@@ -16,17 +16,16 @@ mvn test
 
 # Run a single test class
 mvn test -Dtest=AuthServiceTest
-
-# Run tests with coverage (Jacoco)
-mvn verify
 ```
 
-**Swagger UI**: http://localhost:8386/swagger-ui.html (or port from active profile)  
-**OpenAPI spec**: http://localhost:8386/v3/api-docs
+**Swagger UI**: http://localhost:8080/swagger-ui.html  
+**OpenAPI spec**: http://localhost:8080/v3/api-docs
+
+> No test classes exist yet (`src/test/` is absent). The `mvn test` command compiles but runs nothing.
 
 ## Architecture
 
-**Stack**: Java 17 · Spring Boot 3.2.x · Spring Security 6 · Spring Data JPA / Hibernate 6 · SQL Server 2022 · Flyway · MapStruct · Lombok
+**Stack**: Java 17 · Spring Boot 3.2.5 · Spring Security 6 · Spring Data JPA / Hibernate 6 · SQL Server 2022 · Flyway · MapStruct · Lombok · JJWT 0.12.6 · springdoc-openapi 2.5.0
 
 ### Package layout
 
@@ -35,6 +34,7 @@ com.rms.restaurant
 ├── common/                    # Cross-cutting infrastructure
 │   ├── datasource/            # DataSource, JPA, RestTemplate config
 │   ├── filter/                # JwtAuthenticationFilter, HttpRequestLoggingFilter
+│   ├── init/                  # DataSeeder (seeds one user per role on startup)
 │   ├── security/              # JwtService
 │   └── utils/
 │       ├── enums/             # UserRole, UserStatus, OrderStatus, TableStatus, …
@@ -58,35 +58,59 @@ com.rms.restaurant
 
 Each module follows the same internal structure: `config/`, `controller/`, `dto/`, `mapper/`, `model/`, `repository/`, `service/`.
 
+### Implementation status
+
+The scaffolding (entities, DTOs, MapStruct mappers, repository interfaces, Flyway migrations, security config) is complete for all modules. Business logic is largely unimplemented:
+
+| What is complete | What is a stub |
+|---|---|
+| All JPA entity models | Every `*ServiceImpl` (methods return `null` / TODO) |
+| All DTOs and MapStruct mappers | Every controller except `UserController` and `AuthController` |
+| All Spring Data repository interfaces | Integration clients (`SendGridMessagingClient`, `TwilioMessagingClient`, `VNPayGatewayClient`) |
+| `UserController` — 7 endpoints (CRUD + unlock) | OTP verify endpoints — permitted in `SecurityConfig` but not yet in `AuthController` |
+| `AuthController` — 4 endpoints (login, refresh, logout, changePassword) | |
+| Security infrastructure (`SecurityConfig`, `JwtService`, filters, `GlobalExceptionHandler`) | |
+| `DataSeeder` — seeds one user per role (`WAITER`, `CASHIER`, `MANAGER`, `ADMIN`) on startup | |
+| Flyway migrations V1–V7 (full schema) | |
+
 ### Key design decisions
 
-**Response envelope** — all API responses use `ApiResponse<T>`; paginated results use `PageResponse<T>`.
+**Response envelope**:
+- Single-object responses: `ApiResponse<T>` (fields: `data`, `message`, `timestamp`)
+- Paginated list responses: `PageResponse<T>` returned directly (fields: `data`, `pagination` with `page`, `limit`, `total`, `totalPages`)
+- Void operations: `ResponseEntity<Void>` with HTTP 204
 
-**Exception handling** — throw subtypes of `ApplicationException` (e.g. `ResourceNotFoundException`, `ForbiddenException`, `UnauthorizedException`); `GlobalExceptionHandler` converts them to the standard envelope.
+**Exception handling** — throw subtypes of `ApplicationException` (`ResourceNotFoundException`, `ForbiddenException`, `UnauthorizedException`, `ConflictException`, `RateLimitException`); `GlobalExceptionHandler` converts them to `ErrorResponse` with `error`, `message`, `path`, `timestamp`. Validation failures produce a `fieldErrors` map.
 
-**Database schema** — Hibernate DDL is set to `validate`; all schema changes must go through Flyway migration scripts in `src/main/resources/db/migration/V*.sql`. Never use `ddl-auto=update` or `create`.
+**Database schema** — Hibernate DDL is `validate`; all schema changes go through Flyway scripts in `src/main/resources/db/migration/V*.sql`. Migration files V1–V7 cover users/auth, tables/reservations, menu, orders, payments, shifts, and notification logs. Never use `ddl-auto=update` or `create`.
 
 **Authentication split**:
 - Staff → JWT (`Authorization: Bearer <token>`), enforced by `JwtAuthenticationFilter`; method-level rules via `@PreAuthorize`
 - In-restaurant guests → table token (from QR code), *not* a JWT; enforced separately in the `guest_ordering` module
 
 **First-login OTP flow** (`UN_ACTIVE → ACTIVE`):
-1. `POST /api/auth/login` → returns `requires_verification: true` + short-lived `verify_token` (15 min)
-2. `POST /api/auth/verify/info` (header: `X-Verify-Token`) → sends 6-digit OTP (TTL: 5 min)
+1. `POST /api/auth/login` → returns `requires_verification: true` + short-lived `verify_token` (stored in `otp_records.verify_token`)
+2. `POST /api/auth/verify/info` (header: `X-Verify-Token`) → sends 6-digit OTP (TTL 5 min)
 3. `POST /api/auth/verify/otp` → activates account, issues JWT
 4. OTP resend capped at 3× per 10 min; 5 wrong attempts locks OTP for 15 min
 
-**External integrations** use a strategy pattern: `app.integration.messaging-provider` selects SendGrid vs Twilio; `app.integration.payment-provider` selects VNPay. Provider selection lives in `IntegrationConfig`.
+Steps 2–3 are whitelisted in `SecurityConfig` but the handler methods are not yet in `AuthController` — they need to be added alongside their `AuthServiceImpl` logic.
 
-**DTO mapping** is done exclusively via MapStruct mapper interfaces (e.g. `UserMapper`). Do not map manually in services.
+**Roles**: `WAITER`, `CASHIER`, `MANAGER`, `ADMIN` (enum `UserRole`). Authorization uses `@PreAuthorize("hasRole('...')")` or `hasAnyRole(...)`. User IDs are UUID strings generated by JPA (`@GeneratedValue(strategy = GenerationType.UUID)`).
+
+**External integrations** use a strategy pattern: `app.integration.messaging-provider` selects `SendGridMessagingClient` vs `TwilioMessagingClient`; `app.integration.payment-provider` selects `VNPayGatewayClient`. Provider selection lives in `IntegrationConfig` (`@ConfigurationProperties(prefix = "app.integration")`).
+
+**DTO mapping** is done exclusively via MapStruct mapper interfaces. Do not map manually in services.
+
+**`.env` loading** — `spring-dotenv` (me.paulschwarz) is on the classpath; place secrets in a `.env` file at the project root and they are injected as environment variables before Spring resolves `${...}` placeholders.
 
 ### Configuration
 
 | File | Purpose |
 |------|---------|
-| `application.properties` | Production defaults (port 8386, SQL Server, SendGrid) |
-| `application-local.properties` | Local overrides (show-sql, MailHog, etc.) |
-| `.env` | Secrets: `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `SENDGRID_API_KEY`, `TWILIO_*`, `VNPAY_*` |
+| `application.properties` | Production defaults (port 8080, SQL Server, SendGrid) |
+| `application-local.properties` | Local overrides (show-sql, MailHog SMTP on port 1025, verbose logging) |
+| `.env` | Secrets: `DB_PASSWORD`, `JWT_SECRET`, `SENDGRID_API_KEY`, `TWILIO_*`, `VNPAY_*` |
 
 All secrets are injected via `${ENV_VAR:default}` placeholders; never hardcode credentials.
 
