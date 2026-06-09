@@ -1,9 +1,22 @@
 package com.rms.restaurant.common.init;
 
+<<<<<<< HEAD
+=======
+import com.rms.restaurant.common.utils.enums.TableStatus;
+>>>>>>> origin/Huy
 import com.rms.restaurant.common.utils.enums.UserRole;
 import com.rms.restaurant.common.utils.enums.UserStatus;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
+<<<<<<< HEAD
+=======
+import com.rms.restaurant.module.menu.model.MenuCategory;
+import com.rms.restaurant.module.menu.model.MenuItem;
+import com.rms.restaurant.module.menu.repository.MenuCategoryRepository;
+import com.rms.restaurant.module.menu.repository.MenuItemRepository;
+import com.rms.restaurant.module.table.model.RestaurantTable;
+import com.rms.restaurant.module.table.repository.TableRepository;
+>>>>>>> origin/Huy
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -12,6 +25,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+<<<<<<< HEAD
+=======
+import java.math.BigDecimal;
+>>>>>>> origin/Huy
 import java.util.List;
 
 @Slf4j
@@ -21,6 +38,12 @@ public class DataSeeder implements ApplicationRunner {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+<<<<<<< HEAD
+=======
+    private final TableRepository tableRepository;
+    private final MenuCategoryRepository menuCategoryRepository;
+    private final MenuItemRepository menuItemRepository;
+>>>>>>> origin/Huy
 
     record SeedUser(String username, String fullName, String email, String phone,
                     UserRole role, UserStatus status, String rawPassword) {}
@@ -35,6 +58,7 @@ public class DataSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+<<<<<<< HEAD
         int created = 0;
         for (SeedUser seed : SEED_USERS) {
             if (userRepository.existsByUsername(seed.username())) {
@@ -56,5 +80,92 @@ public class DataSeeder implements ApplicationRunner {
         if (created > 0) {
             log.info("DataSeeder: created {} user(s)", created);
         }
+=======
+        seedUsers();
+        seedTables();
+        seedMenu();
+    }
+
+    private void seedUsers() {
+        int created = 0;
+        for (SeedUser seed : SEED_USERS) {
+            if (userRepository.existsByUsername(seed.username())) continue;
+            userRepository.save(User.builder()
+                    .username(seed.username()).fullName(seed.fullName()).email(seed.email()).phone(seed.phone())
+                    .role(seed.role()).status(seed.status()).passwordHash(passwordEncoder.encode(seed.rawPassword()))
+                    .build());
+            created++;
+        }
+        if (created > 0) log.info("DataSeeder: created {} user(s)", created);
+    }
+
+    private void seedTables() {
+        if (tableRepository.count() == 0) {
+            tableRepository.saveAll(List.of(
+                createTable("Bàn 01", 4, "Tầng 1", TableStatus.AVAILABLE, "token-ban-01"),
+                createTable("Bàn 02", 4, "Tầng 1", TableStatus.AVAILABLE, "token-ban-02"),
+                createTable("Bàn 03", 2, "Tầng 1", TableStatus.AVAILABLE,  "token-ban-03"),
+                createTable("Bàn 04", 6, "Tầng 2", TableStatus.AVAILABLE, "token-ban-04"),
+                createTable("Bàn 05", 8, "VIP",    TableStatus.AVAILABLE, "token-ban-05")
+            ));
+        }
+        
+        log.info("================= DANH SÁCH TABLE ID ==================");
+        for (RestaurantTable t : tableRepository.findAll()) {
+            log.info("[{}] ID: {} | Token: {}", t.getName(), t.getId(), t.getQrToken());
+        }
+        log.info("=======================================================");
+    }
+
+    private RestaurantTable createTable(String name, int capacity, String area, TableStatus status, String qrToken) {
+        RestaurantTable t = new RestaurantTable();
+        t.setName(name); t.setCapacity(capacity); t.setArea(area); t.setStatus(status); t.setQrToken(qrToken);
+        return t;
+    }
+
+    private void seedMenu() {
+        if (menuCategoryRepository.count() > 0) return;
+
+        MenuCategory cat1 = createCat("Khai vị", 1, "fas fa-seedling");
+        MenuCategory cat2 = createCat("Món chính", 2, "fas fa-utensils");
+        MenuCategory cat3 = createCat("Đồ uống", 3, "fas fa-glass-martini-alt");
+        MenuCategory cat4 = createCat("Tráng miệng", 4, "fas fa-ice-cream");
+        List<MenuCategory> savedCats = menuCategoryRepository.saveAll(List.of(cat1, cat2, cat3, cat4));
+        
+        cat1 = savedCats.get(0);
+        cat2 = savedCats.get(1);
+        cat3 = savedCats.get(2);
+        cat4 = savedCats.get(3);
+
+        menuItemRepository.saveAll(List.of(
+            createItem(cat1.getId(), "Salad Cá Hồi", 120000, "Salad tươi ngon với cá hồi Na Uy.", "https://example.com/salad.jpg", true),
+            createItem(cat1.getId(), "Súp Cua Măng Tây", 85000, "Súp cua biển nấu với măng tây tươi.", "https://example.com/sup.jpg", true),
+            
+            createItem(cat2.getId(), "Bò Bít Tết Úc", 350000, "Thịt bò Úc nướng kèm khoai tây chiên.", "https://example.com/beef.jpg", true),
+            createItem(cat2.getId(), "Cá Chẽm Sốt Cam", 220000, "Phi lê cá chẽm chiên giòn rưới sốt cam.", "https://example.com/ca.jpg", true),
+            createItem(cat2.getId(), "Gà Nướng Mật Ong", 190000, "Đùi gà góc tư nướng mật ong.", "https://example.com/ga.jpg", false),
+            createItem(cat2.getId(), "Pizza Hải Sản", 250000, "Pizza đế mỏng, topping mực, tôm.", "https://example.com/pizza.jpg", true),
+            
+            createItem(cat3.getId(), "Coca Cola", 25000, "Lon 330ml ướp lạnh.", "https://example.com/coca.jpg", true),
+            createItem(cat3.getId(), "Nước Cam Ép", 45000, "Cam vắt tươi không đường nguyên chất.", "https://example.com/cam.jpg", true),
+            
+            createItem(cat4.getId(), "Bánh Flan Caramen", 35000, "Bánh flan mềm mịn thơm mùi trứng sữa.", "https://example.com/flan.jpg", true),
+            createItem(cat4.getId(), "Dĩa Trái Cây Thập Cẩm", 90000, "Dưa hấu, xoài, thanh long, nho Mỹ.", "https://example.com/trai.jpg", true)
+        ));
+        log.info("DataSeeder: created menu categories and items");
+    }
+
+    private MenuCategory createCat(String name, int order, String icon) {
+        MenuCategory c = new MenuCategory();
+        c.setName(name); c.setDisplayOrder(order); c.setIcon(icon);
+        return c;
+    }
+
+    private MenuItem createItem(String catId, String name, int price, String desc, String img, boolean available) {
+        MenuItem i = new MenuItem();
+        i.setCategoryId(catId); i.setName(name); i.setPrice(BigDecimal.valueOf(price)); 
+        i.setDescription(desc); i.setImageUrl(img); i.setAvailable(available);
+        return i;
+>>>>>>> origin/Huy
     }
 }
