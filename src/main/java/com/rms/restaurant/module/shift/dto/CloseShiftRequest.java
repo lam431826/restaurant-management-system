@@ -11,15 +11,10 @@ import java.util.List;
 
 public record CloseShiftRequest(
 
-<<<<<<< HEAD
         // BR-CLOSE-02: actual counted amount for each payment method
         @NotEmpty @Valid List<PaymentActualAmount> actualAmounts,
 
         // BR-CLOSE-05: required when any variance exceeds tolerance
-=======
-        @NotEmpty @Valid List<PaymentActualAmount> actualAmounts,
-
->>>>>>> origin/develop
         String closingNote
 
 ) {

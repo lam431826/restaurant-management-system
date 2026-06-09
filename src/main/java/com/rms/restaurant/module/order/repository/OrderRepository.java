@@ -14,10 +14,7 @@ public interface OrderRepository extends JpaRepository<Order, String> {
     List<Order> findByTableIdAndStatus(String tableId, OrderStatus status);
     Optional<Order> findTopByTableIdOrderByCreatedAtDesc(String tableId);
     Page<Order> findByStatus(OrderStatus status, Pageable pageable);
-<<<<<<< HEAD
 
     // BR-CLOSE-06: shift cannot close when active orders exist
-=======
->>>>>>> origin/develop
     boolean existsByStatusIn(Collection<OrderStatus> statuses);
 }

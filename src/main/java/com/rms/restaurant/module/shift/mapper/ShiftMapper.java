@@ -29,26 +29,18 @@ public class ShiftMapper {
 
         List<CashMovementDetail> cashMovements = movements.stream()
                 .map(m -> new CashMovementDetail(
-<<<<<<< HEAD
                         m.getId(),
                         m.getType(),
                         m.getAmount(),
                         m.getReason(),
                         m.getOperatorId(),
                         m.getCreatedAt()))
-=======
-                        m.getId(), m.getType(), m.getAmount(),
-                        m.getReason(), m.getOperatorId(), m.getCreatedAt()))
->>>>>>> origin/develop
                 .toList();
 
         BigDecimal totalRevenue = shift.getTotalRevenue() != null
                 ? shift.getTotalRevenue()
                 : reconciliations.stream()
-<<<<<<< HEAD
                         .filter(r -> r.getPaymentMethod() != null)
-=======
->>>>>>> origin/develop
                         .map(ShiftPaymentReconciliation::getExpectedAmount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
 
