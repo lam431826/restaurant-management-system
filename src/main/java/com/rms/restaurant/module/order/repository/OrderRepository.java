@@ -1,0 +1,16 @@
+package com.rms.restaurant.module.order.repository;
+
+import com.rms.restaurant.common.utils.enums.OrderStatus;
+import com.rms.restaurant.module.order.model.Order;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+import java.util.Optional;
+
+public interface OrderRepository extends JpaRepository<Order, String> {
+    List<Order> findByTableIdAndStatus(String tableId, OrderStatus status);
+    Optional<Order> findTopByTableIdOrderByCreatedAtDesc(String tableId);
+    Page<Order> findByStatus(OrderStatus status, Pageable pageable);
+}
