@@ -1,10 +1,26 @@
 package com.rms.restaurant.module.shift.service;
 
 import com.rms.restaurant.module.shift.dto.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 public interface ShiftService {
-    ShiftSummaryResponse open(OpenShiftRequest request, String cashierId);
-    ShiftSummaryResponse close(CloseShiftRequest request, String cashierId);
-    ShiftSummaryResponse getCurrent(String cashierId);
-    void addCashMovement(String shiftId, CashMovementRequest request);
+
+    // SM-01: BR-OPEN-01..04
+    ShiftSummaryResponse open(OpenShiftRequest request, String cashierUsername);
+
+    // SM-02: BR-CASH-01..06
+    void addCashMovement(String shiftId, CashMovementRequest request, String operatorUsername);
+
+    // SM-03: BR-CLOSE-01..08
+    ShiftSummaryResponse close(String shiftId, CloseShiftRequest request, String closingUsername);
+
+    // SM-04: BR-SUM-01..04
+    ShiftSummaryResponse getSummary(String shiftId, String requestingUsername);
+
+    // BR-SUM-02: real-time view of currently open shift
+    ShiftSummaryResponse getOpenShiftSummary();
+
+    // BR-SUM-03: managers can list all shifts
+    Page<ShiftSummaryResponse> listAll(Pageable pageable, String requestingUsername);
 }

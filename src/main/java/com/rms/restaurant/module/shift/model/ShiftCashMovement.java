@@ -21,6 +21,9 @@ public class ShiftCashMovement {
     @Column(name = "shift_id", nullable = false)
     private String shiftId;
 
+    @Column(name = "operator_id")
+    private String operatorId;
+
     @Column(nullable = false, length = 10)
     private String type;
 
