@@ -5,6 +5,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 public interface ShiftService {
+<<<<<<< HEAD
 
     // SM-01: BR-OPEN-01..04
     ShiftSummaryResponse open(OpenShiftRequest request, String cashierUsername);
@@ -22,5 +23,12 @@ public interface ShiftService {
     ShiftSummaryResponse getOpenShiftSummary();
 
     // BR-SUM-03: managers can list all shifts
+=======
+    ShiftSummaryResponse open(OpenShiftRequest request, String cashierUsername);
+    void addCashMovement(String shiftId, CashMovementRequest request, String operatorUsername);
+    ShiftSummaryResponse close(String shiftId, CloseShiftRequest request, String closingUsername);
+    ShiftSummaryResponse getSummary(String shiftId, String requestingUsername);
+    ShiftSummaryResponse getOpenShiftSummary();
+>>>>>>> origin/develop
     Page<ShiftSummaryResponse> listAll(Pageable pageable, String requestingUsername);
 }
