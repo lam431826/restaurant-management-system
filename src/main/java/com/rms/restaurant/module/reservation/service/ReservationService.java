@@ -12,6 +12,6 @@ public interface ReservationService {
     ReservationResponse create(CreateReservationRequest request, String createdBy);
     ReservationResponse update(String id, UpdateReservationRequest request);
     void cancel(String id);
-    void checkIn(String id);
+    ReservationResponse checkIn(String id);
     void markNoShow(String id);
 }
