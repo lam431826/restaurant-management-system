@@ -1,0 +1,689 @@
+{
+  "info": {
+    "name": "RMS - Auth Full Test Suite",
+    "description": "Chạy theo thứ tự từ trên xuống. Yêu cầu server đang chạy tại baseUrl.\n⚠️ Mục 5 yêu cầu thiết lập biến `otp` thủ công từ email.\n⚠️ Mục 7 làm LOCKED tài khoản cashier01 vĩnh viễn (cần admin unlock sau).\n⚠️ Mục 5 & 6 chỉ chạy đúng lần đầu (TanTDHE191221 chưa ACTIVE, manager01 chưa vượt rate limit).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",              "value": "http://localhost:8386" },
+    { "key": "accessToken",          "value": "" },
+    { "key": "refreshToken",         "value": "" },
+    { "key": "revokedRefreshToken",  "value": "" },
+    { "key": "verifyToken",          "value": "" },
+    { "key": "otp",                  "value": "" }
+  ],
+  "item": [
+
+    {
+      "name": "1. Login",
+      "item": [
+        {
+          "name": "1.1 Login thành công → JWT (admin)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('accessToken', () => pm.expect(j.accessToken).to.be.a('string'));",
+            "pm.test('refreshToken', () => pm.expect(j.refreshToken).to.be.a('string'));",
+            "pm.test('user.role = ADMIN', () => pm.expect(j.user.role).to.eql('ADMIN'));",
+            "pm.test('no requiresVerification', () => pm.expect(j.requiresVerification).to.be.undefined);",
+            "pm.collectionVariables.set('accessToken', j.accessToken);",
+            "pm.collectionVariables.set('refreshToken', j.refreshToken);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"Admin@123456\"\n}" }
+          }
+        },
+        {
+          "name": "1.2 Login sai mật khẩu → 401 INVALID_CREDENTIALS",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('401', () => pm.response.to.have.status(401));",
+            "pm.test('error = INVALID_CREDENTIALS', () => pm.expect(j.error).to.eql('INVALID_CREDENTIALS'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"SaiMatKhau@999\"\n}" }
+          }
+        },
+        {
+          "name": "1.3 Login username không tồn tại → 401 INVALID_CREDENTIALS",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('401', () => pm.response.to.have.status(401));",
+            "pm.test('error = INVALID_CREDENTIALS', () => pm.expect(j.error).to.eql('INVALID_CREDENTIALS'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"khong_ton_tai\",\n  \"password\": \"Abc@123\"\n}" }
+          }
+        },
+        {
+          "name": "1.4 Login UN_ACTIVE → requiresVerification (TanTDHE191221)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('requiresVerification = true', () => pm.expect(j.requiresVerification).to.be.true);",
+            "pm.test('verifyToken present', () => pm.expect(j.verifyToken).to.be.a('string'));",
+            "pm.test('no accessToken', () => pm.expect(j.accessToken).to.be.undefined);",
+            "pm.test('no user', () => pm.expect(j.user).to.be.undefined);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"TanTDHE191221\",\n  \"password\": \"Qwedsa@1\"\n}" }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "2. Refresh Token & Logout",
+      "item": [
+        {
+          "name": "2.1 Refresh token hợp lệ → JWT mới",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('accessToken mới', () => pm.expect(j.accessToken).to.be.a('string'));",
+            "pm.test('refreshToken mới', () => pm.expect(j.refreshToken).to.be.a('string'));",
+            "pm.collectionVariables.set('accessToken', j.accessToken);",
+            "pm.collectionVariables.set('refreshToken', j.refreshToken);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/refresh",
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" }
+          }
+        },
+        {
+          "name": "2.2 Refresh token không hợp lệ (random string) → 401",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401', () => pm.response.to.have.status(401));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/refresh",
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"invalid.token.string\"\n}" }
+          }
+        },
+        {
+          "name": "2.3 Logout → 204 (lưu refreshToken đã dùng)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('204 No Content', () => pm.response.to.have.status(204));",
+            "pm.collectionVariables.set('revokedRefreshToken', pm.collectionVariables.get('refreshToken'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/auth/logout",
+            "body": { "mode": "raw", "raw": "" }
+          }
+        },
+        {
+          "name": "2.4 Refresh token đã revoke (sau logout) → 401",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401', () => pm.response.to.have.status(401));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/refresh",
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{revokedRefreshToken}}\"\n}" }
+          }
+        },
+        {
+          "name": "2.5 Gọi endpoint bảo vệ sau logout → 401",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/auth/logout",
+            "body": { "mode": "raw", "raw": "" }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "3. Change Password (admin)",
+      "item": [
+        {
+          "name": "3.0 Login lại để lấy token mới",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('accessToken', j.accessToken);",
+            "pm.collectionVariables.set('refreshToken', j.refreshToken);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"Admin@123456\"\n}" }
+          }
+        },
+        {
+          "name": "3.1 Đổi mật khẩu - Sai mật khẩu hiện tại → 401",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401', () => pm.response.to.have.status(401));",
+            "pm.test('error = INVALID_CREDENTIALS', () => pm.expect(pm.response.json().error).to.eql('INVALID_CREDENTIALS'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/auth/change-password",
+            "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"SaiMatKhau@000\",\n  \"newPassword\": \"Admin@123456New\"\n}" }
+          }
+        },
+        {
+          "name": "3.2 Đổi mật khẩu thành công → 204 (→ Admin@123456New)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/auth/change-password",
+            "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"Admin@123456\",\n  \"newPassword\": \"Admin@123456New\"\n}" }
+          }
+        },
+        {
+          "name": "3.3 Login mật khẩu cũ sau khi đổi → 401",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 (mật khẩu cũ không còn hiệu lực)', () => pm.response.to.have.status(401));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"Admin@123456\"\n}" }
+          }
+        },
+        {
+          "name": "3.4 Login mật khẩu mới → 200 JWT, lấy token",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK (mật khẩu mới hợp lệ)', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('accessToken', j.accessToken);",
+            "pm.collectionVariables.set('refreshToken', j.refreshToken);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"Admin@123456New\"\n}" }
+          }
+        },
+        {
+          "name": "3.5 Đổi lại mật khẩu gốc → 204 (→ Admin@123456)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/auth/change-password",
+            "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"Admin@123456New\",\n  \"newPassword\": \"Admin@123456\"\n}" }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "4. UN_ACTIVE Login → requiresVerification",
+      "item": [
+        {
+          "name": "4.1 Login manager01 (UN_ACTIVE) → requiresVerification",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('requiresVerification = true', () => pm.expect(j.requiresVerification).to.be.true);",
+            "pm.test('verifyToken present', () => pm.expect(j.verifyToken).to.be.a('string'));",
+            "pm.test('no accessToken', () => pm.expect(j.accessToken).to.be.undefined);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"manager01\",\n  \"password\": \"Manager@123456\"\n}" }
+          }
+        },
+        {
+          "name": "4.2 Login waiter01 (UN_ACTIVE) → requiresVerification",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('requiresVerification = true', () => pm.expect(j.requiresVerification).to.be.true);",
+            "pm.test('verifyToken khác manager01', () => pm.expect(j.verifyToken).to.not.eql(pm.collectionVariables.get('verifyToken')));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"waiter01\",\n  \"password\": \"Waiter@123456\"\n}" }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "5. OTP Verify Flow (TanTDHE191221) ⚠️ Chỉ chạy khi account còn UN_ACTIVE",
+      "item": [
+        {
+          "name": "5.1 Login TanTDHE191221 → verifyToken",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('requiresVerification = true', () => pm.expect(j.requiresVerification).to.be.true);",
+            "pm.test('verifyToken present', () => pm.expect(j.verifyToken).to.be.a('string'));",
+            "pm.collectionVariables.set('verifyToken', j.verifyToken);",
+            "console.log('verifyToken:', j.verifyToken);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"TanTDHE191221\",\n  \"password\": \"Qwedsa@1\"\n}" }
+          }
+        },
+        {
+          "name": "5.2 verify/info - token không hợp lệ → 401 INVALID_VERIFY_TOKEN",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('401', () => pm.response.to.have.status(401));",
+            "pm.test('error = INVALID_VERIFY_TOKEN', () => pm.expect(j.error).to.eql('INVALID_VERIFY_TOKEN'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Verify-Token", "value": "token-khong-ton-tai-00000000" }
+            ],
+            "url": "{{baseUrl}}/api/auth/verify/info",
+            "body": { "mode": "raw", "raw": "" }
+          }
+        },
+        {
+          "name": "5.3 verify/info hợp lệ → OTP email gửi, maskedEmail + expiresAt",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('maskedEmail present', () => pm.expect(j.data.maskedEmail).to.be.a('string'));",
+            "pm.test('expiresAt present', () => pm.expect(j.data.expiresAt).to.be.a('string'));",
+            "pm.test('maskedEmail che ký tự', () => pm.expect(j.data.maskedEmail).to.include('*'));",
+            "console.log('OTP sent to:', j.data.maskedEmail, '| expires:', j.data.expiresAt);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Verify-Token", "value": "{{verifyToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/auth/verify/info",
+            "body": { "mode": "raw", "raw": "" }
+          }
+        },
+        {
+          "name": "5.4 verify/otp - OTP sai lần 1 → 401 INVALID_OTP (attemptCount: 0→1)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('401', () => pm.response.to.have.status(401));",
+            "pm.test('error = INVALID_OTP', () => pm.expect(j.error).to.eql('INVALID_OTP'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Verify-Token", "value": "{{verifyToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/auth/verify/otp",
+            "body": { "mode": "raw", "raw": "{\n  \"otp\": \"000000\"\n}" }
+          }
+        },
+        {
+          "name": "5.5 verify/otp - OTP sai lần 2 → 401 INVALID_OTP (attemptCount: 1→2)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 INVALID_OTP', () => { pm.response.to.have.status(401); pm.expect(pm.response.json().error).to.eql('INVALID_OTP'); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Verify-Token", "value": "{{verifyToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/auth/verify/otp",
+            "body": { "mode": "raw", "raw": "{\n  \"otp\": \"000000\"\n}" }
+          }
+        },
+        {
+          "name": "5.6 verify/otp - OTP sai lần 3 → 401 INVALID_OTP (attemptCount: 2→3)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 INVALID_OTP', () => { pm.response.to.have.status(401); pm.expect(pm.response.json().error).to.eql('INVALID_OTP'); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Verify-Token", "value": "{{verifyToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/auth/verify/otp",
+            "body": { "mode": "raw", "raw": "{\n  \"otp\": \"000000\"\n}" }
+          }
+        },
+        {
+          "name": "5.7 verify/otp - OTP sai lần 4 → 401 INVALID_OTP (attemptCount: 3→4)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 INVALID_OTP', () => { pm.response.to.have.status(401); pm.expect(pm.response.json().error).to.eql('INVALID_OTP'); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Verify-Token", "value": "{{verifyToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/auth/verify/otp",
+            "body": { "mode": "raw", "raw": "{\n  \"otp\": \"000000\"\n}" }
+          }
+        },
+        {
+          "name": "5.8 verify/otp - OTP sai lần 5 → 401 INVALID_OTP (attemptCount: 4→5)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 INVALID_OTP', () => { pm.response.to.have.status(401); pm.expect(pm.response.json().error).to.eql('INVALID_OTP'); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Verify-Token", "value": "{{verifyToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/auth/verify/otp",
+            "body": { "mode": "raw", "raw": "{\n  \"otp\": \"000000\"\n}" }
+          }
+        },
+        {
+          "name": "5.9 verify/otp - Lần 6 (attemptCount đã = 5) → 429 OTP_MAX_ATTEMPTS",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('429 Too Many Requests', () => pm.response.to.have.status(429));",
+            "pm.test('error = OTP_MAX_ATTEMPTS', () => pm.expect(j.error).to.eql('OTP_MAX_ATTEMPTS'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Verify-Token", "value": "{{verifyToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/auth/verify/otp",
+            "body": { "mode": "raw", "raw": "{\n  \"otp\": \"000000\"\n}" }
+          }
+        },
+        {
+          "name": "5.10 resend-otp (sau max attempts) → 200, verifyToken mới + OTP mới gửi email",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('verifyToken mới', () => pm.expect(j.data.verifyToken).to.be.a('string'));",
+            "pm.test('expiresIn = 300', () => pm.expect(j.data.expiresIn).to.eql(300));",
+            "pm.test('verifyToken đã thay đổi', () => pm.expect(j.data.verifyToken).to.not.eql(pm.collectionVariables.get('verifyToken')));",
+            "pm.collectionVariables.set('verifyToken', j.data.verifyToken);",
+            "console.log('>>> Kiểm tra email tranduytanrobin@gmail.com để lấy OTP mới');",
+            "console.log('>>> Sau đó set biến collection otp = <mã 6 số>');",
+            "console.log('>>> New verifyToken:', j.data.verifyToken);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/resend-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"verifyToken\": \"{{verifyToken}}\"\n}" }
+          }
+        },
+        {
+          "name": "5.11 resend-otp token không hợp lệ → 401 INVALID_VERIFY_TOKEN",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('401', () => pm.response.to.have.status(401));",
+            "pm.test('error = INVALID_VERIFY_TOKEN', () => pm.expect(j.error).to.eql('INVALID_VERIFY_TOKEN'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/resend-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"verifyToken\": \"token-khong-ton-tai-00000000\"\n}" }
+          }
+        },
+        {
+          "name": "5.12 [MANUAL] verify/otp OTP đúng → 200 JWT, account ACTIVE",
+          "event": [{ "listen": "prerequest", "script": { "exec": [
+            "const otp = pm.collectionVariables.get('otp');",
+            "if (!otp || otp.length !== 6) {",
+            "  console.warn('⚠️ Biến otp chưa được set! Hãy kiểm tra email và set Collection Variable otp = <mã 6 số>');",
+            "}"
+          ]}}, { "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('accessToken present', () => pm.expect(j.accessToken).to.be.a('string'));",
+            "pm.test('refreshToken present', () => pm.expect(j.refreshToken).to.be.a('string'));",
+            "pm.test('user.role = MANAGER', () => pm.expect(j.user.role).to.eql('MANAGER'));",
+            "pm.test('no requiresVerification', () => pm.expect(j.requiresVerification).to.be.undefined);",
+            "pm.collectionVariables.set('accessToken', j.accessToken);",
+            "pm.collectionVariables.set('refreshToken', j.refreshToken);",
+            "console.log('Account ACTIVE! accessToken:', j.accessToken.substring(0,30) + '...');"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Verify-Token", "value": "{{verifyToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/auth/verify/otp",
+            "body": { "mode": "raw", "raw": "{\n  \"otp\": \"{{otp}}\"\n}" }
+          }
+        },
+        {
+          "name": "5.13 Login lại sau khi ACTIVE → full JWT (không còn requiresVerification)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('accessToken present (account ACTIVE)', () => pm.expect(j.accessToken).to.be.a('string'));",
+            "pm.test('no requiresVerification', () => pm.expect(j.requiresVerification).to.be.undefined);",
+            "pm.test('user.role = MANAGER', () => pm.expect(j.user.role).to.eql('MANAGER'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"TanTDHE191221\",\n  \"password\": \"Qwedsa@1\"\n}" }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "6. Resend OTP Rate Limit (manager01) ⚠️ Chỉ chạy 1 lần / 10 phút",
+      "item": [
+        {
+          "name": "6.1 Login manager01 → verifyToken (record #1)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('requiresVerification = true', () => pm.expect(j.requiresVerification).to.be.true);",
+            "pm.collectionVariables.set('verifyToken', j.verifyToken);",
+            "console.log('verifyToken_1:', j.verifyToken);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"manager01\",\n  \"password\": \"Manager@123456\"\n}" }
+          }
+        },
+        {
+          "name": "6.2 Resend lần 1 → 200, verifyToken mới (record #2, count=2<4)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('verifyToken mới', () => pm.expect(j.data.verifyToken).to.be.a('string'));",
+            "pm.test('expiresIn = 300', () => pm.expect(j.data.expiresIn).to.eql(300));",
+            "pm.collectionVariables.set('verifyToken', j.data.verifyToken);",
+            "console.log('verifyToken_2:', j.data.verifyToken);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/resend-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"verifyToken\": \"{{verifyToken}}\"\n}" }
+          }
+        },
+        {
+          "name": "6.3 Resend lần 2 → 200, verifyToken mới (record #3, count=3<4)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('verifyToken mới', () => pm.expect(j.data.verifyToken).to.be.a('string'));",
+            "pm.collectionVariables.set('verifyToken', j.data.verifyToken);",
+            "console.log('verifyToken_3:', j.data.verifyToken);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/resend-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"verifyToken\": \"{{verifyToken}}\"\n}" }
+          }
+        },
+        {
+          "name": "6.4 Resend lần 3 → 200, verifyToken mới (record #4, count=4, nhưng check trước khi tạo = 3<4 OK)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('verifyToken mới', () => pm.expect(j.data.verifyToken).to.be.a('string'));",
+            "pm.collectionVariables.set('verifyToken', j.data.verifyToken);",
+            "console.log('verifyToken_4:', j.data.verifyToken);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/resend-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"verifyToken\": \"{{verifyToken}}\"\n}" }
+          }
+        },
+        {
+          "name": "6.5 Resend lần 4 → 429 RESEND_LIMIT_EXCEEDED (count=4 >= MAX=4)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('429 Too Many Requests', () => pm.response.to.have.status(429));",
+            "pm.test('error = RESEND_LIMIT_EXCEEDED', () => pm.expect(j.error).to.eql('RESEND_LIMIT_EXCEEDED'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/resend-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"verifyToken\": \"{{verifyToken}}\"\n}" }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "7. Account Lockout (cashier01) ⚠️ Destructive — cashier01 bị LOCKED sau khi chạy",
+      "item": [
+        {
+          "name": "7.1 Login cashier01 sai mật khẩu lần 1 → 401 (failedAttempts: 0→1)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 INVALID_CREDENTIALS', () => { pm.response.to.have.status(401); pm.expect(pm.response.json().error).to.eql('INVALID_CREDENTIALS'); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"cashier01\",\n  \"password\": \"SaiMatKhau@001\"\n}" }
+          }
+        },
+        {
+          "name": "7.2 Login cashier01 sai mật khẩu lần 2 → 401 (failedAttempts: 1→2)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 INVALID_CREDENTIALS', () => { pm.response.to.have.status(401); pm.expect(pm.response.json().error).to.eql('INVALID_CREDENTIALS'); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"cashier01\",\n  \"password\": \"SaiMatKhau@002\"\n}" }
+          }
+        },
+        {
+          "name": "7.3 Login cashier01 sai mật khẩu lần 3 → 401 (failedAttempts: 2→3)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 INVALID_CREDENTIALS', () => { pm.response.to.have.status(401); pm.expect(pm.response.json().error).to.eql('INVALID_CREDENTIALS'); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"cashier01\",\n  \"password\": \"SaiMatKhau@003\"\n}" }
+          }
+        },
+        {
+          "name": "7.4 Login cashier01 sai mật khẩu lần 4 → 401 (failedAttempts: 3→4)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 INVALID_CREDENTIALS', () => { pm.response.to.have.status(401); pm.expect(pm.response.json().error).to.eql('INVALID_CREDENTIALS'); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"cashier01\",\n  \"password\": \"SaiMatKhau@004\"\n}" }
+          }
+        },
+        {
+          "name": "7.5 Login cashier01 sai lần 5 → 401, status → LOCKED (failedAttempts: 4→5)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 INVALID_CREDENTIALS (account vừa bị LOCKED)', () => { pm.response.to.have.status(401); pm.expect(pm.response.json().error).to.eql('INVALID_CREDENTIALS'); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"cashier01\",\n  \"password\": \"SaiMatKhau@005\"\n}" }
+          }
+        },
+        {
+          "name": "7.6 Login cashier01 đúng mật khẩu nhưng đã LOCKED → 403 ACCOUNT_LOCKED",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "pm.test('403 Forbidden', () => pm.response.to.have.status(403));",
+            "pm.test('error = ACCOUNT_LOCKED', () => pm.expect(j.error).to.eql('ACCOUNT_LOCKED'));",
+            "console.log('cashier01 bị LOCKED. Cần admin gọi POST /api/users/{id}/unlock để mở.');"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"cashier01\",\n  \"password\": \"Cashier@123456\"\n}" }
+          }
+        }
+      ]
+    }
+
+  ]
+}

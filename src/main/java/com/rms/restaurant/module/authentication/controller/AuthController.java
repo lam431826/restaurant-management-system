@@ -58,4 +58,18 @@ public class AuthController {
             @Valid @RequestBody ResendOtpRequest request) {
         return ResponseEntity.ok(ApiResponse.success(authService.resendOtp(request)));
     }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ApiResponse<ForgotPasswordResponse>> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(authService.forgotPassword(request)));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(
+            @RequestHeader("X-Reset-Token") String resetToken,
+            @Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(resetToken, request);
+        return ResponseEntity.noContent().build();
+    }
 }

@@ -4,13 +4,6 @@ import com.rms.restaurant.common.security.JwtService;
 import com.rms.restaurant.common.utils.enums.UserStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ForbiddenException;
-<<<<<<< HEAD
-import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
-import com.rms.restaurant.common.utils.exception.UnauthorizedException;
-import com.rms.restaurant.module.authentication.dto.*;
-import com.rms.restaurant.module.authentication.model.RefreshToken;
-import com.rms.restaurant.module.authentication.model.User;
-=======
 import com.rms.restaurant.common.utils.exception.RateLimitException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.exception.UnauthorizedException;
@@ -20,46 +13,29 @@ import com.rms.restaurant.module.authentication.model.OtpRecord;
 import com.rms.restaurant.module.authentication.model.RefreshToken;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.OtpRecordRepository;
->>>>>>> 3861575a6bd13be9f9864e95132fbacfbf771276
 import com.rms.restaurant.module.authentication.repository.RefreshTokenRepository;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.authentication.service.AuthService;
 import lombok.RequiredArgsConstructor;
-<<<<<<< HEAD
-=======
 import lombok.extern.slf4j.Slf4j;
->>>>>>> 3861575a6bd13be9f9864e95132fbacfbf771276
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-<<<<<<< HEAD
-import java.time.LocalDateTime;
-import java.util.Map;
-
-=======
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
->>>>>>> 3861575a6bd13be9f9864e95132fbacfbf771276
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class AuthServiceImpl implements AuthService {
 
     private static final int MAX_FAILED_ATTEMPTS = 5;
-<<<<<<< HEAD
-
-    private final UserRepository userRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
-    private final JwtService jwtService;
-    private final PasswordEncoder passwordEncoder;
-=======
     private static final int MAX_OTP_ATTEMPTS = 5;
     private static final int MAX_RESEND_RECORDS = 4; // 1 initial + 3 resends
     private static final int OTP_TTL_MINUTES = 5;
@@ -73,7 +49,6 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final GmailService gmailService;
     private final SecureRandom secureRandom = new SecureRandom();
->>>>>>> 3861575a6bd13be9f9864e95132fbacfbf771276
 
     @Value("${app.jwt.access-token-expiration}")
     private long accessTokenExpirationMs;
@@ -92,12 +67,6 @@ public class AuthServiceImpl implements AuthService {
         if (user.getStatus() == UserStatus.INACTIVE) {
             throw new ForbiddenException(ApplicationError.ACCOUNT_INACTIVE);
         }
-<<<<<<< HEAD
-        if (user.getStatus() == UserStatus.UN_ACTIVE) {
-            throw new ForbiddenException(ApplicationError.ACCOUNT_UNVERIFIED);
-        }
-=======
->>>>>>> 3861575a6bd13be9f9864e95132fbacfbf771276
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             int attempts = user.getFailedLoginAttempts() + 1;
@@ -110,20 +79,15 @@ public class AuthServiceImpl implements AuthService {
             throw new UnauthorizedException(ApplicationError.INVALID_CREDENTIALS);
         }
 
-<<<<<<< HEAD
-=======
         if (user.getStatus() == UserStatus.UN_ACTIVE) {
             return createVerificationResponse(user);
         }
 
->>>>>>> 3861575a6bd13be9f9864e95132fbacfbf771276
         user.setFailedLoginAttempts(0);
         userRepository.save(user);
 
         refreshTokenRepository.revokeAllByUserId(user.getId());
         return issueTokenPair(user);
-<<<<<<< HEAD
-=======
     }
 
     @Override
@@ -211,7 +175,6 @@ public class AuthServiceImpl implements AuthService {
         gmailService.sendOtpEmail(user.getEmail(), user.getFullName(), otp);
 
         return new ResendOtpResponse(newVerifyToken, (long) OTP_TTL_MINUTES * 60);
->>>>>>> 3861575a6bd13be9f9864e95132fbacfbf771276
     }
 
     @Override
@@ -257,8 +220,72 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(user);
     }
 
-<<<<<<< HEAD
-=======
+    @Override
+    public ForgotPasswordResponse forgotPassword(ForgotPasswordRequest request) {
+        User user = userRepository.findByUsername(request.username())
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.USER_NOT_FOUND));
+
+        if (user.getStatus() == UserStatus.INACTIVE) {
+            throw new ForbiddenException(ApplicationError.ACCOUNT_INACTIVE);
+        }
+
+        String resetToken = UUID.randomUUID().toString();
+        String otp = generateOtp();
+        LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(OTP_TTL_MINUTES);
+
+        OtpRecord record = OtpRecord.builder()
+                .user(user)
+                .verifyToken(resetToken)
+                .otpCode(otp)
+                .expiresAt(expiresAt)
+                .createdAt(LocalDateTime.now())
+                .build();
+        otpRecordRepository.save(record);
+
+        try {
+            gmailService.sendOtpEmail(user.getEmail(), user.getFullName(), otp);
+        } catch (Exception e) {
+            log.warn("Forgot-password OTP email failed for user '{}': {}", user.getUsername(), e.getMessage());
+        }
+
+        return new ForgotPasswordResponse(resetToken, maskEmail(user.getEmail()), expiresAt);
+    }
+
+    @Override
+    public void resetPassword(String resetToken, ResetPasswordRequest request) {
+        OtpRecord record = otpRecordRepository.findByVerifyTokenAndUsedFalse(resetToken)
+                .orElseThrow(() -> new UnauthorizedException(ApplicationError.INVALID_RESET_TOKEN));
+
+        if (record.getOtpCode() == null || record.getExpiresAt() == null
+                || record.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new UnauthorizedException(ApplicationError.OTP_EXPIRED);
+        }
+
+        if (record.getAttemptCount() >= MAX_OTP_ATTEMPTS) {
+            throw new RateLimitException(ApplicationError.OTP_MAX_ATTEMPTS);
+        }
+
+        if (!record.getOtpCode().equals(request.otp())) {
+            record.setAttemptCount(record.getAttemptCount() + 1);
+            otpRecordRepository.save(record);
+            throw new UnauthorizedException(ApplicationError.INVALID_OTP);
+        }
+
+        record.setUsed(true);
+        otpRecordRepository.save(record);
+
+        User user = record.getUser();
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setFailedLoginAttempts(0);
+        if (user.getStatus() == UserStatus.LOCKED) {
+            user.setStatus(UserStatus.ACTIVE);
+            user.setLockedAt(null);
+        }
+        userRepository.save(user);
+
+        refreshTokenRepository.revokeAllByUserId(user.getId());
+    }
+
     private LoginResponse createVerificationResponse(User user) {
         String verifyToken = UUID.randomUUID().toString();
         String otp = generateOtp();
@@ -273,7 +300,6 @@ public class AuthServiceImpl implements AuthService {
         return new LoginResponse(null, null, null, null, true, verifyToken);
     }
 
->>>>>>> 3861575a6bd13be9f9864e95132fbacfbf771276
     private LoginResponse issueTokenPair(User user) {
         UserDetails principal = org.springframework.security.core.userdetails.User
                 .withUsername(user.getUsername())
@@ -297,10 +323,6 @@ public class AuthServiceImpl implements AuthService {
                 accessToken,
                 rawRefreshToken,
                 accessTokenExpirationMs / 1000,
-<<<<<<< HEAD
-                new LoginResponse.UserInfo(user.getId(), user.getUsername(), user.getFullName(), user.getRole())
-        );
-=======
                 new LoginResponse.UserInfo(user.getId(), user.getUsername(), user.getFullName(), user.getRole()),
                 null,
                 null
@@ -318,6 +340,5 @@ public class AuthServiceImpl implements AuthService {
         String domain = email.substring(atIndex);
         String masked = local.substring(0, 2) + "*".repeat(local.length() - 2);
         return masked + domain;
->>>>>>> 3861575a6bd13be9f9864e95132fbacfbf771276
     }
 }

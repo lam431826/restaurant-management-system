@@ -17,6 +17,7 @@ public enum ApplicationError {
     RESEND_LIMIT_EXCEEDED("Exceeded OTP resend limit", HttpStatus.TOO_MANY_REQUESTS),
     VERIFY_TOKEN_EXPIRED("Verification token has expired", HttpStatus.GONE),
     INVALID_VERIFY_TOKEN("Verification token is invalid", HttpStatus.UNAUTHORIZED),
+    INVALID_RESET_TOKEN("Password reset token is invalid or expired", HttpStatus.UNAUTHORIZED),
     UNAUTHORIZED("Authentication required", HttpStatus.UNAUTHORIZED),
 
     // Resources

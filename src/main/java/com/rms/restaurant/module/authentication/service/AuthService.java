@@ -10,4 +10,6 @@ public interface AuthService {
     VerifyInfoResponse verifyInfo(String verifyToken);
     LoginResponse verifyOtp(String verifyToken, VerifyOtpRequest request);
     ResendOtpResponse resendOtp(ResendOtpRequest request);
+    ForgotPasswordResponse forgotPassword(ForgotPasswordRequest request);
+    void resetPassword(String resetToken, ResetPasswordRequest request);
 }
