@@ -32,15 +32,14 @@
 
 **RMS (Restaurant Management System)** là nền tảng quản lý nhà hàng full-stack, phục vụ đồng thời bốn nhóm người dùng:
 
-| Nhóm                        | Vai trò                                                           |
-| --------------------------- | ----------------------------------------------------------------- |
-| **Khách online**            | Đặt bàn trước qua website, nhận xác nhận qua email/SMS            |
-| **Khách tại quán**          | Quét QR tại bàn → xem menu, gọi món, yêu cầu hỗ trợ               |
-| **Thu Ngân (Cashier)**      | Quản lý đơn hàng, tính tiền, xử lý thanh toán đa kênh, quản lý ca |
-| **Quản Lý (Manager/Admin)** | Quản lý menu, nhân viên, ca làm, báo cáo doanh thu, phân tích     |
+| Nhóm | Vai trò |
+|------|---------|
+| **Khách online** | Đặt bàn trước qua website, nhận xác nhận qua email/SMS |
+| **Khách tại quán** | Quét QR tại bàn → xem menu, gọi món, yêu cầu hỗ trợ |
+| **Thu Ngân (Cashier)** | Quản lý đơn hàng, tính tiền, xử lý thanh toán đa kênh, quản lý ca |
+| **Quản Lý (Manager/Admin)** | Quản lý menu, nhân viên, ca làm, báo cáo doanh thu, phân tích |
 
 **Điểm nổi bật:**
-
 - Xác thực thông tin tài khoản khi đăng nhập lần đầu (email + số điện thoại → OTP) với vòng đời `UN_ACTIVE → ACTIVE`
 - Cập nhật trạng thái bàn theo thời gian thực qua WebSocket (SockJS + STOMP)
 - Tích hợp Payment Gateway (VNPay / MoMo) với Webhook HMAC-SHA256
@@ -110,50 +109,50 @@ POST /api/auth/login
 
 ### Backend
 
-| Công nghệ                 | Phiên bản        | Mục đích                       |
-| ------------------------- | ---------------- | ------------------------------ |
-| **Java**                  | 17 LTS (Temurin) | Runtime                        |
-| **Spring Boot**           | 3.2.x            | API Framework                  |
-| **Spring Security**       | 6.x              | Authentication & Authorization |
-| **Spring Data JPA**       | 3.x              | ORM / Repository layer         |
-| **Hibernate**             | 6.x              | JPA implementation             |
-| **Flyway**                | (tích hợp Boot)  | Database migrations            |
-| **Microsoft JDBC Driver** | 12.x             | SQL Server connector           |
-| **jjwt**                  | 0.12.x           | JWT (Access + Refresh token)   |
-| **JavaMailSender**        | —                | Gửi email OTP                  |
-| **Lombok**                | 1.18.x           | Giảm boilerplate code          |
-| **MapStruct**             | 1.6.x            | Entity ↔ DTO mapping           |
-| **SpringDoc OpenAPI**     | 2.x              | Swagger UI / API docs          |
-| **Spring Validation**     | —                | DTO validation                 |
-| **Maven**                 | 3.9.14           | Build tool                     |
+| Công nghệ | Phiên bản | Mục đích |
+|-----------|-----------|---------|
+| **Java** | 17 LTS (Temurin) | Runtime |
+| **Spring Boot** | 3.2.x | API Framework |
+| **Spring Security** | 6.x | Authentication & Authorization |
+| **Spring Data JPA** | 3.x | ORM / Repository layer |
+| **Hibernate** | 6.x | JPA implementation |
+| **Flyway** | (tích hợp Boot) | Database migrations |
+| **Microsoft JDBC Driver** | 12.x | SQL Server connector |
+| **jjwt** | 0.12.x | JWT (Access + Refresh token) |
+| **JavaMailSender** | — | Gửi email OTP |
+| **Lombok** | 1.18.x | Giảm boilerplate code |
+| **MapStruct** | 1.6.x | Entity ↔ DTO mapping |
+| **SpringDoc OpenAPI** | 2.x | Swagger UI / API docs |
+| **Spring Validation** | — | DTO validation |
+| **Maven** | 3.9.14 | Build tool |
 
 ### Frontend
 
-| Công nghệ           | Phiên bản | Mục đích                     |
-| ------------------- | --------- | ---------------------------- |
-| **React**           | 18.x      | UI Framework                 |
-| **Vite**            | 5.x       | Build tool                   |
-| **TypeScript**      | 5.x       | Ngôn ngữ chính               |
-| **TanStack Query**  | 5.x       | Server state management      |
-| **Zustand**         | 4.x       | Client state management      |
-| **React Router**    | 6.x       | Routing                      |
-| **Tailwind CSS**    | 3.x       | Styling                      |
-| **shadcn/ui**       | —         | UI Component library         |
-| **Axios**           | 1.x       | HTTP client                  |
-| **React Hook Form** | —         | Form management              |
-| **Zod**             | —         | Schema validation            |
-| **SockJS + STOMP**  | —         | WebSocket client (real-time) |
-| **Node.js**         | 24 LTS    | Runtime / tooling            |
-| **npm**             | 11.x      | Package manager              |
+| Công nghệ | Phiên bản | Mục đích |
+|-----------|-----------|---------|
+| **React** | 18.x | UI Framework |
+| **Vite** | 5.x | Build tool |
+| **TypeScript** | 5.x | Ngôn ngữ chính |
+| **TanStack Query** | 5.x | Server state management |
+| **Zustand** | 4.x | Client state management |
+| **React Router** | 6.x | Routing |
+| **Tailwind CSS** | 3.x | Styling |
+| **shadcn/ui** | — | UI Component library |
+| **Axios** | 1.x | HTTP client |
+| **React Hook Form** | — | Form management |
+| **Zod** | — | Schema validation |
+| **SockJS + STOMP** | — | WebSocket client (real-time) |
+| **Node.js** | 24 LTS | Runtime / tooling |
+| **npm** | 11.x | Package manager |
 
 ### Cơ sở dữ liệu & Công cụ
 
-| Công nghệ                        | Phiên bản   | Mục đích            |
-| -------------------------------- | ----------- | ------------------- |
-| **SQL Server**                   | 2022 (16.x) | Cơ sở dữ liệu chính |
-| **SQL Server Management Studio** | 20.x        | Database GUI        |
-| **Git**                          | 2.40+       | Version control     |
-| **VS Code / IntelliJ IDEA**      | Latest      | IDE                 |
+| Công nghệ | Phiên bản | Mục đích |
+|-----------|-----------|---------|
+| **SQL Server** | 2022 (16.x) | Cơ sở dữ liệu chính |
+| **SQL Server Management Studio** | 20.x | Database GUI |
+| **Git** | 2.40+ | Version control |
+| **VS Code / IntelliJ IDEA** | Latest | IDE |
 
 ---
 
@@ -256,14 +255,14 @@ rms/
 
 Đảm bảo các công cụ sau đã được cài đặt:
 
-| Công cụ        | Phiên bản            | Kiểm tra                                    |
-| -------------- | -------------------- | ------------------------------------------- |
-| **Java (JDK)** | 17 LTS               | `java -version`                             |
-| **Maven**      | 3.9.x                | `mvn -version`                              |
-| **Node.js**    | 24 LTS               | `node --version`                            |
-| **npm**        | 11.x                 | `npm --version`                             |
+| Công cụ | Phiên bản | Kiểm tra |
+|---------|-----------|---------|
+| **Java (JDK)** | 17 LTS | `java -version` |
+| **Maven** | 3.9.x | `mvn -version` |
+| **Node.js** | 24 LTS | `node --version` |
+| **npm** | 11.x | `npm --version` |
 | **SQL Server** | 2022 (Local/Express) | `sqlcmd -S localhost -Q "SELECT @@VERSION"` |
-| **Git**        | 2.40+                | `git --version`                             |
+| **Git** | 2.40+ | `git --version` |
 
 > Phiên bản đã xác nhận trên máy: Java 21.0.11, Maven 3.9.14, Node.js 24.14.0, npm 11.9.0, SQL Server 2022 (sqlcmd 16.0).
 
@@ -364,21 +363,21 @@ npm run dev
 
 ### Endpoints sau khi khởi động
 
-| Service         | URL                                   | Ghi chú                    |
-| --------------- | ------------------------------------- | -------------------------- |
-| **Frontend**    | http://localhost:5173                 | React SPA                  |
-| **Backend API** | http://localhost:8080                 | Spring Boot REST API       |
-| **Swagger UI**  | http://localhost:8080/swagger-ui.html | API Documentation          |
-| **WebSocket**   | ws://localhost:8080/ws                | Real-time (SockJS + STOMP) |
+| Service | URL | Ghi chú |
+|---------|-----|---------|
+| **Frontend** | http://localhost:5173 | React SPA |
+| **Backend API** | http://localhost:8080 | Spring Boot REST API |
+| **Swagger UI** | http://localhost:8080/swagger-ui.html | API Documentation |
+| **WebSocket** | ws://localhost:8080/ws | Real-time (SockJS + STOMP) |
 
 ### Tài khoản mặc định (sau khi chạy seed V3)
 
-| Role    | Username    | Password         | Status    |
-| ------- | ----------- | ---------------- | --------- |
-| Admin   | `admin`     | `Admin@123456`   | ACTIVE    |
+| Role | Username | Password | Status |
+|------|----------|----------|--------|
+| Admin | `admin` | `Admin@123456` | ACTIVE |
 | Manager | `manager01` | `Manager@123456` | UN_ACTIVE |
 | Cashier | `cashier01` | `Cashier@123456` | UN_ACTIVE |
-| Waiter  | `waiter01`  | `Waiter@123456`  | UN_ACTIVE |
+| Waiter | `waiter01` | `Waiter@123456` | UN_ACTIVE |
 
 > Tài khoản `UN_ACTIVE` sẽ được yêu cầu xác thực thông tin (email + SĐT) khi đăng nhập lần đầu.
 
@@ -423,6 +422,8 @@ POST /api/auth/login
                                         (tối đa 5 lần, sau đó khoá 15 phút)
 ```
 
+
+
 ## 9. API Đặc Tả — Authentication
 
 Base URL: `http://localhost:8080/api`
@@ -436,7 +437,6 @@ Base URL: `http://localhost:8080/api`
 Đăng nhập bằng username và password. Nếu tài khoản `UN_ACTIVE`, trả về yêu cầu xác thực thông tin thay vì JWT.
 
 **Request Body:**
-
 ```json
 {
   "username": "cashier01",
@@ -445,7 +445,6 @@ Base URL: `http://localhost:8080/api`
 ```
 
 **Response — Tài khoản đã ACTIVE (200):**
-
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -463,7 +462,6 @@ Base URL: `http://localhost:8080/api`
 ```
 
 **Response — Tài khoản UN_ACTIVE, cần xác thực lần đầu (200):**
-
 ```json
 {
   "requires_verification": true,
@@ -481,7 +479,6 @@ Base URL: `http://localhost:8080/api`
 > `prefilled` chứa email/SĐT đã che một phần (nếu Admin đã nhập trước). Frontend hiển thị để user xác nhận hoặc điền mới.
 
 **Response — Sai thông tin (401):**
-
 ```json
 {
   "error": "INVALID_CREDENTIALS",
@@ -490,7 +487,6 @@ Base URL: `http://localhost:8080/api`
 ```
 
 **Response — Tài khoản bị khoá (403):**
-
 ```json
 {
   "error": "ACCOUNT_LOCKED",
@@ -508,13 +504,11 @@ Base URL: `http://localhost:8080/api`
 User gửi email và số điện thoại. Hệ thống xác nhận thông tin và gửi OTP.
 
 **Headers:**
-
 ```
 X-Verify-Token: vt_a1b2c3d4e5f6...
 ```
 
 **Request Body:**
-
 ```json
 {
   "email": "nguyen.vana@example.com",
@@ -523,12 +517,10 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 ```
 
 **Validation:**
-
 - `email`: định dạng email hợp lệ, bắt buộc
 - `phone`: 10–11 chữ số, bắt đầu bằng 0, bắt buộc
 
 **Response — Thành công (200):**
-
 ```json
 {
   "message": "Mã OTP đã được gửi đến email và số điện thoại của bạn.",
@@ -542,7 +534,6 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 ```
 
 **Response — verify_token hết hạn hoặc không hợp lệ (401):**
-
 ```json
 {
   "error": "INVALID_VERIFY_TOKEN",
@@ -551,7 +542,6 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 ```
 
 **Response — Email/SĐT đã được dùng bởi tài khoản khác (409):**
-
 ```json
 {
   "error": "CONTACT_ALREADY_USED",
@@ -569,13 +559,11 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 User nhập mã OTP 6 chữ số. Nếu hợp lệ, tài khoản chuyển sang `ACTIVE` và trả về JWT.
 
 **Headers:**
-
 ```
 X-Verify-Token: vt_a1b2c3d4e5f6...
 ```
 
 **Request Body:**
-
 ```json
 {
   "otp": "847291"
@@ -583,7 +571,6 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 ```
 
 **Response — Thành công, tài khoản được kích hoạt (200):**
-
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -604,7 +591,6 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 ```
 
 **Response — OTP sai (400):**
-
 ```json
 {
   "error": "INVALID_OTP",
@@ -614,7 +600,6 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 ```
 
 **Response — OTP hết hạn (400):**
-
 ```json
 {
   "error": "OTP_EXPIRED",
@@ -623,7 +608,6 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 ```
 
 **Response — Vượt quá số lần thử (429):**
-
 ```json
 {
   "error": "OTP_MAX_ATTEMPTS",
@@ -642,7 +626,6 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 Yêu cầu gửi lại OTP khi OTP cũ đã hết hạn hoặc không nhận được.
 
 **Headers:**
-
 ```
 X-Verify-Token: vt_a1b2c3d4e5f6...
 ```
@@ -650,7 +633,6 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 **Request Body:** _(không cần body)_
 
 **Response — Thành công (200):**
-
 ```json
 {
   "message": "Mã OTP mới đã được gửi.",
@@ -660,7 +642,6 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 ```
 
 **Response — Vượt quá giới hạn gửi lại (429):**
-
 ```json
 {
   "error": "RESEND_LIMIT_EXCEEDED",
@@ -676,7 +657,6 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 **`POST /api/auth/refresh`**
 
 **Request Body:**
-
 ```json
 {
   "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
@@ -684,7 +664,6 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 ```
 
 **Response (200):**
-
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -706,27 +685,27 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 
 ### Bảng Tóm Tắt API Auth
 
-| #     | Method | Endpoint                  | Auth         | Mô tả                         |
-| ----- | ------ | ------------------------- | ------------ | ----------------------------- |
-| AM-01 | POST   | `/api/auth/login`         | Public       | Đăng nhập                     |
-| AM-02 | POST   | `/api/auth/verify/info`   | verify_token | Gửi email + SĐT, nhận OTP     |
-| AM-03 | POST   | `/api/auth/verify/otp`    | verify_token | Nhập OTP, kích hoạt tài khoản |
-| AM-04 | POST   | `/api/auth/verify/resend` | verify_token | Gửi lại OTP                   |
-| AM-05 | POST   | `/api/auth/refresh`       | Public       | Làm mới access token          |
-| AM-06 | POST   | `/api/auth/logout`        | JWT          | Đăng xuất                     |
+| # | Method | Endpoint | Auth | Mô tả |
+|---|--------|----------|------|-------|
+| AM-01 | POST | `/api/auth/login` | Public | Đăng nhập |
+| AM-02 | POST | `/api/auth/verify/info` | verify_token | Gửi email + SĐT, nhận OTP |
+| AM-03 | POST | `/api/auth/verify/otp` | verify_token | Nhập OTP, kích hoạt tài khoản |
+| AM-04 | POST | `/api/auth/verify/resend` | verify_token | Gửi lại OTP |
+| AM-05 | POST | `/api/auth/refresh` | Public | Làm mới access token |
+| AM-06 | POST | `/api/auth/logout` | JWT | Đăng xuất |
 
 ---
 
 ### Quy tắc OTP
 
-| Tham số                | Giá trị            |
-| ---------------------- | ------------------ |
-| Độ dài OTP             | 6 chữ số           |
-| TTL                    | 5 phút (300 giây)  |
-| Số lần thử tối đa      | 5 lần              |
+| Tham số | Giá trị |
+|---------|---------|
+| Độ dài OTP | 6 chữ số |
+| TTL | 5 phút (300 giây) |
+| Số lần thử tối đa | 5 lần |
 | Khoá tạm thời khi vượt | 15 phút (900 giây) |
-| Số lần gửi lại tối đa  | 3 lần / 10 phút    |
-| verify_token TTL       | 15 phút            |
+| Số lần gửi lại tối đa | 3 lần / 10 phút |
+| verify_token TTL | 15 phút |
 
 ---
 
@@ -775,11 +754,11 @@ npm run coverage
 
 ### Mục tiêu coverage
 
-| Loại                | Mục tiêu                  |
-| ------------------- | ------------------------- |
-| Unit tests Backend  | ≥ 80%                     |
-| Unit tests Frontend | ≥ 70%                     |
-| Integration tests   | Happy path + luồng verify |
+| Loại | Mục tiêu |
+|------|---------|
+| Unit tests Backend | ≥ 80% |
+| Unit tests Frontend | ≥ 70% |
+| Integration tests | Happy path + luồng verify |
 
 ---
 
@@ -796,13 +775,13 @@ main ─────────────────────────
            └─── hotfix/rms-099-payment-crash
 ```
 
-| Branch      | Quy tắc                                                              |
-| ----------- | -------------------------------------------------------------------- |
-| `main`      | Chỉ nhận merge từ `release/*` hoặc `hotfix/*`. Không push trực tiếp. |
-| `develop`   | Nhánh tích hợp chính. Feature branch merge vào đây sau review.       |
-| `feature/*` | Tạo từ `develop`, merge về `develop` qua Pull Request.               |
-| `bugfix/*`  | Tạo từ `develop`, merge về `develop` qua Pull Request.               |
-| `hotfix/*`  | Tạo từ `main`, merge về cả `main` và `develop`.                      |
+| Branch | Quy tắc |
+|--------|---------|
+| `main` | Chỉ nhận merge từ `release/*` hoặc `hotfix/*`. Không push trực tiếp. |
+| `develop` | Nhánh tích hợp chính. Feature branch merge vào đây sau review. |
+| `feature/*` | Tạo từ `develop`, merge về `develop` qua Pull Request. |
+| `bugfix/*` | Tạo từ `develop`, merge về `develop` qua Pull Request. |
+| `hotfix/*` | Tạo từ `main`, merge về cả `main` và `develop`. |
 
 ---
 
@@ -810,14 +789,14 @@ main ─────────────────────────
 
 **Cú pháp:** `<type>/<ticket-id>-<slug-mo-ta-ngan>`
 
-| Type        | Khi nào dùng         | Ví dụ                                 |
-| ----------- | -------------------- | ------------------------------------- |
-| `feature/`  | Tính năng mới        | `feature/rms-001-first-login-verify`  |
-| `bugfix/`   | Sửa bug trên develop | `bugfix/rms-047-otp-not-sending`      |
-| `hotfix/`   | Sửa khẩn cấp         | `hotfix/rms-099-payment-webhook-fail` |
-| `chore/`    | Cấu hình, CI         | `chore/rms-010-update-spring-boot`    |
-| `docs/`     | Tài liệu             | `docs/rms-012-update-api-spec`        |
-| `refactor/` | Tái cấu trúc         | `refactor/rms-020-auth-service`       |
+| Type | Khi nào dùng | Ví dụ |
+|------|-------------|-------|
+| `feature/` | Tính năng mới | `feature/rms-001-first-login-verify` |
+| `bugfix/` | Sửa bug trên develop | `bugfix/rms-047-otp-not-sending` |
+| `hotfix/` | Sửa khẩn cấp | `hotfix/rms-099-payment-webhook-fail` |
+| `chore/` | Cấu hình, CI | `chore/rms-010-update-spring-boot` |
+| `docs/` | Tài liệu | `docs/rms-012-update-api-spec` |
+| `refactor/` | Tái cấu trúc | `refactor/rms-020-auth-service` |
 
 **Quy tắc:** viết thường, dùng `-`, có ticket ID, tối đa 50 ký tự slug.
 
@@ -828,7 +807,6 @@ main ─────────────────────────
 Dự án tuân theo **[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)**.
 
 **Cú pháp:**
-
 ```
 <type>(<scope>): <description>
 
@@ -837,19 +815,18 @@ Dự án tuân theo **[Conventional Commits](https://www.conventionalcommits.org
 [optional footer]
 ```
 
-| Type       | Khi nào dùng                                 |
-| ---------- | -------------------------------------------- |
-| `feat`     | Thêm tính năng mới                           |
-| `fix`      | Sửa bug                                      |
-| `docs`     | Thay đổi tài liệu                            |
+| Type | Khi nào dùng |
+|------|-------------|
+| `feat` | Thêm tính năng mới |
+| `fix` | Sửa bug |
+| `docs` | Thay đổi tài liệu |
 | `refactor` | Tái cấu trúc, không thêm tính năng / sửa bug |
-| `test`     | Thêm hoặc sửa test                           |
-| `chore`    | Cập nhật build tools, dependencies           |
+| `test` | Thêm hoặc sửa test |
+| `chore` | Cập nhật build tools, dependencies |
 
 **Scope thường dùng:** `auth`, `users`, `reservations`, `tables`, `menu`, `orders`, `payments`, `shifts`, `notifications`, `reports`, `ui`, `config`, `db`
 
 **Ví dụ hợp lệ:**
-
 ```bash
 feat(auth): add first-time login info verification flow
 
@@ -886,20 +863,16 @@ cd frontend && npm run lint && npm run test
 
 ```markdown
 ## Mô tả thay đổi
-
 <!-- Mô tả ngắn gọn những gì đã thay đổi và tại sao -->
 
 ## Liên kết
-
 - Closes #[Issue ID]
 
 ## Cách kiểm thử
-
 - [ ] Bước 1
 - [ ] Bước 2
 
 ## Checklist
-
 - [ ] Code tuân theo coding standards
 - [ ] Đã viết / cập nhật unit tests
 - [ ] Coverage không giảm
@@ -908,12 +881,12 @@ cd frontend && npm run lint && npm run test
 - [ ] Đã self-review toàn bộ diff
 ```
 
-| Quy tắc          | Chi tiết                                    |
-| ---------------- | ------------------------------------------- |
-| Số approvals     | 1 reviewer (2 cho hotfix)                   |
-| CI phải pass     | Tất cả tests phải xanh trước khi merge      |
-| Không self-merge | Không được merge PR của chính mình          |
-| Squash merge     | Dùng "Squash and merge" để giữ history sạch |
+| Quy tắc | Chi tiết |
+|---------|---------|
+| Số approvals | 1 reviewer (2 cho hotfix) |
+| CI phải pass | Tất cả tests phải xanh trước khi merge |
+| Không self-merge | Không được merge PR của chính mình |
+| Squash merge | Dùng "Squash and merge" để giữ history sạch |
 
 ---
 
@@ -1062,11 +1035,7 @@ export function VerifyInfoPage() {
   const { verifyToken } = useAuthStore();
   const navigate = useNavigate();
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<VerifyInfoFormValues>({
+  const { register, handleSubmit, formState: { errors } } = useForm<VerifyInfoFormValues>({
     resolver: zodResolver(verifyInfoSchema),
   });
 
@@ -1094,15 +1063,15 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 ### Đặt tên
 
-| Thành phần      | Quy tắc                   | Ví dụ                     |
-| --------------- | ------------------------- | ------------------------- |
-| Java class      | `PascalCase`              | `AuthService`, `OtpToken` |
-| Java method     | `camelCase`               | `submitVerifyInfo`        |
-| Java constant   | `UPPER_SNAKE_CASE`        | `MAX_OTP_ATTEMPTS`        |
-| SQL table       | `snake_case`              | `otp_tokens`, `users`     |
-| React component | `PascalCase`              | `VerifyInfoPage`          |
-| React hook      | `camelCase` bắt đầu `use` | `useVerification`         |
-| TS interface    | `PascalCase`              | `LoginResponse`           |
+| Thành phần | Quy tắc | Ví dụ |
+|-----------|---------|-------|
+| Java class | `PascalCase` | `AuthService`, `OtpToken` |
+| Java method | `camelCase` | `submitVerifyInfo` |
+| Java constant | `UPPER_SNAKE_CASE` | `MAX_OTP_ATTEMPTS` |
+| SQL table | `snake_case` | `otp_tokens`, `users` |
+| React component | `PascalCase` | `VerifyInfoPage` |
+| React hook | `camelCase` bắt đầu `use` | `useVerification` |
+| TS interface | `PascalCase` | `LoginResponse` |
 
 ---
 
@@ -1134,42 +1103,41 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 ### Sprint 1 (Tuần 1–2): Foundation
 
-| #   | Tính năng                                            | Use Case      | Priority |
-| --- | ---------------------------------------------------- | ------------- | -------- |
-| 1   | Xác thực & phân quyền (Login, Verify Info, OTP, JWT) | AM-01 → AM-06 | Critical |
-| 2   | Quản lý người dùng (CRUD)                            | UM-01 → UM-04 | Critical |
-| 3   | Quản lý thực đơn                                     | MM-01 → MM-03 | Critical |
-| 4   | Sơ đồ bàn — xem & cập nhật trạng thái                | TM-01, TM-02  | Critical |
+| # | Tính năng | Use Case | Priority |
+|---|-----------|----------|---------|
+| 1 | Xác thực & phân quyền (Login, Verify Info, OTP, JWT) | AM-01 → AM-06 | Critical |
+| 2 | Quản lý người dùng (CRUD) | UM-01 → UM-04 | Critical |
+| 3 | Quản lý thực đơn | MM-01 → MM-03 | Critical |
+| 4 | Sơ đồ bàn — xem & cập nhật trạng thái | TM-01, TM-02 | Critical |
 
 ### Sprint 2 (Tuần 3–4): Core Flows
 
-| #   | Tính năng                                      | Use Case       | Priority |
-| --- | ---------------------------------------------- | -------------- | -------- |
-| 1   | Đặt bàn trực tuyến                             | ORM-01, ORM-02 | High     |
-| 2   | Quản lý đặt bàn nội bộ + Check-in              | RM-01 → RM-06  | High     |
-| 3   | QR Ordering: Menu → Giỏ hàng → Gửi đơn         | GO-01 → GO-05  | High     |
-| 4   | Quản lý đơn hàng (Cashier dashboard)           | OM-01 → OM-07  | High     |
-| 5   | WebSocket — cập nhật bàn và đơn hàng real-time | TM-03          | High     |
+| # | Tính năng | Use Case | Priority |
+|---|-----------|----------|---------|
+| 1 | Đặt bàn trực tuyến | ORM-01, ORM-02 | High |
+| 2 | Quản lý đặt bàn nội bộ + Check-in | RM-01 → RM-06 | High |
+| 3 | QR Ordering: Menu → Giỏ hàng → Gửi đơn | GO-01 → GO-05 | High |
+| 4 | Quản lý đơn hàng (Cashier dashboard) | OM-01 → OM-07 | High |
+| 5 | WebSocket — cập nhật bàn và đơn hàng real-time | TM-03 | High |
 
 ### Sprint 3 (Tuần 5–6): Payment & Operations
 
-| #   | Tính năng                | Use Case      | Priority |
-| --- | ------------------------ | ------------- | -------- |
-| 1   | Tạo hóa đơn, thanh toán  | PM-01 → PM-05 | High     |
-| 2   | Tích hợp VNPay + Webhook | PM-03         | High     |
-| 3   | Quản lý ca làm việc      | SM-01 → SM-04 | Medium   |
-| 4   | Thông báo email/SMS      | NM-01, NM-02  | Medium   |
+| # | Tính năng | Use Case | Priority |
+|---|-----------|----------|---------|
+| 1 | Tạo hóa đơn, thanh toán | PM-01 → PM-05 | High |
+| 2 | Tích hợp VNPay + Webhook | PM-03 | High |
+| 3 | Quản lý ca làm việc | SM-01 → SM-04 | Medium |
+| 4 | Thông báo email/SMS | NM-01, NM-02 | Medium |
 
 ### Sprint 4 (Tuần 7–8): Analytics
 
-| #   | Tính năng                            | Use Case      | Priority |
-| --- | ------------------------------------ | ------------- | -------- |
-| 1   | Báo cáo doanh thu, lượng khách, menu | RA-01 → RA-03 | Medium   |
-| 2   | Quản lý khuyến mãi                   | PM-10         | Medium   |
-| 3   | Xuất PDF/Excel                       | MM-04, UM-04  | Low      |
+| # | Tính năng | Use Case | Priority |
+|---|-----------|----------|---------|
+| 1 | Báo cáo doanh thu, lượng khách, menu | RA-01 → RA-03 | Medium |
+| 2 | Quản lý khuyến mãi | PM-10 | Medium |
+| 3 | Xuất PDF/Excel | MM-04, UM-04 | Low |
 
 ### Backlog (v2.0)
-
 - Mobile app (React Native) cho cashier
 - Kitchen Display System (KDS)
 - Hệ thống đánh giá từ khách
