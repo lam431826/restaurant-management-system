@@ -5,9 +5,27 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.rms.restaurant.module.guest_ordering.dto.GuestOrderRequest;
+import com.rms.restaurant.module.guest_ordering.dto.OrderStatusResponse;
+import com.rms.restaurant.module.guest_ordering.dto.UpdateOrderItemsRequest;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
 @RestController
-@RequestMapping("/api/guest")
+@RequestMapping("/api/guest/orders")
 @RequiredArgsConstructor
 public class GuestOrderingController {
     private final GuestOrderingService guestOrderingService;
+
+    @PostMapping
+    public ResponseEntity<OrderStatusResponse> submitOrder(@jakarta.validation.Valid @RequestBody GuestOrderRequest request) {
+        return ResponseEntity.ok(guestOrderingService.placeOrder(request));
+    }
+
+    @PutMapping("/{id}/items")
+    public ResponseEntity<OrderStatusResponse> updateOrderItems(
+            @PathVariable String id,
+            @jakarta.validation.Valid @RequestBody UpdateOrderItemsRequest request) {
+        return ResponseEntity.ok(guestOrderingService.updateOrderItems(id, request));
+    }
 }

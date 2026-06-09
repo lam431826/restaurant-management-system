@@ -21,7 +21,7 @@ public class MenuItem {
     @Column(name = "category_id", nullable = false)
     private String categoryId;
 
-    @Column(nullable = false, length = 200)
+    @Column(nullable = false, columnDefinition = "NVARCHAR(200)")
     private String name;
 
     @Column(nullable = false, precision = 12, scale = 0)
