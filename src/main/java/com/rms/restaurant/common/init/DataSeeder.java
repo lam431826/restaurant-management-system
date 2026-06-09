@@ -9,6 +9,8 @@ import com.rms.restaurant.module.menu.model.MenuCategory;
 import com.rms.restaurant.module.menu.model.MenuItem;
 import com.rms.restaurant.module.menu.repository.MenuCategoryRepository;
 import com.rms.restaurant.module.menu.repository.MenuItemRepository;
+import com.rms.restaurant.module.payment.model.Promotion;
+import com.rms.restaurant.module.payment.repository.PromotionRepository;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 @Slf4j
@@ -32,6 +35,7 @@ public class DataSeeder implements ApplicationRunner {
     private final TableRepository tableRepository;
     private final MenuCategoryRepository menuCategoryRepository;
     private final MenuItemRepository menuItemRepository;
+    private final PromotionRepository promotionRepository;
 
     record SeedUser(String username, String fullName, String email, String phone,
                     UserRole role, UserStatus status, String rawPassword) {}
@@ -49,6 +53,7 @@ public class DataSeeder implements ApplicationRunner {
         seedUsers();
         seedTables();
         seedMenu();
+        seedPromotions();
     }
 
     private void seedUsers() {
@@ -128,8 +133,55 @@ public class DataSeeder implements ApplicationRunner {
 
     private MenuItem createItem(String catId, String name, int price, String desc, String img, boolean available) {
         MenuItem i = new MenuItem();
-        i.setCategoryId(catId); i.setName(name); i.setPrice(BigDecimal.valueOf(price)); 
+        i.setCategoryId(catId); i.setName(name); i.setPrice(BigDecimal.valueOf(price));
         i.setDescription(desc); i.setImageUrl(img); i.setAvailable(available);
         return i;
+    }
+
+    private void seedPromotions() {
+        if (promotionRepository.count() > 0) return;
+
+        promotionRepository.saveAll(List.of(
+            // 10% off — always-on, used in Postman "Create Invoice with Promotion Code"
+            Promotion.builder()
+                .code("PERCENT10")
+                .description("Giảm 10% tổng hóa đơn")
+                .discountPercent(new BigDecimal("10.00"))
+                .validFrom(LocalDate.of(2026, 1, 1))
+                .validTo(LocalDate.of(2026, 12, 31))
+                .active(true)
+                .build(),
+
+            // Fixed 50 000 VND off — always-on
+            Promotion.builder()
+                .code("FLAT50K")
+                .description("Giảm 50.000đ cho mọi đơn hàng")
+                .discountAmount(new BigDecimal("50000"))
+                .validFrom(LocalDate.of(2026, 1, 1))
+                .validTo(LocalDate.of(2026, 12, 31))
+                .active(true)
+                .build(),
+
+            // 20% off — inactive (for deactivated-promotion test cases)
+            Promotion.builder()
+                .code("WELCOME20")
+                .description("Khuyến mãi chào mừng khách hàng mới - Giảm 20%")
+                .discountPercent(new BigDecimal("20.00"))
+                .validFrom(LocalDate.of(2026, 6, 1))
+                .validTo(LocalDate.of(2026, 6, 30))
+                .active(false)
+                .build(),
+
+            // 30% off — expired date range, inactive (for expired-promotion test cases)
+            Promotion.builder()
+                .code("SUMMER30")
+                .description("Khuyến mãi hè 2025 - Giảm 30%")
+                .discountPercent(new BigDecimal("30.00"))
+                .validFrom(LocalDate.of(2025, 6, 1))
+                .validTo(LocalDate.of(2025, 8, 31))
+                .active(false)
+                .build()
+        ));
+        log.info("DataSeeder: created 4 promotion(s)");
     }
 }
