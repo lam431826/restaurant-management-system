@@ -14,6 +14,9 @@ import com.rms.restaurant.module.menu.repository.MenuItemRepository;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
 import com.rms.restaurant.module.order.repository.OrderRepository;
+import com.rms.restaurant.common.utils.exception.ApplicationError;
+import com.rms.restaurant.common.utils.exception.ApplicationException;
+import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 
 @Service
 @RequiredArgsConstructor
@@ -34,7 +37,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
         if (request.items() != null) {
             request.items().forEach(itemRequest -> {
             MenuItem menuItem = menuItemRepository.findById(itemRequest.menuItemId())
-                    .orElseThrow(() -> new com.rms.restaurant.common.utils.exception.ResourceNotFoundException(com.rms.restaurant.common.utils.exception.ApplicationError.MENU_ITEM_NOT_FOUND));
+                    .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND));
             
             OrderItem orderItem = new OrderItem();
             orderItem.setOrder(order);
@@ -55,17 +58,17 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     @Override
     public OrderStatusResponse updateOrderItems(String orderId, com.rms.restaurant.module.guest_ordering.dto.UpdateOrderItemsRequest request) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new com.rms.restaurant.common.utils.exception.ResourceNotFoundException(com.rms.restaurant.common.utils.exception.ApplicationError.ORDER_NOT_FOUND));
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
 
         if (order.getStatus() != OrderStatus.PENDING) {
-            throw new com.rms.restaurant.common.utils.exception.ApplicationException(com.rms.restaurant.common.utils.exception.ApplicationError.INVALID_STATUS_TRANSITION, "Can only update items for pending orders.");
+            throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION, "Can only update items for pending orders.");
         }
 
         order.getItems().clear();
 
         request.items().forEach(itemRequest -> {
             MenuItem menuItem = menuItemRepository.findById(itemRequest.menuItemId())
-                    .orElseThrow(() -> new com.rms.restaurant.common.utils.exception.ResourceNotFoundException(com.rms.restaurant.common.utils.exception.ApplicationError.MENU_ITEM_NOT_FOUND));
+                    .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND));
             
             OrderItem orderItem = new OrderItem();
             orderItem.setOrder(order);
