@@ -1,0 +1,152 @@
+{
+  "info": {
+    "name": "RMS - Verify UN_ACTIVE to ACTIVE Flow",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",     "value": "http://localhost:8386" },
+    { "key": "verifyToken", "value": "" },
+    { "key": "accessToken", "value": "" },
+    { "key": "otp",         "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Step 1 - Login (expect requiresVerification)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var json = pm.response.json();",
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('requiresVerification = true', () => pm.expect(json.requiresVerification).to.be.true);",
+              "pm.test('verifyToken present', () => pm.expect(json.verifyToken).to.be.a('string'));",
+              "pm.collectionVariables.set('verifyToken', json.verifyToken);",
+              "console.log('verifyToken:', json.verifyToken);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"TanTDHE191221\",\n  \"password\": \"Qwedsa@1\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Step 2 - POST /verify/info (send OTP email)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var json = pm.response.json();",
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('maskedEmail present', () => pm.expect(json.data.maskedEmail).to.be.a('string'));",
+              "pm.test('expiresAt present',  () => pm.expect(json.data.expiresAt).to.be.a('string'));",
+              "console.log('OTP sent to:', json.data.maskedEmail);",
+              "console.log('OTP expires:', json.data.expiresAt);",
+              "console.log('>>> Check MailHog http://localhost:8025 or Gmail, then paste OTP into Step 3 body');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type",   "value": "application/json" },
+          { "key": "X-Verify-Token", "value": "{{verifyToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/auth/verify/info",
+        "body": { "mode": "raw", "raw": "" }
+      }
+    },
+    {
+      "name": "Step 3 - POST /verify/otp (activate account, get JWT)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var json = pm.response.json();",
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('accessToken present',  () => pm.expect(json.accessToken).to.be.a('string'));",
+              "pm.test('refreshToken present', () => pm.expect(json.refreshToken).to.be.a('string'));",
+              "pm.test('user.role = MANAGER',  () => pm.expect(json.user.role).to.eql('MANAGER'));",
+              "pm.collectionVariables.set('accessToken', json.accessToken);",
+              "console.log('Account activated. accessToken:', json.accessToken.substring(0,30) + '...');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type",   "value": "application/json" },
+          { "key": "X-Verify-Token", "value": "{{verifyToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/auth/verify/otp",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"otp\": \"{{otp}}\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Step 4 - Login again (confirm ACTIVE)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var json = pm.response.json();",
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('accessToken present (account is ACTIVE)', () => pm.expect(json.accessToken).to.be.a('string'));",
+              "console.log('Second login OK - account is ACTIVE');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"TanTDHE191221\",\n  \"password\": \"Qwedsa@1\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Extra - Resend OTP (optional)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var json = pm.response.json();",
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('new verifyToken present', () => pm.expect(json.data.verifyToken).to.be.a('string'));",
+              "pm.test('expiresIn = 300',         () => pm.expect(json.data.expiresIn).to.eql(300));",
+              "pm.collectionVariables.set('verifyToken', json.data.verifyToken);",
+              "console.log('New verifyToken:', json.data.verifyToken);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/resend-otp",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"verifyToken\": \"{{verifyToken}}\"\n}"
+        }
+      }
+    }
+  ]
+}

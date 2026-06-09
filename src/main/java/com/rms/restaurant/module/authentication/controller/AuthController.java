@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.authentication.controller;
 
+import com.rms.restaurant.common.utils.wrapper.ApiResponse;
 import com.rms.restaurant.module.authentication.dto.*;
 import com.rms.restaurant.module.authentication.service.AuthService;
 import jakarta.validation.Valid;
@@ -37,5 +38,24 @@ public class AuthController {
                                                @Valid @RequestBody ChangePasswordRequest request) {
         authService.changePassword(userDetails.getUsername(), request);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/verify/info")
+    public ResponseEntity<ApiResponse<VerifyInfoResponse>> verifyInfo(
+            @RequestHeader("X-Verify-Token") String verifyToken) {
+        return ResponseEntity.ok(ApiResponse.success(authService.verifyInfo(verifyToken)));
+    }
+
+    @PostMapping("/verify/otp")
+    public ResponseEntity<LoginResponse> verifyOtp(
+            @RequestHeader("X-Verify-Token") String verifyToken,
+            @Valid @RequestBody VerifyOtpRequest request) {
+        return ResponseEntity.ok(authService.verifyOtp(verifyToken, request));
+    }
+
+    @PostMapping("/resend-otp")
+    public ResponseEntity<ApiResponse<ResendOtpResponse>> resendOtp(
+            @Valid @RequestBody ResendOtpRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(authService.resendOtp(request)));
     }
 }
