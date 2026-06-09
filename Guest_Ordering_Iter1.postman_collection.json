@@ -1,0 +1,171 @@
+{
+	"info": {
+		"_postman_id": "c8e1a123-b1d4-4a7b-8910-c3d5e2f6a789",
+		"name": "SWP_Project - Guest Ordering (Iter 1)",
+		"description": "Collection dùng để test 3 API thuộc Iteration 1 của phân hệ Guest Ordering",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Lấy danh sách Thực đơn",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8081/api/menu/public",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"api",
+						"menu",
+						"public"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "2. Gửi yêu cầu đặt món mới",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"pm.sendRequest(\"http://localhost:8081/api/menu/public\", function (err, res) {",
+							"    if (err) {",
+							"        console.log(err);",
+							"    } else {",
+							"        let menu = res.json();",
+							"        let beefId = \"\";",
+							"        let cocaId = \"\";",
+							"        menu.forEach(cat => {",
+							"            cat.items.forEach(item => {",
+							"                if (item.name === \"Bò Bít Tết Úc\") beefId = item.id;",
+							"                if (item.name === \"Coca Cola\") cocaId = item.id;",
+							"            });",
+							"        });",
+							"        pm.collectionVariables.set(\"beefId\", beefId);",
+							"        pm.collectionVariables.set(\"cocaId\", cocaId);",
+							"        console.log(\"Saved beefId: \" + beefId);",
+							"        console.log(\"Saved cocaId: \" + cocaId);",
+							"    }",
+							"});"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"let response = pm.response.json();",
+							"if (response && response.orderId) {",
+							"    pm.collectionVariables.set(\"orderId\", response.orderId);",
+							"    console.log(\"Saved orderId: \" + response.orderId);",
+							"}"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"tableId\": \"{{tableId}}\",\r\n  \"tableToken\": \"token-ban-01\",\r\n  \"items\": [\r\n    {\r\n      \"menuItemId\": \"{{beefId}}\",\r\n      \"quantity\": 2,\r\n      \"note\": \"Ít cay, không hành\"\r\n    }\r\n  ],\r\n  \"note\": \"Khách bàn 01 gọi món\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8081/api/guest/orders",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"api",
+						"guest",
+						"orders"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "3. Chỉnh sửa giỏ hàng (Cập nhật món)",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"items\": [\r\n    {\r\n      \"menuItemId\": \"{{beefId}}\",\r\n      \"quantity\": 5,\r\n      \"note\": \"Đổi thành 5 phần nha\"\r\n    },\r\n    {\r\n      \"menuItemId\": \"{{cocaId}}\",\r\n      \"quantity\": 2,\r\n      \"note\": \"Lấy thêm 2 lon coca\"\r\n    }\r\n  ]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8081/api/guest/orders/{{orderId}}/items",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"api",
+						"guest",
+						"orders",
+						"{{orderId}}",
+						"items"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "tableId",
+			"value": "COPY-ID-BAN-TU-CONSOLE-CUA-IDE-VAO-DAY",
+			"type": "string"
+		},
+		{
+			"key": "orderId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "beefId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "cocaId",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
