@@ -65,7 +65,7 @@ public class ShiftController {
     // SM-04: List all shifts (manager only)
     @GetMapping
     public ResponseEntity<Page<ShiftSummaryResponse>> listAll(
-            @PageableDefault(size = 20, sort = "openedAt") Pageable pageable,
+            @PageableDefault(size = 20) Pageable pageable,
             @AuthenticationPrincipal UserDetails principal) {
         return ResponseEntity.ok(shiftService.listAll(pageable, principal.getUsername()));
     }

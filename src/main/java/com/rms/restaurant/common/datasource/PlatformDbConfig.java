@@ -1,5 +1,8 @@
 package com.rms.restaurant.common.datasource;
 
+import org.flywaydb.core.Flyway;
+import org.springframework.boot.autoconfigure.flyway.FlywayMigrationStrategy;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
@@ -10,7 +13,12 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 @EnableJpaAuditing
 @EnableJpaRepositories(basePackages = "com.rms.restaurant.module")
 public class PlatformDbConfig {
-    // JPA dialect and naming strategy are configured via application.properties:
-    // spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.SQLServerDialect
-    // spring.jpa.hibernate.naming.physical-strategy=...
+
+    @Bean
+    public FlywayMigrationStrategy repairThenMigrate() {
+        return flyway -> {
+            flyway.repair();
+            flyway.migrate();
+        };
+    }
 }
