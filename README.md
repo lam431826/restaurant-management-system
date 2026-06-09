@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # restaurant-management-system
 =======
 # RMS — Hệ Thống Quản Lý Nhà Hàng
