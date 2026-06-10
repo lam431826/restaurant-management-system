@@ -1,5 +1,3 @@
-# restaurant-management-system
-=======
 # RMS — Hệ Thống Quản Lý Nhà Hàng
 
 > **Restaurant Management System** · Nền tảng quản lý nhà hàng toàn diện: đặt bàn trực tuyến, gọi món kỹ thuật số, thanh toán đa kênh và phân tích vận hành theo thời gian thực.
@@ -1162,4 +1160,3 @@ MIT License — Copyright (c) 2025 RMS Team
 Spring Boot 3.2 · React 18 · SQL Server 2019 · Java 17
 
 </div>
->>>>>>> origin/main
