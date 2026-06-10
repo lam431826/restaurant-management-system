@@ -1,0 +1,344 @@
+{
+	"info": {
+		"_postman_id": "74880a1c-99d9-43c3-b46f-c1f0bdfd6bb5",
+		"name": "RMS Reservation API Tests",
+		"description": "Collection of API test cases for the Reservation module in the Restaurant Management System.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Create Reservation",
+			"item": [
+				{
+					"name": "Create Reservation - Success (Happy Path)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"guestName\": \"Nguyen Van A\",\n  \"phone\": \"0987654321\",\n  \"partySize\": 4,\n  \"datetime\": \"2026-07-20T19:00:00\",\n  \"tableId\": \"\",\n  \"note\": \"Tiệc sinh nhật ấm cúng\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/reservations",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"reservations"
+							]
+						},
+						"description": "Tạo đặt bàn mới thành công với thông tin hợp lệ."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Reservation - Fail (Past Datetime)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"guestName\": \"Nguyen Van A\",\n  \"phone\": \"0987654321\",\n  \"partySize\": 4,\n  \"datetime\": \"2020-01-01T19:00:00\",\n  \"note\": \"Lỗi ngày quá khứ\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/reservations",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"reservations"
+							]
+						},
+						"description": "Tạo đặt bàn thất bại vì ngày đặt bàn ở quá khứ (@Future)."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Reservation - Fail (Party Size Out of Bounds - Max 20)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"guestName\": \"Nguyen Van A\",\n  \"phone\": \"0987654321\",\n  \"partySize\": 25,\n  \"datetime\": \"2026-07-20T19:00:00\",\n  \"note\": \"Lỗi quá số người quy định\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/reservations",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"reservations"
+							]
+						},
+						"description": "Tạo đặt bàn thất bại vì số lượng khách quá giới hạn cho phép (max 20 người)."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Reservation - Fail (Invalid Phone Format)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"guestName\": \"Nguyen Van A\",\n  \"phone\": \"123456789\",\n  \"partySize\": 4,\n  \"datetime\": \"2026-07-20T19:00:00\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/reservations",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"reservations"
+							]
+						},
+						"description": "Tạo đặt bàn thất bại vì số điện thoại không bắt đầu bằng số 0 hoặc không đủ 10-11 chữ số."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Reservation - Fail (Blank Guest Name)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"guestName\": \"\",\n  \"phone\": \"0987654321\",\n  \"partySize\": 4,\n  \"datetime\": \"2026-07-20T19:00:00\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/reservations",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"reservations"
+							]
+						},
+						"description": "Tạo đặt bàn thất bại vì tên khách hàng bỏ trống (@NotBlank)."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. Update Reservation",
+			"item": [
+				{
+					"name": "Update Reservation - Success",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"tableId\": \"t2\",\n  \"partySize\": 6,\n  \"datetime\": \"2026-07-20T20:00:00\",\n  \"note\": \"Cập nhật chuyển bàn lớn hơn và đổi giờ\",\n  \"status\": \"CONFIRMED\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"reservations",
+								"{{reservationId}}"
+							]
+						},
+						"description": "Cập nhật đặt bàn thành công."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Reservation - Fail (Past Datetime)",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"partySize\": 6,\n  \"datetime\": \"2020-01-01T20:00:00\",\n  \"status\": \"CONFIRMED\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"reservations",
+								"{{reservationId}}"
+							]
+						},
+						"description": "Cập nhật đặt bàn thất bại do cập nhật thời gian ở quá khứ."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. Check-In Reservation",
+			"item": [
+				{
+					"name": "Check-In Reservation - Success",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/reservations/{{reservationId}}/check-in",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"reservations",
+								"{{reservationId}}",
+								"check-in"
+							]
+						},
+						"description": "Chuyển trạng thái khách đặt bàn sang CHECKED_IN khi khách đến nhận bàn."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Cancel Reservation",
+			"item": [
+				{
+					"name": "Cancel Reservation - Success",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"reservations",
+								"{{reservationId}}"
+							]
+						},
+						"description": "Hủy đặt bàn (chuyển trạng thái sang CANCELLED)."
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8386",
+			"type": "string"
+		},
+		{
+			"key": "accessToken",
+			"value": "YOUR_JWT_ACCESS_TOKEN",
+			"type": "string"
+		},
+		{
+			"key": "reservationId",
+			"value": "RESERVATION_UUID_HERE",
+			"type": "string"
+		}
+	]
+}
