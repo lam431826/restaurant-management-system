@@ -1,4 +1,4 @@
-package com.rms.restaurant.module.authentication.config;
+package com.rms.restaurant.common.config;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;

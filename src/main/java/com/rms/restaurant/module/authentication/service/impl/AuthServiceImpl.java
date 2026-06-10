@@ -172,7 +172,11 @@ public class AuthServiceImpl implements AuthService {
                 .build();
         otpRecordRepository.save(newRecord);
 
-        gmailService.sendOtpEmail(user.getEmail(), user.getFullName(), otp);
+        try {
+            gmailService.sendOtpEmail(user.getEmail(), user.getFullName(), otp);
+        } catch (Exception e) {
+            log.warn("Resend OTP email failed for user '{}': {}", user.getUsername(), e.getMessage());
+        }
 
         return new ResendOtpResponse(newVerifyToken, (long) OTP_TTL_MINUTES * 60);
     }

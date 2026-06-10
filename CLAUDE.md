@@ -16,10 +16,14 @@ mvn test
 
 # Run a single test class
 mvn test -Dtest=AuthServiceTest
+
+# If enum/constant changes are not picked up, compile first then run separately
+mvn clean compile
+mvn spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-**Swagger UI**: http://localhost:8386/swagger-ui.html  
-**OpenAPI spec**: http://localhost:8386/v3/api-docs
+**Swagger UI**: http://localhost:8389/swagger-ui.html  
+**OpenAPI spec**: http://localhost:8389/v3/api-docs
 
 > No test classes exist yet (`src/test/` is absent). The `mvn test` command compiles but runs nothing.
 
@@ -32,13 +36,13 @@ mvn test -Dtest=AuthServiceTest
 ```
 com.rms.restaurant
 ├── common/                    # Cross-cutting infrastructure
-│   ├── datasource/            # DataSourceConfig (HikariCP), DataSourceProperties, PlatformDbConfig
+│   ├── datasource/            # DataSourceConfig (HikariCP), DataSourceProperties, PlatformDbConfig, RestTemplateConfig
 │   ├── filter/                # JwtAuthenticationFilter, HttpRequestLoggingFilter
 │   ├── init/                  # DataSeeder (seeds one user per role on startup)
 │   ├── security/              # JwtService
 │   └── utils/
-│       ├── enums/             # UserRole, UserStatus, OrderStatus, TableStatus, …
-│       ├── exception/         # ApplicationError enum, ApplicationException hierarchy, GlobalExceptionHandler
+│       ├── enums/             # UserRole, UserStatus, OrderStatus, TableStatus, ReservationStatus, PaymentMethod, CookingStatus, NotificationChannel
+│       ├── exception/         # ApplicationError enum, ApplicationException (base), UnauthorizedException, ForbiddenException, ResourceNotFoundException, ConflictException, RateLimitException, GlobalExceptionHandler
 │       ├── mail/              # GmailService (direct SMTP OTP sender via JavaMailSender)
 │       └── wrapper/           # ApiResponse<T>, PageResponse<T>
 └── module/                    # One sub-package per business domain
@@ -65,12 +69,13 @@ The scaffolding (entities, DTOs, MapStruct mappers, repository interfaces, Flywa
 
 | What is complete | What is a stub |
 |---|---|
-| All JPA entity models | Most `*ServiceImpl` (methods return `null` / TODO) |
-| All DTOs and MapStruct mappers | Most controllers (only `UserController` and `AuthController` are wired) |
-| All Spring Data repository interfaces | Integration clients (`SendGridMessagingClient`, `TwilioMessagingClient`, `VNPayGatewayClient`) |
-| `UserController` — 7 endpoints (CRUD + unlock) | OTP verify endpoints — permitted in `SecurityConfig`, DTOs exist (`VerifyInfoResponse`, `ResendOtpResponse`), but handler methods not yet in `AuthController` |
-| `AuthController` — 4 endpoints (login, refresh, logout, changePassword) | |
-| `AuthServiceImpl` — login, refreshToken, logout, changePassword fully implemented | |
+| All JPA entity models | All `*ServiceImpl` except `AuthServiceImpl` (methods return `null` / TODO) |
+| All DTOs and MapStruct mappers | Integration clients (`SendGridMessagingClient`, `TwilioMessagingClient`, `VNPayGatewayClient`) |
+| All Spring Data repository interfaces | |
+| All module controllers — routing scaffolded for all 16 controllers across all modules | |
+| `AuthController` — 9 endpoints: login, refresh, logout, changePassword, verifyInfo, verifyOtp, resendOtp, forgotPassword, resetPassword | |
+| `AuthServiceImpl` — all 9 methods fully implemented | |
+| `UserController` — 7 endpoints (CRUD + unlock) | |
 | Security infrastructure (`SecurityConfig`, `JwtService`, filters, `GlobalExceptionHandler`) | |
 | `DataSeeder` — seeds one user per role (`WAITER`, `CASHIER`, `MANAGER`, `ADMIN`) on startup | |
 | Flyway migrations V1–V7 (full schema) | |
@@ -85,22 +90,36 @@ The scaffolding (entities, DTOs, MapStruct mappers, repository interfaces, Flywa
 
 **Exception handling** — throw subtypes of `ApplicationException` with an `ApplicationError` enum value (e.g. `throw new UnauthorizedException(ApplicationError.INVALID_CREDENTIALS)`). `ApplicationError` carries a `defaultMessage` and `HttpStatus`. `GlobalExceptionHandler` converts them to `ErrorResponse` with `error`, `message`, `path`, `timestamp`. Validation failures produce a `fieldErrors` map.
 
+Available exception subtypes and their intended use:
+- `UnauthorizedException` → 401 (invalid/missing credentials or token)
+- `ForbiddenException` → 403 (authenticated but lacking permission)
+- `ResourceNotFoundException` → 404 (entity not found by ID)
+- `ConflictException` → 409 (duplicate or conflicting state)
+- `RateLimitException` → 429 (OTP resend / attempt limits)
+
+`ApplicationError` groups: **Authentication** (`INVALID_CREDENTIALS`, `ACCOUNT_LOCKED`, `INVALID_OTP`, `OTP_EXPIRED`, `OTP_MAX_ATTEMPTS`, `RESEND_LIMIT_EXCEEDED`, `VERIFY_TOKEN_EXPIRED`, `INVALID_VERIFY_TOKEN`, `INVALID_RESET_TOKEN`), **Resources** (`USER_NOT_FOUND`, `TABLE_NOT_FOUND`, `ORDER_NOT_FOUND`, `RESERVATION_NOT_FOUND`, `INVOICE_NOT_FOUND`, `MENU_ITEM_NOT_FOUND`, `SHIFT_NOT_FOUND`, `PROMOTION_NOT_FOUND`), **Business Rules** (`TABLE_NOT_AVAILABLE`, `INVALID_TABLE_TOKEN`, `SHIFT_ALREADY_OPEN`, `SHIFT_NOT_OPEN`, `CANNOT_CANCEL_PAID_ORDER`, `INVOICE_ALREADY_EXISTS`, `INVALID_STATUS_TRANSITION`, `ORDER_NOT_CLOSEABLE`), **System** (`INTERNAL_ERROR`).
+
 **Database schema** — Hibernate DDL is `validate`; all schema changes go through Flyway scripts in `src/main/resources/db/migration/V*.sql`. Migration files V1–V7 cover users/auth, tables/reservations, menu, orders, payments, shifts, and notification logs. Never use `ddl-auto=update` or `create`.
 
 **Authentication split**:
 - Staff → JWT (`Authorization: Bearer <token>`), enforced by `JwtAuthenticationFilter`; method-level rules via `@PreAuthorize`
 - In-restaurant guests → table token (from QR code), *not* a JWT; enforced separately in the `guest_ordering` module
 
-**First-login OTP flow** (`UN_ACTIVE → ACTIVE`):
+**First-login OTP flow** (`UN_ACTIVE → ACTIVE`) — fully implemented:
 1. `POST /api/auth/login` → returns `requires_verification: true` + short-lived `verify_token` (stored in `otp_records.verify_token`)
 2. `POST /api/auth/verify/info` (header: `X-Verify-Token`) → sends 6-digit OTP via `GmailService` (TTL 5 min); returns `VerifyInfoResponse`
-3. `POST /api/auth/verify/otp` → activates account, issues JWT; returns `ResendOtpResponse` on resend
-4. OTP resend capped at 3× per 10 min (`OtpRecordRepository.countByUserIdAndCreatedAtAfter`); 5 wrong attempts locks OTP for 15 min
+3. `POST /api/auth/verify/otp` → activates account, issues JWT
+4. `POST /api/auth/resend-otp` → sends new OTP; capped at 3 resends per 10 min; 5 wrong attempts locks OTP
 
-Steps 2–3 are whitelisted in `SecurityConfig` and DTOs/repository queries exist, but handler methods are not yet in `AuthController`.
+**Forgot password flow** — fully implemented:
+1. `POST /api/auth/forgot-password` (body: `username`) → generates resetToken + OTP, emails OTP via `GmailService`; returns `ForgotPasswordResponse{resetToken, maskedEmail, expiresAt}`
+2. `POST /api/auth/reset-password` (header: `X-Reset-Token`, body: `otp` + `newPassword`) → validates OTP, updates password, auto-unlocks LOCKED accounts; returns HTTP 204
+- Both endpoints are public (no JWT required). `OtpRecord.verifyToken` field reused to store `resetToken` — no additional Flyway migration needed.
+- INACTIVE users are blocked from forgot-password. LOCKED users are auto-set to ACTIVE on success.
 
 **Email sending** — two layers exist; use `GmailService` for OTP:
 - `GmailService` (`common/utils/mail/`): direct `JavaMailSender` via `spring.mail.*` config; used for OTP emails (Vietnamese-language template)
+- Email failures in `verifyInfo()`, `resendOtp()`, and `forgotPassword()` are caught and logged as warnings — they must not rollback the `@Transactional` method or prevent OTP record from being saved
 - `integration/messaging/`: strategy-pattern `MessagingClient` (SendGrid / Twilio); selected by `app.integration.messaging-provider`; used for general notifications
 
 **Roles**: `WAITER`, `CASHIER`, `MANAGER`, `ADMIN` (enum `UserRole`). Authorization uses `@PreAuthorize("hasRole('...')")` or `hasAnyRole(...)`. User IDs are UUID strings generated by JPA (`@GeneratedValue(strategy = GenerationType.UUID)`).
@@ -111,11 +130,16 @@ Steps 2–3 are whitelisted in `SecurityConfig` and DTOs/repository queries exis
 
 **`.env` loading** — `spring-dotenv` (me.paulschwarz) is on the classpath; place secrets in a `.env` file at the project root and they are injected as environment variables before Spring resolves `${...}` placeholders.
 
+**Windows JVM flags** — to avoid G1GC paging-file errors on Windows with limited virtual memory, run with:
+```
+-XX:+UseSerialGC -Xmx256m -Xms64m
+```
+
 ### Configuration
 
 | File | Purpose |
 |------|---------|
-| `application.properties` | Production defaults (port 8386, SQL Server, Spring Mail) |
+| `application.properties` | Production defaults (port 8389, SQL Server, Spring Mail) |
 | `application-local.properties` | Local overrides (show-sql, MailHog SMTP on port 1025, verbose logging, `validate-on-migrate=false`) |
 | `.env` | Secrets: `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `SENDGRID_API_KEY`, `TWILIO_*`, `VNPAY_*` |
 
@@ -134,3 +158,5 @@ fix(payment): handle HMAC-SHA256 signature mismatch on webhook
 Common scopes: `auth`, `users`, `reservations`, `tables`, `menu`, `orders`, `payments`, `shifts`, `notifications`, `reports`, `config`, `db`
 
 **Merge strategy**: squash-merge feature/bugfix branches into `develop`; hotfixes go to both `main` and `develop`.
+
+**IMPORTANT**: Do NOT add `Co-Authored-By:` trailers to any commit message.

@@ -1,4 +1,4 @@
-package com.rms.restaurant.module.authentication.config;
+package com.rms.restaurant.common.security;
 
 import lombok.Getter;
 import lombok.Setter;

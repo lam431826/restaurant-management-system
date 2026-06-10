@@ -5,9 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -44,6 +46,22 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(403)
                 .body(ErrorResponse.of("FORBIDDEN", "Access denied", req.getRequestURI()));
+    }
+
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFound(NoHandlerFoundException ex,
+                                                        HttpServletRequest req) {
+        return ResponseEntity
+                .status(404)
+                .body(ErrorResponse.of("NOT_FOUND", "The requested resource was not found", req.getRequestURI()));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotAllowed(HttpRequestMethodNotSupportedException ex,
+                                                                HttpServletRequest req) {
+        return ResponseEntity
+                .status(405)
+                .body(ErrorResponse.of("METHOD_NOT_ALLOWED", "HTTP method '" + ex.getMethod() + "' is not supported for this endpoint", req.getRequestURI()));
     }
 
     @ExceptionHandler(Exception.class)
