@@ -27,7 +27,7 @@ public class ReservationController {
     private final ReservationService reservationService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER')")
     public ResponseEntity<ApiResponse<ReservationResponse>> create(
             @Valid @RequestBody CreateReservationRequest request,
             @AuthenticationPrincipal UserDetails userDetails) {
@@ -37,7 +37,7 @@ public class ReservationController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER')")
     public ResponseEntity<ApiResponse<ReservationResponse>> update(
             @PathVariable String id,
             @Valid @RequestBody UpdateReservationRequest request) {
@@ -46,14 +46,14 @@ public class ReservationController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER')")
     public ResponseEntity<Void> delete(@PathVariable String id) {
         reservationService.cancel(id);
         return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/{id}/check-in")
-    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER')")
     public ResponseEntity<ApiResponse<ReservationResponse>> checkIn(@PathVariable String id) {
         ReservationResponse response = reservationService.checkIn(id);
         return ResponseEntity.ok(ApiResponse.success(response));
