@@ -45,6 +45,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/auth/forgot-password").permitAll()
                 // Public – Online reservation
                 .requestMatchers("/api/online/**").permitAll()
+                // Public – Reservation
+                .requestMatchers("/api/reservations/online/new/**").permitAll()
                 // Public – Menu
                 .requestMatchers(HttpMethod.GET, "/api/menu/public").permitAll()
                 // Public – Guest ordering (table token validated in service)

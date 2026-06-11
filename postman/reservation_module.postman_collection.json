@@ -1,0 +1,1437 @@
+{
+  "info": {
+    "_postman_id": "d1e2f3a4-b5c6-7d8e-9f0a-1b2c3d4e5f60",
+    "name": "RMS – Reservation Module",
+    "description": "Test collection đầy đủ cho Reservation Module. Mỗi PROCESS là một use case khép kín từ đầu đến cuối.\n\n---\n## ⚠️ PREREQUISITE – Kích hoạt tài khoản (chạy 1 lần trước tất cả)\n\nDo `AuthController` chưa implement endpoint `/api/auth/verify`, các tài khoản `manager01` và `waiter01` mặc định ở trạng thái `UN_ACTIVE`.\nChạy lệnh SQL sau trên database `rms_db` trước khi test:\n\n```sql\nUPDATE users SET status = 'ACTIVE', failed_login_attempts = 0\nWHERE username IN ('manager01', 'waiter01');\n```\n\n---\n## Credentials\n| Account | Password | Role | Dùng cho |\n|---|---|---|---|\n| manager01 | Manager@123456 | MANAGER | Các process cần quản lý |\n| waiter01 | Waiter@123456 | WAITER | Các process của waiter |\n\n## Danh sách Processes\n| # | Process | Kết quả mong đợi |\n|---|---|---|\n| 01 | Guest tạo reservation (public) | 201 Created, status=PENDING |\n| 02 | PENDING → CONFIRMED → CHECKED_IN | Happy path hoàn chỉnh |\n| 03 | PENDING → CONFIRMED → NO_SHOW | Khách không đến |\n| 04 | PENDING → CANCELLED | Huỷ trực tiếp |\n| 05 | PENDING → CONFIRMED → CANCELLED | Huỷ sau khi confirm |\n| 06 | Cập nhật thông tin reservation | Thay đổi partySize, note, datetime |\n| 07 | Danh sách & Chi tiết (pagination) | Phân trang và lấy by ID |\n| 08 | [Error] Check-in từ PENDING | 400 invalid transition |\n| 09 | [Error] Update sau khi CANCELLED | 400 terminal state |\n| 10 | [Error] Không có token | 401 Unauthorized |\n| 11 | [Error] Validation thất bại | 400 Bad Request |",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",          "value": "http://localhost:8082", "type": "string" },
+    { "key": "managerUsername",  "value": "manager01",             "type": "string" },
+    { "key": "managerPassword",  "value": "Manager@123456",        "type": "string" },
+    { "key": "waiterUsername",   "value": "waiter01",              "type": "string" },
+    { "key": "waiterPassword",   "value": "Waiter@123456",         "type": "string" },
+    { "key": "accessToken",      "value": "",                      "type": "string" },
+    { "key": "refreshToken",     "value": "",                      "type": "string" },
+    { "key": "reservationId",    "value": "",                      "type": "string" },
+    { "key": "futureDateTime",   "value": "",                      "type": "string" },
+    { "key": "futureDateTimeAlt","value": "",                      "type": "string" }
+  ],
+  "item": [
+
+    {
+      "name": "PROCESS 01 – Guest tạo reservation (Public, không cần login)",
+      "description": "Use case: Khách vãng lai truy cập endpoint công khai để đặt bàn.\nKhông cần token. Response phải là 201 với status=PENDING.",
+      "item": [
+        {
+          "name": "01-01 Tạo reservation",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 30);",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "pm.collectionVariables.set('futureDateTime',",
+                  "  `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T19:00:00`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('success = true', () => pm.expect(json.success).to.be.true);",
+                  "pm.test('status = PENDING', () => pm.expect(json.data.status).to.eql('PENDING'));",
+                  "pm.test('guestName đúng', () => pm.expect(json.data.guestName).to.eql('Nguyen Van A'));",
+                  "pm.test('partySize đúng', () => pm.expect(json.data.partySize).to.eql(4));",
+                  "pm.test('có id', () => pm.expect(json.data.id).to.be.a('string').and.not.empty);",
+                  "pm.collectionVariables.set('reservationId', json.data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Nguyen Van A\",\n  \"phone\": \"0901234567\",\n  \"partySize\": 4,\n  \"datetime\": \"{{futureDateTime}}\",\n  \"note\": \"Ưu tiên bàn gần cửa sổ\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "PROCESS 02 – PENDING → CONFIRMED → CHECKED_IN (Happy Path)",
+      "description": "Use case hoàn chỉnh: khách đặt bàn → manager xác nhận → waiter check-in khi khách đến.\nCác bước:\n  02-01 Guest tạo reservation → PENDING\n  02-02 Login manager01 → lấy accessToken\n  02-03 Xem chi tiết → xác nhận PENDING\n  02-04 Xác nhận reservation → CONFIRMED\n  02-05 Check-in → CHECKED_IN",
+      "item": [
+        {
+          "name": "02-01 Tạo reservation (Guest)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 30);",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "pm.collectionVariables.set('futureDateTime',",
+                  "  `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T19:00:00`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('status = PENDING', () => pm.expect(json.data.status).to.eql('PENDING'));",
+                  "pm.collectionVariables.set('reservationId', json.data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Tran Thi B\",\n  \"phone\": \"0912345678\",\n  \"partySize\": 2,\n  \"datetime\": \"{{futureDateTime}}\",\n  \"note\": \"Anniversary dinner\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        },
+        {
+          "name": "02-02 Login manager01",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('có accessToken', () => pm.expect(json.accessToken).to.be.a('string').and.not.empty);",
+                  "pm.test('role = MANAGER', () => pm.expect(json.user.role).to.eql('MANAGER'));",
+                  "pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "pm.collectionVariables.set('refreshToken', json.refreshToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{managerUsername}}\",\n  \"password\": \"{{managerPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "02-03 Xem chi tiết → verify PENDING",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('status = PENDING', () => pm.expect(json.data.status).to.eql('PENDING'));",
+                  "pm.test('id khớp', () => pm.expect(json.data.id).to.eql(pm.collectionVariables.get('reservationId')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}"]
+            }
+          }
+        },
+        {
+          "name": "02-04 Xác nhận reservation → CONFIRMED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('status = CONFIRMED', () => pm.expect(json.data.status).to.eql('CONFIRMED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"CONFIRMED\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}"]
+            }
+          }
+        },
+        {
+          "name": "02-05 Check-in → CHECKED_IN",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('status = CHECKED_IN', () => pm.expect(json.data.status).to.eql('CHECKED_IN'));",
+                  "pm.test('success = true', () => pm.expect(json.success).to.be.true);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}/check-in",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}", "check-in"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "PROCESS 03 – PENDING → CONFIRMED → NO_SHOW (Khách không đến)",
+      "description": "Use case: Khách đặt bàn, manager xác nhận, nhưng khách không đến → đánh dấu NO_SHOW.\nCác bước:\n  03-01 Tạo reservation\n  03-02 Login manager01\n  03-03 Xác nhận → CONFIRMED\n  03-04 Đánh dấu NO_SHOW qua PUT update status",
+      "item": [
+        {
+          "name": "03-01 Tạo reservation (Guest)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 30);",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "pm.collectionVariables.set('futureDateTime',",
+                  "  `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T20:00:00`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('status = PENDING', () => pm.expect(json.data.status).to.eql('PENDING'));",
+                  "pm.collectionVariables.set('reservationId', json.data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Le Van C\",\n  \"phone\": \"0923456789\",\n  \"partySize\": 3,\n  \"datetime\": \"{{futureDateTime}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        },
+        {
+          "name": "03-02 Login manager01",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('accessToken', pm.response.json().accessToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{managerUsername}}\",\n  \"password\": \"{{managerPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "03-03 Xác nhận → CONFIRMED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('status = CONFIRMED', () => pm.expect(pm.response.json().data.status).to.eql('CONFIRMED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"CONFIRMED\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}"]
+            }
+          }
+        },
+        {
+          "name": "03-04 Đánh dấu NO_SHOW",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('status = NO_SHOW', () => pm.expect(json.data.status).to.eql('NO_SHOW'));",
+                  "pm.test('success = true', () => pm.expect(json.success).to.be.true);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"NO_SHOW\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "PROCESS 04 – PENDING → CANCELLED (Huỷ trực tiếp)",
+      "description": "Use case: Khách đặt bàn, waiter huỷ ngay khi còn PENDING (ví dụ: khách gọi điện huỷ).\nCác bước:\n  04-01 Tạo reservation\n  04-02 Login waiter01\n  04-03 DELETE → 204 No Content",
+      "item": [
+        {
+          "name": "04-01 Tạo reservation (Guest)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 30);",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "pm.collectionVariables.set('futureDateTime',",
+                  "  `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T18:00:00`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('reservationId', pm.response.json().data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Pham Thi D\",\n  \"phone\": \"0934567890\",\n  \"partySize\": 6,\n  \"datetime\": \"{{futureDateTime}}\",\n  \"note\": \"Birthday party\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        },
+        {
+          "name": "04-02 Login waiter01",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('role = WAITER', () => pm.expect(json.user.role).to.eql('WAITER'));",
+                  "pm.collectionVariables.set('accessToken', json.accessToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{waiterUsername}}\",\n  \"password\": \"{{waiterPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "04-03 Huỷ reservation → 204 No Content",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));",
+                  "pm.test('body rỗng', () => pm.expect(pm.response.text()).to.be.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "PROCESS 05 – PENDING → CONFIRMED → CANCELLED (Huỷ sau khi đã confirm)",
+      "description": "Use case: Manager đã xác nhận bàn nhưng cần huỷ (khách đổi ý, sự cố nhà hàng, v.v.).\nCác bước:\n  05-01 Tạo reservation\n  05-02 Login manager01\n  05-03 Xác nhận → CONFIRMED\n  05-04 Huỷ → 204 No Content",
+      "item": [
+        {
+          "name": "05-01 Tạo reservation (Guest)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 30);",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "pm.collectionVariables.set('futureDateTime',",
+                  "  `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T21:00:00`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('reservationId', pm.response.json().data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Hoang Van E\",\n  \"phone\": \"0945678901\",\n  \"partySize\": 5,\n  \"datetime\": \"{{futureDateTime}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        },
+        {
+          "name": "05-02 Login manager01",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('accessToken', pm.response.json().accessToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{managerUsername}}\",\n  \"password\": \"{{managerPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "05-03 Xác nhận → CONFIRMED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('status = CONFIRMED', () => pm.expect(pm.response.json().data.status).to.eql('CONFIRMED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"CONFIRMED\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}"]
+            }
+          }
+        },
+        {
+          "name": "05-04 Huỷ từ CONFIRMED → 204 No Content",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));",
+                  "pm.test('body rỗng', () => pm.expect(pm.response.text()).to.be.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "PROCESS 06 – Cập nhật thông tin reservation",
+      "description": "Use case: Manager chỉnh sửa partySize, note và thời gian của reservation đang PENDING.\nCác bước:\n  06-01 Tạo reservation (partySize=2, note ban đầu)\n  06-02 Login manager01\n  06-03 Cập nhật partySize=6, note mới, datetime mới\n  06-04 Xem lại → verify thay đổi đã lưu",
+      "item": [
+        {
+          "name": "06-01 Tạo reservation (Guest, partySize=2)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 30);",
+                  "const d2 = new Date();",
+                  "d2.setDate(d2.getDate() + 45);",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "pm.collectionVariables.set('futureDateTime',",
+                  "  `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T18:30:00`);",
+                  "pm.collectionVariables.set('futureDateTimeAlt',",
+                  "  `${d2.getFullYear()}-${pad(d2.getMonth()+1)}-${pad(d2.getDate())}T20:30:00`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('partySize ban đầu = 2', () => pm.expect(json.data.partySize).to.eql(2));",
+                  "pm.collectionVariables.set('reservationId', json.data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Nguyen Thi F\",\n  \"phone\": \"0956789012\",\n  \"partySize\": 2,\n  \"datetime\": \"{{futureDateTime}}\",\n  \"note\": \"Note ban đầu\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        },
+        {
+          "name": "06-02 Login manager01",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('accessToken', pm.response.json().accessToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{managerUsername}}\",\n  \"password\": \"{{managerPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "06-03 Cập nhật partySize, note, datetime",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('partySize đã cập nhật = 6', () => pm.expect(json.data.partySize).to.eql(6));",
+                  "pm.test('note đã cập nhật', () => pm.expect(json.data.note).to.eql('Note đã chỉnh sửa – thêm 4 người'));",
+                  "pm.test('status vẫn PENDING', () => pm.expect(json.data.status).to.eql('PENDING'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partySize\": 6,\n  \"note\": \"Note đã chỉnh sửa – thêm 4 người\",\n  \"datetime\": \"{{futureDateTimeAlt}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}"]
+            }
+          }
+        },
+        {
+          "name": "06-04 Xem lại → verify thay đổi",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('partySize = 6', () => pm.expect(json.data.partySize).to.eql(6));",
+                  "pm.test('note đúng', () => pm.expect(json.data.note).to.eql('Note đã chỉnh sửa – thêm 4 người'));",
+                  "pm.test('status vẫn PENDING', () => pm.expect(json.data.status).to.eql('PENDING'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "PROCESS 07 – Danh sách & Chi tiết (Pagination)",
+      "description": "Use case: Manager xem danh sách tất cả reservation có phân trang và xem chi tiết một reservation.\nCác bước:\n  07-01 Login manager01\n  07-02 Lấy trang đầu (page=0, size=10)\n  07-03 Lấy trang nhỏ hơn (page=0, size=3)\n  07-04 Lấy theo ID cụ thể",
+      "item": [
+        {
+          "name": "07-01 Login manager01",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('accessToken', pm.response.json().accessToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{managerUsername}}\",\n  \"password\": \"{{managerPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "07-02 Danh sách trang 1 (size=10)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('success = true', () => pm.expect(json.success).to.be.true);",
+                  "pm.test('data.content là array', () => pm.expect(json.data.content).to.be.an('array'));",
+                  "pm.test('totalElements >= 0', () => pm.expect(json.data.totalElements).to.be.at.least(0));",
+                  "pm.test('size = 10', () => pm.expect(json.data.size).to.eql(10));",
+                  "pm.test('number = 0', () => pm.expect(json.data.number).to.eql(0));",
+                  "if (json.data.content.length > 0) {",
+                  "  pm.collectionVariables.set('reservationId', json.data.content[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations?page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "07-03 Danh sách trang nhỏ (size=3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('size = 3', () => pm.expect(json.data.size).to.eql(3));",
+                  "pm.test('content <= 3 phần tử', () => pm.expect(json.data.content.length).to.be.at.most(3));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations?page=0&size=3",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "3" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "07-04 Chi tiết theo ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('có id', () => pm.expect(json.data.id).to.be.a('string').and.not.empty);",
+                  "pm.test('có guestName', () => pm.expect(json.data.guestName).to.be.a('string').and.not.empty);",
+                  "pm.test('có status hợp lệ', () => pm.expect(['PENDING','CONFIRMED','CHECKED_IN','NO_SHOW','CANCELLED']).to.include(json.data.status));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "PROCESS 08 – [Error] Check-in từ PENDING (Invalid Transition)",
+      "description": "Use case lỗi: Waiter cố check-in reservation chưa được CONFIRM.\nBusiness rule: check-in chỉ được phép từ CONFIRMED.\nMong đợi: 400 Bad Request với thông báo INVALID_STATUS_TRANSITION.",
+      "item": [
+        {
+          "name": "08-01 Tạo reservation (Guest, status=PENDING)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 30);",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "pm.collectionVariables.set('futureDateTime',",
+                  "  `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T17:00:00`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('reservationId', pm.response.json().data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Vu Van G\",\n  \"phone\": \"0967890123\",\n  \"partySize\": 2,\n  \"datetime\": \"{{futureDateTime}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        },
+        {
+          "name": "08-02 Login waiter01",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('accessToken', pm.response.json().accessToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{waiterUsername}}\",\n  \"password\": \"{{waiterPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "08-03 Check-in từ PENDING → PHẢI lỗi 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400 Bad Request (invalid transition)', () => pm.response.to.have.status(400));",
+                  "const json = pm.response.json();",
+                  "pm.test('success = false', () => pm.expect(json.success).to.be.false);",
+                  "pm.test('có error message', () => pm.expect(json.message || json.error).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}/check-in",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}", "check-in"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "PROCESS 09 – [Error] Update sau khi CANCELLED (Terminal State)",
+      "description": "Use case lỗi: Cố cập nhật reservation đã bị huỷ (terminal state).\nBusiness rule: CANCELLED là trạng thái cuối, không cho phép chuyển tiếp.\nMong đợi: 400 Bad Request.",
+      "item": [
+        {
+          "name": "09-01 Tạo reservation (Guest)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 30);",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "pm.collectionVariables.set('futureDateTime',",
+                  "  `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T16:00:00`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('reservationId', pm.response.json().data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Do Thi H\",\n  \"phone\": \"0978901234\",\n  \"partySize\": 3,\n  \"datetime\": \"{{futureDateTime}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        },
+        {
+          "name": "09-02 Login manager01",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('accessToken', pm.response.json().accessToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{managerUsername}}\",\n  \"password\": \"{{managerPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "09-03 Huỷ reservation → CANCELLED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}"]
+            }
+          }
+        },
+        {
+          "name": "09-04 Cập nhật reservation đã CANCELLED → PHẢI lỗi 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400 Bad Request (terminal state)', () => pm.response.to.have.status(400));",
+                  "const json = pm.response.json();",
+                  "pm.test('success = false', () => pm.expect(json.success).to.be.false);",
+                  "pm.test('có error message', () => pm.expect(json.message || json.error).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"CONFIRMED\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/{{reservationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "{{reservationId}}"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "PROCESS 10 – [Error] Không có token (401 Unauthorized)",
+      "description": "Use case lỗi: Gọi endpoint bảo vệ mà không có Bearer token.\nMong đợi: 401 Unauthorized cho tất cả các endpoint WAITER/MANAGER.",
+      "item": [
+        {
+          "name": "10-01 GET list – không có token → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations"]
+            }
+          }
+        },
+        {
+          "name": "10-02 GET by ID – không có token → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/non-existent-id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "non-existent-id"]
+            }
+          }
+        },
+        {
+          "name": "10-03 PUT update – không có token → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"CONFIRMED\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/non-existent-id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "non-existent-id"]
+            }
+          }
+        },
+        {
+          "name": "10-04 DELETE – không có token → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/non-existent-id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "non-existent-id"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "PROCESS 11 – [Error] Validation thất bại (400 Bad Request)",
+      "description": "Use case lỗi: Gọi endpoint public tạo reservation với dữ liệu không hợp lệ.\nTất cả request đều không cần token (endpoint public).",
+      "item": [
+        {
+          "name": "11-01 Phone sai format → 400",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 30);",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "pm.collectionVariables.set('futureDateTime',",
+                  "  `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T19:00:00`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400 Bad Request (phone sai format)', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Test User\",\n  \"phone\": \"123\",\n  \"partySize\": 2,\n  \"datetime\": \"{{futureDateTime}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        },
+        {
+          "name": "11-02 partySize = 0 (dưới @Min(1)) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400 Bad Request (partySize < 1)', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Test User\",\n  \"phone\": \"0901234567\",\n  \"partySize\": 0,\n  \"datetime\": \"{{futureDateTime}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        },
+        {
+          "name": "11-03 partySize = 21 (vượt @Max(20)) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400 Bad Request (partySize > 20)', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Test User\",\n  \"phone\": \"0901234567\",\n  \"partySize\": 21,\n  \"datetime\": \"{{futureDateTime}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        },
+        {
+          "name": "11-04 datetime trong quá khứ (@Future) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400 Bad Request (datetime phải là tương lai)', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Test User\",\n  \"phone\": \"0901234567\",\n  \"partySize\": 2,\n  \"datetime\": \"2020-01-01T12:00:00\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        },
+        {
+          "name": "11-05 Thiếu guestName (@NotBlank) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400 Bad Request (guestName bắt buộc)', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"0901234567\",\n  \"partySize\": 2,\n  \"datetime\": \"{{futureDateTime}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        },
+        {
+          "name": "11-06 Thiếu datetime (@NotNull) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400 Bad Request (datetime bắt buộc)', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Test User\",\n  \"phone\": \"0901234567\",\n  \"partySize\": 2\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations/online/new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reservations", "online", "new"]
+            }
+          }
+        }
+      ]
+    }
+
+  ]
+}
