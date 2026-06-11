@@ -37,9 +37,10 @@ mvn spring-boot:run -Dspring-boot.run.profiles=local
 com.rms.restaurant
 ├── common/                    # Cross-cutting infrastructure
 │   ├── datasource/            # DataSourceConfig (HikariCP), DataSourceProperties, PlatformDbConfig, RestTemplateConfig
+│   ├── config/                # WebMvcConfig (CORS for /api/**)
 │   ├── filter/                # JwtAuthenticationFilter, HttpRequestLoggingFilter
 │   ├── init/                  # DataSeeder (seeds one user per role on startup)
-│   ├── security/              # JwtService
+│   ├── security/              # SecurityConfig, JwtConfig (app.jwt.*), JwtService
 │   └── utils/
 │       ├── enums/             # UserRole, UserStatus, OrderStatus, TableStatus, ReservationStatus, PaymentMethod, CookingStatus, NotificationChannel
 │       ├── exception/         # ApplicationError enum, ApplicationException (base), UnauthorizedException, ForbiddenException, ResourceNotFoundException, ConflictException, RateLimitException, GlobalExceptionHandler
@@ -142,6 +143,8 @@ Available exception subtypes and their intended use:
 | `application.properties` | Production defaults (port 8389, SQL Server, Spring Mail) |
 | `application-local.properties` | Local overrides (show-sql, MailHog SMTP on port 1025, verbose logging, `validate-on-migrate=false`) |
 | `.env` | Secrets: `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `SENDGRID_API_KEY`, `TWILIO_*`, `VNPAY_*` |
+
+`app.cors.allowed-origins` controls CORS in `WebMvcConfig`; defaults to `http://localhost:3000`. Set to the frontend origin(s) when deploying.
 
 All secrets are injected via `${ENV_VAR:default}` placeholders; never hardcode credentials.
 

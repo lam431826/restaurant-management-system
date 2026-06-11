@@ -3,6 +3,7 @@ package com.rms.restaurant.module.user.controller;
 import com.rms.restaurant.common.utils.wrapper.ApiResponse;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.user.dto.CreateUserRequest;
+import com.rms.restaurant.module.user.dto.CreateUserResponse;
 import com.rms.restaurant.module.user.dto.UpdateUserRequest;
 import com.rms.restaurant.module.user.dto.UserResponse;
 import com.rms.restaurant.module.user.service.UserService;
@@ -35,10 +36,10 @@ public class UserController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<UserResponse>> create(@Valid @RequestBody CreateUserRequest request) {
-        UserResponse created = userService.createUser(request);
+    public ResponseEntity<ApiResponse<CreateUserResponse>> create(@Valid @RequestBody CreateUserRequest request) {
+        CreateUserResponse created = userService.createUser(request);
         return ResponseEntity
-                .created(URI.create("/api/users/" + created.id()))
+                .created(URI.create("/api/users/" + created.user().id()))
                 .body(ApiResponse.success(created));
     }
 

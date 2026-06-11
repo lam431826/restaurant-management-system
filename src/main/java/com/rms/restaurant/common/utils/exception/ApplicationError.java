@@ -30,6 +30,12 @@ public enum ApplicationError {
     SHIFT_NOT_FOUND("Shift not found", HttpStatus.NOT_FOUND),
     PROMOTION_NOT_FOUND("Promotion not found", HttpStatus.NOT_FOUND),
 
+    // User Management
+    DUPLICATE_USERNAME("Username already in use", HttpStatus.CONFLICT),
+    DUPLICATE_EMAIL("Email already in use", HttpStatus.CONFLICT),
+    DUPLICATE_PHONE("Phone number already in use", HttpStatus.CONFLICT),
+    USER_NOT_UNLOCKABLE("Only locked accounts can be unlocked", HttpStatus.UNPROCESSABLE_ENTITY),
+
     // Business Rules
     TABLE_NOT_AVAILABLE("Table is not available for this time slot", HttpStatus.CONFLICT),
     INVALID_TABLE_TOKEN("Table token is invalid or expired", HttpStatus.UNAUTHORIZED),
