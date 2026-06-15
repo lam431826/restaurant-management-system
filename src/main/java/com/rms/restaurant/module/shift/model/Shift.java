@@ -35,4 +35,10 @@ public class Shift {
 
     @Column(length = 20)
     private String status;
+
+    @Column(name = "closed_by")
+    private String closedBy;
+
+    @Column(name = "closing_note", length = 500)
+    private String closingNote;
 }

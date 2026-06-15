@@ -7,4 +7,7 @@ public interface AuthService {
     LoginResponse refreshToken(RefreshTokenRequest request);
     void logout(String username);
     void changePassword(String username, ChangePasswordRequest request);
+    VerifyInfoResponse verifyInfo(String verifyToken);
+    LoginResponse verifyOtp(String verifyToken, VerifyOtpRequest request);
+    ResendOtpResponse resendOtp(ResendOtpRequest request);
 }
