@@ -3,6 +3,7 @@ package com.rms.restaurant.module.reservation.service.impl;
 import com.rms.restaurant.common.utils.enums.ReservationStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
+import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.reservation.dto.CreateReservationRequest;
 import com.rms.restaurant.module.reservation.dto.ReservationResponse;
@@ -17,119 +18,143 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.EnumSet;
+
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class ReservationServiceImpl implements ReservationService {
 
-    private final ReservationRepository reservationRepository;
-    private final TableRepository tableRepository;
-    private final ReservationMapper reservationMapper;
+    private static final EnumSet<ReservationStatus> TERMINAL_STATUSES =
+            EnumSet.of(ReservationStatus.CHECKED_IN, ReservationStatus.NO_SHOW, ReservationStatus.CANCELLED);
 
-    @Override public PageResponse<ReservationResponse> list(Pageable pageable) { return null; }
-    @Override public ReservationResponse getById(String id) { return null; }
+    private final ReservationRepository reservationRepository;
+    private final ReservationMapper reservationMapper;
+    private final TableRepository tableRepository;
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ReservationResponse> list(Pageable pageable) {
+        return PageResponse.of(
+                reservationRepository.findAll(pageable).map(reservationMapper::toResponse)
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ReservationResponse getById(String id) {
+        return reservationMapper.toResponse(findOrThrow(id));
+    }
 
     @Override
     public ReservationResponse create(CreateReservationRequest request, String createdBy) {
-        validateTable(request.tableId());
-
+        if (request.tableId() != null && !request.tableId().isBlank()) {
+            validateTableExists(request.tableId());
+            checkTableAvailability(request.tableId(), request.datetime(), null);
+        }
         Reservation reservation = reservationMapper.toEntity(request);
-        reservation.setCreatedBy(createdBy);
+        if (reservation.getTableId() != null && reservation.getTableId().isBlank()) {
+            reservation.setTableId(null);
+        }
         reservation.setStatus(ReservationStatus.PENDING);
-
+        reservation.setCreatedBy(createdBy);
         return reservationMapper.toResponse(reservationRepository.save(reservation));
     }
 
     @Override
     public ReservationResponse update(String id, UpdateReservationRequest request) {
-        Reservation reservation = findReservationById(id);
-        validateUpdatableStatus(reservation);
-        validateTable(request.tableId());
+        Reservation reservation = findOrThrow(id);
 
-        applyUpdates(reservation, request);
+        if (TERMINAL_STATUSES.contains(reservation.getStatus())) {
+            throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
+        }
+
+        if (request.tableId() != null) {
+            validateTableExists(request.tableId());
+            checkTableAvailability(request.tableId(),
+                    request.datetime() != null ? request.datetime() : reservation.getDatetime(),
+                    id);
+            reservation.setTableId(request.tableId());
+        }
+        if (request.partySize() != null) reservation.setPartySize(request.partySize());
+        if (request.datetime() != null) reservation.setDatetime(request.datetime());
+        if (request.note() != null) reservation.setNote(request.note());
+        if (request.status() != null) {
+            validateTransition(reservation.getStatus(), request.status());
+            reservation.setStatus(request.status());
+        }
+
         return reservationMapper.toResponse(reservationRepository.save(reservation));
     }
 
     @Override
     public void cancel(String id) {
-        Reservation reservation = findReservationById(id);
-        validateCancellableStatus(reservation);
+        Reservation reservation = findOrThrow(id);
+        if (reservation.getStatus() != ReservationStatus.PENDING
+                && reservation.getStatus() != ReservationStatus.CONFIRMED) {
+            throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
+        }
         reservation.setStatus(ReservationStatus.CANCELLED);
         reservationRepository.save(reservation);
     }
 
     @Override
     public ReservationResponse checkIn(String id) {
-        Reservation reservation = findReservationById(id);
-        validateCheckInStatus(reservation);
+        Reservation reservation = findOrThrow(id);
+        if (reservation.getStatus() != ReservationStatus.CONFIRMED) {
+            throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
+        }
         reservation.setStatus(ReservationStatus.CHECKED_IN);
         return reservationMapper.toResponse(reservationRepository.save(reservation));
     }
 
-    @Override public void markNoShow(String id) {}
+    @Override
+    public void markNoShow(String id) {
+        Reservation reservation = findOrThrow(id);
+        if (reservation.getStatus() != ReservationStatus.CONFIRMED) {
+            throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
+        }
+        reservation.setStatus(ReservationStatus.NO_SHOW);
+        reservationRepository.save(reservation);
+    }
 
-    private Reservation findReservationById(String id) {
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private Reservation findOrThrow(String id) {
         return reservationRepository.findById(id)
-                .orElseThrow(() -> new ApplicationException(ApplicationError.RESERVATION_NOT_FOUND));
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.RESERVATION_NOT_FOUND));
     }
 
-    private void validateUpdatableStatus(Reservation reservation) {
-        if (reservation.getStatus() == ReservationStatus.CANCELLED
-                || reservation.getStatus() == ReservationStatus.NO_SHOW) {
-            throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
-        }
-    }
-
-    private void validateCancellableStatus(Reservation reservation) {
-        if (reservation.getStatus() == ReservationStatus.CANCELLED
-                || reservation.getStatus() == ReservationStatus.NO_SHOW
-                || reservation.getStatus() == ReservationStatus.CHECKED_IN) {
-            throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
-        }
-    }
-
-    private void validateCheckInStatus(Reservation reservation) {
-        if (reservation.getStatus() == ReservationStatus.CANCELLED
-                || reservation.getStatus() == ReservationStatus.NO_SHOW
-                || reservation.getStatus() == ReservationStatus.CHECKED_IN) {
-            throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
-        }
-    }
-
-    private void validateTable(String tableId) {
-        if (tableId == null || tableId.isBlank()) {
-            return;
-        }
+    private void validateTableExists(String tableId) {
         if (!tableRepository.existsById(tableId)) {
-            throw new ApplicationException(ApplicationError.TABLE_NOT_FOUND);
+            throw new ResourceNotFoundException(ApplicationError.TABLE_NOT_FOUND);
         }
     }
 
-    private void applyUpdates(Reservation reservation, UpdateReservationRequest request) {
-        if (request.tableId() != null) {
-            reservation.setTableId(request.tableId().isBlank() ? null : request.tableId());
+    private void checkTableAvailability(String tableId, LocalDateTime datetime, String excludeId) {
+        boolean conflict = reservationRepository.findByTableIdAndStatus(tableId, ReservationStatus.PENDING)
+                .stream()
+                .anyMatch(r -> !r.getId().equals(excludeId) && r.getDatetime().equals(datetime));
+        if (!conflict) {
+            conflict = reservationRepository.findByTableIdAndStatus(tableId, ReservationStatus.CONFIRMED)
+                    .stream()
+                    .anyMatch(r -> !r.getId().equals(excludeId) && r.getDatetime().equals(datetime));
         }
-        if (request.partySize() != null) {
-            reservation.setPartySize(request.partySize());
-        }
-        if (request.datetime() != null) {
-            reservation.setDatetime(request.datetime());
-        }
-        if (request.note() != null) {
-            reservation.setNote(request.note());
-        }
-        if (request.status() != null) {
-            validateStatusTransition(reservation.getStatus(), request.status());
-            reservation.setStatus(request.status());
+        if (conflict) {
+            throw new ApplicationException(ApplicationError.TABLE_NOT_AVAILABLE);
         }
     }
 
-    private void validateStatusTransition(ReservationStatus currentStatus, ReservationStatus newStatus) {
-        if (currentStatus == newStatus) {
-            return;
-        }
-        if (currentStatus == ReservationStatus.CHECKED_IN
-                || newStatus == ReservationStatus.PENDING) {
+    private void validateTransition(ReservationStatus current, ReservationStatus next) {
+        boolean valid = switch (current) {
+            case PENDING -> next == ReservationStatus.CONFIRMED || next == ReservationStatus.CANCELLED;
+            case CONFIRMED -> next == ReservationStatus.CHECKED_IN
+                    || next == ReservationStatus.NO_SHOW
+                    || next == ReservationStatus.CANCELLED;
+            default -> false;
+        };
+        if (!valid) {
             throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
         }
     }

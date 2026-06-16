@@ -1,6 +1,7 @@
 package com.rms.restaurant.module.authentication.config;
 
 import com.rms.restaurant.common.filter.JwtAuthenticationFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -44,6 +45,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/auth/forgot-password").permitAll()
                 // Public – Online reservation
                 .requestMatchers("/api/online/**").permitAll()
+                // Public – Reservation
+                .requestMatchers("/api/reservations/online/new/**").permitAll()
                 // Public – Menu
                 .requestMatchers(HttpMethod.GET, "/api/menu/public").permitAll()
                 // Public – Guest ordering (table token validated in service)
@@ -54,6 +57,10 @@ public class SecurityConfig {
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 // Everything else requires JWT
                 .anyRequest().authenticated()
+            )
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint((req, res, e) ->
+                    res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized"))
             )
             .authenticationProvider(authenticationProvider())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
