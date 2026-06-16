@@ -17,16 +17,17 @@
 - [7. Chạy Local](#7-chạy-local)
 - [8. Luồng Xác Thực Thông Tin Lần Đầu Đăng Nhập](#8-luồng-xác-thực-thông-tin-lần-đầu-đăng-nhập)
 - [9. API Đặc Tả — Authentication](#9-api-đặc-tả--authentication)
-- [10. Kiểm Thử](#10-kiểm-thử)
-- [11. Quy Tắc Git Flow](#11-quy-tắc-git-flow)
-- [12. Quy Tắc Đặt Tên Branch](#12-quy-tắc-đặt-tên-branch)
-- [13. Quy Tắc Commit Message](#13-quy-tắc-commit-message)
-- [14. Quy Trình Pull Request](#14-quy-trình-pull-request)
-- [15. Biến Môi Trường](#15-biến-môi-trường)
-- [16. Coding Standards](#16-coding-standards)
-- [17. Checklist Developer Mới](#17-checklist-developer-mới)
-- [18. Roadmap Giai Đoạn Đầu](#18-roadmap-giai-đoạn-đầu)
-- [19. License](#19-license)
+- [10. API Đặc Tả — Guest Ordering & Order Management (Iter 1 & 2)](#10-api-đặc-tả--guest-ordering--order-management-iter-1--2)
+- [11. Kiểm Thử](#11-kiểm-thử)
+- [12. Quy Tắc Git Flow](#12-quy-tắc-git-flow)
+- [13. Quy Tắc Đặt Tên Branch](#13-quy-tắc-đặt-tên-branch)
+- [14. Quy Tắc Commit Message](#14-quy-tắc-commit-message)
+- [15. Quy Trình Pull Request](#15-quy-trình-pull-request)
+- [16. Biến Môi Trường](#16-biến-môi-trường)
+- [17. Coding Standards](#17-coding-standards)
+- [18. Checklist Developer Mới](#18-checklist-developer-mới)
+- [19. Roadmap Giai Đoạn Đầu](#19-roadmap-giai-đoạn-đầu)
+- [20. License](#20-license)
 
 ---
 
@@ -711,7 +712,221 @@ X-Verify-Token: vt_a1b2c3d4e5f6...
 
 ---
 
-## 10. Kiểm Thử
+## 10. API Đặc Tả — Guest Ordering & Order Management (Iter 1 & 2)
+
+> Các API dưới đây do **Nguyễn Quang Huy (HE204327)** phụ trách phát triển trong Iteration 1 và Iteration 2.
+
+Base URL: `http://localhost:8080/api`
+
+---
+
+### 🧾 Module: Guest Ordering (Khách hàng tại bàn)
+
+---
+
+#### GO-01: Xem Thực Đơn Số *(Iteration 1)*
+
+**`GET /api/menu/public`**
+
+Khách hàng quét mã QR tại bàn, hệ thống trả về toàn bộ thực đơn đang **có sẵn (available)**, phân theo danh mục.
+
+**Response (200):**
+```json
+[
+  {
+    "categoryId": "cat-01",
+    "categoryName": "Món Chính",
+    "items": [
+      {
+        "id": "item-01",
+        "name": "Bò Lúc Lắc",
+        "price": 95000,
+        "description": "Thịt bò xào với ớt chuông",
+        "imageUrl": "https://..."
+      }
+    ]
+  }
+]
+```
+
+---
+
+#### GO-02: Gửi Yêu Cầu Đặt Món *(Iteration 1)*
+
+**`POST /api/guest/orders`**
+
+Khách hàng gửi danh sách món muốn đặt kèm thông tin bàn.
+
+**Request Body:**
+```json
+{
+  "tableId": "table-01",
+  "note": "Ít cay",
+  "items": [
+    { "menuItemId": "item-01", "quantity": 2, "note": "Chín hẳn" },
+    { "menuItemId": "item-05", "quantity": 1, "note": "" }
+  ]
+}
+```
+
+**Response (201):**
+```json
+{
+  "orderId": "order-abc123",
+  "status": "PENDING",
+  "estimatedWaitTime": null
+}
+```
+
+---
+
+#### GO-03: Chỉnh Sửa Giỏ Hàng *(Iteration 1)*
+
+**`PUT /api/guest/orders/{id}/items`**
+
+Khách hàng cập nhật lại danh sách món (chỉ khi đơn vẫn ở trạng thái `PENDING`).
+
+**Request Body:**
+```json
+{
+  "items": [
+    { "menuItemId": "item-01", "quantity": 3, "note": "Thêm tương ớt" }
+  ]
+}
+```
+
+**Response (200):** Trả về `OrderStatusResponse` mới nhất.
+
+**Lỗi — Đơn đã được duyệt (400):**
+```json
+{ "error": "INVALID_STATUS_TRANSITION", "message": "Chỉ có thể chỉnh sửa đơn hàng đang chờ xử lý." }
+```
+
+---
+
+#### GO-04: Xem Trạng Thái Đơn Hàng *(Iteration 2)*
+
+**`GET /api/guest/orders/{id}/status`**
+
+Khách hàng kiểm tra trạng thái đơn hàng của mình theo ID đơn.
+
+**Response (200):**
+```json
+{
+  "orderId": "order-abc123",
+  "status": "ACCEPTED",
+  "estimatedWaitTime": "15 minutes"
+}
+```
+
+**Lỗi — ID không tồn tại (404):**
+```json
+{ "error": "ORDER_NOT_FOUND", "message": "Không tìm thấy đơn hàng." }
+```
+
+| Status | Ý nghĩa |
+|--------|---------|
+| `PENDING` | Đơn mới tạo, chờ Thu Ngân duyệt |
+| `ACCEPTED` | Thu Ngân đã duyệt, đang chế biến |
+| `COMPLETED` | Đã phục vụ xong |
+| `CANCELLED` | Đơn bị huỷ |
+
+---
+
+#### GO-05: Yêu Cầu Hỗ Trợ (Gọi Phục Vụ) *(Iteration 2)*
+
+**`POST /api/guest/assistance`**
+
+Khách hàng bấm nút gọi nhân viên phục vụ đến bàn.
+
+**Request Body:**
+```json
+{
+  "tableToken": "QR_TOKEN_CUA_BAN",
+  "message": "Lấy thêm cho mình ít giấy ăn nhé!"
+}
+```
+
+**Response (201):** *(No Content — yêu cầu đã được ghi nhận)*
+
+**Lỗi — Token bàn không hợp lệ (400):**
+```json
+{ "error": "INVALID_TABLE_TOKEN", "message": "Mã QR bàn không hợp lệ hoặc đã hết hạn." }
+```
+
+---
+
+### 📋 Module: Order Management (Thu Ngân)
+
+---
+
+#### OM-01: Lấy Danh Sách Đơn Hàng *(Iteration 2)*
+
+**`GET /api/orders`**
+
+Thu Ngân xem toàn bộ đơn hàng, có hỗ trợ phân trang và sắp xếp.
+
+**Headers:** `Authorization: Bearer <access_token>`
+
+**Query Params:**
+
+| Tham số | Mô tả | Mặc định |
+|---------|-------|----------|
+| `page` | Số trang (bắt đầu từ 0) | 0 |
+| `size` | Số bản ghi mỗi trang | 20 |
+| `sort` | Sắp xếp (vd: `createdAt,desc`) | — |
+
+**Ví dụ:**
+```
+GET /api/orders?page=0&size=10&sort=createdAt,desc
+```
+
+**Response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "order-abc123",
+      "tableId": "table-01",
+      "status": "PENDING",
+      "items": [
+        { "menuItemId": "item-01", "menuItemName": "Bò Lúc Lắc", "quantity": 2, "unitPrice": 95000 }
+      ],
+      "totalAmount": 190000,
+      "createdAt": "2025-06-16T10:30:00"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 42,
+    "totalPages": 5
+  }
+}
+```
+
+**Lỗi — Không có token (401):**
+```json
+{ "error": "UNAUTHORIZED", "message": "Bạn cần đăng nhập để truy cập chức năng này." }
+```
+
+---
+
+### Bảng Tóm Tắt API Guest Ordering & Order Management
+
+| # | Iter | Method | Endpoint | Auth | Mô tả |
+|---|------|--------|----------|------|-------|
+| GO-01 | 1 | GET | `/api/menu/public` | Public | Xem thực đơn số |
+| GO-02 | 1 | POST | `/api/guest/orders` | Public | Đặt món |
+| GO-03 | 1 | PUT | `/api/guest/orders/{id}/items` | Public | Chỉnh sửa giỏ hàng |
+| GO-04 | 2 | GET | `/api/guest/orders/{id}/status` | Public | Xem trạng thái đơn |
+| GO-05 | 2 | POST | `/api/guest/assistance` | Public | Gọi phục vụ |
+| OM-01 | 2 | GET | `/api/orders` | JWT (Cashier) | Danh sách đơn hàng (phân trang) |
+
+---
+
+## 11. Kiểm Thử
+
 
 ### Cấu trúc test
 
@@ -764,7 +979,7 @@ npm run coverage
 
 ---
 
-## 11. Quy Tắc Git Flow
+## 12. Quy Tắc Git Flow
 
 ```
 main ─────────────────────────────────────── (production-ready)
@@ -787,7 +1002,7 @@ main ─────────────────────────
 
 ---
 
-## 12. Quy Tắc Đặt Tên Branch
+## 13. Quy Tắc Đặt Tên Branch
 
 **Cú pháp:** `<type>/<ticket-id>-<slug-mo-ta-ngan>`
 
@@ -804,7 +1019,7 @@ main ─────────────────────────
 
 ---
 
-## 13. Quy Tắc Commit Message
+## 14. Quy Tắc Commit Message
 
 Dự án tuân theo **[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)**.
 
@@ -847,7 +1062,7 @@ docs(readme): rewrite for Spring Boot + React + SQL Server stack
 
 ---
 
-## 14. Quy Trình Pull Request
+## 15. Quy Trình Pull Request
 
 ### Trước khi tạo PR
 
@@ -892,7 +1107,7 @@ cd frontend && npm run lint && npm run test
 
 ---
 
-## 15. Biến Môi Trường
+## 16. Biến Môi Trường
 
 ### Backend (`backend/src/main/resources/application-local.properties`)
 
@@ -967,7 +1182,7 @@ VITE_APP_NAME=RMS – Quản Lý Nhà Hàng
 
 ---
 
-## 16. Coding Standards
+## 17. Coding Standards
 
 ### Java / Spring Boot
 
@@ -1077,7 +1292,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 ---
 
-## 17. Checklist Developer Mới
+## 18. Checklist Developer Mới
 
 ### Ngày 1 — Setup & Tìm hiểu
 
@@ -1101,7 +1316,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 ---
 
-## 18. Roadmap Giai Đoạn Đầu
+## 19. Roadmap Giai Đoạn Đầu
 
 ### Sprint 1 (Tuần 1–2): Foundation
 
@@ -1147,7 +1362,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 ---
 
-## 19. License
+## 20. License
 
 ```
 MIT License — Copyright (c) 2025 RMS Team
