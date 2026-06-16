@@ -17,6 +17,7 @@ public enum ApplicationError {
     RESEND_LIMIT_EXCEEDED("Exceeded OTP resend limit", HttpStatus.TOO_MANY_REQUESTS),
     VERIFY_TOKEN_EXPIRED("Verification token has expired", HttpStatus.GONE),
     INVALID_VERIFY_TOKEN("Verification token is invalid", HttpStatus.UNAUTHORIZED),
+    INVALID_RESET_TOKEN("Password reset token is invalid or expired", HttpStatus.UNAUTHORIZED),
     UNAUTHORIZED("Authentication required", HttpStatus.UNAUTHORIZED),
 
     // Resources
@@ -28,6 +29,12 @@ public enum ApplicationError {
     MENU_ITEM_NOT_FOUND("Menu item not found", HttpStatus.NOT_FOUND),
     SHIFT_NOT_FOUND("Shift not found", HttpStatus.NOT_FOUND),
     PROMOTION_NOT_FOUND("Promotion not found", HttpStatus.NOT_FOUND),
+
+    // User Management
+    DUPLICATE_USERNAME("Username already in use", HttpStatus.CONFLICT),
+    DUPLICATE_EMAIL("Email already in use", HttpStatus.CONFLICT),
+    DUPLICATE_PHONE("Phone number already in use", HttpStatus.CONFLICT),
+    USER_NOT_UNLOCKABLE("Only locked accounts can be unlocked", HttpStatus.UNPROCESSABLE_ENTITY),
 
     // Business Rules
     TABLE_NOT_AVAILABLE("Table is not available for this time slot", HttpStatus.CONFLICT),

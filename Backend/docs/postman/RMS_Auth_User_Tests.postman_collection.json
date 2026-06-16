@@ -1,0 +1,1285 @@
+{
+  "info": {
+    "name": "RMS – Auth & User Module Tests",
+    "_postman_id": "rms-auth-user-v1",
+    "description": "Kiểm thử toàn diện module Auth và User — dùng SMTP thật (Gmail).\n\nYêu cầu:\n- Backend chạy tại http://localhost:8387 (profile local)\n- Tài khoản admin đã được seed sẵn (admin / Admin@123456)\n- Mỗi lần chạy collection tự sinh username duy nhất → không cần xoá database giữa các lần chạy\n\n⚙️  BƯỚC THỦ CÔNG (cần làm 2 lần trong suốt collection):\n  Sau bước [4.4] và [6.2] → kiểm tra hộp thư chiswiub@gmail.com,\n  lấy mã OTP 6 chữ số rồi đặt vào biến Collection \"otp\" trước khi chạy tiếp.\n\nThứ tự chạy: Collection Runner → chạy tuần tự từ trên xuống.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "baseUrl",         "value": "http://localhost:8387", "type": "string"},
+    {"key": "testEmail",       "value": "chiswiub@gmail.com",     "type": "string"},
+    {"key": "testNewPassword", "value": "NewPass@Test123",        "type": "string"},
+    {"key": "resetPassword",   "value": "ResetPass@Test123",      "type": "string"},
+    {"key": "runId",           "value": "", "type": "string"},
+    {"key": "testUsername",    "value": "", "type": "string"},
+    {"key": "lockUsername",    "value": "", "type": "string"},
+    {"key": "deleteUsername",  "value": "", "type": "string"},
+    {"key": "adminToken",      "value": "", "type": "string"},
+    {"key": "testToken",       "value": "", "type": "string"},
+    {"key": "testRefreshToken","value": "", "type": "string"},
+    {"key": "testUserId",      "value": "", "type": "string"},
+    {"key": "lockUserId",      "value": "", "type": "string"},
+    {"key": "deleteUserId",    "value": "", "type": "string"},
+    {"key": "testPassword",    "value": "", "type": "string"},
+    {"key": "lockPassword",    "value": "", "type": "string"},
+    {"key": "deletePassword",  "value": "", "type": "string"},
+    {"key": "verifyToken",     "value": "", "type": "string"},
+    {"key": "resetToken",      "value": "", "type": "string"},
+    {"key": "otp",             "value": "", "type": "string"}
+  ],
+  "item": [
+
+    {
+      "name": "1. Setup",
+      "item": [
+        {
+          "name": "[1.1 ✅] Admin Login",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Sinh runId mới mỗi lần chạy collection → username luôn unique",
+                  "const rid = Date.now();",
+                  "pm.collectionVariables.set('runId', rid.toString());",
+                  "pm.collectionVariables.set('testUsername',   'testuser_'  + rid);",
+                  "pm.collectionVariables.set('lockUsername',   'lockuser_'  + rid);",
+                  "pm.collectionVariables.set('deleteUsername', 'deluser_'   + rid);",
+                  "// Xoá các biến động từ lần chạy trước",
+                  "['adminToken','testToken','testRefreshToken',",
+                  " 'testUserId','lockUserId','deleteUserId',",
+                  " 'testPassword','lockPassword','deletePassword',",
+                  " 'verifyToken','resetToken','otp'",
+                  "].forEach(k => pm.collectionVariables.set(k, ''));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.1] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[1.1] Có accessToken', () => pm.expect(j.accessToken).to.be.a('string').and.not.empty);",
+                  "pm.test('[1.1] Không yêu cầu xác thực', () => pm.expect(j.requiresVerification).to.be.oneOf([null, undefined, false]));",
+                  "pm.collectionVariables.set('adminToken', j.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"admin\",\"password\":\"Admin@123456\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "2. User – Tạo người dùng test",
+      "item": [
+        {
+          "name": "[2.1 ✅] Tạo main test user (CASHIER, có email)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[2.1] Status 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test('[2.1] Có tempPassword', () => pm.expect(j.data.tempPassword).to.match(/^Tmp@/));",
+                  "pm.test('[2.1] User status là UN_ACTIVE', () => pm.expect(j.data.user.status).to.eql('UN_ACTIVE'));",
+                  "pm.test('[2.1] Role đúng', () => pm.expect(j.data.user.role).to.eql('CASHIER'));",
+                  "pm.collectionVariables.set('testUserId',   j.data.user.id);",
+                  "pm.collectionVariables.set('testPassword', j.data.tempPassword);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{testUsername}}\",\n  \"fullName\": \"Test User Auth\",\n  \"email\": \"{{testEmail}}\",\n  \"phone\": \"0901234567\",\n  \"role\": \"CASHIER\"\n}"
+            },
+            "url": {"raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api","users"]}
+          }
+        },
+        {
+          "name": "[2.2 ❌] Tạo user – username trùng → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[2.2] Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('[2.2] Error là DUPLICATE_USERNAME', () => pm.expect(pm.response.json().error).to.eql('DUPLICATE_USERNAME'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{testUsername}}\",\n  \"fullName\": \"Duplicate User\",\n  \"role\": \"CASHIER\"\n}"
+            },
+            "url": {"raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api","users"]}
+          }
+        },
+        {
+          "name": "[2.3 ❌] Tạo user – email trùng → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[2.3] Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('[2.3] Error là DUPLICATE_EMAIL', () => pm.expect(pm.response.json().error).to.eql('DUPLICATE_EMAIL'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"uniqueuser_{{runId}}\",\n  \"fullName\": \"Email Dupe Test\",\n  \"email\": \"{{testEmail}}\",\n  \"role\": \"CASHIER\"\n}"
+            },
+            "url": {"raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api","users"]}
+          }
+        },
+        {
+          "name": "[2.4 ✅] Tạo lock test user (không email)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[2.4] Status 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('lockUserId',   j.data.user.id);",
+                  "pm.collectionVariables.set('lockPassword', j.data.tempPassword);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{lockUsername}}\",\n  \"fullName\": \"Lock Test User\",\n  \"role\": \"CASHIER\"\n}"
+            },
+            "url": {"raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api","users"]}
+          }
+        },
+        {
+          "name": "[2.5 ✅] Tạo delete test user (không email)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[2.5] Status 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('deleteUserId',   j.data.user.id);",
+                  "pm.collectionVariables.set('deletePassword', j.data.tempPassword);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{deleteUsername}}\",\n  \"fullName\": \"Delete Test User\",\n  \"role\": \"CASHIER\"\n}"
+            },
+            "url": {"raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api","users"]}
+          }
+        },
+        {
+          "name": "[2.6 ❌] Tạo user – thiếu quyền (không token) → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[2.6] Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"noperm_user\",\n  \"fullName\": \"No Permission\",\n  \"role\": \"CASHIER\"\n}"
+            },
+            "url": {"raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api","users"]}
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "3. Auth – Đăng nhập",
+      "item": [
+        {
+          "name": "[3.1 ❌] Login – sai mật khẩu → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[3.1] Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('[3.1] Error là INVALID_CREDENTIALS', () => pm.expect(pm.response.json().error).to.eql('INVALID_CREDENTIALS'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{testUsername}}\",\"password\":\"WrongPass@999\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+        {
+          "name": "[3.2 ❌] Login – username không tồn tại → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[3.2] Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('[3.2] Error là INVALID_CREDENTIALS', () => pm.expect(pm.response.json().error).to.eql('INVALID_CREDENTIALS'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"nonexistent_user_xyz\",\"password\":\"SomePass@123\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+        {
+          "name": "[3.3 ❌] Login – body rỗng / thiếu field → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[3.3] Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+        {
+          "name": "[3.4 ✅] Login user UN_ACTIVE → nhận verify_token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[3.4] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[3.4] requiresVerification = true', () => pm.expect(j.requiresVerification).to.be.true);",
+                  "pm.test('[3.4] Có verifyToken', () => pm.expect(j.verifyToken).to.be.a('string').and.not.empty);",
+                  "pm.test('[3.4] Không có accessToken', () => pm.expect(j.accessToken).to.be.undefined);",
+                  "pm.collectionVariables.set('verifyToken', j.verifyToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{testUsername}}\",\"password\":\"{{testPassword}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "4. Auth – Xác thực OTP lần đầu đăng nhập",
+      "item": [
+        {
+          "name": "[4.1 ❌] Verify Info – không có header X-Verify-Token → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[4.1] Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {"raw": "{{baseUrl}}/api/auth/verify/info", "host": ["{{baseUrl}}"], "path": ["api","auth","verify","info"]}
+          }
+        },
+        {
+          "name": "[4.2 ❌] Verify Info – verify token không hợp lệ → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[4.2] Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('[4.2] Error là INVALID_VERIFY_TOKEN', () => pm.expect(pm.response.json().error).to.eql('INVALID_VERIFY_TOKEN'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "X-Verify-Token", "value": "this-is-a-fake-invalid-token-12345"}],
+            "url": {"raw": "{{baseUrl}}/api/auth/verify/info", "host": ["{{baseUrl}}"], "path": ["api","auth","verify","info"]}
+          }
+        },
+        {
+          "name": "[4.3 ✅] Verify Info – gửi OTP thành công",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[4.3] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[4.3] Có maskedEmail', () => pm.expect(j.data.maskedEmail).to.be.a('string').and.not.empty);",
+                  "pm.test('[4.3] maskedEmail che một phần', () => pm.expect(j.data.maskedEmail).to.include('*'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "X-Verify-Token", "value": "{{verifyToken}}"}],
+            "url": {"raw": "{{baseUrl}}/api/auth/verify/info", "host": ["{{baseUrl}}"], "path": ["api","auth","verify","info"]}
+          }
+        },
+        {
+          "name": "[4.4 ✅] Resend OTP (gửi lại mã OTP)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[4.4] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[4.4] Có verifyToken mới', () => pm.expect(j.data.verifyToken).to.be.a('string').and.not.empty);",
+                  "// Cập nhật verifyToken (có thể giống hoặc khác token cũ)",
+                  "pm.collectionVariables.set('verifyToken', j.data.verifyToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"verifyToken\":\"{{verifyToken}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/resend-otp", "host": ["{{baseUrl}}"], "path": ["api","auth","resend-otp"]}
+          }
+        },
+        {
+          "name": "[4.5 ⚙️ THỦ CÔNG] Kiểm tra email chiswiub@gmail.com → đặt biến otp",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// ─────────────────────────────────────────────────────────────────",
+                  "// BƯỚC THỦ CÔNG: Email OTP đã được gửi đến chiswiub@gmail.com.",
+                  "// 1. Mở hộp thư chiswiub@gmail.com",
+                  "// 2. Tìm email có tiêu đề 'Mã xác thực OTP'",
+                  "// 3. Sao chép mã 6 chữ số",
+                  "// 4. Trong Postman: Variables → đặt 'otp' = <mã vừa sao chép>",
+                  "// 5. Tiếp tục chạy từ bước [4.6]",
+                  "// ─────────────────────────────────────────────────────────────────"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const otp = pm.collectionVariables.get('otp');",
+                  "pm.test('[4.5] Biến otp đã được đặt thủ công (6 chữ số)',",
+                  "    () => pm.expect(otp, 'Kiểm tra email chiswiub@gmail.com và đặt biến otp trước khi chạy tiếp').to.match(/^\\d{6}$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {"raw": "{{baseUrl}}/api/auth/verify/info", "host": ["{{baseUrl}}"], "path": ["api","auth","verify","info"],
+              "description": "Placeholder — request này sẽ trả về 400 (không có header). Điều quan trọng là test script kiểm tra biến otp đã được đặt thủ công chưa."
+            }
+          }
+        },
+        {
+          "name": "[4.6 ❌] Verify OTP – mã OTP sai → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[4.6] Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('[4.6] Error là INVALID_OTP', () => pm.expect(pm.response.json().error).to.eql('INVALID_OTP'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",    "value": "application/json"},
+              {"key": "X-Verify-Token",  "value": "{{verifyToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\"otp\":\"000000\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/verify/otp", "host": ["{{baseUrl}}"], "path": ["api","auth","verify","otp"]}
+          }
+        },
+        {
+          "name": "[4.7 ✅] Verify OTP – kích hoạt tài khoản, nhận JWT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[4.7] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[4.7] Có accessToken', () => pm.expect(j.accessToken).to.be.a('string').and.not.empty);",
+                  "pm.test('[4.7] Có refreshToken', () => pm.expect(j.refreshToken).to.be.a('string').and.not.empty);",
+                  "pm.test('[4.7] Role là CASHIER', () => pm.expect(j.user.role).to.eql('CASHIER'));",
+                  "pm.collectionVariables.set('testToken',        j.accessToken);",
+                  "pm.collectionVariables.set('testRefreshToken', j.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",   "value": "application/json"},
+              {"key": "X-Verify-Token", "value": "{{verifyToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\"otp\":\"{{otp}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/verify/otp", "host": ["{{baseUrl}}"], "path": ["api","auth","verify","otp"]}
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "5. Auth – Thao tác sau đăng nhập",
+      "item": [
+        {
+          "name": "[5.1 ✅] Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.1] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[5.1] Có accessToken mới', () => pm.expect(j.accessToken).to.be.a('string').and.not.empty);",
+                  "pm.collectionVariables.set('testToken',        j.accessToken);",
+                  "pm.collectionVariables.set('testRefreshToken', j.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"refreshToken\":\"{{testRefreshToken}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/refresh", "host": ["{{baseUrl}}"], "path": ["api","auth","refresh"]}
+          }
+        },
+        {
+          "name": "[5.2 ❌] Refresh Token – token không hợp lệ → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.2] Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"refreshToken\":\"fake-invalid-refresh-token-xyz\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/refresh", "host": ["{{baseUrl}}"], "path": ["api","auth","refresh"]}
+          }
+        },
+        {
+          "name": "[5.3 ❌] Đổi mật khẩu – mật khẩu hiện tại sai → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.3] Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('[5.3] Error là INVALID_CREDENTIALS', () => pm.expect(pm.response.json().error).to.eql('INVALID_CREDENTIALS'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{testToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\"currentPassword\":\"WrongCurrent@999\",\"newPassword\":\"{{testNewPassword}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/change-password", "host": ["{{baseUrl}}"], "path": ["api","auth","change-password"]}
+          }
+        },
+        {
+          "name": "[5.4 ✅] Đổi mật khẩu thành công → 204",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.4] Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{testToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\"currentPassword\":\"{{testPassword}}\",\"newPassword\":\"{{testNewPassword}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/change-password", "host": ["{{baseUrl}}"], "path": ["api","auth","change-password"]}
+          }
+        },
+        {
+          "name": "[5.5 ✅] Login với mật khẩu mới sau khi đổi",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.5] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[5.5] Đăng nhập thành công với mật khẩu mới', () => pm.expect(j.accessToken).to.be.a('string').and.not.empty);",
+                  "pm.collectionVariables.set('testToken',        j.accessToken);",
+                  "pm.collectionVariables.set('testRefreshToken', j.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{testUsername}}\",\"password\":\"{{testNewPassword}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+        {
+          "name": "[5.6 ✅] Đăng xuất → 204",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.6] Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{testToken}}"}],
+            "url": {"raw": "{{baseUrl}}/api/auth/logout", "host": ["{{baseUrl}}"], "path": ["api","auth","logout"]}
+          }
+        },
+        {
+          "name": "[5.7 ❌] Refresh sau khi đăng xuất – refresh token bị xoá → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.7] Status 401 – refresh token đã bị thu hồi', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"refreshToken\":\"{{testRefreshToken}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/refresh", "host": ["{{baseUrl}}"], "path": ["api","auth","refresh"]}
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "6. Auth – Quên mật khẩu",
+      "item": [
+        {
+          "name": "[6.1 ❌] Quên mật khẩu – username không tồn tại → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[6.1] Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('[6.1] Error là USER_NOT_FOUND', () => pm.expect(pm.response.json().error).to.eql('USER_NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"ghost_user_not_exist_xyz\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/forgot-password", "host": ["{{baseUrl}}"], "path": ["api","auth","forgot-password"]}
+          }
+        },
+        {
+          "name": "[6.2 ✅] Quên mật khẩu – nhận resetToken",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[6.2] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[6.2] Có resetToken', () => pm.expect(j.data.resetToken).to.be.a('string').and.not.empty);",
+                  "pm.test('[6.2] Có maskedEmail', () => pm.expect(j.data.maskedEmail).to.be.a('string').and.include('*'));",
+                  "pm.collectionVariables.set('resetToken', j.data.resetToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{testUsername}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/forgot-password", "host": ["{{baseUrl}}"], "path": ["api","auth","forgot-password"]}
+          }
+        },
+        {
+          "name": "[6.3 ⚙️ THỦ CÔNG] Kiểm tra email chiswiub@gmail.com → đặt biến otp (reset)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// ─────────────────────────────────────────────────────────────────",
+                  "// BƯỚC THỦ CÔNG: Email OTP đặt lại mật khẩu đã được gửi đến chiswiub@gmail.com.",
+                  "// 1. Mở hộp thư chiswiub@gmail.com",
+                  "// 2. Tìm email mới nhất có tiêu đề liên quan đến OTP / đặt lại mật khẩu",
+                  "// 3. Sao chép mã 6 chữ số",
+                  "// 4. Trong Postman: Variables → xóa giá trị otp cũ, nhập mã mới",
+                  "// 5. Tiếp tục chạy từ bước [6.4]",
+                  "// ─────────────────────────────────────────────────────────────────",
+                  "pm.collectionVariables.set('otp', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const otp = pm.collectionVariables.get('otp');",
+                  "pm.test('[6.3] Biến otp (reset) đã được đặt thủ công (6 chữ số)',",
+                  "    () => pm.expect(otp, 'Kiểm tra email chiswiub@gmail.com và đặt biến otp trước khi chạy tiếp').to.match(/^\\d{6}$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {"raw": "{{baseUrl}}/api/auth/forgot-password", "host": ["{{baseUrl}}"], "path": ["api","auth","forgot-password"],
+              "description": "Placeholder — request này sẽ trả về 405 (GET thay vì POST). Điều quan trọng là test script kiểm tra biến otp đã được đặt thủ công chưa."
+            }
+          }
+        },
+        {
+          "name": "[6.4 ❌] Đặt lại mật khẩu – OTP sai → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[6.4] Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('[6.4] Error là INVALID_OTP', () => pm.expect(pm.response.json().error).to.eql('INVALID_OTP'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "X-Reset-Token", "value": "{{resetToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\"otp\":\"111111\",\"newPassword\":\"{{resetPassword}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/reset-password", "host": ["{{baseUrl}}"], "path": ["api","auth","reset-password"]}
+          }
+        },
+        {
+          "name": "[6.5 ✅] Đặt lại mật khẩu thành công → 204",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[6.5] Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "X-Reset-Token", "value": "{{resetToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\"otp\":\"{{otp}}\",\"newPassword\":\"{{resetPassword}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/reset-password", "host": ["{{baseUrl}}"], "path": ["api","auth","reset-password"]}
+          }
+        },
+        {
+          "name": "[6.6 ✅] Login với mật khẩu vừa đặt lại",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[6.6] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[6.6] Có accessToken', () => pm.expect(j.accessToken).to.be.a('string').and.not.empty);",
+                  "// Lưu lại token để dùng cho phần test 7 (kiểm tra phân quyền CASHIER)",
+                  "pm.collectionVariables.set('testToken',        j.accessToken);",
+                  "pm.collectionVariables.set('testRefreshToken', j.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{testUsername}}\",\"password\":\"{{resetPassword}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "7. User – CRUD",
+      "item": [
+        {
+          "name": "[7.1 ❌] Danh sách user – không auth → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[7.1] Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {"raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api","users"]}
+          }
+        },
+        {
+          "name": "[7.2 ❌] Danh sách user – CASHIER role → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[7.2] Status 403 – CASHIER không được liệt kê user', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{testToken}}"}],
+            "url": {"raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api","users"]}
+          }
+        },
+        {
+          "name": "[7.3 ✅] Danh sách user – Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[7.3] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[7.3] Có trường data (danh sách)', () => pm.expect(j.data).to.be.an('array'));",
+                  "pm.test('[7.3] Có trường pagination', () => pm.expect(j.pagination).to.be.an('object'));",
+                  "pm.test('[7.3] total > 0', () => pm.expect(j.pagination.total).to.be.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/users?page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","users"],
+              "query": [
+                {"key": "page", "value": "0"},
+                {"key": "size", "value": "10"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "[7.4 ✅] Lấy user theo ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[7.4] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[7.4] ID khớp', () => pm.expect(j.data.id).to.eql(pm.collectionVariables.get('testUserId')));",
+                  "pm.test('[7.4] Username khớp', () => pm.expect(j.data.username).to.eql(pm.collectionVariables.get('testUsername')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {"raw": "{{baseUrl}}/api/users/{{testUserId}}", "host": ["{{baseUrl}}"], "path": ["api","users","{{testUserId}}"]}
+          }
+        },
+        {
+          "name": "[7.5 ❌] Lấy user theo ID – không tìm thấy → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[7.5] Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('[7.5] Error là USER_NOT_FOUND', () => pm.expect(pm.response.json().error).to.eql('USER_NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {"raw": "{{baseUrl}}/api/users/00000000-0000-0000-0000-000000000000", "host": ["{{baseUrl}}"], "path": ["api","users","00000000-0000-0000-0000-000000000000"]}
+          }
+        },
+        {
+          "name": "[7.6 ✅] Cập nhật user – fullName",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[7.6] Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('[7.6] fullName đã được cập nhật', () => pm.expect(pm.response.json().data.fullName).to.eql('Test User Updated'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\"fullName\":\"Test User Updated\"}"},
+            "url": {"raw": "{{baseUrl}}/api/users/{{testUserId}}", "host": ["{{baseUrl}}"], "path": ["api","users","{{testUserId}}"]}
+          }
+        },
+        {
+          "name": "[7.7 ❌] Cập nhật user – email trùng với user khác → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Cập nhật lockUser với email của testUser (đã tồn tại) → 409",
+                  "pm.test('[7.7] Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('[7.7] Error là DUPLICATE_EMAIL', () => pm.expect(pm.response.json().error).to.eql('DUPLICATE_EMAIL'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\"email\":\"{{testEmail}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/users/{{lockUserId}}", "host": ["{{baseUrl}}"], "path": ["api","users","{{lockUserId}}"]}
+          }
+        },
+        {
+          "name": "[7.8 ❌] Xoá user – CASHIER không có quyền → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[7.8] Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [{"key": "Authorization", "value": "Bearer {{testToken}}"}],
+            "url": {"raw": "{{baseUrl}}/api/users/{{deleteUserId}}", "host": ["{{baseUrl}}"], "path": ["api","users","{{deleteUserId}}"]}
+          }
+        },
+        {
+          "name": "[7.9 ✅] Xoá user (soft delete) – Admin → 204",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[7.9] Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {"raw": "{{baseUrl}}/api/users/{{deleteUserId}}", "host": ["{{baseUrl}}"], "path": ["api","users","{{deleteUserId}}"]}
+          }
+        },
+        {
+          "name": "[7.10 ❌] Login user đã xoá (INACTIVE) → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[7.10] Status 403 – user INACTIVE không thể đăng nhập', () => pm.response.to.have.status(403));",
+                  "pm.test('[7.10] Error là ACCOUNT_INACTIVE', () => pm.expect(pm.response.json().error).to.eql('ACCOUNT_INACTIVE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{deleteUsername}}\",\"password\":\"{{deletePassword}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+        {
+          "name": "[7.11 ❌] Mở khoá user không bị khoá → 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// testUser đang ACTIVE, mở khoá sẽ báo lỗi",
+                  "pm.test('[7.11] Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('[7.11] Error là USER_NOT_UNLOCKABLE', () => pm.expect(pm.response.json().error).to.eql('USER_NOT_UNLOCKABLE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {"raw": "{{baseUrl}}/api/users/{{testUserId}}/unlock", "host": ["{{baseUrl}}"], "path": ["api","users","{{testUserId}}","unlock"]}
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "8. Lock / Unlock",
+      "item": [
+        {
+          "name": "[8.1] Sai mật khẩu lần 1 (lockUser)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[8.1] Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{lockUsername}}\",\"password\":\"WrongPass@001\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+        {
+          "name": "[8.2] Sai mật khẩu lần 2 (lockUser)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('[8.2] Status 401', () => pm.response.to.have.status(401));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{lockUsername}}\",\"password\":\"WrongPass@002\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+        {
+          "name": "[8.3] Sai mật khẩu lần 3 (lockUser)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('[8.3] Status 401', () => pm.response.to.have.status(401));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{lockUsername}}\",\"password\":\"WrongPass@003\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+        {
+          "name": "[8.4] Sai mật khẩu lần 4 (lockUser)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('[8.4] Status 401', () => pm.response.to.have.status(401));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{lockUsername}}\",\"password\":\"WrongPass@004\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+        {
+          "name": "[8.5] Sai mật khẩu lần 5 → tài khoản bị LOCK",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Lần thứ 5 sai: server tăng counter lên 5 → set LOCKED → vẫn trả 401 INVALID_CREDENTIALS",
+                  "pm.test('[8.5] Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('[8.5] Error là INVALID_CREDENTIALS (tài khoản vừa bị lock nội bộ)', () => pm.expect(pm.response.json().error).to.eql('INVALID_CREDENTIALS'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{lockUsername}}\",\"password\":\"WrongPass@005\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+        {
+          "name": "[8.6 ❌] Login đúng mật khẩu nhưng tài khoản bị khoá → 423",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[8.6] Status 423', () => pm.response.to.have.status(423));",
+                  "pm.test('[8.6] Error là ACCOUNT_LOCKED', () => pm.expect(pm.response.json().error).to.eql('ACCOUNT_LOCKED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{lockUsername}}\",\"password\":\"{{lockPassword}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+        {
+          "name": "[8.7 ❌] Mở khoá user – CASHIER không có quyền → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[8.7] Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{testToken}}"}],
+            "url": {"raw": "{{baseUrl}}/api/users/{{lockUserId}}/unlock", "host": ["{{baseUrl}}"], "path": ["api","users","{{lockUserId}}","unlock"]}
+          }
+        },
+        {
+          "name": "[8.8 ✅] Admin mở khoá user → 204",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[8.8] Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {"raw": "{{baseUrl}}/api/users/{{lockUserId}}/unlock", "host": ["{{baseUrl}}"], "path": ["api","users","{{lockUserId}}","unlock"]}
+          }
+        },
+        {
+          "name": "[8.9 ✅] Login sau khi mở khoá → thành công",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[8.9] Status 200 – đăng nhập được sau khi mở khoá', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[8.9] Có accessToken', () => pm.expect(j.accessToken).to.be.a('string').and.not.empty);",
+                  "pm.test('[8.9] Không yêu cầu OTP (admin đã force ACTIVE)', () => pm.expect(j.requiresVerification).to.be.oneOf([null, undefined, false]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"{{lockUsername}}\",\"password\":\"{{lockPassword}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        }
+      ]
+    }
+
+  ]
+}

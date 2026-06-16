@@ -1,4 +1,4 @@
-package com.rms.restaurant.module.authentication.config;
+package com.rms.restaurant.common.security;
 
 import com.rms.restaurant.common.filter.JwtAuthenticationFilter;
 import jakarta.servlet.http.HttpServletResponse;
@@ -36,13 +36,16 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // Public – Auth
+                // Public – Auth: pre-login flows (no JWT yet)
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/auth/verify").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/auth/verify/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/refresh").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/verify/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/resend-otp").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/forgot-password").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/reset-password").permitAll()
+                // Protected – Auth: requires JWT (@AuthenticationPrincipal must not be null)
+                .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
+                .requestMatchers(HttpMethod.POST, "/api/auth/change-password").authenticated()
                 // Public – Online reservation
                 .requestMatchers("/api/online/**").permitAll()
                 // Public – Reservation
@@ -59,8 +62,8 @@ public class SecurityConfig {
                 .anyRequest().authenticated()
             )
             .exceptionHandling(ex -> ex
-                .authenticationEntryPoint((req, res, e) ->
-                    res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized"))
+                .authenticationEntryPoint((request, response, authException) ->
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized"))
             )
             .authenticationProvider(authenticationProvider())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
