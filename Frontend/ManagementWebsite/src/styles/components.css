@@ -1,0 +1,314 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Shared design-system primitives, Tailwind-powered via @apply on the kv theme.
+   These classes are referenced as string classNames and via cross-component
+   selectors across the app, so they live here as one consolidated layer.
+   @reference gives this file access to the Tailwind theme/utilities for @apply.
+   ───────────────────────────────────────────────────────────────────────────── */
+@reference './tailwind.css';
+
+@layer components {
+  /* ── Button ─────────────────────────────────────────────────────────────── */
+  .kv-btn {
+    @apply inline-flex items-center justify-center gap-2 h-8 px-4 font-sans text-md
+           font-semibold leading-none rounded-full border border-transparent
+           cursor-pointer whitespace-nowrap no-underline transition-colors select-none shrink-0;
+    background: none;
+  }
+  .kv-btn:focus-visible {
+    @apply outline-none;
+    box-shadow: var(--kv-state-focus-ring);
+  }
+  .kv-btn:disabled {
+    @apply opacity-50 cursor-not-allowed pointer-events-none;
+  }
+
+  .kv-btn-sm { @apply h-6 px-3 text-sm; }
+  .kv-btn-lg { @apply h-10 px-6 text-lg; }
+
+  .kv-btn-icon-only { @apply w-8 px-0; }
+  .kv-btn-sm.kv-btn-icon-only { @apply w-6; }
+  .kv-btn-lg.kv-btn-icon-only { @apply w-10; }
+
+  .kv-btn-primary { @apply bg-primary border-primary text-white; }
+  .kv-btn-primary:hover { @apply bg-primary-600 border-primary-600; }
+  .kv-btn-primary:active { @apply bg-primary-700 border-primary-700; }
+
+  .kv-btn-outline-primary { @apply bg-transparent border-primary text-primary; }
+  .kv-btn-outline-primary:hover { @apply bg-primary-50; }
+  .kv-btn-outline-primary:active { @apply bg-primary-100; }
+
+  .kv-btn-text-primary { @apply bg-transparent border-transparent text-primary px-2; }
+  .kv-btn-text-primary:hover { @apply bg-primary-50; }
+  .kv-btn-text-primary:active { @apply bg-primary-100; }
+
+  .kv-btn-neutral { @apply bg-neutral-100 border-neutral-100 text-neutral-900; }
+  .kv-btn-neutral:hover { @apply bg-neutral-150 border-neutral-150; }
+
+  .kv-btn-outline-neutral { @apply bg-transparent border-line-default text-ink; }
+  .kv-btn-outline-neutral:hover { @apply bg-fill border-line-strong; }
+  .kv-btn-outline-neutral:active { @apply bg-fill-default; }
+
+  .kv-btn-group { @apply inline-flex items-center; }
+  .kv-btn-group .kv-btn:not(:first-child):not(:last-child) { @apply rounded-none; }
+  .kv-btn-group .kv-btn:first-child:not(:last-child) { @apply rounded-r-none border-r-0; }
+  .kv-btn-group .kv-btn:last-child:not(:first-child) { @apply rounded-l-none px-3; }
+
+  /* ── Card ───────────────────────────────────────────────────────────────── */
+  .kv-card {
+    @apply flex flex-col relative overflow-hidden bg-card rounded-3xl border border-line shadow-sm;
+  }
+  .kv-card-lg { @apply min-h-[18rem] rounded-lg; }
+
+  .kv-card-header {
+    @apply flex items-start gap-3 px-6 pt-4 pb-2;
+  }
+  .kv-card-header-prefix { @apply shrink-0; }
+  .kv-card-header-text { @apply flex-1 min-w-0 flex flex-col gap-0.5; }
+  .kv-card-title {
+    @apply text-md font-semibold text-ink m-0 truncate;
+  }
+  .kv-card-subtitle { @apply text-sm text-ink-subtle m-0; }
+  .kv-card-header-actions { @apply shrink-0 flex items-center gap-2; }
+
+  .kv-card-body { @apply flex-1 px-6 pt-2 pb-4 flex flex-col; }
+  .kv-card-body-no-pad { @apply p-0; }
+
+  .kv-card-footer {
+    @apply px-6 py-3 border-t border-line min-h-0;
+  }
+  .kv-card-footer:empty { @apply hidden; }
+
+  .kv-card-kpi { @apply overflow-hidden; }
+
+  /* ── Card group (horizontal row with merged borders) ─────────────────── */
+  .kv-card-group { display: flex; gap: 0; }
+  .kv-card-group-horizontal { flex-direction: row; align-items: stretch; }
+  .kv-card-group-horizontal > .kv-card,
+  .kv-card-group-horizontal > * > .kv-card {
+    flex: 1;
+    border-radius: 0;
+    border-right: none;
+  }
+  .kv-card-group-horizontal > .kv-card:first-child,
+  .kv-card-group-horizontal > *:first-child > .kv-card {
+    border-top-left-radius: var(--kv-card-group-radius, var(--kv-radius-xxxl));
+    border-bottom-left-radius: var(--kv-card-group-radius, var(--kv-radius-xxxl));
+  }
+  .kv-card-group-horizontal > .kv-card:last-child,
+  .kv-card-group-horizontal > *:last-child > .kv-card {
+    border-top-right-radius: var(--kv-card-group-radius, var(--kv-radius-xxxl));
+    border-bottom-right-radius: var(--kv-card-group-radius, var(--kv-radius-xxxl));
+    border-right: var(--kv-border-width) solid var(--kv-border-subtle);
+  }
+  .kv-card-group-lg { --kv-card-group-radius: var(--kv-radius-lg); }
+  .kv-card-group-horizontal > .kv-card + .kv-card,
+  .kv-card-group-horizontal > * + * > .kv-card {
+    border-left: var(--kv-border-width) solid var(--kv-border-subtle);
+  }
+
+  /* ── KPI / form content (used by KPI cards) ───────────────────────────── */
+  .kv-kpi { @apply flex gap-4 flex-1; }
+  .kv-kpi-trend { @apply flex-1 flex flex-col gap-2; }
+  .kv-big-text {
+    @apply text-[2.8rem] font-extrabold text-ink tracking-[-0.02em];
+    line-height: 1.2;
+  }
+  .kv-trend { @apply flex items-center gap-2 flex-wrap; }
+  .kv-trend-value { @apply text-sm font-semibold px-2 py-[0.2rem] rounded-xxs; }
+  .kv-trend-value-up { @apply text-success-700 bg-success-50; }
+  .kv-trend-value-down { @apply text-danger-700 bg-danger-50; }
+  .kv-trend-value-neutral { @apply text-ink-subtle bg-fill; }
+  .kv-trend-label { @apply text-sm text-ink-muted; }
+  .kv-kpi-details { @apply flex flex-col gap-2 min-w-[14rem]; }
+  .kv-form-group { @apply flex justify-between items-center gap-4; }
+  .kv-form-label { @apply text-sm text-ink-subtle whitespace-nowrap; }
+  .kv-form-output { @apply text-sm font-medium text-ink text-right; }
+  .kv-vat-badge {
+    @apply inline-flex items-center gap-1 text-xs text-ink-subtle border border-line-default
+           rounded-xxs px-2 py-[0.2rem] whitespace-nowrap;
+  }
+
+  /* ── Badge ──────────────────────────────────────────────────────────────── */
+  .kv-badge {
+    @apply inline-flex items-center gap-1 h-5 px-2 text-xs font-semibold rounded-xxs
+           whitespace-nowrap border border-transparent;
+  }
+  .kv-badge-primary { @apply bg-primary-50 text-primary-700; }
+  .kv-badge-success { @apply bg-success-50 text-success-700; }
+  .kv-badge-warning { @apply bg-warning-50 text-warning-700; }
+  .kv-badge-danger  { @apply bg-danger-50 text-danger-700; }
+  .kv-badge-neutral { @apply bg-neutral-50 text-neutral-700; }
+  .kv-badge-outline.kv-badge-primary { @apply bg-transparent border-primary-150 text-primary-700; }
+  .kv-badge-outline.kv-badge-neutral { @apply bg-transparent border-line-default text-ink-subtle; }
+
+  /* ── Avatar ─────────────────────────────────────────────────────────────── */
+  .kv-avatar {
+    @apply rounded-full overflow-hidden bg-fill-default flex items-center justify-center
+           shrink-0 border-2 border-line-default;
+  }
+  .kv-avatar-sm { @apply w-6 h-6; }
+  .kv-avatar-md { @apply w-8 h-8; }
+  .kv-avatar-lg { @apply w-10 h-10; }
+  .kv-avatar-image { @apply w-full h-full object-cover block; }
+
+  /* ── Divider ────────────────────────────────────────────────────────────── */
+  .kv-divider { @apply h-px bg-line my-1 shrink-0; }
+  .kv-divider-vertical { @apply w-px h-auto mx-1 self-stretch; }
+
+  /* ── Floating dropdown panel (shared by header dropdowns) ─────────────── */
+  .kv-float-container {
+    @apply absolute right-0 bg-card border border-line-default rounded-md shadow-md
+           min-w-[18rem] py-2;
+    top: calc(100% + 0.8rem);
+    z-index: var(--kv-z-dropdown);
+  }
+
+  /* ── Dropdown list + items (shared by nav & branch dropdowns) ─────────── */
+  .kv-list { @apply list-none m-0 py-2; }
+  .kv-list-item {
+    @apply flex items-center gap-3 px-6 py-2 text-md text-ink no-underline cursor-pointer
+           whitespace-nowrap min-h-[3.6rem] transition-colors;
+  }
+  .kv-list-item:hover { @apply text-primary; background: var(--kv-state-hover-bg); }
+  .kv-list-item-text { @apply flex-1; }
+
+  /* ── Shared chart card bits (used across chart components) ────────────── */
+  .kv-chart-card { @apply min-w-0; }
+  .kv-chart-card-title { @apply inline-flex items-center gap-2 text-ink-subtle; }
+  .kv-chart-body { @apply pt-1 overflow-hidden; }
+  .kv-chart-summary { @apply flex items-baseline gap-2 mb-3; }
+  .kv-chart-summary-value { @apply text-[2.4rem] font-extrabold text-ink leading-[1.1]; }
+  .kv-chart-summary-sub { @apply text-sm text-ink-muted; }
+
+  /* ── Shared chart tooltip ─────────────────────────────────────────────── */
+  .kv-chart-tooltip {
+    @apply bg-neutral-900 text-white rounded-md px-3 py-2 text-sm shadow-md;
+  }
+  .kv-chart-tooltip-label { @apply text-neutral-300 mb-[0.2rem]; }
+  .kv-chart-tooltip-value { @apply font-semibold text-md; }
+
+  /* ── Dashboard KPI cards (gradient bg + pseudo-element accent bar) ────── */
+  .kv-dashboard-kpi.kv-card-group { gap: var(--kv-spacer-4); }
+  .kv-dashboard-kpi.kv-card-group-horizontal > .kv-card,
+  .kv-dashboard-kpi.kv-card-group-horizontal > * > .kv-card {
+    border-radius: var(--kv-radius-lg) !important;
+    border-right: var(--kv-border-width) solid var(--kv-border-subtle) !important;
+  }
+  .kv-dashboard-kpi.kv-card-group-horizontal > .kv-card:first-child,
+  .kv-dashboard-kpi.kv-card-group-horizontal > *:first-child > .kv-card,
+  .kv-dashboard-kpi.kv-card-group-horizontal > .kv-card:last-child,
+  .kv-dashboard-kpi.kv-card-group-horizontal > *:last-child > .kv-card {
+    border-radius: var(--kv-radius-lg) !important;
+  }
+  .kv-dashboard-kpi.kv-card-group-horizontal > .kv-card + .kv-card,
+  .kv-dashboard-kpi.kv-card-group-horizontal > * + * > .kv-card {
+    border-left: var(--kv-border-width) solid var(--kv-border-subtle) !important;
+  }
+
+  .kv-dashboard-kpi .kv-card.net-revenue {
+    background: linear-gradient(90deg, var(--kv-primary-50) 0%, var(--kv-primary-75) 100%);
+  }
+  .kv-dashboard-kpi .kv-card.total-orders {
+    background: linear-gradient(90deg, #e9ffec 0%, #ccffd7 100%);
+  }
+  .kv-dashboard-kpi .kv-card.new-customer {
+    background: linear-gradient(90deg, #fffeef 0%, #fff0c7 100%);
+  }
+
+  .kv-dashboard-kpi .kv-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(
+      0deg,
+      var(--kv-white) 0%,
+      var(--kv-white) 30%,
+      rgba(var(--kv-white-rgb), 0) 80%
+    );
+    pointer-events: none;
+    z-index: 0;
+    border-radius: inherit;
+  }
+
+  .kv-dashboard-kpi .kv-card::after {
+    content: "";
+    width: 0.6rem;
+    height: 4.8rem;
+    position: absolute;
+    top: 2.6rem;
+    left: 0;
+    border-top-right-radius: var(--kv-radius-circle);
+    border-bottom-right-radius: var(--kv-radius-circle);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .kv-dashboard-kpi .kv-card.net-revenue::after  { background: var(--kv-primary); }
+  .kv-dashboard-kpi .kv-card.total-orders::after { background: var(--kv-success); }
+  .kv-dashboard-kpi .kv-card.new-customer::after { background: var(--kv-warning); }
+
+  .kv-dashboard-kpi .kv-card .kv-card-header,
+  .kv-dashboard-kpi .kv-card .kv-card-body {
+    @apply relative z-1;
+  }
+
+  .kv-dashboard-kpi .kv-card {
+    box-shadow: 0 8px 24px rgba(var(--kv-black-rgb), 0.04);
+  }
+
+  .kv-trend-pct { @apply inline-flex items-center gap-0.5 text-sm font-semibold; }
+  .kv-trend-pct-up { @apply text-success; }
+  .kv-trend-pct-down { @apply text-danger; }
+
+  /* ── Form controls: checkbox / radio (shared by menu filters & table) ── */
+  .kv-check, .kv-radio { @apply inline-flex items-center gap-1.5 cursor-pointer select-none; }
+  .kv-check input, .kv-radio input { @apply absolute opacity-0 w-0 h-0; }
+
+  .kv-check-box {
+    width: 1.8rem;
+    height: 1.8rem;
+    border: 0.15rem solid var(--kv-border-strong);
+    border-radius: var(--kv-radius-xxs);
+    flex-shrink: 0;
+    position: relative;
+    transition: all var(--kv-duration-fast);
+  }
+  .kv-check input:checked + .kv-check-box {
+    background: var(--kv-primary);
+    border-color: var(--kv-primary);
+  }
+  .kv-check input:checked + .kv-check-box::after {
+    content: '';
+    position: absolute;
+    left: 0.5rem;
+    top: 0.2rem;
+    width: 0.5rem;
+    height: 0.9rem;
+    border: solid var(--kv-white);
+    border-width: 0 0.2rem 0.2rem 0;
+    transform: rotate(45deg);
+  }
+  .kv-check-text { @apply text-md text-ink; }
+
+  .kv-radio-dot {
+    width: 1.8rem;
+    height: 1.8rem;
+    border: 0.15rem solid var(--kv-border-strong);
+    border-radius: var(--kv-radius-circle);
+    flex-shrink: 0;
+    position: relative;
+    transition: all var(--kv-duration-fast);
+  }
+  .kv-radio input:checked + .kv-radio-dot { border-color: var(--kv-primary); }
+  .kv-radio input:checked + .kv-radio-dot::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 0.9rem;
+    height: 0.9rem;
+    background: var(--kv-primary);
+    border-radius: var(--kv-radius-circle);
+    transform: translate(-50%, -50%);
+  }
+  .kv-radio-text { @apply text-md text-ink; }
+}

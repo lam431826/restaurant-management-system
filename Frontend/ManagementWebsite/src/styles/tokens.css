@@ -1,0 +1,272 @@
+/* ─── KiotViet Design Tokens ────────────────────────────────────────────── */
+/* Replicated exactly from fnb.kiotviet.vn CSS custom properties             */
+
+:root {
+  /* ── Primary ── */
+  --kv-primary: #0070f4;
+  --kv-primary-rgb: 0, 112, 244;
+  --kv-primary-25: #f2f8fe;
+  --kv-primary-50: #e6f1fe;
+  --kv-primary-75: #d9eafd;
+  --kv-primary-100: #cce2fd;
+  --kv-primary-150: #b3d4fc;
+  --kv-primary-200: #99c6fb;
+  --kv-primary-600: #005ac3;
+  --kv-primary-700: #004392;
+  --kv-primary-750: #00387a;
+
+  /* ── Success ── */
+  --kv-success: #00b63e;
+  --kv-success-rgb: 0, 182, 62;
+  --kv-success-50: #e6f8ec;
+  --kv-success-100: #ccf0d8;
+  --kv-success-150: #b3e9c5;
+  --kv-success-600: #009232;
+  --kv-success-700: #006d25;
+
+  /* ── Warning ── */
+  --kv-warning: #ff8800;
+  --kv-warning-rgb: 255, 136, 0;
+  --kv-warning-50: #fff3e6;
+  --kv-warning-100: #ffe7cc;
+  --kv-warning-600: #cc6d00;
+  --kv-warning-700: #995200;
+
+  /* ── Danger ── */
+  --kv-danger: #ff0000;
+  --kv-danger-rgb: 255, 0, 0;
+  --kv-danger-50: #ffe6e6;
+  --kv-danger-100: #ffcccc;
+  --kv-danger-600: #cc0000;
+  --kv-danger-700: #990000;
+
+  /* ── Promotion ── */
+  --kv-promotion: #ef06bc;
+  --kv-promotion-50: #fde6f8;
+
+  /* ── Neutral ── */
+  --kv-neutral: #677484;
+  --kv-neutral-rgb: 103, 116, 132;
+  --kv-neutral-25: #f7f8f9;
+  --kv-neutral-50: #f0f1f3;
+  --kv-neutral-75: #e8eaed;
+  --kv-neutral-100: #e1e3e6;
+  --kv-neutral-150: #d1d5da;
+  --kv-neutral-200: #c2c7ce;
+  --kv-neutral-250: #b3bac2;
+  --kv-neutral-300: #a4acb5;
+  --kv-neutral-400: #85909d;
+  --kv-neutral-600: #525d6a;
+  --kv-neutral-700: #3e464f;
+  --kv-neutral-750: #343a42;
+  --kv-neutral-800: #292e35;
+  --kv-neutral-900: #15171a;
+
+  /* ── White / Black ── */
+  --kv-white: #fff;
+  --kv-black: #000;
+  --kv-white-rgb: 255, 255, 255;
+  --kv-black-rgb: 0, 0, 0;
+
+  /* ── Surfaces ── */
+  --kv-surface-default: var(--kv-neutral-25);
+  --kv-surface-elevated: var(--kv-white);
+  --kv-surface-sunken: var(--kv-neutral-50);
+  --kv-surface-inverse: var(--kv-neutral-900);
+
+  /* ── Text ── */
+  --kv-text-default: var(--kv-neutral-900);
+  --kv-text-emphasis: var(--kv-neutral-800);
+  --kv-text-strong: var(--kv-neutral-700);
+  --kv-text-subtle: var(--kv-neutral-600);
+  --kv-text-muted: var(--kv-neutral-400);
+  --kv-text-disabled: var(--kv-neutral-300);
+  --kv-text-inverse: var(--kv-white);
+  --kv-text-link: var(--kv-primary);
+
+  /* ── Borders ── */
+  --kv-border-subtle: var(--kv-neutral-75);
+  --kv-border-default: var(--kv-neutral-150);
+  --kv-border-strong: var(--kv-neutral-300);
+  --kv-border-focus: var(--kv-primary);
+  --kv-border-width: 0.1rem;
+
+  /* ── Interactive states ── */
+  --kv-state-hover-bg: rgba(var(--kv-primary-rgb), 0.08);
+  --kv-state-pressed-bg: rgba(var(--kv-primary-rgb), 0.12);
+  --kv-state-selected-bg: rgba(var(--kv-primary-rgb), 0.16);
+  --kv-state-focus-ring: 0 0 0 3px rgba(var(--kv-primary-rgb), 0.25);
+  --kv-state-disabled-opacity: 0.5;
+
+  /* ── Fill ── */
+  --kv-fill-subtle: var(--kv-neutral-50);
+  --kv-fill-default: var(--kv-neutral-100);
+  --kv-fill-strong: var(--kv-neutral-200);
+
+  /* ── Field ── */
+  --kv-field-bg: var(--kv-white);
+  --kv-field-bg-hover: var(--kv-neutral-25);
+  --kv-field-bg-disabled: var(--kv-neutral-50);
+  --kv-field-border: var(--kv-neutral-150);
+  --kv-field-border-hover: var(--kv-neutral-300);
+  --kv-field-border-focus: var(--kv-primary);
+
+  /* ── Overlay ── */
+  --kv-overlay-bg: var(--kv-white);
+  --kv-overlay-border: var(--kv-neutral-200);
+
+  /* ── Typography ── */
+  --kv-font-sans-serif: Inter, Roboto, Helvetica, Arial, sans-serif;
+  --kv-root-font-size: 10px;
+  --kv-body-font-family: var(--kv-font-sans-serif);
+  --kv-body-font-size: 1.4rem;
+  --kv-body-font-weight: 400;
+  --kv-body-line-height: 2rem;
+
+  --kv-font-weight-light: 300;
+  --kv-font-weight-regular: 400;
+  --kv-font-weight-medium: 500;
+  --kv-font-weight-semibold: 600;
+  --kv-font-weight-bold: 700;
+  --kv-font-weight-extrabold: 800;
+  --kv-font-weight-black: 900;
+
+  --kv-font-size-xs: 1rem;
+  --kv-font-size-sm: 1.2rem;
+  --kv-font-size-md: 1.4rem;
+  --kv-font-size-lg: 1.6rem;
+  --kv-font-size-xl: 1.8rem;
+  --kv-font-size-xxl: 2rem;
+  --kv-font-size-h1: 2.8rem;
+  --kv-font-size-h2: 2.4rem;
+  --kv-font-size-h3: 2rem;
+  --kv-font-size-h4: 1.8rem;
+  --kv-font-size-h5: 1.6rem;
+  --kv-font-size-h6: 1.4rem;
+
+  --kv-line-height-xs: 1.6rem;
+  --kv-line-height-sm: 1.6rem;
+  --kv-line-height-md: 2rem;
+  --kv-line-height-lg: 2.4rem;
+  --kv-line-height-xl: 2.6rem;
+  --kv-line-height-h1: 3.6rem;
+  --kv-line-height-h2: 3.2rem;
+  --kv-line-height-h3: 2.8rem;
+  --kv-line-height-h4: 2.6rem;
+  --kv-line-height-h5: 2.4rem;
+
+  /* ── Spacing ── */
+  --kv-spacer-none: 0;
+  --kv-spacer-h: 0.2rem;
+  --kv-spacer-1: 0.4rem;
+  --kv-spacer-1h: 0.6rem;
+  --kv-spacer-2: 0.8rem;
+  --kv-spacer-2h: 1rem;
+  --kv-spacer-3: 1.2rem;
+  --kv-spacer-4: 1.6rem;
+  --kv-spacer-5: 2rem;
+  --kv-spacer-6: 2.4rem;
+  --kv-spacer-7: 2.8rem;
+  --kv-spacer-8: 3.2rem;
+  --kv-spacer-9: 3.6rem;
+  --kv-spacer-10: 4rem;
+  --kv-spacer-12: 4.8rem;
+  --kv-spacer-14: 5.6rem;
+  --kv-spacer-16: 6.4rem;
+
+  /* ── Border Radius ── */
+  --kv-radius-none: 0;
+  --kv-radius-xxs: 0.4rem;
+  --kv-radius-xs: 0.7rem;
+  --kv-radius-sm: 0.9rem;
+  --kv-radius-md: 1.2rem;
+  --kv-radius-lg: 1.5rem;
+  --kv-radius-xl: 1.6rem;
+  --kv-radius-xxl: 1.8rem;
+  --kv-radius-xxxl: 2.4rem;
+  --kv-radius-circle: 9999rem;
+
+  /* ── Sizes (component heights) ── */
+  --kv-size-xs: 1.8rem;
+  --kv-size-sm: 2.4rem;
+  --kv-size-md: 3.2rem;
+  --kv-size-lg: 4rem;
+  --kv-size-xl: 4.8rem;
+  --kv-size-xxl: 5.6rem;
+
+  /* ── Icon sizes ── */
+  --kv-icon-size-xs: 1rem;
+  --kv-icon-size-sm: 1.2rem;
+  --kv-icon-size-md: 1.6rem;
+  --kv-icon-size-lg: 1.8rem;
+  --kv-icon-size-xl: 2.2rem;
+  --kv-icon-size-xxl: 2.8rem;
+
+  /* ── Shadows ── */
+  --kv-shadow-sm: -8px 8px 24px 0 rgba(var(--kv-black-rgb), 0.04);
+  --kv-shadow-md: 0 8px 24px 0 rgba(var(--kv-black-rgb), 0.25);
+  --kv-shadow-lg: 0 12px 32px 0 rgba(var(--kv-black-rgb), 0.25);
+
+  /* ── Z-index ── */
+  --kv-z-dropdown: 10010;
+  --kv-z-tooltip: 10055;
+  --kv-z-popover: 10060;
+  --kv-z-backdrop: 10040;
+  --kv-z-modal: 10050;
+  --kv-z-toast: 18999;
+  --kv-z-max: 19000;
+
+  /* ── Transitions ── */
+  --kv-duration-fast: 0.15s;
+  --kv-duration-base: 0.2s;
+  --kv-duration-normal: 0.25s;
+  --kv-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --kv-transition-button: color 0.15s ease-in-out, background-color 0.15s ease-in-out,
+    border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  --kv-transition-fade: opacity 0.15s ease-in-out;
+
+  /* ── Layout ── */
+  --kv-header-height: 9.6rem;
+  --kv-scrollbar-size: 8px;
+  --kv-scrollbar-size-sm: 4px;
+  --kv-scrollbar-thumb-bg: var(--kv-fill-strong);
+
+  /* ── Action colours (semantic) ── */
+  --kv-action-primary: var(--kv-primary);
+  --kv-action-primary-hover: var(--kv-primary-600);
+  --kv-action-primary-pressed: var(--kv-primary-700);
+  --kv-action-primary-fg: var(--kv-white);
+  --kv-action-primary-faded-bg: var(--kv-primary-50);
+  --kv-action-primary-faded-bg-hover: var(--kv-primary-100);
+  --kv-action-primary-faded-fg: var(--kv-primary-700);
+  --kv-action-primary-faded-border: var(--kv-primary-150);
+
+  --kv-action-success: var(--kv-success);
+  --kv-action-success-faded-bg: var(--kv-success-50);
+  --kv-action-success-faded-fg: var(--kv-success-700);
+
+  --kv-action-warning: var(--kv-warning);
+  --kv-action-warning-faded-bg: var(--kv-warning-50);
+  --kv-action-warning-faded-fg: var(--kv-warning-700);
+
+  --kv-action-danger: var(--kv-danger);
+  --kv-action-danger-faded-bg: var(--kv-danger-50);
+  --kv-action-danger-faded-fg: var(--kv-danger-700);
+
+  --kv-action-neutral: var(--kv-neutral-100);
+  --kv-action-neutral-hover: var(--kv-neutral-150);
+  --kv-action-neutral-fg: var(--kv-neutral-900);
+  --kv-action-neutral-faded-bg: var(--kv-neutral-50);
+  --kv-action-neutral-faded-fg: var(--kv-neutral-700);
+
+  /* ── Status ── */
+  --kv-status-success: var(--kv-success);
+  --kv-status-success-bg: var(--kv-action-success-faded-bg);
+  --kv-status-success-text: var(--kv-action-success-faded-fg);
+  --kv-status-warning: var(--kv-warning);
+  --kv-status-warning-bg: var(--kv-action-warning-faded-bg);
+  --kv-status-warning-text: var(--kv-action-warning-faded-fg);
+  --kv-status-danger: var(--kv-danger);
+  --kv-status-danger-bg: var(--kv-action-danger-faded-bg);
+  --kv-status-danger-text: var(--kv-action-danger-faded-fg);
+}
