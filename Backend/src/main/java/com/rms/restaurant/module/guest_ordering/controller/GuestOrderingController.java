@@ -28,4 +28,9 @@ public class GuestOrderingController {
             @jakarta.validation.Valid @RequestBody UpdateOrderItemsRequest request) {
         return ResponseEntity.ok(guestOrderingService.updateOrderItems(id, request));
     }
+
+    @GetMapping("/{id}/status")
+    public ResponseEntity<OrderStatusResponse> getOrderStatus(@PathVariable String id) {
+        return ResponseEntity.ok(guestOrderingService.getOrderStatus(id));
+    }
 }

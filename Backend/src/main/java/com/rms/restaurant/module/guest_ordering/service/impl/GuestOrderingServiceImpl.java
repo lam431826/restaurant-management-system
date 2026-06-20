@@ -13,7 +13,10 @@ import com.rms.restaurant.module.menu.model.MenuItem;
 import com.rms.restaurant.module.menu.repository.MenuItemRepository;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
+import com.rms.restaurant.module.order.repository.AssistanceRequestRepository;
 import com.rms.restaurant.module.order.repository.OrderRepository;
+import com.rms.restaurant.module.table.model.RestaurantTable;
+import com.rms.restaurant.module.table.repository.TableRepository;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
@@ -25,6 +28,8 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
 
     private final OrderRepository orderRepository;
     private final MenuItemRepository menuItemRepository;
+    private final TableRepository tableRepository;
+    private final AssistanceRequestRepository assistanceRequestRepository;
 
     @Override
     public OrderStatusResponse placeOrder(GuestOrderRequest request) {
@@ -85,6 +90,24 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
         return new OrderStatusResponse(savedOrder.getId(), savedOrder.getStatus(), null);
     }
 
-    @Override public OrderStatusResponse getOrderStatus(String tableToken) { return null; }
-    @Override public void requestAssistance(AssistanceRequest request) {}
+    @Override 
+    public OrderStatusResponse getOrderStatus(String orderId) { 
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        return new OrderStatusResponse(order.getId(), order.getStatus(), "15 minutes"); 
+    }
+    
+    @Override 
+    public void requestAssistance(AssistanceRequest request) {
+        RestaurantTable table = tableRepository.findByQrToken(request.tableToken())
+                .orElseThrow(() -> new ApplicationException(ApplicationError.INVALID_TABLE_TOKEN));
+
+        com.rms.restaurant.module.order.model.AssistanceRequest entity = com.rms.restaurant.module.order.model.AssistanceRequest.builder()
+                .tableId(table.getId())
+                .message(request.message())
+                .resolved(false)
+                .build();
+        
+        assistanceRequestRepository.save(entity);
+    }
 }
