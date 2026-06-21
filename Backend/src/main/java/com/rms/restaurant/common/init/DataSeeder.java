@@ -42,9 +42,9 @@ public class DataSeeder implements ApplicationRunner {
 
     private static final List<SeedUser> SEED_USERS = List.of(
         new SeedUser("admin",      "System Administrator", "admin@rms.local",      "0900000001", UserRole.ADMIN,    UserStatus.ACTIVE,    "Admin@123456"),
-        new SeedUser("manager01",  "Manager One",          "manager01@rms.local",  "0900000002", UserRole.MANAGER,  UserStatus.UN_ACTIVE, "Manager@123456"),
-        new SeedUser("cashier01",  "Cashier One",          "cashier01@rms.local",  "0900000003", UserRole.CASHIER,  UserStatus.UN_ACTIVE, "Cashier@123456"),
-        new SeedUser("waiter01",   "Waiter One",           "waiter01@rms.local",   "0900000004", UserRole.WAITER,   UserStatus.UN_ACTIVE, "Waiter@123456")
+        new SeedUser("manager01",  "Manager One",          "manager01@rms.local",  "0900000002", UserRole.MANAGER,  UserStatus.ACTIVE, "Manager@123456"),
+        new SeedUser("cashier01",  "Cashier One",          "cashier01@rms.local",  "0900000003", UserRole.CASHIER,  UserStatus.ACTIVE, "Cashier@123456"),
+        new SeedUser("waiter01",   "Waiter One",           "waiter01@rms.local",   "0900000004", UserRole.WAITER,   UserStatus.ACTIVE, "Waiter@123456")
     );
 
     @Override

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -62,6 +63,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(405)
                 .body(ErrorResponse.of("METHOD_NOT_ALLOWED", "HTTP method '" + ex.getMethod() + "' is not supported for this endpoint", req.getRequestURI()));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException ex,
+                                                          HttpServletRequest req) {
+        String msg = ex.getMessage() != null && ex.getMessage().contains("not one of the values accepted")
+                ? "Invalid enum value: " + ex.getMessage().replaceAll("(?s).*\\[([^]]+)].*", "[$1]")
+                : "Malformed or unreadable request body";
+        return ResponseEntity
+                .badRequest()
+                .body(ErrorResponse.of("BAD_REQUEST", msg, req.getRequestURI()));
     }
 
     @ExceptionHandler(Exception.class)

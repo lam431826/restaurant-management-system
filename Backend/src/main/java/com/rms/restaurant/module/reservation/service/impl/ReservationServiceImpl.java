@@ -1,10 +1,13 @@
 package com.rms.restaurant.module.reservation.service.impl;
 
+import com.rms.restaurant.common.utils.enums.NotificationType;
 import com.rms.restaurant.common.utils.enums.ReservationStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
+import com.rms.restaurant.module.notification.dto.ReservationNotificationRequest;
+import com.rms.restaurant.module.notification.service.NotificationService;
 import com.rms.restaurant.module.reservation.dto.CreateReservationRequest;
 import com.rms.restaurant.module.reservation.dto.ReservationResponse;
 import com.rms.restaurant.module.reservation.dto.UpdateReservationRequest;
@@ -14,6 +17,7 @@ import com.rms.restaurant.module.reservation.repository.ReservationRepository;
 import com.rms.restaurant.module.reservation.service.ReservationService;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -32,6 +37,7 @@ public class ReservationServiceImpl implements ReservationService {
     private final ReservationRepository reservationRepository;
     private final ReservationMapper reservationMapper;
     private final TableRepository tableRepository;
+    private final NotificationService notificationService;
 
     @Override
     @Transactional(readOnly = true)
@@ -59,7 +65,15 @@ public class ReservationServiceImpl implements ReservationService {
         }
         reservation.setStatus(ReservationStatus.PENDING);
         reservation.setCreatedBy(createdBy);
-        return reservationMapper.toResponse(reservationRepository.save(reservation));
+        Reservation saved = reservationRepository.save(reservation);
+        // NM-01: gửi confirmation cho khách (async, non-blocking)
+        try {
+            notificationService.sendReservationNotification(
+                    new ReservationNotificationRequest(saved.getId(), NotificationType.CONFIRMATION));
+        } catch (Exception e) {
+            log.warn("NM-01 trigger failed after staff reservation create {}: {}", saved.getId(), e.getMessage());
+        }
+        return reservationMapper.toResponse(saved);
     }
 
     @Override
@@ -97,6 +111,13 @@ public class ReservationServiceImpl implements ReservationService {
         }
         reservation.setStatus(ReservationStatus.CANCELLED);
         reservationRepository.save(reservation);
+        // NM-01: gửi thông báo hủy cho khách (async, non-blocking)
+        try {
+            notificationService.sendReservationNotification(
+                    new ReservationNotificationRequest(id, NotificationType.CANCELLATION));
+        } catch (Exception e) {
+            log.warn("NM-01 trigger failed after cancel reservation {}: {}", id, e.getMessage());
+        }
     }
 
     @Override

@@ -37,6 +37,12 @@ public class NotificationLog {
     @Column(name = "error_message", length = 500)
     private String errorMessage;
 
+    @Column(name = "reference_id", length = 36)
+    private String referenceId;
+
+    @Column(name = "reference_type", length = 50)
+    private String referenceType;
+
     @CreatedDate
     @Column(name = "sent_at", updatable = false)
     private LocalDateTime sentAt;
