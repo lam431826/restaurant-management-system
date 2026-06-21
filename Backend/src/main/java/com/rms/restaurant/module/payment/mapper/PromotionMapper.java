@@ -16,7 +16,12 @@ public class PromotionMapper {
                 promotion.getDiscountAmount(),
                 promotion.getValidFrom(),
                 promotion.getValidTo(),
-                promotion.isActive()
+                promotion.isActive(),
+                promotion.getUsageLimit(),
+                promotion.getUsedCount(),
+                promotion.getUsageLimit() == null
+                        ? null
+                        : promotion.getUsageLimit() - promotion.getUsedCount()
         );
     }
 }

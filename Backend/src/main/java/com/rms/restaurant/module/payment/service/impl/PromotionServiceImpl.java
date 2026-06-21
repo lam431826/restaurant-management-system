@@ -48,6 +48,7 @@ public class PromotionServiceImpl implements PromotionService {
     public PromotionResponse create(CreatePromotionRequest request) {
         validateDiscount(request.discountPercent(), request.discountAmount());
         validateValidityRange(request.validFrom(), request.validTo());
+        validateUsageLimit(request.usageLimit(), 0);
         ensureCodeAvailable(request.code(), null);
 
         Promotion promotion = Promotion.builder()
@@ -58,6 +59,8 @@ public class PromotionServiceImpl implements PromotionService {
                 .validFrom(request.validFrom())
                 .validTo(request.validTo())
                 .active(true)
+                .usageLimit(request.usageLimit())
+                .usedCount(0)
                 .build();
 
         return promotionMapper.toResponse(promotionRepository.save(promotion));
@@ -68,6 +71,7 @@ public class PromotionServiceImpl implements PromotionService {
         Promotion promotion = findPromotion(id);
         validateDiscount(request.discountPercent(), request.discountAmount());
         validateValidityRange(request.validFrom(), request.validTo());
+        validateUsageLimit(request.usageLimit(), promotion.getUsedCount());
         ensureCodeAvailable(request.code(), id);
 
         promotion.setCode(normalizeCode(request.code()));
@@ -76,6 +80,7 @@ public class PromotionServiceImpl implements PromotionService {
         promotion.setDiscountAmount(request.discountAmount());
         promotion.setValidFrom(request.validFrom());
         promotion.setValidTo(request.validTo());
+        promotion.setUsageLimit(request.usageLimit());
         promotion.setActive(request.active() == null ? promotion.isActive() : request.active());
 
         return promotionMapper.toResponse(promotionRepository.save(promotion));
@@ -126,6 +131,16 @@ public class PromotionServiceImpl implements PromotionService {
     private void validateValidityRange(LocalDate validFrom, LocalDate validTo) {
         if (validFrom != null && validTo != null && !validFrom.isBefore(validTo)) {
             throw invalidPromotion("validFrom must be before validTo");
+        }
+    }
+
+    private void validateUsageLimit(Integer usageLimit, int usedCount) {
+        if (usageLimit != null && usageLimit < 1) {
+            throw invalidPromotion("usageLimit must be greater than or equal to 1");
+        }
+
+        if (usageLimit != null && usageLimit < usedCount) {
+            throw invalidPromotion("usageLimit cannot be less than usedCount");
         }
     }
 
