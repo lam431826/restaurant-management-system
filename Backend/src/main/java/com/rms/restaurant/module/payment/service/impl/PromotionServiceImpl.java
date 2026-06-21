@@ -136,11 +136,17 @@ public class PromotionServiceImpl implements PromotionService {
 
     private void validateUsageLimit(Integer usageLimit, int usedCount) {
         if (usageLimit != null && usageLimit < 1) {
-            throw invalidPromotion("usageLimit must be greater than or equal to 1");
+            throw new ApplicationException(
+                    ApplicationError.INVALID_PROMOTION_USAGE_LIMIT,
+                    "usageLimit must be greater than or equal to 1"
+            );
         }
 
         if (usageLimit != null && usageLimit < usedCount) {
-            throw invalidPromotion("usageLimit cannot be less than usedCount");
+            throw new ApplicationException(
+                    ApplicationError.INVALID_PROMOTION_USAGE_LIMIT,
+                    "usageLimit cannot be less than usedCount"
+            );
         }
     }
 
