@@ -35,4 +35,11 @@ public class Promotion {
 
     @Column(nullable = false)
     private boolean active;
+
+    @Column(name = "usage_limit")
+    private Integer usageLimit;
+
+    @Builder.Default
+    @Column(name = "used_count", nullable = false)
+    private Integer usedCount = 0;
 }
