@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthLayout from './AuthLayout'
+import { login, verifyInfo, verifyOtp, resendOtp } from '../../api/auth'
+import { useAuth } from '../../context/AuthContext'
 
 function PersonIcon() {
   return (
@@ -58,15 +60,42 @@ function InputField({ label, icon, rightIcon, placeholder, type = 'text', value,
   )
 }
 
-export default function LoginPage() {
-  const navigate = useNavigate()
+// ── Step 1: Username + Password ───────────────────────────────────────────────
+function LoginForm({ onSuccess, onFirstLogin }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const navigate = useNavigate()
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
-    // TODO: call login API
+    if (!username.trim() || !password.trim()) {
+      setError('Vui lòng nhập đầy đủ thông tin.')
+      return
+    }
+    setError('')
+    setLoading(true)
+    try {
+      const { data } = await login(username.trim(), password)
+      if (data.requiresVerification) {
+        onFirstLogin(data.verifyToken)
+      } else {
+        onSuccess(data)
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message
+      if (err.response?.status === 401) {
+        setError(msg || 'Tài khoản hoặc mật khẩu không đúng.')
+      } else if (err.response?.status === 423) {
+        setError('Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.')
+      } else {
+        setError(msg || 'Đã có lỗi xảy ra, vui lòng thử lại.')
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -93,11 +122,18 @@ export default function LoginPage() {
           onChange={e => setPassword(e.target.value)}
         />
 
+        {error && (
+          <p className="text-[13px] text-red-500 leading-[1.5]">{error}</p>
+        )}
+
         <button
           type="submit"
-          className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors"
+          disabled={loading}
+          className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors disabled:opacity-60"
         >
-          <span className="text-[20px] font-semibold text-white leading-[1.5]">Đăng Nhập</span>
+          <span className="text-[20px] font-semibold text-white leading-[1.5]">
+            {loading ? 'Đang đăng nhập...' : 'Đăng Nhập'}
+          </span>
         </button>
       </form>
 
@@ -108,5 +144,178 @@ export default function LoginPage() {
         Quên mật khẩu
       </button>
     </AuthLayout>
+  )
+}
+
+// ── Step 2: Gửi OTP tới email (lần đầu đăng nhập) ────────────────────────────
+function SendOtpForm({ verifyToken, onOtpSent, onBack }) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [maskedEmail, setMaskedEmail] = useState('')
+
+  async function handleSend() {
+    setError('')
+    setLoading(true)
+    try {
+      const { data } = await verifyInfo(verifyToken)
+      setMaskedEmail(data?.data?.maskedEmail || '')
+      onOtpSent()
+    } catch (err) {
+      setError(err.response?.data?.message || 'Không thể gửi OTP. Thử lại.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <AuthLayout title="Xác thực tài khoản" subtitle="Đây là lần đăng nhập đầu tiên của bạn">
+      <div className="flex flex-col gap-5">
+        <p className="text-[14px] text-[#636566] leading-[1.5]">
+          Hệ thống sẽ gửi mã OTP 6 số tới email của bạn để kích hoạt tài khoản.
+          {maskedEmail && <strong className="text-[#202325]"> ({maskedEmail})</strong>}
+        </p>
+
+        {error && <p className="text-[13px] text-red-500 leading-[1.5]">{error}</p>}
+
+        <button
+          onClick={handleSend}
+          disabled={loading}
+          className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors disabled:opacity-60"
+        >
+          <span className="text-[20px] font-semibold text-white leading-[1.5]">
+            {loading ? 'Đang gửi...' : 'Gửi mã OTP'}
+          </span>
+        </button>
+
+        <button onClick={onBack} className="text-[14px] text-[#357dd5] leading-[1.5] hover:underline text-left">
+          Quay lại
+        </button>
+      </div>
+    </AuthLayout>
+  )
+}
+
+// ── Step 3: Nhập OTP ──────────────────────────────────────────────────────────
+function OtpForm({ verifyToken, onSuccess }) {
+  const [otp, setOtp] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (otp.length !== 6) { setError('Mã OTP phải có 6 chữ số.'); return }
+    setError('')
+    setLoading(true)
+    try {
+      const { data } = await verifyOtp(verifyToken, otp)
+      onSuccess(data)
+    } catch (err) {
+      const status = err.response?.status
+      if (status === 429) setError('Bạn đã nhập sai quá nhiều lần. Vui lòng thử lại sau.')
+      else setError(err.response?.data?.message || 'Mã OTP không đúng hoặc đã hết hạn.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleResend() {
+    setError('')
+    setInfo('')
+    setResending(true)
+    try {
+      await resendOtp(verifyToken)
+      setInfo('Đã gửi lại mã OTP.')
+    } catch (err) {
+      setError(err.response?.data?.message || 'Không thể gửi lại OTP.')
+    } finally {
+      setResending(false)
+    }
+  }
+
+  return (
+    <AuthLayout title="Nhập mã OTP" subtitle="Kiểm tra email và nhập mã 6 chữ số">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-[10px]">
+        <InputField
+          label="Mã OTP"
+          icon={<LockIcon />}
+          placeholder="Nhập 6 chữ số"
+          value={otp}
+          onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+        />
+
+        {error && <p className="text-[13px] text-red-500 leading-[1.5]">{error}</p>}
+        {info && <p className="text-[13px] text-green-600 leading-[1.5]">{info}</p>}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors disabled:opacity-60"
+        >
+          <span className="text-[20px] font-semibold text-white leading-[1.5]">
+            {loading ? 'Đang xác thực...' : 'Xác Nhận'}
+          </span>
+        </button>
+      </form>
+
+      <button
+        onClick={handleResend}
+        disabled={resending}
+        className="text-[14px] text-[#357dd5] leading-[1.5] hover:underline text-left disabled:opacity-50"
+      >
+        {resending ? 'Đang gửi lại...' : 'Gửi lại mã OTP'}
+      </button>
+    </AuthLayout>
+  )
+}
+
+// ── Main export ───────────────────────────────────────────────────────────────
+export default function LoginPage() {
+  const navigate = useNavigate()
+  const { saveSession } = useAuth()
+  // 'login' | 'send-otp' | 'enter-otp'
+  const [step, setStep] = useState('login')
+  const [verifyToken, setVerifyToken] = useState('')
+
+  function handleSessionSaved(data) {
+    saveSession(data)
+    const role = data.user?.role
+    if (role === 'ADMIN') {
+      navigate('/admin', { replace: true })
+    } else {
+      navigate('/cashier', { replace: true })
+    }
+  }
+
+  function handleFirstLogin(token) {
+    setVerifyToken(token)
+    setStep('send-otp')
+  }
+
+  if (step === 'send-otp') {
+    return (
+      <SendOtpForm
+        verifyToken={verifyToken}
+        onOtpSent={() => setStep('enter-otp')}
+        onBack={() => setStep('login')}
+      />
+    )
+  }
+
+  if (step === 'enter-otp') {
+    return (
+      <OtpForm
+        verifyToken={verifyToken}
+        onSuccess={handleSessionSaved}
+      />
+    )
+  }
+
+  return (
+    <LoginForm
+      onSuccess={handleSessionSaved}
+      onFirstLogin={handleFirstLogin}
+    />
   )
 }

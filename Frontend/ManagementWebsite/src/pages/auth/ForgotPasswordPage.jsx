@@ -1,48 +1,71 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthLayout from './AuthLayout'
+import { forgotPassword } from '../../api/auth'
 
-function MailIcon() {
+function PersonIcon() {
   return (
     <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round"
-        d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+        d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
     </svg>
   )
 }
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
-    // TODO: call forgot password API
-    navigate('/new-password')
+    if (!username.trim()) { setError('Vui lòng nhập tên đăng nhập.'); return }
+    setError('')
+    setLoading(true)
+    try {
+      const { data } = await forgotPassword(username.trim())
+      // Lưu resetToken để NewPasswordPage dùng
+      sessionStorage.setItem('reset_token', data.data.resetToken)
+      sessionStorage.setItem('reset_masked_email', data.data.maskedEmail || '')
+      navigate('/new-password')
+    } catch (err) {
+      const status = err.response?.status
+      if (status === 404) setError('Tài khoản không tồn tại.')
+      else if (status === 403) setError('Tài khoản này không thể đặt lại mật khẩu.')
+      else setError(err.response?.data?.message || 'Đã có lỗi xảy ra, vui lòng thử lại.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <AuthLayout title="Forgot Password" subtitle="Nhập email để lấy lại mật khẩu">
+    <AuthLayout title="Quên mật khẩu" subtitle="Nhập tên đăng nhập để lấy lại mật khẩu">
       <form onSubmit={handleSubmit} className="flex flex-col gap-[20px]">
         <div className="flex flex-col gap-3">
-          <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">Email</label>
+          <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">Tên đăng nhập</label>
           <div className="bg-[#f5f5f5] flex gap-3 h-[44px] items-center px-4 rounded-[12px] w-full">
-            <span className="text-[#797b7c]"><MailIcon /></span>
+            <span className="text-[#797b7c]"><PersonIcon /></span>
             <input
-              type="email"
-              placeholder="Nhập email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
+              type="text"
+              placeholder="Nhập tên đăng nhập"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
               className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none leading-[1.5]"
             />
           </div>
         </div>
 
+        {error && <p className="text-[13px] text-red-500 leading-[1.5]">{error}</p>}
+
         <button
           type="submit"
-          className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors"
+          disabled={loading}
+          className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors disabled:opacity-60"
         >
-          <span className="text-[20px] font-semibold text-white leading-[1.5]">Tiếp tục</span>
+          <span className="text-[20px] font-semibold text-white leading-[1.5]">
+            {loading ? 'Đang xử lý...' : 'Tiếp tục'}
+          </span>
         </button>
       </form>
 
