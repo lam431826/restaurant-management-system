@@ -16,6 +16,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -60,6 +63,24 @@ public class PaymentServiceImpl implements PaymentService {
         invoiceRepository.save(invoice);
 
         return paymentMapper.toResponse(savedPayment);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PaymentResponse> getHistory(String invoiceId) {
+        List<Payment> payments;
+
+        if (invoiceId == null || invoiceId.isBlank()) {
+            payments = paymentRepository.findAllByOrderByCreatedAtDesc();
+        } else {
+            payments = paymentRepository.findByInvoiceIdOrderByCreatedAtDesc(invoiceId.trim());
+        }
+
+        List<PaymentResponse> responses = new ArrayList<>();
+        for (Payment payment : payments) {
+            responses.add(paymentMapper.toResponse(payment));
+        }
+        return responses;
     }
 
     @Override public void handleWebhook(PaymentWebhookPayload payload, String signature) {}
