@@ -1,7 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthLayout from './AuthLayout'
-import { resetPassword } from '../../api/auth'
+
+function PersonIcon() {
+  return (
+    <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round"
+        d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+    </svg>
+  )
+}
 
 function LockIcon() {
   return (
@@ -33,94 +41,35 @@ function EyeOffIcon() {
 
 export default function NewPasswordPage() {
   const navigate = useNavigate()
-  const [otp, setOtp] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [maskedEmail, setMaskedEmail] = useState('')
 
-  useEffect(() => {
-    setMaskedEmail(sessionStorage.getItem('reset_masked_email') || '')
-  }, [])
-
-  async function handleSubmit(e) {
+  function handleSubmit(e) {
     e.preventDefault()
-    if (otp.length !== 6) { setError('Mã OTP phải có 6 chữ số.'); return }
-    if (newPassword.length < 8) { setError('Mật khẩu phải có ít nhất 8 ký tự.'); return }
-    if (newPassword !== confirmPassword) { setError('Mật khẩu xác nhận không khớp.'); return }
-
-    const resetToken = sessionStorage.getItem('reset_token')
-    if (!resetToken) {
-      navigate('/forgot-password')
-      return
-    }
-
-    setError('')
-    setLoading(true)
-    try {
-      await resetPassword(resetToken, otp, newPassword)
-      sessionStorage.removeItem('reset_token')
-      sessionStorage.removeItem('reset_masked_email')
-      navigate('/login')
-    } catch (err) {
-      const status = err.response?.status
-      if (status === 401) setError('Mã OTP không đúng hoặc đã hết hạn.')
-      else if (status === 429) setError('Bạn đã nhập sai quá nhiều lần. Vui lòng thử lại sau.')
-      else setError(err.response?.data?.message || 'Đã có lỗi xảy ra, vui lòng thử lại.')
-    } finally {
-      setLoading(false)
-    }
+    // TODO: call reset password API
+    navigate('/login')
   }
 
   return (
-    <AuthLayout title="Đặt lại mật khẩu" subtitle="Nhập mã OTP và mật khẩu mới của bạn">
-      {maskedEmail && (
-        <p className="text-[13px] text-[#636566] leading-[1.5] -mt-2">
-          Mã OTP đã được gửi tới <strong className="text-[#202325]">{maskedEmail}</strong>
-        </p>
-      )}
-
+    <AuthLayout title="Forgot Password" subtitle="Nhập mật khẩu mới của bạn">
       <form onSubmit={handleSubmit} className="flex flex-col gap-[10px]">
-        {/* OTP */}
         <div className="flex flex-col gap-3">
-          <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">Mã OTP</label>
+          <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">New Password</label>
           <div className="bg-[#f5f5f5] flex gap-3 h-[44px] items-center px-4 rounded-[12px] w-full">
             <span className="text-[#797b7c]"><LockIcon /></span>
             <input
-              type="text"
-              inputMode="numeric"
-              placeholder="Nhập 6 chữ số"
-              value={otp}
-              onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none leading-[1.5] tracking-widest"
-            />
-          </div>
-        </div>
-
-        {/* New Password */}
-        <div className="flex flex-col gap-3">
-          <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">Mật khẩu mới</label>
-          <div className="bg-[#f5f5f5] flex gap-3 h-[44px] items-center px-4 rounded-[12px] w-full">
-            <span className="text-[#797b7c]"><LockIcon /></span>
-            <input
-              type={showNew ? 'text' : 'password'}
-              placeholder="Nhập mật khẩu mới (ít nhất 8 ký tự)"
+              type="password"
+              placeholder="Nhập mật khẩu mới"
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
               className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none leading-[1.5]"
             />
-            <button type="button" onClick={() => setShowNew(v => !v)} className="text-[#797b7c] hover:text-[#202325]">
-              {showNew ? <EyeOffIcon /> : <EyeIcon />}
-            </button>
           </div>
         </div>
 
-        {/* Confirm Password */}
         <div className="flex flex-col gap-3">
-          <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">Xác nhận mật khẩu</label>
+          <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">Confirm Password</label>
           <div className="bg-[#f5f5f5] flex gap-3 h-[44px] items-center px-4 rounded-[12px] w-full">
             <span className="text-[#797b7c]"><LockIcon /></span>
             <input
@@ -130,22 +79,21 @@ export default function NewPasswordPage() {
               onChange={e => setConfirmPassword(e.target.value)}
               className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none leading-[1.5]"
             />
-            <button type="button" onClick={() => setShowConfirm(v => !v)} className="text-[#797b7c] hover:text-[#202325]">
+            <button
+              type="button"
+              onClick={() => setShowConfirm(v => !v)}
+              className="text-[#797b7c] hover:text-[#202325]"
+            >
               {showConfirm ? <EyeOffIcon /> : <EyeIcon />}
             </button>
           </div>
         </div>
 
-        {error && <p className="text-[13px] text-red-500 leading-[1.5]">{error}</p>}
-
         <button
           type="submit"
-          disabled={loading}
-          className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors disabled:opacity-60"
+          className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors"
         >
-          <span className="text-[20px] font-semibold text-white leading-[1.5]">
-            {loading ? 'Đang xử lý...' : 'Xác Nhận'}
-          </span>
+          <span className="text-[20px] font-semibold text-white leading-[1.5]">Xác Nhận</span>
         </button>
       </form>
 

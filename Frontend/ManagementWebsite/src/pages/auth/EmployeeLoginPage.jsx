@@ -1,18 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { login } from '../../api/auth'
-import { useAuth } from '../../context/AuthContext'
 
 const bgImage = '/images/bg-food.jpg'
 const logoImage = '/images/logo.png'
 
-// username phải khớp với tài khoản seeded trong backend (DataSeeder)
 const EMPLOYEES = [
-  { id: 1, name: 'Duy Tan',     username: 'username_cashier', shift: '04:00 PM - 12:00 PM' },
-  { id: 2, name: 'Manh Tung',   username: 'username_waiter',  shift: '08:00 AM - 04:00 PM' },
-  { id: 3, name: 'Quang Huy',   username: 'username_waiter',  shift: '08:00 AM - 04:00 PM' },
-  { id: 4, name: 'Mai Chi',     username: 'username_cashier', shift: '04:00 PM - 12:00 PM' },
-  { id: 5, name: 'Elisa Klein', username: 'username_cashier', shift: '04:00 PM - 12:00 PM' },
+  { id: 1, name: 'Duy Tan',     shift: '04:00 PM - 12:00 PM' },
+  { id: 2, name: 'Manh Tung',   shift: '08:00 AM - 04:00 PM' },
+  { id: 3, name: 'Quang Huy',   shift: '08:00 AM - 04:00 PM' },
+  { id: 4, name: 'Mai Chi',     shift: '04:00 PM - 12:00 PM' },
+  { id: 5, name: 'Elisa Klein', shift: '04:00 PM - 12:00 PM' },
 ]
 
 const PIN_LENGTH = 6
@@ -44,12 +41,9 @@ function BackspaceIcon() {
 
 export default function EmployeeLoginPage() {
   const navigate = useNavigate()
-  const { saveSession } = useAuth()
   const [selected, setSelected] = useState(EMPLOYEES[0])
   const [open, setOpen] = useState(false)
   const [pin, setPin] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
   const dropdownRef = useRef(null)
 
   useEffect(() => {
@@ -61,33 +55,15 @@ export default function EmployeeLoginPage() {
   }, [])
 
   function handleKey(key) {
-    if (key === 'del') { setPin(p => p.slice(0, -1)); setError(''); return }
+    if (key === 'del') return setPin(p => p.slice(0, -1))
     if (key === '.') return
-    if (pin.length < PIN_LENGTH) { setPin(p => p + key); setError('') }
+    if (pin.length < PIN_LENGTH) setPin(p => p + key)
   }
 
-  async function handleStartShift() {
+  function handleStartShift() {
     if (pin.length < PIN_LENGTH) return
-    setError('')
-    setLoading(true)
-    try {
-      const { data } = await login(selected.username, pin)
-      if (data.requiresVerification) {
-        // First-login — redirect to main login page for OTP flow
-        navigate('/login')
-        return
-      }
-      saveSession(data)
-      navigate('/cashier', { replace: true })
-    } catch (err) {
-      const status = err.response?.status
-      if (status === 401) setError('PIN không đúng. Vui lòng thử lại.')
-      else if (status === 423) setError('Tài khoản đã bị khóa.')
-      else setError('Đã có lỗi xảy ra, vui lòng thử lại.')
-      setPin('')
-    } finally {
-      setLoading(false)
-    }
+    // TODO: validate PIN via API
+    navigate('/cashier')
   }
 
   return (
@@ -110,7 +86,7 @@ export default function EmployeeLoginPage() {
         </div>
       </div>
 
-      {/* Right form panel */}
+      {/* Right form panel — justify-between to match Figma spacing */}
       <div className="bg-white flex flex-col items-center justify-between px-[72px] py-8 w-[520px] shrink-0 h-screen overflow-y-auto">
 
         {/* Logo */}
@@ -127,6 +103,7 @@ export default function EmployeeLoginPage() {
             Choose your account to start your shift.
           </p>
           <div className="relative w-full">
+            {/* Trigger */}
             <button
               onClick={() => setOpen(o => !o)}
               className="bg-[#f5f5f5] flex items-center gap-3 px-5 py-[10px] rounded-[12px] w-full text-left"
@@ -144,12 +121,13 @@ export default function EmployeeLoginPage() {
               </svg>
             </button>
 
+            {/* Dropdown list */}
             {open && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#e5e5e5] rounded-[12px] shadow-lg z-10 overflow-hidden">
                 {EMPLOYEES.map((emp, i) => (
                   <button
                     key={emp.id}
-                    onClick={() => { setSelected(emp); setOpen(false); setPin(''); setError('') }}
+                    onClick={() => { setSelected(emp); setOpen(false); setPin('') }}
                     className={`flex items-center gap-3 px-5 py-[10px] w-full text-left hover:bg-[#f5f5f5] transition-colors ${emp.id === selected.id ? 'bg-[#e8f0fd]' : ''}`}
                   >
                     <Avatar name={emp.name} index={i} />
@@ -166,6 +144,7 @@ export default function EmployeeLoginPage() {
 
         {/* PIN Input + Numpad */}
         <div className="flex flex-col gap-6 items-center w-full shrink-0">
+          {/* PIN dots */}
           <div className="flex flex-col gap-3 items-center">
             <p className="text-[14px] text-[#636566] leading-[1.5]">
               {pin.length > 0
@@ -176,18 +155,15 @@ export default function EmployeeLoginPage() {
               {Array.from({ length: PIN_LENGTH }).map((_, i) => (
                 <div
                   key={i}
-                  className={`h-[50px] w-[52px] rounded-[12px] flex items-center justify-center transition-colors ${
-                    error ? 'bg-red-50 border border-red-200' : 'bg-[#f5f5f5]'
-                  }`}
+                  className="h-[50px] w-[52px] rounded-[12px] bg-[#f5f5f5] flex items-center justify-center"
                 >
                   {i < pin.length && <div className="w-3 h-3 rounded-full bg-[#202325]" />}
                 </div>
               ))}
             </div>
-            {error && <p className="text-[13px] text-red-500 leading-[1.5] text-center">{error}</p>}
           </div>
 
-          {/* Numpad */}
+          {/* Numpad — 4 rows × 3 cols */}
           <div className="flex flex-col gap-5 w-full">
             {[NUMPAD.slice(0, 3), NUMPAD.slice(3, 6), NUMPAD.slice(6, 9), NUMPAD.slice(9, 12)].map((row, ri) => (
               <div key={ri} className="flex justify-between w-full">
@@ -195,7 +171,6 @@ export default function EmployeeLoginPage() {
                   <button
                     key={key}
                     onClick={() => handleKey(key)}
-                    disabled={loading}
                     className={`h-[54px] w-[64px] flex items-center justify-center rounded-[8px] hover:bg-[#f5f5f5] active:scale-95 transition-all ${key === '.' ? 'opacity-30 pointer-events-none' : ''}`}
                   >
                     {key === 'del'
@@ -212,12 +187,10 @@ export default function EmployeeLoginPage() {
         {/* Start Shift button */}
         <button
           onClick={handleStartShift}
-          disabled={pin.length < PIN_LENGTH || loading}
+          disabled={pin.length < PIN_LENGTH}
           className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full shrink-0 hover:bg-[#0250b0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <span className="text-[16px] font-semibold text-white leading-[1.5]">
-            {loading ? 'Đang xác thực...' : 'Start Shift'}
-          </span>
+          <span className="text-[16px] font-semibold text-white leading-[1.5]">Start Shift</span>
         </button>
       </div>
     </div>

@@ -1,6 +1,4 @@
-import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
+import { useState, useEffect } from "react";
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -387,31 +385,7 @@ function DeleteDigitIcon() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function Header() {
-  const { user, signOut } = useAuth();
-  const navigate = useNavigate();
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef(null);
-
-  useEffect(() => {
-    function onClickOutside(e) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target))
-        setDropdownOpen(false);
-    }
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
-
-  async function handleLogout() {
-    setDropdownOpen(false);
-    await signOut();
-    navigate("/login", { replace: true });
-  }
-
-  const displayName = user?.fullName || user?.username || "User";
-  const role = user?.role || "";
-  const initials = displayName.slice(0, 2).toUpperCase();
-
+function Header({ employeeName = "Duy Tan", onSearch }) {
   return (
     <header className="bg-white flex items-center justify-between px-6 h-[64px] shrink-0 border-b border-[#e8e8e8]">
       {/* Logo */}
@@ -446,7 +420,7 @@ function Header() {
         />
       </div>
 
-      {/* Right: bell + user dropdown */}
+      {/* Right: bell + employee */}
       <div className="flex items-center gap-4 shrink-0">
         <div className="relative">
           <button className="text-[#202325]">
@@ -456,56 +430,18 @@ function Header() {
             2
           </span>
         </div>
-
-        <div className="relative" ref={dropdownRef}>
-          <button
-            onClick={() => setDropdownOpen((v) => !v)}
-            className="flex items-center gap-2 hover:bg-[#f5f5f5] px-2 py-1 rounded-[10px] transition-colors"
-          >
-            <div className="w-9 h-9 rounded-full bg-[#5B8FE8] flex items-center justify-center text-white text-[13px] font-semibold shrink-0">
-              {initials}
-            </div>
-            <div className="flex flex-col items-start leading-tight">
-              <span className="text-[14px] font-medium text-[#202325]">
-                {displayName}
-              </span>
-              <span className="text-[12px] text-[#636566]">{role}</span>
-            </div>
-            <ChevronDownIcon
-              className={`w-4 h-4 text-[#636566] transition-transform ${dropdownOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-
-          {dropdownOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-white border border-[#e8e8e8] rounded-[12px] shadow-lg z-50 w-[180px] py-1 overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#e8e8e8]">
-                <p className="text-[14px] font-semibold text-[#202325] truncate">
-                  {displayName}
-                </p>
-                <p className="text-[12px] text-[#636566]">{role}</p>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-2 w-full px-4 py-3 text-[14px] text-red-500 hover:bg-red-50 transition-colors"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"
-                  />
-                </svg>
-                Đăng xuất
-              </button>
-            </div>
-          )}
-        </div>
+        <button className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-full bg-[#5B8FE8] flex items-center justify-center text-white text-[13px] font-semibold">
+            DT
+          </div>
+          <div className="flex flex-col items-start leading-tight">
+            <span className="text-[14px] font-medium text-[#202325]">
+              {employeeName}
+            </span>
+            <span className="text-[12px] text-[#636566]">Cashier</span>
+          </div>
+          <ChevronDownIcon />
+        </button>
       </div>
     </header>
   );
