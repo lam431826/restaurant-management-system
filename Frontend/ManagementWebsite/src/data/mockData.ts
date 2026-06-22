@@ -522,7 +522,8 @@ export const cashierModes = [
   { id: 11, label: 'Nhà bếp', icon: 'ik-bell-concierge' },
 ];
 
-/* href '#' = screen not yet implemented (placeholder, does not navigate). */
+/* href '#' = screen not yet implemented (placeholder, does not navigate).    */
+/* allowedRoles: undefined = visible to all roles in /manager (MANAGER+ADMIN) */
 export const navItems = [
   {
     id: 1,
@@ -584,6 +585,7 @@ export const navItems = [
   {
     id: 8,
     label: 'Nhân viên',
+    allowedRoles: ['ADMIN'] as string[],
     children: [
       { label: 'Danh sách nhân viên', href: '#/manager/employees' },
       { label: 'Lịch làm việc', href: '#' },

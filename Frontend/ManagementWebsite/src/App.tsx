@@ -9,6 +9,7 @@ import Invoices from './components/transactions/Invoices'
 import Employees from './components/staff/Employees'
 import Reservation from './components/reservation/Reservation'
 import CashierOrders from './components/cashier/CashierOrders'
+import AdminDashboard from './components/admin/AdminDashboard'
 import LoginPage from './components/auth/LoginPage'
 import EmployeeLoginPage from './components/auth/EmployeeLoginPage'
 import ForgotPasswordPage from './components/auth/ForgotPasswordPage'
@@ -24,6 +25,13 @@ function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/new-password" element={<NewPasswordPage />} />
 
+        {/* ── Admin ── */}
+        <Route path="/admin" element={
+          <ProtectedRoute roles={['ADMIN']}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        } />
+
         {/* ── Cashier ── */}
         <Route path="/cashier" element={
           <ProtectedRoute roles={['CASHIER', 'MANAGER', 'ADMIN']}>
@@ -38,9 +46,9 @@ function App() {
           </ProtectedRoute>
         } />
 
-        {/* ── Manager / Admin dashboard ── */}
+        {/* ── Manager dashboard ── */}
         <Route path="/manager" element={
-          <ProtectedRoute roles={['MANAGER', 'ADMIN']}>
+          <ProtectedRoute roles={['MANAGER']}>
             <Layout />
           </ProtectedRoute>
         }>

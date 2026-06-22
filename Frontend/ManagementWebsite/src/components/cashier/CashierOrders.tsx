@@ -1,5 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import { logout } from '../../api/auth'
+import ChangePasswordModal from '../auth/ChangePasswordModal'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface MenuItem {
@@ -149,34 +153,84 @@ const DeleteDigitIcon = () => (
   </svg>
 )
 
-/* ─── Header / BottomNav ─────────────────────────────────────────────────── */
-const Header = ({ employeeName = 'Duy Tan' }: { employeeName?: string }) => (
-  <header className="bg-white flex items-center justify-between px-6 h-[64px] shrink-0 border-b border-[#e8e8e8]">
-    <div className="flex items-center gap-3 shrink-0">
-      <img src="/images/wasabi-logo.svg" alt="Wasabi" className="h-12 w-auto" />
-    </div>
-
-    <div className="flex items-center gap-3 bg-[#f5f5f5] rounded-[12px] px-4 h-[44px] w-[180px] md:w-[260px] lg:w-[340px]">
-      <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
-      <input placeholder="Tìm Kiếm" className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none" />
-    </div>
-
-    <div className="flex items-center gap-4 shrink-0">
-      <div className="relative">
-        <button className="text-[#202325]"><BellIcon /></button>
-        <span className="absolute -top-1 -right-1 bg-[#025cca] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">2</span>
-      </div>
-      <button className="flex items-center gap-2">
-        <div className="w-9 h-9 rounded-full bg-[#5B8FE8] flex items-center justify-center text-white text-[13px] font-semibold">DT</div>
-        <div className="flex flex-col items-start leading-tight">
-          <span className="text-[14px] font-medium text-[#202325]">{employeeName}</span>
-          <span className="text-[12px] text-[#636566]">Cashier</span>
-        </div>
-        <ChevronDownIcon />
-      </button>
-    </div>
-  </header>
+const LogoutIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+  </svg>
 )
+
+/* ─── Header / BottomNav ─────────────────────────────────────────────────── */
+const Header = ({ employeeName = 'Duy Tan', roleLabel = 'Thu ngân', onLogout, onChangePassword }: { employeeName?: string; roleLabel?: string; onLogout?: () => void; onChangePassword?: () => void }) => {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const initials = employeeName.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase()
+
+  return (
+    <header className="bg-white flex items-center justify-between px-6 h-[64px] shrink-0 border-b border-[#e8e8e8]">
+      <div className="flex items-center gap-3 shrink-0">
+        <img src="/images/wasabi-logo.svg" alt="Wasabi" className="h-12 w-auto" />
+      </div>
+
+      <div className="flex items-center gap-3 bg-[#f5f5f5] rounded-[12px] px-4 h-[44px] w-[180px] md:w-[260px] lg:w-[340px]">
+        <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
+        <input placeholder="Tìm Kiếm" className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none" />
+      </div>
+
+      <div className="flex items-center gap-4 shrink-0">
+        <div className="relative">
+          <button className="text-[#202325]"><BellIcon /></button>
+          <span className="absolute -top-1 -right-1 bg-[#025cca] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">2</span>
+        </div>
+
+        <div className="relative" ref={ref}>
+          <button onClick={() => setOpen(v => !v)} className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-full bg-[#5B8FE8] flex items-center justify-center text-white text-[13px] font-semibold">{initials}</div>
+            <div className="flex flex-col items-start leading-tight">
+              <span className="text-[14px] font-medium text-[#202325]">{employeeName}</span>
+              <span className="text-[12px] text-[#636566]">{roleLabel}</span>
+            </div>
+            <ChevronDownIcon className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+          </button>
+
+          {open && (
+            <div className="absolute right-0 top-full mt-2 bg-white border border-[#e8e8e8] rounded-[12px] shadow-lg w-[200px] py-1 z-50">
+              <div className="px-4 py-2 border-b border-[#e8e8e8]">
+                <p className="text-[14px] font-semibold text-[#202325] truncate">{employeeName}</p>
+                <p className="text-[12px] text-[#636566]">{roleLabel}</p>
+              </div>
+              <button
+                onClick={() => { setOpen(false); onChangePassword?.() }}
+                className="flex items-center gap-2 w-full px-4 py-2.5 text-[14px] text-[#202325] hover:bg-[#f5f5f5] transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                </svg>
+                Đổi mật khẩu
+              </button>
+              <div className="h-px bg-[#e8e8e8] mx-2" />
+              <button
+                onClick={() => { setOpen(false); onLogout?.() }}
+                className="flex items-center gap-2 w-full px-4 py-2.5 text-[14px] text-red-500 hover:bg-red-50 transition-colors"
+              >
+                <LogoutIcon />
+                Đăng xuất
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+  )
+}
 
 const BottomNav = ({ active = 'orders' }: { active?: string }) => {
   const items: { id: string; label: string | null; icon: ReactNode }[] = [
@@ -577,7 +631,16 @@ const TABLE_FILTERS = [
   { id: 'empty', label: 'Còn trống' },
 ]
 
+const ROLE_LABEL: Record<string, string> = {
+  ADMIN: 'Quản trị viên',
+  MANAGER: 'Quản lý',
+  CASHIER: 'Thu ngân',
+  WAITER: 'Phục vụ',
+}
+
 const CashierOrders = () => {
+  const navigate = useNavigate()
+  const { user, signOut } = useAuth()
   const [tab, setTab] = useState<'menu' | 'table'>('menu')
   const [floor, setFloor] = useState(0)
   const [tableFilter, setFilter] = useState('all')
@@ -588,6 +651,13 @@ const CashierOrders = () => {
   const [noteModal, setNoteModal] = useState<{ open: boolean; itemId: number | null; text: string }>({ open: false, itemId: null, text: '' })
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [successTotal, setSuccessTotal] = useState<number | null>(null)
+  const [showChangePw, setShowChangePw] = useState(false)
+
+  const handleLogout = async () => {
+    try { await logout() } catch { /* ignore */ }
+    signOut()
+    navigate('/login', { replace: true })
+  }
 
   useEffect(() => {
     if (successTotal !== null) {
@@ -622,7 +692,12 @@ const CashierOrders = () => {
 
   return (
     <div className="flex flex-col h-screen bg-[#f5f5f5] overflow-hidden font-sans">
-      <Header />
+      <Header
+        employeeName={user?.fullName ?? user?.username ?? 'Nhân viên'}
+        roleLabel={ROLE_LABEL[user?.role ?? ''] ?? user?.role ?? 'Thu ngân'}
+        onLogout={handleLogout}
+        onChangePassword={() => setShowChangePw(true)}
+      />
 
       <div className="flex flex-1 gap-3 lg:gap-4 p-3 lg:p-4 overflow-hidden">
         <div className="flex flex-col flex-1 gap-2.5 min-w-0 overflow-hidden">
@@ -686,6 +761,7 @@ const CashierOrders = () => {
       {noteModal.open && noteModal.itemId !== null && (
         <AddNoteModal itemId={noteModal.itemId} initialText={noteModal.text} onConfirm={handleConfirmNote} onCancel={handleCancelNote} />
       )}
+      {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
     </div>
   )
 }

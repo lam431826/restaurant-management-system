@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import ReservationHeader from './ReservationHeader'
 import type { ReservationTab } from './ReservationHeader'
 import CalendarView from './CalendarView'
@@ -6,6 +7,9 @@ import ListView from './ListView'
 import ReservationModal from './ReservationModal'
 import { reservations as initialReservations } from '../../data/mockData'
 import type { Reservation as Res } from '../../data/mockData'
+import { useAuth } from '../../context/AuthContext'
+import { logout } from '../../api/auth'
+import ChangePasswordModal from '../auth/ChangePasswordModal'
 
 const exportCsv = (rows: Res[]) => {
   const header = ['Mã đặt bàn', 'Giờ đến', 'Khách hàng', 'Điện thoại', 'Số khách', 'Phòng/bàn', 'Trạng thái', 'Ghi chú']
@@ -21,6 +25,17 @@ const exportCsv = (rows: Res[]) => {
 }
 
 const Reservation = () => {
+  const navigate = useNavigate()
+  const { signOut } = useAuth()
+
+  const [showChangePw, setShowChangePw] = useState(false)
+
+  const handleLogout = async () => {
+    try { await logout() } catch { /* ignore */ }
+    signOut()
+    navigate('/login', { replace: true })
+  }
+
   const [tab, setTab] = useState<ReservationTab>('calendar')
   const [items, setItems] = useState<Res[]>(initialReservations)
   const [selectedDate, setSelectedDate] = useState(new Date(2026, 5, 17))
@@ -41,7 +56,7 @@ const Reservation = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-surface">
-      <ReservationHeader tab={tab} onTab={setTab} />
+      <ReservationHeader tab={tab} onTab={setTab} onLogout={handleLogout} onChangePassword={() => setShowChangePw(true)} />
 
       <div className="relative flex-1 min-h-0 flex flex-col">
         {/* Floating action cluster (top-right of body) */}
@@ -68,6 +83,7 @@ const Reservation = () => {
       </div>
 
       {showModal && <ReservationModal nextCode={nextCode} onClose={() => setShowModal(false)} onSave={handleSave} />}
+      {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
     </div>
   )
 }

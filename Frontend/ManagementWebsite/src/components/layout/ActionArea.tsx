@@ -9,6 +9,16 @@ import {
   IconConciergeBell,
 } from '../common/Icon'
 import { helpLinks, cashierModes } from '../../data/mockData'
+import { useAuth } from '../../context/AuthContext'
+import { logout } from '../../api/auth'
+import ChangePasswordModal from '../auth/ChangePasswordModal'
+
+const roleLabel: Record<string, string> = {
+  ADMIN: 'Quản trị viên',
+  MANAGER: 'Quản lý',
+  CASHIER: 'Thu ngân',
+  WAITER: 'Phục vụ',
+}
 
 type DropdownName = 'cashier' | 'notifications' | 'help' | 'user' | null
 
@@ -20,8 +30,17 @@ const menuRow =
 
 const ActionArea = () => {
   const [open, setOpen] = useState<DropdownName>(null)
+  const [showChangePassword, setShowChangePassword] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const { user, signOut } = useAuth()
+
+  const handleLogout = async () => {
+    setOpen(null)
+    try { await logout() } catch { /* ignore — clear local session regardless */ }
+    signOut()
+    navigate('/login', { replace: true })
+  }
 
   const selectCashierMode = (id: number) => {
     setOpen(null)
@@ -43,6 +62,7 @@ const ActionArea = () => {
     icon === 'ik-calendar-day' ? <IconCalendar size={16} /> : <IconConciergeBell size={16} />
 
   return (
+    <>
     <div className="flex items-center gap-2" ref={ref}>
       {/* ── Thu ngân button group ── */}
       <div className="relative flex items-center">
@@ -164,8 +184,8 @@ const ActionArea = () => {
                 <img src="/assets/avatar-empty.svg" alt="" className="kv-avatar-image" />
               </div>
               <div>
-                <div className="text-md font-semibold text-ink">Nguyen Duc Anh</div>
-                <div className="text-sm text-ink-muted mt-0.5">Chưa bật xác thực 2 lớp</div>
+                <div className="text-md font-semibold text-ink">{user?.fullName ?? user?.username}</div>
+                <div className="text-sm text-ink-muted mt-0.5">{roleLabel[user?.role ?? ''] ?? user?.role}</div>
               </div>
             </div>
 
@@ -201,13 +221,32 @@ const ActionArea = () => {
 
             <div className="h-px bg-line my-1" />
 
-            <div className={`${menuRow} text-danger hover:!bg-[var(--kv-action-danger-faded-bg)]`}>
+            <button
+              type="button"
+              onClick={() => { setOpen(null); setShowChangePassword(true) }}
+              className={`${menuRow} w-full bg-transparent border-none`}
+            >
+              Đổi mật khẩu
+            </button>
+
+            <div className="h-px bg-line my-1" />
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className={`${menuRow} w-full text-danger hover:!bg-[var(--kv-action-danger-faded-bg)] bg-transparent border-none`}
+            >
               Đăng xuất
-            </div>
+            </button>
           </div>
         )}
       </div>
     </div>
+
+    {showChangePassword && (
+      <ChangePasswordModal onClose={() => setShowChangePassword(false)} />
+    )}
+    </>
   )
 }
 

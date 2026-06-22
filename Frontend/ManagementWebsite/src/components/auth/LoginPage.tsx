@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import AuthLayout from './AuthLayout'
 import { login, verifyInfo, verifyOtp, resendOtp } from '../../api/auth'
 import { useAuth, type UserRole } from '../../context/AuthContext'
@@ -51,7 +51,8 @@ const InputField = ({ label, icon, rightIcon, placeholder, type = 'text', value,
 
 /* ── route helper ── */
 function defaultRoute(role: UserRole): string {
-  if (role === 'ADMIN' || role === 'MANAGER') return '/manager/dashboard'
+  if (role === 'ADMIN') return '/admin'
+  if (role === 'MANAGER') return '/manager/dashboard'
   if (role === 'CASHIER') return '/cashier'
   return '/waiter'
 }
@@ -60,6 +61,8 @@ type Step = 'login' | 'send-otp' | 'enter-otp'
 
 const LoginPage = () => {
   const navigate = useNavigate()
+  const location = useLocation()
+  const successMsg = (location.state as { message?: string } | null)?.message ?? ''
   const { saveSession } = useAuth()
 
   const [step, setStep] = useState<Step>('login')
@@ -125,7 +128,7 @@ const LoginPage = () => {
       navigate(defaultRoute(data.user.role), { replace: true })
     } catch (err: any) {
       const status = err.response?.status
-      if (status === 401) setError('Mã OTP không đúng.')
+      if (status === 400) setError('Mã OTP không đúng.')
       else if (status === 429) setError('Đã nhập sai OTP quá nhiều lần. Tài khoản bị khóa OTP.')
       else setError('Có lỗi xảy ra, vui lòng thử lại.')
     } finally {
@@ -152,6 +155,11 @@ const LoginPage = () => {
     return (
       <AuthLayout title="Welcome Back" subtitle="Đăng nhập để bắt đầu làm việc">
         <form onSubmit={handleLogin} className="flex flex-col gap-[10px]">
+          {successMsg && (
+            <p className="text-[13px] text-green-600 bg-green-50 border border-green-200 rounded-[8px] px-3 py-2 leading-[1.5]">
+              {successMsg}
+            </p>
+          )}
           <InputField label="Username" icon={<PersonIcon />} placeholder="Nhập tài khoản"
             value={username} onChange={e => setUsername(e.target.value)} />
           <InputField

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, Navigate } from 'react-router-dom'
 import AuthLayout from './AuthLayout'
 import { resetPassword } from '../../api/auth'
 
@@ -38,10 +38,7 @@ const NewPasswordPage = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  if (!state?.resetToken) {
-    navigate('/forgot-password', { replace: true })
-    return null
-  }
+  if (!state?.resetToken) return <Navigate to="/forgot-password" replace />
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
