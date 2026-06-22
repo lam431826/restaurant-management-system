@@ -4,6 +4,10 @@ import { reservationStatusMeta } from '../../data/mockData'
 
 interface Props {
   reservations: Reservation[]
+  onConfirm: (id: string) => Promise<void>
+  onCheckIn: (id: string) => Promise<void>
+  onNoShow: (id: string) => Promise<void>
+  onCancel: (id: string) => Promise<void>
 }
 
 const Chevron = ({ open = true }: { open?: boolean }) => (
@@ -29,7 +33,7 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-const LIST_STATUSES: ReservationStatus[] = ['waiting', 'arranged', 'received', 'cancelled']
+const LIST_STATUSES: ReservationStatus[] = ['PENDING', 'CONFIRMED', 'CHECKED_IN', 'CANCELLED']
 
 const StatusCheck = ({ status, checked, onChange }: { status: ReservationStatus; checked: boolean; onChange: () => void }) => {
   const meta = reservationStatusMeta[status]
@@ -51,13 +55,11 @@ const fieldCls = 'w-full h-10 px-3 bg-field border border-line-default rounded-m
 const th = 'sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-3 py-3 whitespace-nowrap'
 const td = 'text-md text-ink px-3 py-3 border-b border-line align-middle'
 
-const ListView = ({ reservations }: Props) => {
+const ListView = ({ reservations, onConfirm, onCheckIn, onNoShow, onCancel }: Props) => {
   const [code, setCode] = useState('')
   const [timeMode, setTimeMode] = useState<'all' | 'other'>('all')
-  const [statuses, setStatuses] = useState<Set<ReservationStatus>>(new Set(['waiting', 'arranged', 'received']))
-  const [overtime, setOvertime] = useState(false)
-  const [upcoming, setUpcoming] = useState(false)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [statuses, setStatuses] = useState<Set<ReservationStatus>>(new Set(['PENDING', 'CONFIRMED', 'CHECKED_IN']))
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   const toggleStatus = (s: ReservationStatus) =>
     setStatuses(prev => {
@@ -70,21 +72,17 @@ const ListView = ({ reservations }: Props) => {
     const q = code.trim().toLowerCase()
     return reservations.filter(r => {
       if (!statuses.has(r.status)) return false
-      if (q && !r.code.toLowerCase().includes(q)) return false
+      if (q && !r.customer.toLowerCase().includes(q) && !r.phone.includes(q) && !r.id.toLowerCase().includes(q)) return false
       return true
     })
   }, [reservations, statuses, code])
 
   const totalGuests = filtered.reduce((s, r) => s + r.guests, 0)
 
-  const allSelected = filtered.length > 0 && selected.size === filtered.length
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(filtered.map(r => r.code)))
-  const toggleRow = (c: string) =>
-    setSelected(s => {
-      const next = new Set(s)
-      if (next.has(c)) next.delete(c); else next.add(c)
-      return next
-    })
+  const act = async (fn: () => Promise<void>, id: string) => {
+    setActionLoading(id)
+    try { await fn() } finally { setActionLoading(null) }
+  }
 
   return (
     <div className="flex flex-1 min-h-0">
@@ -95,8 +93,7 @@ const ListView = ({ reservations }: Props) => {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 text-ink-muted pointer-events-none">
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            <input className={`${fieldCls} pl-9 pr-8`} placeholder="Theo mã đặt bàn" value={code} onChange={e => setCode(e.target.value)} />
-            <span className="absolute right-3"><Chevron open={false} /></span>
+            <input className={`${fieldCls} pl-9`} placeholder="Tên khách / SĐT / mã đặt bàn" value={code} onChange={e => setCode(e.target.value)} />
           </div>
         </Section>
 
@@ -119,35 +116,16 @@ const ListView = ({ reservations }: Props) => {
           </div>
         </Section>
 
-        <Section title="Phòng/Bàn">
-          <button className="flex items-center justify-between w-full h-10 px-3 bg-field border border-line-default rounded-md cursor-pointer hover:border-line-strong" type="button">
-            <span className="text-md text-ink-muted">Chọn phòng/bàn</span>
-          </button>
-        </Section>
-
-        <Section title="Lựa chọn hiển thị">
-          <div className="flex flex-col gap-1.5">
-            <label className="kv-check">
-              <input type="checkbox" checked={overtime} onChange={() => setOvertime(v => !v)} />
-              <span className="kv-check-box" /><span className="kv-check-text">Lượt khách quá giờ</span>
-            </label>
-            <label className="kv-check">
-              <input type="checkbox" checked={upcoming} onChange={() => setUpcoming(v => !v)} />
-              <span className="kv-check-box" /><span className="kv-check-text">Lượt khách sắp đến</span>
-            </label>
-          </div>
-        </Section>
-
         <div className="flex items-center justify-between pt-1">
           <span className="text-md font-semibold text-ink">Số bản ghi:</span>
-          <button className="flex items-center gap-2 h-9 px-3 border border-line-default rounded-md text-md text-ink cursor-pointer">15 <Chevron open={false} /></button>
+          <span className="text-md text-ink">{filtered.length}</span>
         </div>
       </aside>
 
       {/* Main */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Status filters */}
-        <div className="flex items-center gap-6 px-5 py-3">
+        <div className="flex items-center gap-6 px-5 py-3 flex-wrap">
           {LIST_STATUSES.map(s => (
             <StatusCheck key={s} status={s} checked={statuses.has(s)} onChange={() => toggleStatus(s)} />
           ))}
@@ -158,60 +136,95 @@ const ListView = ({ reservations }: Props) => {
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                <th className={`${th} w-[4rem] text-center`}>
-                  <label className="kv-check justify-center">
-                    <input type="checkbox" checked={allSelected} onChange={toggleAll} />
-                    <span className="kv-check-box" />
-                  </label>
-                </th>
-                <th className={`${th} w-[14rem]`}>Mã đặt bàn</th>
+                <th className={`${th} w-[10rem]`}>Mã đặt bàn</th>
                 <th className={`${th} w-[16rem]`}>Giờ đến</th>
                 <th className={th}>Khách hàng</th>
-                <th className={`${th} w-[15rem]`}>Điện thoại</th>
-                <th className={`${th} text-right w-[11rem]`}>Số khách</th>
-                <th className={`${th} w-[13rem]`}>Phòng/bàn</th>
-                <th className={`${th} w-[15rem]`}>Trạng thái</th>
-                <th className={`${th} w-[14rem]`}>Ghi chú</th>
+                <th className={`${th} w-[14rem]`}>Điện thoại</th>
+                <th className={`${th} text-right w-[9rem]`}>Số khách</th>
+                <th className={`${th} w-[13rem]`}>Trạng thái</th>
+                <th className={`${th} w-[10rem]`}>Ghi chú</th>
+                <th className={`${th} w-[20rem]`}>Hành động</th>
               </tr>
             </thead>
             <tbody>
               {/* Summary row */}
               <tr className="bg-[var(--kv-warning-50)] border-b border-line">
-                <td className={td} /><td className={td} /><td className={td} /><td className={td} /><td className={td} />
+                <td className={td} colSpan={4} />
                 <td className={`${td} text-right font-bold`}>{totalGuests}</td>
-                <td className={td} /><td className={td} /><td className={td} />
+                <td className={td} colSpan={3} />
               </tr>
 
               {filtered.map(r => {
                 const meta = reservationStatusMeta[r.status]
+                const busy = actionLoading === r.id
                 return (
-                  <tr key={r.code} className="cursor-pointer hover:bg-primary-25">
-                    <td className={`${td} text-center`} onClick={e => e.stopPropagation()}>
-                      <label className="kv-check justify-center">
-                        <input type="checkbox" checked={selected.has(r.code)} onChange={() => toggleRow(r.code)} />
-                        <span className="kv-check-box" />
-                      </label>
-                    </td>
-                    <td className={`${td} text-primary font-medium`}>{r.code}</td>
+                  <tr key={r.id} className="hover:bg-primary-25">
+                    <td className={`${td} font-mono text-[12px] text-primary`}>{r.id.slice(0, 8).toUpperCase()}</td>
                     <td className={td}>{r.arriveTime}</td>
-                    <td className={td}>{r.customer}</td>
+                    <td className={`${td} font-medium`}>{r.customer}</td>
                     <td className={td}>{r.phone}</td>
                     <td className={`${td} text-right`}>{r.guests}</td>
-                    <td className={td}>{r.table}</td>
                     <td className={td}>
                       <span className="inline-flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full" style={{ background: meta.color }} />
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: meta.color }} />
                         {meta.label}
                       </span>
                     </td>
-                    <td className={`${td} text-ink-muted`}>{r.note}</td>
+                    <td className={`${td} text-ink-muted max-w-[10rem] truncate`}>{r.note}</td>
+                    <td className={td}>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {r.status === 'PENDING' && (
+                          <>
+                            <button
+                              disabled={busy}
+                              onClick={() => act(() => onConfirm(r.id), r.id)}
+                              className="h-7 px-2.5 text-[12px] font-semibold rounded-md bg-[var(--kv-success)] text-white hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                            >
+                              Xác nhận
+                            </button>
+                            <button
+                              disabled={busy}
+                              onClick={() => act(() => onCancel(r.id), r.id)}
+                              className="h-7 px-2.5 text-[12px] font-semibold rounded-md border border-danger text-danger hover:bg-red-50 disabled:opacity-50 cursor-pointer"
+                            >
+                              Hủy
+                            </button>
+                          </>
+                        )}
+                        {r.status === 'CONFIRMED' && (
+                          <>
+                            <button
+                              disabled={busy}
+                              onClick={() => act(() => onCheckIn(r.id), r.id)}
+                              className="h-7 px-2.5 text-[12px] font-semibold rounded-md bg-primary text-white hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                            >
+                              Check-in
+                            </button>
+                            <button
+                              disabled={busy}
+                              onClick={() => act(() => onNoShow(r.id), r.id)}
+                              className="h-7 px-2.5 text-[12px] font-semibold rounded-md border border-line-default text-ink-subtle hover:bg-fill disabled:opacity-50 cursor-pointer"
+                            >
+                              Không đến
+                            </button>
+                            <button
+                              disabled={busy}
+                              onClick={() => act(() => onCancel(r.id), r.id)}
+                              className="h-7 px-2.5 text-[12px] font-semibold rounded-md border border-danger text-danger hover:bg-red-50 disabled:opacity-50 cursor-pointer"
+                            >
+                              Hủy
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 )
               })}
 
               {filtered.length === 0 && (
                 <tr>
-                  <td className={`${td} text-center text-ink-muted`} colSpan={9}>Không có phiếu đặt nào</td>
+                  <td className={`${td} text-center text-ink-muted`} colSpan={8}>Không có phiếu đặt nào</td>
                 </tr>
               )}
             </tbody>

@@ -2,6 +2,7 @@ package com.rms.restaurant.module.reservation.controller;
 
 import com.rms.restaurant.common.utils.wrapper.ApiResponse;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
+import com.rms.restaurant.module.reservation.dto.CreateReservationRequest;
 import com.rms.restaurant.module.reservation.dto.ReservationResponse;
 import com.rms.restaurant.module.reservation.dto.UpdateReservationRequest;
 import com.rms.restaurant.module.reservation.service.ReservationService;
@@ -19,6 +20,15 @@ import org.springframework.web.bind.annotation.*;
 public class ReservationController {
 
     private final ReservationService reservationService;
+
+    // Staff tạo đặt bàn qua điện thoại → auto CONFIRMED
+    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER')")
+    @PostMapping
+    public ResponseEntity<ApiResponse<ReservationResponse>> create(
+            @Valid @RequestBody CreateReservationRequest request) {
+        return ResponseEntity.status(201)
+                .body(ApiResponse.success(reservationService.create(request)));
+    }
 
     // RM-05: Danh sách tất cả reservations
     @PreAuthorize("hasAnyRole('WAITER', 'MANAGER')")

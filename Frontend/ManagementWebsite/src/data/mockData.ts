@@ -422,37 +422,32 @@ export const invoices: Invoice[] = [
 ];
 
 /* ─── Đặt bàn (Reception / Table reservations) ───────────────────────────── */
-export type ReservationStatus = 'waiting' | 'arranged' | 'received' | 'overtime' | 'cancelled';
+export type ReservationStatus = 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'NO_SHOW' | 'CANCELLED';
 
 export const reservationStatusMeta: Record<ReservationStatus, { label: string; color: string }> = {
-  waiting:   { label: 'Chờ xếp bàn',          color: 'var(--kv-warning)' },
-  arranged:  { label: 'Đã xếp bàn',           color: 'var(--kv-success)' },
-  received:  { label: 'Đã nhận bàn',          color: 'var(--kv-primary)' },
-  overtime:  { label: 'Quá giờ / Không đến',  color: 'var(--kv-neutral-400)' },
-  cancelled: { label: 'Đã hủy',               color: 'var(--kv-danger)' },
+  PENDING:    { label: 'Chờ xác nhận',       color: 'var(--kv-warning)' },
+  CONFIRMED:  { label: 'Đã xác nhận',        color: 'var(--kv-success)' },
+  CHECKED_IN: { label: 'Đã nhận bàn',        color: 'var(--kv-primary)' },
+  NO_SHOW:    { label: 'Không đến',           color: 'var(--kv-neutral-400)' },
+  CANCELLED:  { label: 'Đã hủy',             color: 'var(--kv-danger)' },
 };
 
 export interface Reservation {
-  code: string;        // Mã đặt bàn (DB000001)
-  arriveTime: string;  // Giờ đến (17/06/2026 21:30)
-  customer: string;    // Khách hàng
+  id: string;          // UUID từ backend
+  code: string;        // Mã hiển thị (viết tắt từ id)
+  arriveTime: string;  // Giờ đến định dạng dd/MM/yyyy HH:mm
+  customer: string;    // Tên khách
   phone: string;       // Điện thoại
   guests: number;      // Số khách
-  table: string;       // Phòng/bàn
-  area: string;        // Khu vực
+  table: string;       // tableId hoặc '—'
+  area: string;
   status: ReservationStatus;
-  note: string;        // Ghi chú
-  startHour: number;   // timeline start (e.g. 21.5)
-  durationH: number;   // timeline duration in hours
+  note: string;
+  startHour: number;   // giờ bắt đầu dạng số thực (e.g. 21.5)
+  durationH: number;   // thời lượng giờ
 }
 
-export const reservations: Reservation[] = [
-  {
-    code: 'DB000001', arriveTime: '17/06/2026 21:30', customer: 'Anh Giang - Kim Mã',
-    phone: '0362316731', guests: 10, table: 'Bàn 15', area: 'Lầu 3',
-    status: 'received', note: '', startHour: 21.5, durationH: 1.5,
-  },
-];
+export const reservations: Reservation[] = [];
 
 /* Timeline rows grouped by area, in reception display order */
 export const reservationAreaOrder = ['Phòng VIP', 'Lầu 2', 'Lầu 3'];

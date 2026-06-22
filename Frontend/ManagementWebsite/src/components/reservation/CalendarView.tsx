@@ -16,7 +16,7 @@ const ROW_H = 43
 const NOW = 21 + 5 / 60 // current-time marker (~21:05)
 
 /* Timeline status filters (matches the model: Đã hủy off by default) */
-const TIMELINE_STATUSES: ReservationStatus[] = ['arranged', 'received', 'overtime', 'cancelled']
+const TIMELINE_STATUSES: ReservationStatus[] = ['PENDING', 'CONFIRMED', 'CHECKED_IN', 'NO_SHOW', 'CANCELLED']
 
 const Chevron = ({ open }: { open: boolean }) => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={`text-ink-muted transition-transform ${open ? '' : '-rotate-90'}`}>
@@ -44,7 +44,7 @@ const StatusCheck = ({ status, checked, onChange }: { status: ReservationStatus;
 
 const CalendarView = ({ reservations, selectedDate, onSelectDate }: Props) => {
   const [view, setView] = useState<'day' | 'week' | 'month'>('day')
-  const [statuses, setStatuses] = useState<Set<ReservationStatus>>(new Set(['arranged', 'received', 'overtime']))
+  const [statuses, setStatuses] = useState<Set<ReservationStatus>>(new Set(['PENDING', 'CONFIRMED', 'CHECKED_IN']))
   const [openAreas, setOpenAreas] = useState<Set<string>>(new Set(reservationAreaOrder))
   const [roomsOpen, setRoomsOpen] = useState(false)
   const [waitOpen, setWaitOpen] = useState(true)

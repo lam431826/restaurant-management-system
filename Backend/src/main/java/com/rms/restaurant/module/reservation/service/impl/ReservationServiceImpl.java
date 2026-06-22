@@ -8,6 +8,7 @@ import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.notification.dto.ReservationNotificationRequest;
 import com.rms.restaurant.module.notification.service.NotificationService;
+import com.rms.restaurant.module.reservation.dto.CreateReservationRequest;
 import com.rms.restaurant.module.reservation.dto.ReservationResponse;
 import com.rms.restaurant.module.reservation.dto.UpdateReservationRequest;
 import com.rms.restaurant.module.reservation.mapper.ReservationMapper;
@@ -50,6 +51,26 @@ public class ReservationServiceImpl implements ReservationService {
     @Transactional(readOnly = true)
     public ReservationResponse getById(String id) {
         return reservationMapper.toResponse(findOrThrow(id));
+    }
+
+    // ── Staff tạo đặt bàn qua điện thoại → auto CONFIRMED ────────────────────
+
+    @Override
+    public ReservationResponse create(CreateReservationRequest request) {
+        if (request.tableId() != null) {
+            validateTableExists(request.tableId());
+            checkTableAvailability(request.tableId(), request.datetime(), null);
+        }
+        Reservation reservation = Reservation.builder()
+                .guestName(request.guestName())
+                .phone(request.phone())
+                .partySize(request.partySize())
+                .datetime(request.datetime())
+                .tableId(request.tableId())
+                .note(request.note())
+                .status(ReservationStatus.CONFIRMED)
+                .build();
+        return reservationMapper.toResponse(reservationRepository.save(reservation));
     }
 
     // ── Staff confirm: PENDING → CONFIRMED ───────────────────────────────────
