@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -112,6 +113,50 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
 
         return invoiceMapper.toResponse(savedInvoice);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public InvoiceDetailResponse getById(String invoiceId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
+
+        List<OrderItem> orderItems = orderItemRepository.findByOrderId(invoice.getOrderId());
+        List<InvoiceItemResponse> items = new ArrayList<>();
+
+        for (OrderItem orderItem : orderItems) {
+            BigDecimal lineTotal = orderItem.getUnitPrice()
+                    .multiply(BigDecimal.valueOf(orderItem.getQuantity()));
+
+            items.add(new InvoiceItemResponse(
+                    orderItem.getMenuItemId(),
+                    orderItem.getMenuItemName(),
+                    orderItem.getQuantity(),
+                    orderItem.getUnitPrice(),
+                    lineTotal,
+                    orderItem.getNote()
+            ));
+        }
+
+        String promotionCode = null;
+        if (invoice.getPromotionId() != null) {
+            promotionCode = promotionRepository.findById(invoice.getPromotionId())
+                    .map(Promotion::getCode)
+                    .orElse(null);
+        }
+
+        return new InvoiceDetailResponse(
+                invoice.getId(),
+                invoice.getOrderId(),
+                invoice.getSubtotal(),
+                invoice.getDiscountAmount(),
+                invoice.getTotalAmount(),
+                invoice.isPaid(),
+                invoice.getCreatedAt(),
+                invoice.getPromotionId(),
+                promotionCode,
+                items
+        );
     }
 
     @Override public InvoiceResponse getByOrderId(String orderId) { return null; }
