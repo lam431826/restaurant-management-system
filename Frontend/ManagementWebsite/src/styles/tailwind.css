@@ -1,0 +1,132 @@
+@import 'tailwindcss';
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Tailwind theme mapped onto the existing KiotViet design tokens (--kv-*).
+   Values reference tokens.css so there is a single source of truth and the
+   visual design stays pixel-identical. Root font-size is 10px, so --spacing is
+   0.4rem to make the spacing scale (p-1=4px … p-4=16px) line up with --kv-spacer-*.
+   ───────────────────────────────────────────────────────────────────────────── */
+@theme {
+  /* ── Spacing (0.4rem * n) ── */
+  --spacing: 0.4rem;
+
+  /* ── Fonts ── */
+  --font-sans: var(--kv-font-sans-serif);
+  --font-forum: Forum, serif;
+  --font-bitter-rose: "Bitter Rose", "Great Vibes", cursive;
+
+  /* ── Font sizes ── */
+  --text-xs: var(--kv-font-size-xs);
+  --text-xs--line-height: var(--kv-line-height-xs);
+  --text-sm: var(--kv-font-size-sm);
+  --text-sm--line-height: var(--kv-line-height-sm);
+  --text-md: var(--kv-font-size-md);
+  --text-md--line-height: var(--kv-line-height-md);
+  --text-base: var(--kv-font-size-md);
+  --text-base--line-height: var(--kv-line-height-md);
+  --text-lg: var(--kv-font-size-lg);
+  --text-lg--line-height: var(--kv-line-height-lg);
+  --text-xl: var(--kv-font-size-xl);
+  --text-xl--line-height: var(--kv-line-height-xl);
+  --text-2xl: var(--kv-font-size-xxl);
+  --text-h1: var(--kv-font-size-h1);
+  --text-h1--line-height: var(--kv-line-height-h1);
+  --text-h2: var(--kv-font-size-h2);
+  --text-h2--line-height: var(--kv-line-height-h2);
+  --text-h3: var(--kv-font-size-h3);
+  --text-h3--line-height: var(--kv-line-height-h3);
+
+  /* ── Radius ── */
+  --radius-xxs: var(--kv-radius-xxs);
+  --radius-xs: var(--kv-radius-xs);
+  --radius-sm: var(--kv-radius-sm);
+  --radius-md: var(--kv-radius-md);
+  --radius-lg: var(--kv-radius-lg);
+  --radius-xl: var(--kv-radius-xl);
+  --radius-2xl: var(--kv-radius-xxl);
+  --radius-3xl: var(--kv-radius-xxxl);
+
+  /* ── Shadows ── */
+  --shadow-sm: var(--kv-shadow-sm);
+  --shadow-md: var(--kv-shadow-md);
+  --shadow-lg: var(--kv-shadow-lg);
+
+  /* ── Brand palette ── */
+  --color-primary: var(--kv-primary);
+  --color-primary-25: var(--kv-primary-25);
+  --color-primary-50: var(--kv-primary-50);
+  --color-primary-75: var(--kv-primary-75);
+  --color-primary-100: var(--kv-primary-100);
+  --color-primary-150: var(--kv-primary-150);
+  --color-primary-200: var(--kv-primary-200);
+  --color-primary-600: var(--kv-primary-600);
+  --color-primary-700: var(--kv-primary-700);
+  --color-primary-750: var(--kv-primary-750);
+
+  --color-success: var(--kv-success);
+  --color-success-50: var(--kv-success-50);
+  --color-success-100: var(--kv-success-100);
+  --color-success-600: var(--kv-success-600);
+  --color-success-700: var(--kv-success-700);
+
+  --color-warning: var(--kv-warning);
+  --color-warning-50: var(--kv-warning-50);
+  --color-warning-100: var(--kv-warning-100);
+  --color-warning-600: var(--kv-warning-600);
+  --color-warning-700: var(--kv-warning-700);
+
+  --color-danger: var(--kv-danger);
+  --color-danger-50: var(--kv-danger-50);
+  --color-danger-100: var(--kv-danger-100);
+  --color-danger-600: var(--kv-danger-600);
+  --color-danger-700: var(--kv-danger-700);
+
+  --color-promotion: var(--kv-promotion);
+  --color-promotion-50: var(--kv-promotion-50);
+
+  /* ── Neutral scale ── */
+  --color-neutral-25: var(--kv-neutral-25);
+  --color-neutral-50: var(--kv-neutral-50);
+  --color-neutral-75: var(--kv-neutral-75);
+  --color-neutral-100: var(--kv-neutral-100);
+  --color-neutral-150: var(--kv-neutral-150);
+  --color-neutral-200: var(--kv-neutral-200);
+  --color-neutral-250: var(--kv-neutral-250);
+  --color-neutral-300: var(--kv-neutral-300);
+  --color-neutral-400: var(--kv-neutral-400);
+  --color-neutral-600: var(--kv-neutral-600);
+  --color-neutral-700: var(--kv-neutral-700);
+  --color-neutral-750: var(--kv-neutral-750);
+  --color-neutral-800: var(--kv-neutral-800);
+  --color-neutral-900: var(--kv-neutral-900);
+
+  /* ── Semantic surfaces ── */
+  --color-surface: var(--kv-surface-default);
+  --color-card: var(--kv-surface-elevated);
+  --color-sunken: var(--kv-surface-sunken);
+
+  /* ── Semantic text (ink-*) ── */
+  --color-ink: var(--kv-text-default);
+  --color-ink-emphasis: var(--kv-text-emphasis);
+  --color-ink-strong: var(--kv-text-strong);
+  --color-ink-subtle: var(--kv-text-subtle);
+  --color-ink-muted: var(--kv-text-muted);
+  --color-ink-disabled: var(--kv-text-disabled);
+
+  /* ── Semantic borders (line-*) ── */
+  --color-line: var(--kv-border-subtle);
+  --color-line-default: var(--kv-border-default);
+  --color-line-strong: var(--kv-border-strong);
+
+  /* ── Semantic fills ── */
+  --color-fill: var(--kv-fill-subtle);
+  --color-fill-default: var(--kv-fill-default);
+  --color-fill-strong: var(--kv-fill-strong);
+  --color-field: var(--kv-field-bg);
+
+  /* ── Action faded backgrounds/foregrounds ── */
+  --color-success-faded: var(--kv-action-success-faded-bg);
+  --color-success-faded-fg: var(--kv-action-success-faded-fg);
+  --color-danger-faded: var(--kv-action-danger-faded-bg);
+  --color-danger-faded-fg: var(--kv-action-danger-faded-fg);
+}
