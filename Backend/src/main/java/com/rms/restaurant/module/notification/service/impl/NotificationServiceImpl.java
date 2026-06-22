@@ -120,6 +120,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     private String templateFor(NotificationType type) {
         return switch (type) {
+            case PENDING      -> "RESERVATION_PENDING";
             case CONFIRMATION -> "RESERVATION_CONFIRMATION";
             case REMINDER     -> "RESERVATION_REMINDER";
             case CANCELLATION -> "RESERVATION_CANCELLATION";

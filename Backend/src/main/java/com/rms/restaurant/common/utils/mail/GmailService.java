@@ -122,6 +122,47 @@ public class GmailService {
         mailSender.send(msg);
     }
 
+    // ── ORM-02: Booking received, pending staff confirmation ──────────────────
+
+    public void sendReservationPendingEmail(String toEmail, String guestName,
+            LocalDateTime datetime, int partySize, String reservationId) {
+        SimpleMailMessage msg = new SimpleMailMessage();
+        msg.setFrom(fromAddress);
+        msg.setTo(toEmail);
+        msg.setSubject("[Wasabi Restaurant] Yêu cầu đặt bàn đã được tiếp nhận");
+        msg.setText(
+            "Xin chào " + guestName + ",\n\n" +
+            "Chúng tôi đã nhận được yêu cầu đặt bàn của bạn.\n\n" +
+            "Chi tiết:\n" +
+            "  - Mã đặt bàn : " + reservationId + "\n" +
+            "  - Thời gian  : " + datetime.format(DATETIME_FORMATTER) + "\n" +
+            "  - Số khách   : " + partySize + " người\n\n" +
+            "Nhân viên sẽ liên hệ qua điện thoại để xác nhận trong thời gian sớm nhất.\n" +
+            "Sau khi xác nhận, bạn sẽ nhận được email thông báo.\n\n" +
+            "Nếu bạn cần thay đổi, vui lòng liên hệ nhà hàng trực tiếp.\n\n" +
+            "Trân trọng,\nWasabi Restaurant"
+        );
+        mailSender.send(msg);
+    }
+
+    // ── ORM-03: Cancel OTP ────────────────────────────────────────────────────
+
+    public void sendCancelOtpEmail(String toEmail, String guestName, String otp) {
+        SimpleMailMessage msg = new SimpleMailMessage();
+        msg.setFrom(fromAddress);
+        msg.setTo(toEmail);
+        msg.setSubject("[Wasabi Restaurant] Mã xác nhận huỷ đặt bàn");
+        msg.setText(
+            "Xin chào " + guestName + ",\n\n" +
+            "Bạn đã yêu cầu huỷ đặt bàn tại Wasabi Restaurant.\n\n" +
+            "Mã OTP xác nhận huỷ: " + otp + "\n\n" +
+            "Mã có hiệu lực trong 10 phút.\n" +
+            "Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email và liên hệ nhà hàng ngay.\n\n" +
+            "Trân trọng,\nWasabi Restaurant"
+        );
+        mailSender.send(msg);
+    }
+
     // ── NM-04: Manual email ───────────────────────────────────────────────────
 
     public void sendManualEmail(String toEmail, String message) {

@@ -1,8 +1,9 @@
 package com.rms.restaurant.common.utils.enums;
 
 public enum NotificationType {
-    CONFIRMATION,
-    REMINDER,
-    CANCELLATION,
-    PAYMENT
+    PENDING,       // Đặt bàn đang chờ xác nhận
+    CONFIRMATION,  // Đặt bàn đã được xác nhận bởi nhân viên
+    REMINDER,      // Nhắc nhở 1 tiếng trước giờ đặt
+    CANCELLATION,  // Đặt bàn đã bị huỷ
+    PAYMENT        // Thanh toán thành công
 }

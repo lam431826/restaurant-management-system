@@ -57,6 +57,13 @@ public class NotificationDispatcher {
 
     private void dispatchEmail(String recipient, String template, Map<String, Object> vars) {
         switch (template) {
+            case "RESERVATION_PENDING" -> gmailService.sendReservationPendingEmail(
+                    recipient,
+                    (String) vars.get("guestName"),
+                    (LocalDateTime) vars.get("datetime"),
+                    (int) vars.get("partySize"),
+                    (String) vars.get("reservationId")
+            );
             case "RESERVATION_CONFIRMATION" -> gmailService.sendReservationConfirmationEmail(
                     recipient,
                     (String) vars.get("guestName"),

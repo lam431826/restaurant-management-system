@@ -8,7 +8,6 @@ import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.notification.dto.ReservationNotificationRequest;
 import com.rms.restaurant.module.notification.service.NotificationService;
-import com.rms.restaurant.module.reservation.dto.CreateReservationRequest;
 import com.rms.restaurant.module.reservation.dto.ReservationResponse;
 import com.rms.restaurant.module.reservation.dto.UpdateReservationRequest;
 import com.rms.restaurant.module.reservation.mapper.ReservationMapper;
@@ -53,26 +52,26 @@ public class ReservationServiceImpl implements ReservationService {
         return reservationMapper.toResponse(findOrThrow(id));
     }
 
+    // ── Staff confirm: PENDING → CONFIRMED ───────────────────────────────────
+    // Nhân viên gọi điện xác nhận với khách ngoài đời thực rồi mới bấm confirm
+
     @Override
-    public ReservationResponse create(CreateReservationRequest request, String createdBy) {
-        if (request.tableId() != null && !request.tableId().isBlank()) {
-            validateTableExists(request.tableId());
-            checkTableAvailability(request.tableId(), request.datetime(), null);
+    public ReservationResponse confirm(String id) {
+        Reservation reservation = findOrThrow(id);
+        if (reservation.getStatus() != ReservationStatus.PENDING) {
+            throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
         }
-        Reservation reservation = reservationMapper.toEntity(request);
-        if (reservation.getTableId() != null && reservation.getTableId().isBlank()) {
-            reservation.setTableId(null);
-        }
-        reservation.setStatus(ReservationStatus.PENDING);
-        reservation.setCreatedBy(createdBy);
+        reservation.setStatus(ReservationStatus.CONFIRMED);
         Reservation saved = reservationRepository.save(reservation);
-        // NM-01: gửi confirmation cho khách (async, non-blocking)
+
+        // NM-01: gửi email "đã được xác nhận" cho khách (async)
         try {
             notificationService.sendReservationNotification(
                     new ReservationNotificationRequest(saved.getId(), NotificationType.CONFIRMATION));
         } catch (Exception e) {
-            log.warn("NM-01 trigger failed after staff reservation create {}: {}", saved.getId(), e.getMessage());
+            log.warn("NM-01 CONFIRMATION trigger failed for reservation {}: {}", saved.getId(), e.getMessage());
         }
+
         return reservationMapper.toResponse(saved);
     }
 
@@ -102,21 +101,24 @@ public class ReservationServiceImpl implements ReservationService {
         return reservationMapper.toResponse(reservationRepository.save(reservation));
     }
 
+    // ── Staff cancel (PENDING hoặc CONFIRMED → CANCELLED) ────────────────────
+
     @Override
     public void cancel(String id) {
         Reservation reservation = findOrThrow(id);
-        if (reservation.getStatus() != ReservationStatus.PENDING
-                && reservation.getStatus() != ReservationStatus.CONFIRMED) {
+        if (!EnumSet.of(ReservationStatus.PENDING, ReservationStatus.CONFIRMED)
+                .contains(reservation.getStatus())) {
             throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
         }
         reservation.setStatus(ReservationStatus.CANCELLED);
         reservationRepository.save(reservation);
-        // NM-01: gửi thông báo hủy cho khách (async, non-blocking)
+
+        // NM-01: gửi thông báo huỷ cho khách (async)
         try {
             notificationService.sendReservationNotification(
                     new ReservationNotificationRequest(id, NotificationType.CANCELLATION));
         } catch (Exception e) {
-            log.warn("NM-01 trigger failed after cancel reservation {}: {}", id, e.getMessage());
+            log.warn("NM-01 CANCELLATION trigger failed for reservation {}: {}", id, e.getMessage());
         }
     }
 
@@ -140,7 +142,7 @@ public class ReservationServiceImpl implements ReservationService {
         reservationRepository.save(reservation);
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private Reservation findOrThrow(String id) {
         return reservationRepository.findById(id)

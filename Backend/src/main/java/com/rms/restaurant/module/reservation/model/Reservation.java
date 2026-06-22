@@ -51,6 +51,16 @@ public class Reservation {
     @Column(name = "created_by")
     private String createdBy;
 
+    // ── Cancel OTP (luồng huỷ đặt bàn online 2-bước) ─────────────────────────
+    @Column(name = "cancel_token", length = 64)
+    private String cancelToken;
+
+    @Column(name = "cancel_otp", length = 6)
+    private String cancelOtp;
+
+    @Column(name = "cancel_otp_expires")
+    private LocalDateTime cancelOtpExpires;
+
     @CreatedDate
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
