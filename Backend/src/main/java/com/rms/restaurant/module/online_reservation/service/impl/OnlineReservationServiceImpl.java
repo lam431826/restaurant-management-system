@@ -55,7 +55,7 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
                 .datetime(request.datetime())
                 .note(request.note())
                 .status(ReservationStatus.CONFIRMED) // online booking = auto CONFIRMED
-                .createdBy("ONLINE")
+                .createdBy(null)  // không có staff tạo — online guest tự đặt
                 .build();
 
         Reservation saved = reservationRepository.save(reservation);
