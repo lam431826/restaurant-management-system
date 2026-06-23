@@ -2,13 +2,21 @@ package com.rms.restaurant.module.menu.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 
 import java.math.BigDecimal;
 
 public record CreateMenuItemRequest(
         @NotBlank String categoryId,
         @NotBlank String name,
-        @NotNull @Positive BigDecimal price,
-        String description
+        @NotNull @PositiveOrZero BigDecimal price,
+        String code,
+        @PositiveOrZero BigDecimal costPrice,
+        String description,
+        String imageUrl,
+        String menuType,
+        String itemType,
+        String tag,
+        Boolean trackStock,
+        Boolean available
 ) {}

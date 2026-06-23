@@ -9,6 +9,7 @@ import Reservation from './components/reservation/Reservation'
 import CashierOrders from './components/cashier/CashierOrders'
 import LoginPage from './components/auth/LoginPage'
 import EmployeeLoginPage from './components/auth/EmployeeLoginPage'
+import { ProtectedRoute } from './contexts/AuthContext'
 
 function App() {
   return (
@@ -24,7 +25,7 @@ function App() {
       <Route path="/waiter" element={<Reservation />} />
 
       {/* ── Manager role (dashboard chrome) ── */}
-      <Route path="/manager" element={<Layout />}>
+      <Route path="/manager" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Navigate to="/manager/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="products" element={<Menu />} />

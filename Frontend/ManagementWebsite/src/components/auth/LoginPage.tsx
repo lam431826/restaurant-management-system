@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthLayout from './AuthLayout'
+import { useAuth } from '../../contexts/AuthContext'
+import { ApiError } from '../../services/api'
 
 const PersonIcon = () => (
   <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
@@ -53,15 +55,27 @@ const ROLES: { id: Role; label: string; to: string }[] = [
 
 const LoginPage = () => {
   const navigate = useNavigate()
+  const { login } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [role, setRole] = useState<Role>('manager')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const target = ROLES.find(r => r.id === role)!.to
-    navigate(target)
+    setError('')
+    setSubmitting(true)
+    try {
+      await login(username.trim(), password)
+      const target = ROLES.find(r => r.id === role)!.to
+      navigate(target)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Đăng nhập thất bại. Vui lòng thử lại.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -95,8 +109,10 @@ const LoginPage = () => {
           </div>
         </div>
 
-        <button type="submit" className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors">
-          <span className="text-[20px] font-semibold text-white leading-[1.5]">Đăng Nhập</span>
+        {error && <p className="text-[14px] text-[#d92d20] leading-[1.5]">{error}</p>}
+
+        <button type="submit" disabled={submitting} className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+          <span className="text-[20px] font-semibold text-white leading-[1.5]">{submitting ? 'Đang đăng nhập...' : 'Đăng Nhập'}</span>
         </button>
       </form>
 

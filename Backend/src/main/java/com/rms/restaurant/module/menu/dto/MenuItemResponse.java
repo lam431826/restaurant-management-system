@@ -2,4 +2,18 @@ package com.rms.restaurant.module.menu.dto;
 
 import java.math.BigDecimal;
 
-public record MenuItemResponse(String id, String categoryId, String name, BigDecimal price, String description, String imageUrl, boolean available) {}
+public record MenuItemResponse(
+        String id,
+        String code,
+        String categoryId,
+        String name,
+        BigDecimal price,
+        BigDecimal costPrice,
+        String description,
+        String imageUrl,
+        String menuType,
+        String itemType,
+        String tag,
+        boolean trackStock,
+        boolean available
+) {}
