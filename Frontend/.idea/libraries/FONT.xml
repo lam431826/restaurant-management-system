@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="FONT">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/PublicWebsite/FONT/bitterrose.zip!/" />
+      <root url="jar://$PROJECT_DIR$/PublicWebsite/FONT/MJSatoshi.zip!/" />
+      <root url="jar://$PROJECT_DIR$/PublicWebsite/FONT/satoshi.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
