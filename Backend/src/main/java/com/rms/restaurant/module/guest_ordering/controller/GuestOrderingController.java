@@ -29,8 +29,20 @@ public class GuestOrderingController {
         return ResponseEntity.ok(guestOrderingService.updateOrderItems(id, request));
     }
 
+    @PostMapping("/{id}/items")
+    public ResponseEntity<OrderStatusResponse> addOrderItems(
+            @PathVariable String id,
+            @jakarta.validation.Valid @RequestBody UpdateOrderItemsRequest request) {
+        return ResponseEntity.ok(guestOrderingService.addOrderItems(id, request));
+    }
+
     @GetMapping("/{id}/status")
     public ResponseEntity<OrderStatusResponse> getOrderStatus(@PathVariable String id) {
         return ResponseEntity.ok(guestOrderingService.getOrderStatus(id));
+    }
+
+    @GetMapping("/table-info")
+    public ResponseEntity<com.rms.restaurant.module.guest_ordering.dto.TableInfoResponse> getTableInfo(@RequestParam String token) {
+        return ResponseEntity.ok(guestOrderingService.getTableInfo(token));
     }
 }

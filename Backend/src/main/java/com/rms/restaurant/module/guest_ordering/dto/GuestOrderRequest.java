@@ -6,7 +6,6 @@ import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 
 public record GuestOrderRequest(
-        @NotBlank String tableId,
         @NotBlank String tableToken,
         @NotEmpty List<GuestOrderItemRequest> items,
         String note
