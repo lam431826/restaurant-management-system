@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import InvoiceDetail from './InvoiceDetail'
 import { getInvoiceById } from '../../services/invoiceApi'
 import type { InvoiceDetail as InvoiceDetailData, InvoiceSummary } from '../../services/invoiceApi'
@@ -8,6 +8,7 @@ interface Props {
   loading: boolean
   refreshVersion: number
   onApplyDiscount: (invoice: InvoiceSummary) => void
+  onProcessPayment: (invoice: InvoiceSummary) => void
 }
 
 const money = (value: number) => value.toLocaleString('vi-VN')
@@ -25,17 +26,37 @@ const DiscountIcon = () => (
   </svg>
 )
 
-const InvoiceTable = ({ invoices, loading, refreshVersion, onApplyDiscount }: Props) => {
+const PaymentIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" />
+  </svg>
+)
+
+const InvoiceTable = ({ invoices, loading, refreshVersion, onApplyDiscount, onProcessPayment }: Props) => {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<InvoiceDetailData | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState('')
+  const previousRefreshVersion = useRef(refreshVersion)
 
-  useEffect(() => {
-    setExpandedId(null)
+  const loadDetail = useCallback(async (invoiceId: string) => {
     setDetail(null)
     setDetailError('')
-  }, [refreshVersion])
+    setDetailLoading(true)
+    try {
+      setDetail(await getInvoiceById(invoiceId))
+    } catch (loadError) {
+      setDetailError(loadError instanceof Error ? loadError.message : 'Không thể tải chi tiết hóa đơn')
+    } finally {
+      setDetailLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (previousRefreshVersion.current === refreshVersion) return
+    previousRefreshVersion.current = refreshVersion
+    if (expandedId) void loadDetail(expandedId)
+  }, [expandedId, loadDetail, refreshVersion])
 
   const toggleDetail = async (invoice: InvoiceSummary) => {
     if (expandedId === invoice.id) {
@@ -46,16 +67,7 @@ const InvoiceTable = ({ invoices, loading, refreshVersion, onApplyDiscount }: Pr
     }
 
     setExpandedId(invoice.id)
-    setDetail(null)
-    setDetailError('')
-    setDetailLoading(true)
-    try {
-      setDetail(await getInvoiceById(invoice.id))
-    } catch (loadError) {
-      setDetailError(loadError instanceof Error ? loadError.message : 'Không thể tải chi tiết hóa đơn')
-    } finally {
-      setDetailLoading(false)
-    }
+    await loadDetail(invoice.id)
   }
 
   const totals = invoices.reduce((sum, invoice) => ({
@@ -67,7 +79,7 @@ const InvoiceTable = ({ invoices, loading, refreshVersion, onApplyDiscount }: Pr
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-card border border-line rounded-t-lg overflow-hidden">
       <div className="flex-1 min-h-0 overflow-auto">
-        <table className="w-full min-w-[112rem] border-collapse">
+        <table className="w-full min-w-[126rem] border-collapse">
           <thead>
             <tr>
               <th className={`${th} min-w-[22rem]`}>Mã hóa đơn</th>
@@ -77,7 +89,7 @@ const InvoiceTable = ({ invoices, loading, refreshVersion, onApplyDiscount }: Pr
               <th className={`${th} text-right w-[13rem]`}>Giảm giá</th>
               <th className={`${th} text-right w-[15rem]`}>Tổng thanh toán</th>
               <th className={`${th} w-[15rem]`}>Trạng thái</th>
-              <th className={`${th} text-center w-[18rem]`}>Thao tác</th>
+              <th className={`${th} text-center w-[30rem]`}>Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -111,16 +123,28 @@ const InvoiceTable = ({ invoices, loading, refreshVersion, onApplyDiscount }: Pr
                       </span>
                     </td>
                     <td className={`${td} text-center`} onClick={event => event.stopPropagation()}>
-                      <button
-                        type="button"
-                        className="kv-btn kv-btn-outline-primary h-8 px-3"
-                        onClick={() => onApplyDiscount(invoice)}
-                        disabled={invoice.paid}
-                        title={invoice.paid ? 'Hóa đơn đã thanh toán' : 'Áp dụng khuyến mãi'}
-                      >
-                        <DiscountIcon />
-                        Giảm giá
-                      </button>
+                      <div className="inline-flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          className="kv-btn kv-btn-outline-primary h-8 px-3"
+                          onClick={() => onApplyDiscount(invoice)}
+                          disabled={invoice.paid}
+                          title={invoice.paid ? 'Hóa đơn đã thanh toán' : 'Áp dụng khuyến mãi'}
+                        >
+                          <DiscountIcon />
+                          Giảm giá
+                        </button>
+                        <button
+                          type="button"
+                          className="kv-btn kv-btn-primary h-8 px-3"
+                          onClick={() => onProcessPayment(invoice)}
+                          disabled={invoice.paid}
+                          title={invoice.paid ? 'Hóa đơn đã thanh toán' : 'Thanh toán hóa đơn'}
+                        >
+                          <PaymentIcon />
+                          Thanh toán
+                        </button>
+                      </div>
                     </td>
                   </tr>
                   {isOpen && (
@@ -129,7 +153,12 @@ const InvoiceTable = ({ invoices, loading, refreshVersion, onApplyDiscount }: Pr
                         {detailLoading && <div className="px-5 py-8 text-center text-md text-ink-muted">Đang tải chi tiết hóa đơn...</div>}
                         {detailError && <div className="px-5 py-5 text-md text-danger bg-danger-50">{detailError}</div>}
                         {detail && (
-                          <InvoiceDetail invoice={detail} onApplyDiscount={() => onApplyDiscount(invoice)} />
+                          <InvoiceDetail
+                            invoice={detail}
+                            historyRefreshVersion={refreshVersion}
+                            onApplyDiscount={() => onApplyDiscount(invoice)}
+                            onProcessPayment={() => onProcessPayment(invoice)}
+                          />
                         )}
                       </td>
                     </tr>

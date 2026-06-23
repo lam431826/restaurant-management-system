@@ -5,12 +5,15 @@ import InvoiceFilters from './InvoiceFilters'
 import type { FilterState } from './InvoiceFilters'
 import InvoiceTable from './InvoiceTable'
 import InvoiceToolbar from './InvoiceToolbar'
+import ProcessPaymentModal from './ProcessPaymentModal'
 import {
   applyInvoiceDiscount,
   generateInvoice,
   getInvoices,
 } from '../../services/invoiceApi'
 import type { InvoiceSummary } from '../../services/invoiceApi'
+import { processPayment } from '../../services/paymentApi'
+import type { PaymentMethod } from '../../services/paymentApi'
 
 const initialFilters: FilterState = {
   orderId: '',
@@ -25,6 +28,7 @@ const Invoices = () => {
   const [success, setSuccess] = useState('')
   const [showGenerate, setShowGenerate] = useState(false)
   const [discountInvoice, setDiscountInvoice] = useState<InvoiceSummary | null>(null)
+  const [paymentInvoice, setPaymentInvoice] = useState<InvoiceSummary | null>(null)
   const [refreshVersion, setRefreshVersion] = useState(0)
 
   const loadInvoices = useCallback(async (nextFilters: FilterState) => {
@@ -66,6 +70,15 @@ const Invoices = () => {
     await refreshInvoices()
   }
 
+  const handleProcessPayment = async (method: PaymentMethod) => {
+    if (!paymentInvoice) return
+    const invoiceId = paymentInvoice.id
+    await processPayment(invoiceId, method)
+    setPaymentInvoice(null)
+    setSuccess(`Thanh toán hóa đơn ${invoiceId} thành công`)
+    await refreshInvoices()
+  }
+
   return (
     <div className="flex h-[calc(100vh-var(--kv-header-height))] bg-surface overflow-hidden">
       <aside className="w-[24rem] shrink-0 flex flex-col px-4 pt-5 pb-4 overflow-y-auto border-r border-line bg-card">
@@ -98,6 +111,7 @@ const Invoices = () => {
           loading={loading}
           refreshVersion={refreshVersion}
           onApplyDiscount={invoice => { setDiscountInvoice(invoice); setSuccess('') }}
+          onProcessPayment={invoice => { setPaymentInvoice(invoice); setSuccess('') }}
         />
       </section>
 
@@ -109,6 +123,13 @@ const Invoices = () => {
           invoice={discountInvoice}
           onClose={() => setDiscountInvoice(null)}
           onSubmit={handleApplyDiscount}
+        />
+      )}
+      {paymentInvoice && (
+        <ProcessPaymentModal
+          invoice={paymentInvoice}
+          onClose={() => setPaymentInvoice(null)}
+          onSubmit={handleProcessPayment}
         />
       )}
     </div>
