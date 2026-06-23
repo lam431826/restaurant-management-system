@@ -37,7 +37,10 @@ public enum ApplicationError {
     USER_NOT_UNLOCKABLE("Only locked accounts can be unlocked", HttpStatus.UNPROCESSABLE_ENTITY),
 
     // Business Rules
+    DUPLICATE_TABLE_NAME("Table name already exists", HttpStatus.CONFLICT),
     TABLE_NOT_AVAILABLE("Table is not available for this time slot", HttpStatus.CONFLICT),
+    TABLE_CAPACITY_EXCEEDED("Party size exceeds table capacity", HttpStatus.UNPROCESSABLE_ENTITY),
+    TABLE_IN_USE("Table is currently occupied and cannot be deleted", HttpStatus.CONFLICT),
     INVALID_TABLE_TOKEN("Table token is invalid or expired", HttpStatus.UNAUTHORIZED),
     SHIFT_ALREADY_OPEN("A shift is already open", HttpStatus.CONFLICT),
     SHIFT_NOT_OPEN("No open shift found", HttpStatus.CONFLICT),

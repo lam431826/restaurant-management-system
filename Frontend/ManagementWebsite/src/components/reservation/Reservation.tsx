@@ -14,8 +14,10 @@ import {
   cancelReservation,
   checkInReservation,
   noShowReservation,
+  updateReservation,
   type ReservationDto,
 } from '../../api/reservations'
+import { listTables, type TableDto } from '../../api/tables'
 import { pollReservationNotifResult, getNotificationLogs, type NotificationLogDto } from '../../api/notifications'
 import ChangePasswordModal from '../auth/ChangePasswordModal'
 
@@ -31,8 +33,8 @@ const toDisplay = (dto: ReservationDto): Res => {
     phone: dto.phone,
     guestEmail: dto.guestEmail ?? null,
     guests: dto.partySize,
-    table: dto.tableId ?? '—',
-    area: '',
+    table: dto.tableName ?? '—',
+    area: dto.tableArea ?? '',
     status: dto.status,
     note: dto.note ?? '',
     startHour: dt.getHours() + dt.getMinutes() / 60,
@@ -65,6 +67,7 @@ const Reservation = () => {
   const [showModal, setShowModal] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'info' | 'error' } | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [tables, setTables] = useState<TableDto[]>([])
   const [bellOpen, setBellOpen] = useState(false)
   const [notifLogs, setNotifLogs] = useState<NotificationLogDto[]>([])
   const [notifLoading, setNotifLoading] = useState(false)
@@ -121,6 +124,10 @@ const Reservation = () => {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    listTables().then(r => setTables(r.data.data)).catch(() => {})
+  }, [])
+
   const handleConfirm = async (id: string) => {
     const guestEmail = items.find(r => r.id === id)?.guestEmail ?? null
     try {
@@ -154,6 +161,14 @@ const Reservation = () => {
   const handleNoShow = async (id: string) => {
     try { await noShowReservation(id); await load(); showToast('Đã đánh dấu không đến') }
     catch { showToast('Không thể cập nhật', 'error') }
+  }
+
+  const handleAssignTable = async (reservationId: string, tableId: string) => {
+    try {
+      await updateReservation(reservationId, { tableId })
+      await load()
+      showToast('Đã xếp bàn thành công')
+    } catch { showToast('Không thể xếp bàn', 'error') }
   }
 
   return (
@@ -193,7 +208,17 @@ const Reservation = () => {
         )}
 
         {tab === 'calendar' ? (
-          <CalendarView reservations={items} selectedDate={selectedDate} onSelectDate={setSelectedDate} />
+          <CalendarView
+            reservations={items}
+            tables={tables}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            onAssignTable={handleAssignTable}
+            onConfirm={handleConfirm}
+            onCheckIn={handleCheckIn}
+            onCancel={handleCancel}
+            onNoShow={handleNoShow}
+          />
         ) : (
           <ListView
             reservations={items}

@@ -16,6 +16,7 @@ import com.rms.restaurant.module.authentication.repository.OtpRecordRepository;
 import com.rms.restaurant.module.authentication.repository.RefreshTokenRepository;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.authentication.service.AuthService;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,6 +49,7 @@ public class AuthServiceImpl implements AuthService {
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final GmailService gmailService;
+    private final AuditService auditService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Value("${app.jwt.access-token-expiration}")
@@ -76,6 +78,8 @@ public class AuthServiceImpl implements AuthService {
                 user.setLockedAt(LocalDateTime.now());
             }
             userRepository.save(user);
+            audit(user.getId(), user.getUsername(), "AUTH_LOGIN_FAILED", "User", user.getId(),
+                    "{\"reason\":\"INVALID_CREDENTIALS\",\"attempts\":" + attempts + "}");
             throw new UnauthorizedException(ApplicationError.INVALID_CREDENTIALS);
         }
 
@@ -87,6 +91,7 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(user);
 
         refreshTokenRepository.revokeAllByUserId(user.getId());
+        audit(user.getId(), user.getUsername(), "AUTH_LOGIN", "User", user.getId(), "{}");
         return issueTokenPair(user);
     }
 
@@ -139,6 +144,7 @@ public class AuthServiceImpl implements AuthService {
         user.setStatus(UserStatus.ACTIVE);
         user.setFailedLoginAttempts(0);
         userRepository.save(user);
+        audit(user.getId(), user.getUsername(), "AUTH_ACCOUNT_ACTIVATED", "User", user.getId(), "{}");
 
         refreshTokenRepository.revokeAllByUserId(user.getId());
         return issueTokenPair(user);
@@ -207,8 +213,10 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void logout(String username) {
-        userRepository.findByUsername(username)
-                .ifPresent(user -> refreshTokenRepository.revokeAllByUserId(user.getId()));
+        userRepository.findByUsername(username).ifPresent(user -> {
+            refreshTokenRepository.revokeAllByUserId(user.getId());
+            audit(user.getId(), user.getUsername(), "AUTH_LOGOUT", "User", user.getId(), "{}");
+        });
     }
 
     @Override
@@ -222,6 +230,7 @@ public class AuthServiceImpl implements AuthService {
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         userRepository.save(user);
+        audit(user.getId(), user.getUsername(), "AUTH_PASSWORD_CHANGED", "User", user.getId(), "{}");
     }
 
     @Override
@@ -286,6 +295,7 @@ public class AuthServiceImpl implements AuthService {
             user.setLockedAt(null);
         }
         userRepository.save(user);
+        audit(user.getId(), user.getUsername(), "AUTH_PASSWORD_RESET", "User", user.getId(), "{}");
 
         refreshTokenRepository.revokeAllByUserId(user.getId());
     }
@@ -331,6 +341,12 @@ public class AuthServiceImpl implements AuthService {
                 null,
                 null
         );
+    }
+
+    private void audit(String actorId, String actorUsername, String action,
+                       String targetEntity, String targetId, String detail) {
+        try { auditService.log(actorId, actorUsername, action, targetEntity, targetId, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
     }
 
     private String generateOtp() {

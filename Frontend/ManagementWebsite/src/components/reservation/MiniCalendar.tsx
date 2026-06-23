@@ -28,7 +28,7 @@ const buildGrid = (view: Date): Date[] => {
 
 const MiniCalendar = ({ selected, onSelect }: Props) => {
   const [view, setView] = useState(new Date(selected.getFullYear(), selected.getMonth(), 1))
-  const today = new Date(2026, 5, 17) // matches the app's "today" (17/06/2026)
+  const today = new Date()
 
   const grid = buildGrid(view)
   const move = (delta: number) => setView(v => new Date(v.getFullYear(), v.getMonth() + delta, 1))

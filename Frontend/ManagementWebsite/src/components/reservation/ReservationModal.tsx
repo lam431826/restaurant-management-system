@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createReservation } from '../../api/reservations'
+import { listTables, type TableDto } from '../../api/tables'
 
 interface Props {
   onClose: () => void
@@ -40,6 +41,8 @@ const ReservationModal = ({ onClose, onSaved }: Props) => {
   const [date, setDate] = useState(defaultDate)
   const [time, setTime] = useState('19:00')
   const [note, setNote] = useState('')
+  const [tableId, setTableId] = useState<string>('')
+  const [tables, setTables] = useState<TableDto[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const customerRef = useRef<HTMLInputElement>(null)
@@ -50,8 +53,13 @@ const ReservationModal = ({ onClose, onSaved }: Props) => {
     document.body.style.overflow = 'hidden'
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
+    listTables().then(r => setTables(r.data.data)).catch(() => {})
     return () => { document.body.style.overflow = prev; document.removeEventListener('keydown', onKey) }
   }, [onClose])
+
+  // Group available tables by area for the dropdown
+  const availableTables = tables.filter(t => t.status === 'AVAILABLE')
+  const areas = [...new Set(availableTables.map(t => t.area))]
 
   const handleSave = async () => {
     if (!customer.trim()) { setError('Vui lòng nhập tên khách hàng'); customerRef.current?.focus(); return }
@@ -67,6 +75,7 @@ const ReservationModal = ({ onClose, onSaved }: Props) => {
         phone: phone.trim(),
         partySize: Number(guests),
         datetime: `${date}T${time}:00`,
+        tableId: tableId || null,
         note: note.trim() || null,
         guestEmail: email.trim() || null,
       })
@@ -112,7 +121,24 @@ const ReservationModal = ({ onClose, onSaved }: Props) => {
               <div className="w-[10rem] shrink-0"><label className="text-md text-ink-subtle">Số khách<span className="text-danger ml-0.5">*</span></label></div>
               <input className={`${inputCls} text-right`} inputMode="numeric" placeholder="0" value={guests} onChange={e => setGuests(e.target.value.replace(/[^\d]/g, ''))} />
             </div>
-            <div />
+            <Row label="Chọn bàn">
+              <select
+                className={inputCls}
+                value={tableId}
+                onChange={e => setTableId(e.target.value)}
+              >
+                <option value="">— Chưa xếp bàn —</option>
+                {areas.map(area => (
+                  <optgroup key={area} label={area}>
+                    {availableTables.filter(t => t.area === area).map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.capacity} chỗ)
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </Row>
           </div>
           <Row label="Giờ đến" required>
             <div className="flex gap-2">

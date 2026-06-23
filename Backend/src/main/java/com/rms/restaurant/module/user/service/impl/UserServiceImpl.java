@@ -14,6 +14,7 @@ import com.rms.restaurant.module.user.dto.CreateUserResponse;
 import com.rms.restaurant.module.user.dto.UpdateUserRequest;
 import com.rms.restaurant.module.user.dto.UserResponse;
 import com.rms.restaurant.module.user.mapper.UserProfileMapper;
+import com.rms.restaurant.module.user.service.AuditService;
 import com.rms.restaurant.module.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,7 @@ public class UserServiceImpl implements UserService {
     private final UserProfileMapper userProfileMapper;
     private final PasswordEncoder passwordEncoder;
     private final GmailService gmailService;
+    private final AuditService auditService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Override
@@ -88,6 +90,11 @@ public class UserServiceImpl implements UserService {
             }
         }
 
+        try {
+            auditService.log("USER_CREATE", "User", saved.getId(),
+                    "{\"username\":\"" + saved.getUsername() + "\",\"role\":\"" + saved.getRole() + "\"}");
+        } catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+
         return new CreateUserResponse(userProfileMapper.toResponse(saved), tempPassword);
     }
 
@@ -123,7 +130,12 @@ public class UserServiceImpl implements UserService {
             log.info("Admin changed status of user '{}' to {}", user.getUsername(), request.status());
         }
 
-        return userProfileMapper.toResponse(userRepository.save(user));
+        User saved = userRepository.save(user);
+        try {
+            auditService.log("USER_UPDATE", "User", saved.getId(),
+                    "{\"username\":\"" + saved.getUsername() + "\",\"role\":\"" + saved.getRole() + "\",\"status\":\"" + saved.getStatus() + "\"}");
+        } catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+        return userProfileMapper.toResponse(saved);
     }
 
     @Override
@@ -132,6 +144,10 @@ public class UserServiceImpl implements UserService {
         user.setStatus(UserStatus.INACTIVE);
         userRepository.save(user);
         log.info("Soft-deleted user '{}'", user.getUsername());
+        try {
+            auditService.log("USER_DELETE", "User", user.getId(),
+                    "{\"username\":\"" + user.getUsername() + "\"}");
+        } catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
     }
 
     @Override
@@ -145,6 +161,10 @@ public class UserServiceImpl implements UserService {
         user.setLockedAt(null);
         userRepository.save(user);
         log.info("Unlocked user '{}'", user.getUsername());
+        try {
+            auditService.log("USER_UNLOCK", "User", user.getId(),
+                    "{\"username\":\"" + user.getUsername() + "\"}");
+        } catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
     }
 
     private User findUserById(String id) {

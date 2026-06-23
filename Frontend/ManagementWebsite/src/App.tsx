@@ -10,6 +10,7 @@ import Employees from './components/staff/Employees'
 import Reservation from './components/reservation/Reservation'
 import CashierOrders from './components/cashier/CashierOrders'
 import AdminDashboard from './components/admin/AdminDashboard'
+import AuditLogPage from './components/audit/AuditLogPage'
 import LoginPage from './components/auth/LoginPage'
 import EmployeeLoginPage from './components/auth/EmployeeLoginPage'
 import ForgotPasswordPage from './components/auth/ForgotPasswordPage'
@@ -34,14 +35,14 @@ function App() {
 
         {/* ── Cashier ── */}
         <Route path="/cashier" element={
-          <ProtectedRoute roles={['CASHIER', 'MANAGER', 'ADMIN']}>
+          <ProtectedRoute roles={['CASHIER', 'MANAGER']}>
             <CashierOrders />
           </ProtectedRoute>
         } />
 
         {/* ── Waiter ── */}
         <Route path="/waiter" element={
-          <ProtectedRoute roles={['WAITER', 'MANAGER', 'ADMIN']}>
+          <ProtectedRoute roles={['WAITER', 'MANAGER']}>
             <Reservation />
           </ProtectedRoute>
         } />
@@ -58,6 +59,7 @@ function App() {
           <Route path="rooms" element={<Rooms />} />
           <Route path="invoices" element={<Invoices />} />
           <Route path="employees" element={<Employees />} />
+          <Route path="audit-logs" element={<AuditLogPage />} />
         </Route>
 
         {/* ── Default → login ── */}

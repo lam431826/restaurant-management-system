@@ -2,6 +2,7 @@ package com.rms.restaurant.module.reservation.service.impl;
 
 import com.rms.restaurant.common.utils.enums.NotificationType;
 import com.rms.restaurant.common.utils.enums.ReservationStatus;
+import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
@@ -11,11 +12,12 @@ import com.rms.restaurant.module.notification.service.NotificationService;
 import com.rms.restaurant.module.reservation.dto.CreateReservationRequest;
 import com.rms.restaurant.module.reservation.dto.ReservationResponse;
 import com.rms.restaurant.module.reservation.dto.UpdateReservationRequest;
-import com.rms.restaurant.module.reservation.mapper.ReservationMapper;
 import com.rms.restaurant.module.reservation.model.Reservation;
 import com.rms.restaurant.module.reservation.repository.ReservationRepository;
 import com.rms.restaurant.module.reservation.service.ReservationService;
+import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
@@ -23,7 +25,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.EnumSet;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -35,30 +38,37 @@ public class ReservationServiceImpl implements ReservationService {
             EnumSet.of(ReservationStatus.CHECKED_IN, ReservationStatus.NO_SHOW, ReservationStatus.CANCELLED);
 
     private final ReservationRepository reservationRepository;
-    private final ReservationMapper reservationMapper;
     private final TableRepository tableRepository;
     private final NotificationService notificationService;
+    private final AuditService auditService;
 
     @Override
     @Transactional(readOnly = true)
     public PageResponse<ReservationResponse> list(Pageable pageable) {
-        return PageResponse.of(
-                reservationRepository.findAll(pageable).map(reservationMapper::toResponse)
-        );
+        var page = reservationRepository.findAll(pageable);
+
+        Set<String> tableIds = page.getContent().stream()
+                .map(Reservation::getTableId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<String, RestaurantTable> tableMap = tableIds.isEmpty() ? Collections.emptyMap() :
+                tableRepository.findAllById(tableIds).stream()
+                        .collect(Collectors.toMap(RestaurantTable::getId, t -> t));
+
+        return PageResponse.of(page.map(r -> toResponse(r, tableMap)));
     }
+
+
 
     @Override
     @Transactional(readOnly = true)
     public ReservationResponse getById(String id) {
-        return reservationMapper.toResponse(findOrThrow(id));
+        return enrich(findOrThrow(id));
     }
-
-    // ── Staff tạo đặt bàn qua điện thoại → auto CONFIRMED ────────────────────
 
     @Override
     public ReservationResponse create(CreateReservationRequest request) {
         if (request.tableId() != null) {
             validateTableExists(request.tableId());
+            validateTableCapacity(request.tableId(), request.partySize());
             checkTableAvailability(request.tableId(), request.datetime(), null);
         }
         Reservation reservation = Reservation.builder()
@@ -73,6 +83,10 @@ public class ReservationServiceImpl implements ReservationService {
                 .build();
         Reservation saved = reservationRepository.save(reservation);
 
+        if (saved.getTableId() != null) {
+            setTableStatus(saved.getTableId(), TableStatus.RESERVED, TableStatus.AVAILABLE);
+        }
+
         if (saved.getGuestEmail() != null && !saved.getGuestEmail().isBlank()) {
             try {
                 notificationService.sendReservationNotification(
@@ -82,11 +96,10 @@ public class ReservationServiceImpl implements ReservationService {
             }
         }
 
-        return reservationMapper.toResponse(saved);
+        audit("RESERVATION_CREATE", saved.getId(),
+                "{\"guestName\":\"" + esc(saved.getGuestName()) + "\",\"tableId\":\"" + esc(saved.getTableId()) + "\"}");
+        return enrich(saved);
     }
-
-    // ── Staff confirm: PENDING → CONFIRMED ───────────────────────────────────
-    // Nhân viên gọi điện xác nhận với khách ngoài đời thực rồi mới bấm confirm
 
     @Override
     public ReservationResponse confirm(String id) {
@@ -97,7 +110,10 @@ public class ReservationServiceImpl implements ReservationService {
         reservation.setStatus(ReservationStatus.CONFIRMED);
         Reservation saved = reservationRepository.save(reservation);
 
-        // NM-01: gửi email "đã được xác nhận" cho khách (async)
+        if (saved.getTableId() != null) {
+            setTableStatus(saved.getTableId(), TableStatus.RESERVED, TableStatus.AVAILABLE);
+        }
+
         try {
             notificationService.sendReservationNotification(
                     new ReservationNotificationRequest(saved.getId(), NotificationType.CONFIRMATION));
@@ -105,7 +121,9 @@ public class ReservationServiceImpl implements ReservationService {
             log.warn("NM-01 CONFIRMATION trigger failed for reservation {}: {}", saved.getId(), e.getMessage());
         }
 
-        return reservationMapper.toResponse(saved);
+        audit("RESERVATION_CONFIRM", saved.getId(),
+                "{\"from\":\"PENDING\",\"to\":\"CONFIRMED\",\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
+        return enrich(saved);
     }
 
     @Override
@@ -116,8 +134,12 @@ public class ReservationServiceImpl implements ReservationService {
             throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
         }
 
+        String oldTableId = reservation.getTableId();
+
         if (request.tableId() != null) {
             validateTableExists(request.tableId());
+            int effectivePartySize = request.partySize() != null ? request.partySize() : reservation.getPartySize();
+            validateTableCapacity(request.tableId(), effectivePartySize);
             checkTableAvailability(request.tableId(),
                     request.datetime() != null ? request.datetime() : reservation.getDatetime(),
                     id);
@@ -131,10 +153,38 @@ public class ReservationServiceImpl implements ReservationService {
             reservation.setStatus(request.status());
         }
 
-        return reservationMapper.toResponse(reservationRepository.save(reservation));
-    }
+        Reservation saved = reservationRepository.save(reservation);
 
-    // ── Staff cancel (PENDING hoặc CONFIRMED → CANCELLED) ────────────────────
+        if (request.tableId() != null && !request.tableId().equals(oldTableId)) {
+            if (oldTableId != null) {
+                setTableStatus(oldTableId, TableStatus.AVAILABLE, null);
+            }
+            if (saved.getStatus() == ReservationStatus.CONFIRMED) {
+                setTableStatus(saved.getTableId(), TableStatus.RESERVED, TableStatus.AVAILABLE);
+            }
+        }
+
+        String auditAction;
+        String auditDetail;
+        if (request.status() != null) {
+            auditAction = switch (request.status()) {
+                case CONFIRMED -> "RESERVATION_CONFIRM";
+                case CHECKED_IN -> "RESERVATION_CHECK_IN";
+                case NO_SHOW -> "RESERVATION_NO_SHOW";
+                case CANCELLED -> "RESERVATION_CANCEL";
+                default -> "RESERVATION_UPDATE";
+            };
+            auditDetail = "{\"to\":\"" + request.status() + "\",\"guestName\":\"" + esc(saved.getGuestName()) + "\"}";
+        } else if (request.tableId() != null) {
+            auditAction = "RESERVATION_ASSIGN_TABLE";
+            auditDetail = "{\"tableId\":\"" + esc(saved.getTableId()) + "\",\"guestName\":\"" + esc(saved.getGuestName()) + "\"}";
+        } else {
+            auditAction = "RESERVATION_UPDATE";
+            auditDetail = "{\"guestName\":\"" + esc(saved.getGuestName()) + "\"}";
+        }
+        audit(auditAction, saved.getId(), auditDetail);
+        return enrich(saved);
+    }
 
     @Override
     public void cancel(String id) {
@@ -143,16 +193,24 @@ public class ReservationServiceImpl implements ReservationService {
                 .contains(reservation.getStatus())) {
             throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
         }
+
+        if (reservation.getTableId() != null) {
+            setTableStatus(reservation.getTableId(), TableStatus.AVAILABLE, TableStatus.RESERVED);
+        }
+
+        ReservationStatus prevStatus = reservation.getStatus();
         reservation.setStatus(ReservationStatus.CANCELLED);
         reservationRepository.save(reservation);
 
-        // NM-01: gửi thông báo huỷ cho khách (async)
         try {
             notificationService.sendReservationNotification(
                     new ReservationNotificationRequest(id, NotificationType.CANCELLATION));
         } catch (Exception e) {
             log.warn("NM-01 CANCELLATION trigger failed for reservation {}: {}", id, e.getMessage());
         }
+
+        audit("RESERVATION_CANCEL", id,
+                "{\"from\":\"" + prevStatus + "\",\"guestName\":\"" + esc(reservation.getGuestName()) + "\"}");
     }
 
     @Override
@@ -162,7 +220,15 @@ public class ReservationServiceImpl implements ReservationService {
             throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
         }
         reservation.setStatus(ReservationStatus.CHECKED_IN);
-        return reservationMapper.toResponse(reservationRepository.save(reservation));
+        Reservation saved = reservationRepository.save(reservation);
+
+        if (saved.getTableId() != null) {
+            setTableStatus(saved.getTableId(), TableStatus.OCCUPIED, null);
+        }
+
+        audit("RESERVATION_CHECK_IN", saved.getId(),
+                "{\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
+        return enrich(saved);
     }
 
     @Override
@@ -171,11 +237,27 @@ public class ReservationServiceImpl implements ReservationService {
         if (reservation.getStatus() != ReservationStatus.CONFIRMED) {
             throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
         }
+
+        if (reservation.getTableId() != null) {
+            setTableStatus(reservation.getTableId(), TableStatus.AVAILABLE, TableStatus.RESERVED);
+        }
+
         reservation.setStatus(ReservationStatus.NO_SHOW);
         reservationRepository.save(reservation);
+        audit("RESERVATION_NO_SHOW", id,
+                "{\"guestName\":\"" + esc(reservation.getGuestName()) + "\"}");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void audit(String action, String id, String detail) {
+        try { auditService.log(action, "Reservation", id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
 
     private Reservation findOrThrow(String id) {
         return reservationRepository.findById(id)
@@ -186,6 +268,14 @@ public class ReservationServiceImpl implements ReservationService {
         if (!tableRepository.existsById(tableId)) {
             throw new ResourceNotFoundException(ApplicationError.TABLE_NOT_FOUND);
         }
+    }
+
+    private void validateTableCapacity(String tableId, int partySize) {
+        tableRepository.findById(tableId).ifPresent(t -> {
+            if (partySize > t.getCapacity()) {
+                throw new ApplicationException(ApplicationError.TABLE_CAPACITY_EXCEEDED);
+            }
+        });
     }
 
     private void checkTableAvailability(String tableId, LocalDateTime datetime, String excludeId) {
@@ -213,5 +303,39 @@ public class ReservationServiceImpl implements ReservationService {
         if (!valid) {
             throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
         }
+    }
+
+    private void setTableStatus(String tableId, TableStatus newStatus, TableStatus onlyIfCurrent) {
+        tableRepository.findById(tableId).ifPresent(t -> {
+            if (onlyIfCurrent == null || t.getStatus() == onlyIfCurrent) {
+                t.setStatus(newStatus);
+                tableRepository.save(t);
+            }
+        });
+    }
+
+    private ReservationResponse enrich(Reservation r) {
+        Map<String, RestaurantTable> tableMap = r.getTableId() == null ? Collections.emptyMap() :
+                tableRepository.findAllById(List.of(r.getTableId())).stream()
+                        .collect(Collectors.toMap(RestaurantTable::getId, t -> t));
+        return toResponse(r, tableMap);
+    }
+
+    private ReservationResponse toResponse(Reservation r, Map<String, RestaurantTable> tableMap) {
+        RestaurantTable t = r.getTableId() != null ? tableMap.get(r.getTableId()) : null;
+        return new ReservationResponse(
+                r.getId(),
+                r.getTableId(),
+                t != null ? t.getName() : null,
+                t != null ? t.getArea() : null,
+                r.getGuestName(),
+                r.getPhone(),
+                r.getGuestEmail(),
+                r.getPartySize(),
+                r.getDatetime(),
+                r.getNote(),
+                r.getStatus(),
+                r.getCreatedAt()
+        );
     }
 }

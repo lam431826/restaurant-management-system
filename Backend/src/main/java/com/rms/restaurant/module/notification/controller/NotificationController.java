@@ -27,7 +27,7 @@ public class NotificationController {
     // ── NM-01: Gửi thông báo đặt bàn ────────────────────────────────────────
     // Dùng để trigger thủ công hoặc retry; auto-trigger xảy ra trong ReservationService
     @PostMapping("/reservation")
-    @PreAuthorize("hasAnyRole('WAITER','MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('WAITER','MANAGER')")
     public ResponseEntity<Void> sendReservationNotification(
             @Valid @RequestBody ReservationNotificationRequest request) {
         notificationService.sendReservationNotification(request);
@@ -37,7 +37,7 @@ public class NotificationController {
     // ── NM-02: Gửi xác nhận thanh toán ──────────────────────────────────────
     // Auto-trigger sẽ được wire từ PM-03; endpoint này cho phép retry thủ công
     @PostMapping("/payment")
-    @PreAuthorize("hasAnyRole('CASHIER','MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER','MANAGER')")
     public ResponseEntity<Void> sendPaymentNotification(
             @Valid @RequestBody PaymentNotificationRequest request) {
         notificationService.sendPaymentNotification(request);
@@ -47,7 +47,7 @@ public class NotificationController {
     // ── NM-03: Xem lịch sử thông báo ─────────────────────────────────────────
     // WAITER/CASHIER chỉ truy vấn theo referenceId cụ thể; MANAGER/ADMIN xem toàn bộ
     @GetMapping("/log")
-    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER')")
     public PageResponse<NotificationLogResponse> getLogs(
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String status,
@@ -62,7 +62,7 @@ public class NotificationController {
 
     // ── NM-04: Gửi thông báo thủ công ────────────────────────────────────────
     @PostMapping("/manual")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasRole('MANAGER')")
     public ResponseEntity<Void> sendManual(
             @Valid @RequestBody ManualNotificationRequest request) {
         notificationService.sendManual(request);

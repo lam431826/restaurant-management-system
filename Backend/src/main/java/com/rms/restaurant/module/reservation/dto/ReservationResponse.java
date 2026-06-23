@@ -7,6 +7,8 @@ import java.time.LocalDateTime;
 public record ReservationResponse(
         String id,
         String tableId,
+        String tableName,
+        String tableArea,
         String guestName,
         String phone,
         String guestEmail,

@@ -5,6 +5,8 @@ export type ReservationStatus = 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'NO_SHO
 export interface ReservationDto {
   id: string
   tableId: string | null
+  tableName: string | null
+  tableArea: string | null
   guestName: string
   phone: string
   guestEmail: string | null
@@ -45,3 +47,6 @@ export const checkInReservation = (id: string) =>
 
 export const noShowReservation = (id: string) =>
   apiClient.put(`/reservations/${id}/no-show`)
+
+export const updateReservation = (id: string, body: { tableId?: string | null; note?: string | null; partySize?: number; datetime?: string }) =>
+  apiClient.put<{ data: ReservationDto }>(`/reservations/${id}`, body)

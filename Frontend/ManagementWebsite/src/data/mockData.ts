@@ -440,7 +440,7 @@ export interface Reservation {
   phone: string;       // Điện thoại
   guestEmail: string | null;
   guests: number;      // Số khách
-  table: string;       // tableId hoặc '—'
+  table: string;       // tableName hoặc '—'
   area: string;
   status: ReservationStatus;
   note: string;
@@ -626,6 +626,14 @@ export const navItems = [
     children: [
       { label: 'Thuế & Kế toán', href: '#' },
       { label: 'Hóa đơn điện tử', href: '#' },
+    ],
+  },
+  {
+    id: 13,
+    label: 'Nhật ký',
+    allowedRoles: ['MANAGER', 'ADMIN'] as string[],
+    children: [
+      { label: 'Nhật ký thao tác', href: '#/manager/audit-logs' },
     ],
   },
 ];
