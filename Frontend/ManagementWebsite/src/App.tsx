@@ -9,6 +9,7 @@ import Reservation from './components/reservation/Reservation'
 import CashierOrders from './components/cashier/CashierOrders'
 import LoginPage from './components/auth/LoginPage'
 import EmployeeLoginPage from './components/auth/EmployeeLoginPage'
+import PromotionManagement from './components/promotions/PromotionManagement'
 
 function App() {
   return (
@@ -30,6 +31,7 @@ function App() {
         <Route path="products" element={<Menu />} />
         <Route path="rooms" element={<Rooms />} />
         <Route path="invoices" element={<Invoices />} />
+        <Route path="promotions" element={<PromotionManagement />} />
         <Route path="employees" element={<Employees />} />
       </Route>
 

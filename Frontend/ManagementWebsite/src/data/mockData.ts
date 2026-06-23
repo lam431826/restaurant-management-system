@@ -569,6 +569,7 @@ export const navItems = [
     label: 'Giao dịch',
     children: [
       { label: 'Hóa đơn', href: '#/manager/invoices' },
+      { label: 'Khuyến mãi', href: '#/manager/promotions' },
       { label: 'Trả hàng', href: '#' },
     ],
   },
