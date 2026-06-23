@@ -1,24 +1,59 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import RoomFilters from './RoomFilters'
 import type { AreaFilter, StatusFilter } from './RoomFilters'
 import RoomToolbar from './RoomToolbar'
 import RoomTable from './RoomTable'
 import RoomModal from './RoomModal'
+import AreaModal from './AreaModal'
 import QrModal from './QrModal'
-import { rooms as initialRooms, roomAreas as initialAreas } from '../../data/mockData'
-import type { Room } from '../../data/mockData'
+import ConfirmDialog from '../menu/ConfirmDialog'
+import { listTables, listAreas, setTableActive, deleteTable } from '../../services/tableService'
+import type { TableItem, TableArea } from '../../services/tableService'
+import { ApiError } from '../../services/api'
 
 const Rooms = () => {
-  const [items, setItems] = useState<Room[]>(initialRooms)
-  const [areas, setAreas] = useState<string[]>(initialAreas)
+  const [items, setItems] = useState<TableItem[]>([])
+  const [areas, setAreas] = useState<TableArea[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
   const [search, setSearch] = useState('')
   const [area, setArea] = useState<AreaFilter>('all')
-  const [status, setStatus] = useState<StatusFilter>('active')
+  const [status, setStatus] = useState<StatusFilter>('all')
 
   // modal state
   const [showAdd, setShowAdd] = useState(false)
-  const [editRoom, setEditRoom] = useState<Room | null>(null)
-  const [qrRoom, setQrRoom] = useState<Room | null>(null)
+  const [editTable, setEditTable] = useState<TableItem | null>(null)
+  const [qrTable, setQrTable] = useState<TableItem | null>(null)
+  const [showAddArea, setShowAddArea] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<TableItem | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  const areaNames = useMemo(() => areas.map(a => a.name), [areas])
+
+  const loadAreas = useCallback(async () => {
+    try {
+      setAreas(await listAreas())
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không tải được khu vực.')
+    }
+  }, [])
+
+  const loadTables = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      setItems(await listTables())
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không tải được danh sách phòng/bàn.')
+      setItems([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void loadAreas() }, [loadAreas])
+  useEffect(() => { void loadTables() }, [loadTables])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -31,22 +66,28 @@ const Rooms = () => {
     })
   }, [items, area, status, search])
 
-  const createArea = (): string | undefined => {
-    const name = window.prompt('Tên khu vực mới:')?.trim()
-    if (!name) return undefined
-    setAreas(prev => (prev.includes(name) ? prev : [...prev, name]))
-    return name
+  const handleToggleActive = async (table: TableItem) => {
+    try {
+      await setTableActive(table.id, !table.active)
+      setItems(prev => prev.map(r => (r.id === table.id ? { ...r, active: !r.active } : r)))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không cập nhật được trạng thái.')
+    }
   }
 
-  const handleSave = (room: Room, addAnother: boolean) => {
-    setItems(prev => {
-      const exists = prev.some(r => r.id === room.id)
-      return exists ? prev.map(r => (r.id === room.id ? room : r)) : [room, ...prev]
-    })
-    if (room.area && !areas.includes(room.area)) setAreas(prev => [...prev, room.area])
-    if (!addAnother) {
-      setShowAdd(false)
-      setEditRoom(null)
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setError('')
+    try {
+      await deleteTable(deleteTarget.id)
+      setDeleteTarget(null)
+      void loadTables()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không xóa được phòng/bàn.')
+      setDeleteTarget(null)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -55,12 +96,12 @@ const Rooms = () => {
       <aside className="w-[26rem] shrink-0 flex flex-col px-5 pt-5 pb-4 overflow-y-auto">
         <h1 className="text-h2 font-extrabold text-ink mb-5">Phòng/Bàn</h1>
         <RoomFilters
-          areas={areas}
+          areas={areaNames}
           area={area}
           status={status}
           onArea={setArea}
           onStatus={setStatus}
-          onCreateArea={createArea}
+          onCreateArea={() => setShowAddArea(true)}
         />
       </aside>
 
@@ -70,33 +111,63 @@ const Rooms = () => {
           onSearch={setSearch}
           onAdd={() => setShowAdd(true)}
           rooms={items}
+          onImported={() => { void loadTables(); void loadAreas() }}
+          onError={setError}
         />
+
+        {error && (
+          <div className="px-4 py-2 rounded-md bg-danger-50 text-danger text-md border border-danger/30">{error}</div>
+        )}
+
         <RoomTable
           rooms={filtered}
           total={items.length}
-          onViewQr={setQrRoom}
-          onRowClick={setEditRoom}
+          loading={loading}
+          onViewQr={setQrTable}
+          onEdit={setEditTable}
+          onToggleActive={handleToggleActive}
+          onDelete={setDeleteTarget}
         />
       </section>
 
       {showAdd && (
         <RoomModal
-          areas={areas}
+          areas={areaNames}
           onClose={() => setShowAdd(false)}
-          onSave={handleSave}
-          onCreateArea={createArea}
+          onSaved={loadTables}
+          onCreateArea={() => setShowAddArea(true)}
         />
       )}
-      {editRoom && (
+      {editTable && (
         <RoomModal
-          room={editRoom}
-          areas={areas}
-          onClose={() => setEditRoom(null)}
-          onSave={handleSave}
-          onCreateArea={createArea}
+          table={editTable}
+          areas={areaNames}
+          onClose={() => setEditTable(null)}
+          onSaved={loadTables}
+          onCreateArea={() => setShowAddArea(true)}
         />
       )}
-      {qrRoom && <QrModal room={qrRoom} onClose={() => setQrRoom(null)} />}
+      {qrTable && <QrModal room={qrTable} onClose={() => setQrTable(null)} />}
+
+      {showAddArea && (
+        <AreaModal
+          existingNames={areaNames}
+          onClose={() => setShowAddArea(false)}
+          onSaved={() => { setShowAddArea(false); void loadAreas() }}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Xóa phòng/bàn"
+          message={<>Bạn có chắc muốn xóa <b className="text-ink">{deleteTarget.name}</b>? Hành động này không thể hoàn tác.</>}
+          confirmLabel="Xóa"
+          cancelLabel="Hủy"
+          loading={deleting}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   )
 }

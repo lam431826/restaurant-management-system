@@ -9,6 +9,10 @@ import java.util.Optional;
 
 public interface TableRepository extends JpaRepository<RestaurantTable, String> {
     List<RestaurantTable> findByStatus(TableStatus status);
+    List<RestaurantTable> findAllByOrderByDisplayOrderAscNameAsc();
     Optional<RestaurantTable> findByQrToken(String qrToken);
     boolean existsByName(String name);
+    boolean existsByNameIgnoreCase(String name);
+    boolean existsByArea(String area);
+    Optional<RestaurantTable> findByNameIgnoreCase(String name);
 }

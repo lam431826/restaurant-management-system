@@ -42,6 +42,13 @@ public enum ApplicationError {
     CATEGORY_HAS_ITEMS("Category still has items; reassign or remove them first", HttpStatus.CONFLICT),
     MENU_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
 
+    // Table Management
+    DUPLICATE_TABLE_NAME("A table with this name already exists", HttpStatus.CONFLICT),
+    AREA_NOT_FOUND("Area not found", HttpStatus.NOT_FOUND),
+    DUPLICATE_AREA_NAME("An area with this name already exists", HttpStatus.CONFLICT),
+    AREA_HAS_TABLES("Area still has tables; reassign or remove them first", HttpStatus.CONFLICT),
+    TABLE_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
+
     // Business Rules
     TABLE_NOT_AVAILABLE("Table is not available for this time slot", HttpStatus.CONFLICT),
     INVALID_TABLE_TOKEN("Table token is invalid or expired", HttpStatus.UNAUTHORIZED),

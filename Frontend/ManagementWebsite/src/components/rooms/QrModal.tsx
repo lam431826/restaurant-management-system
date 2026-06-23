@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
-import type { Room } from '../../data/mockData'
+import type { TableItem } from '../../services/tableService'
 
 interface Props {
-  room: Room
+  room: TableItem
   onClose: () => void
 }
 

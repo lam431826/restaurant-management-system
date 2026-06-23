@@ -1,11 +1,15 @@
-import { useState } from 'react'
-import type { Room } from '../../data/mockData'
+import { Fragment, useState } from 'react'
+import type { TableItem } from '../../services/tableService'
+import RoomDetail from './RoomDetail'
 
 interface Props {
-  rooms: Room[]
+  rooms: TableItem[]
   total: number
-  onViewQr: (room: Room) => void
-  onRowClick: (room: Room) => void
+  loading: boolean
+  onViewQr: (room: TableItem) => void
+  onEdit: (room: TableItem) => void
+  onToggleActive: (room: TableItem) => void
+  onDelete: (room: TableItem) => void
 }
 
 const PAGE_SIZE = 15
@@ -13,8 +17,9 @@ const PAGE_SIZE = 15
 const th = 'sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-4 py-3 whitespace-nowrap'
 const td = 'text-md text-ink px-4 py-3 border-b border-line align-middle'
 
-const RoomTable = ({ rooms, total, onViewQr, onRowClick }: Props) => {
+const RoomTable = ({ rooms, total, loading, onViewQr, onEdit, onToggleActive, onDelete }: Props) => {
   const [page, setPage] = useState(1)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const pageCount = Math.max(1, Math.ceil(rooms.length / PAGE_SIZE))
   // Clamp during render so the page stays valid when the filtered set shrinks
@@ -43,33 +48,50 @@ const RoomTable = ({ rooms, total, onViewQr, onRowClick }: Props) => {
             {visible.length === 0 ? (
               <tr>
                 <td className={`${td} text-center text-ink-muted`} colSpan={7}>
-                  Không tìm thấy phòng/bàn nào
+                  {loading ? 'Đang tải…' : 'Không tìm thấy phòng/bàn nào'}
                 </td>
               </tr>
             ) : (
               visible.map(r => (
-                <tr key={r.id} className="cursor-pointer hover:bg-primary-25" onClick={() => onRowClick(r)}>
-                  <td className={td}>{r.name}</td>
-                  <td className={`${td} text-ink-muted`}>{r.note || ''}</td>
-                  <td className={td}>{r.area}</td>
-                  <td className={td}>{r.seats}</td>
-                  <td className={td}>
-                    {r.active ? (
-                      <span className="text-ink">Đang hoạt động</span>
-                    ) : (
-                      <span className="text-ink-muted">Ngừng hoạt động</span>
-                    )}
-                  </td>
-                  <td className={td}>{r.order}</td>
-                  <td className={td}>
-                    <button
-                      className="text-primary cursor-pointer hover:underline"
-                      onClick={e => { e.stopPropagation(); onViewQr(r) }}
-                    >
-                      Xem mã QR
-                    </button>
-                  </td>
-                </tr>
+                <Fragment key={r.id}>
+                  <tr
+                    className={`cursor-pointer ${expandedId === r.id ? 'bg-primary-50' : 'hover:bg-primary-25'}`}
+                    onClick={() => setExpandedId(id => (id === r.id ? null : r.id))}
+                  >
+                    <td className={td}>{r.name}</td>
+                    <td className={`${td} text-ink-muted`}>{r.note || ''}</td>
+                    <td className={td}>{r.area}</td>
+                    <td className={td}>{r.seats}</td>
+                    <td className={td}>
+                      {r.active ? (
+                        <span className="text-ink">Đang hoạt động</span>
+                      ) : (
+                        <span className="text-ink-muted">Ngừng hoạt động</span>
+                      )}
+                    </td>
+                    <td className={td}>{r.order}</td>
+                    <td className={td}>
+                      <button
+                        className="text-primary cursor-pointer hover:underline"
+                        onClick={e => { e.stopPropagation(); onViewQr(r) }}
+                      >
+                        Xem mã QR
+                      </button>
+                    </td>
+                  </tr>
+                  {expandedId === r.id && (
+                    <tr>
+                      <td colSpan={7} className="p-0 border-b border-line" onClick={e => e.stopPropagation()}>
+                        <RoomDetail
+                          room={r}
+                          onEdit={onEdit}
+                          onToggleActive={onToggleActive}
+                          onDelete={onDelete}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))
             )}
           </tbody>

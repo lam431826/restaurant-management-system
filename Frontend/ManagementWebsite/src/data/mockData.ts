@@ -289,7 +289,16 @@ export interface Room {
   order: number;      // Số thứ tự
 }
 
-export const roomAreas = ['Phòng VIP', 'Lầu 2', 'Lầu 3'];
+export interface RoomArea {
+  name: string;   // Tên khu vực
+  note: string;   // Ghi chú
+}
+
+export const roomAreas: RoomArea[] = [
+  { name: 'Phòng VIP', note: '' },
+  { name: 'Lầu 2', note: '' },
+  { name: 'Lầu 3', note: '' },
+];
 
 const buildRooms = (): Room[] => {
   const list: Room[] = [];
