@@ -38,6 +38,29 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final InvoiceMapper invoiceMapper;
 
     @Override
+    @Transactional(readOnly = true)
+    public List<InvoiceSummaryResponse> getAll(Boolean paid, String orderId) {
+        boolean hasOrderId = orderId != null && !orderId.isBlank();
+        List<Invoice> invoices;
+
+        if (hasOrderId && paid != null) {
+            invoices = invoiceRepository.findByOrderIdAndPaidOrderByCreatedAtDesc(orderId.trim(), paid);
+        } else if (hasOrderId) {
+            invoices = invoiceRepository.findByOrderIdOrderByCreatedAtDesc(orderId.trim());
+        } else if (paid != null) {
+            invoices = invoiceRepository.findByPaidOrderByCreatedAtDesc(paid);
+        } else {
+            invoices = invoiceRepository.findAllByOrderByCreatedAtDesc();
+        }
+
+        List<InvoiceSummaryResponse> responses = new ArrayList<>();
+        for (Invoice invoice : invoices) {
+            responses.add(invoiceMapper.toSummaryResponse(invoice));
+        }
+        return responses;
+    }
+
+    @Override
     public InvoiceResponse generate(GenerateInvoiceRequest request) {
         String orderId = request.orderId();
 

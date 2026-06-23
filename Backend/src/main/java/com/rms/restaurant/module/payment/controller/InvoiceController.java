@@ -5,6 +5,7 @@ import com.rms.restaurant.module.payment.dto.ApplyDiscountRequest;
 import com.rms.restaurant.module.payment.dto.GenerateInvoiceRequest;
 import com.rms.restaurant.module.payment.dto.InvoiceDetailResponse;
 import com.rms.restaurant.module.payment.dto.InvoiceResponse;
+import com.rms.restaurant.module.payment.dto.InvoiceSummaryResponse;
 import com.rms.restaurant.module.payment.service.InvoiceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,15 +16,24 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/invoices")
 @RequiredArgsConstructor
 public class InvoiceController {
     private final InvoiceService invoiceService;
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<InvoiceSummaryResponse>>> getAll(
+            @RequestParam(required = false) Boolean paid,
+            @RequestParam(required = false) String orderId) {
+        return ResponseEntity.ok(ApiResponse.success(invoiceService.getAll(paid, orderId)));
+    }
 
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<InvoiceDetailResponse>> getById(@PathVariable String id) {
