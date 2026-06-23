@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthLayout from './AuthLayout'
+import { login } from '../../services/authApi'
+import type { UserRole } from '../../services/authApi'
+import { saveAuth } from '../../services/tokenStorage'
 
 const PersonIcon = () => (
   <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
@@ -51,17 +54,43 @@ const ROLES: { id: Role; label: string; to: string }[] = [
   { id: 'cashier', label: 'Thu ngân', to: '/cashier' },
 ]
 
+const ROLE_ROUTES: Record<UserRole, string> = {
+  ADMIN: '/manager/dashboard',
+  MANAGER: '/manager/dashboard',
+  WAITER: '/waiter',
+  CASHIER: '/cashier',
+}
+
 const LoginPage = () => {
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [role, setRole] = useState<Role>('manager')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const target = ROLES.find(r => r.id === role)!.to
-    navigate(target)
+    setError('')
+    setSubmitting(true)
+
+    try {
+      const response = await login(username, password)
+      if (!response.accessToken) {
+        throw new Error(response.requiresVerification
+          ? 'Tài khoản cần được xác thực trước khi đăng nhập.'
+          : 'Phản hồi đăng nhập không có access token.')
+      }
+
+      saveAuth(response.accessToken, response.user)
+      const fallbackTarget = ROLES.find(r => r.id === role)!.to
+      navigate(response.user ? ROLE_ROUTES[response.user.role] : fallbackTarget)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Đăng nhập thất bại.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -95,8 +124,10 @@ const LoginPage = () => {
           </div>
         </div>
 
-        <button type="submit" className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors">
-          <span className="text-[20px] font-semibold text-white leading-[1.5]">Đăng Nhập</span>
+        {error && <p className="text-[14px] text-red-600 leading-[1.5]">{error}</p>}
+
+        <button type="submit" disabled={submitting} className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+          <span className="text-[20px] font-semibold text-white leading-[1.5]">{submitting ? 'Đang đăng nhập...' : 'Đăng Nhập'}</span>
         </button>
       </form>
 

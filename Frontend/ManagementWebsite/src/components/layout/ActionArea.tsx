@@ -9,6 +9,8 @@ import {
   IconConciergeBell,
 } from '../common/Icon'
 import { helpLinks, cashierModes } from '../../data/mockData'
+import { logout } from '../../services/authApi'
+import { clearAuth } from '../../services/tokenStorage'
 
 type DropdownName = 'cashier' | 'notifications' | 'help' | 'user' | null
 
@@ -38,6 +40,18 @@ const ActionArea = () => {
   }, [])
 
   const toggle = (name: DropdownName) => setOpen(prev => (prev === name ? null : name))
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+    } catch {
+      // Local logout must still complete when the backend is unavailable.
+    } finally {
+      clearAuth()
+      setOpen(null)
+      navigate('/login')
+    }
+  }
 
   const cashierIcon = (icon: string) =>
     icon === 'ik-calendar-day' ? <IconCalendar size={16} /> : <IconConciergeBell size={16} />
@@ -201,9 +215,9 @@ const ActionArea = () => {
 
             <div className="h-px bg-line my-1" />
 
-            <div className={`${menuRow} text-danger hover:!bg-[var(--kv-action-danger-faded-bg)]`}>
+            <button type="button" onClick={handleLogout} className={`${menuRow} w-full border-none bg-transparent text-left text-danger hover:!bg-[var(--kv-action-danger-faded-bg)]`}>
               Đăng xuất
-            </div>
+            </button>
           </div>
         )}
       </div>
