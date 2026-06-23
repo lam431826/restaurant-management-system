@@ -12,6 +12,26 @@ import { helpLinks, cashierModes } from '../../data/mockData'
 import { useAuth } from '../../context/AuthContext'
 import { logout } from '../../api/auth'
 import ChangePasswordModal from '../auth/ChangePasswordModal'
+import { getNotificationLogs, type NotificationLogDto } from '../../api/notifications'
+
+const TEMPLATE_LABELS: Record<string, string> = {
+  RESERVATION_CONFIRMATION: 'Xác nhận đặt bàn',
+  RESERVATION_CANCELLATION: 'Hủy đặt bàn',
+  RESERVATION_REMINDER: 'Nhắc lịch đặt bàn',
+  RESERVATION_PENDING: 'Đặt bàn chờ duyệt',
+  PAYMENT_CONFIRMATION: 'Xác nhận thanh toán',
+  MANUAL: 'Thủ công',
+}
+
+const timeAgo = (dateStr: string): string => {
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
+  if (seconds < 60) return 'Vừa xong'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} phút trước`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} giờ trước`
+  return `${Math.floor(hours / 24)} ngày trước`
+}
 
 const roleLabel: Record<string, string> = {
   ADMIN: 'Quản trị viên',
@@ -31,9 +51,23 @@ const menuRow =
 const ActionArea = () => {
   const [open, setOpen] = useState<DropdownName>(null)
   const [showChangePassword, setShowChangePassword] = useState(false)
+  const [notifLogs, setNotifLogs] = useState<NotificationLogDto[]>([])
+  const [notifLoading, setNotifLoading] = useState(false)
+  const [notifTab, setNotifTab] = useState<'all' | 'failed'>('all')
   const ref = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
+
+  const failedCount = notifLogs.filter(n => n.status === 'FAILED').length
+
+  useEffect(() => {
+    if (open !== 'notifications') return
+    setNotifLoading(true)
+    getNotificationLogs({ size: 30 })
+      .then(r => setNotifLogs(r.data.data))
+      .catch(() => {/* silent */})
+      .finally(() => setNotifLoading(false))
+  }, [open])
 
   const handleLogout = async () => {
     setOpen(null)
@@ -101,33 +135,82 @@ const ActionArea = () => {
 
       {/* ── Notification bell ── */}
       <div className="relative flex items-center">
-        <button
-          className="kv-btn kv-btn-icon-only kv-btn-outline-primary"
-          onClick={() => toggle('notifications')}
-          aria-label="Hộp thư đến"
-          aria-expanded={open === 'notifications'}
-        >
-          <IconBell size={16} />
-        </button>
+        <div className="relative inline-flex">
+          <button
+            className="kv-btn kv-btn-icon-only kv-btn-outline-primary"
+            onClick={() => toggle('notifications')}
+            aria-label="Thông báo email"
+            aria-expanded={open === 'notifications'}
+          >
+            <IconBell size={16} />
+          </button>
+          {failedCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[1rem] h-4 bg-danger rounded-full text-white text-[10px] font-bold flex items-center justify-center px-0.5 pointer-events-none">
+              {failedCount > 9 ? '9+' : failedCount}
+            </span>
+          )}
+        </div>
 
         {open === 'notifications' && (
-          <div className="kv-float-container w-[36rem] max-h-[58rem] overflow-hidden flex flex-col p-0">
+          <div className="kv-float-container w-[38rem] max-h-[58rem] overflow-hidden flex flex-col p-0">
             <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-              <h6 className="text-xl font-bold m-0">Hộp thư đến</h6>
+              <h6 className="text-xl font-bold m-0">Lịch sử email thông báo</h6>
             </div>
             <div className="flex px-5 gap-4 border-b border-line">
-              <span className="py-3 text-md text-primary font-semibold border-b-2 border-primary cursor-pointer">
+              <span
+                onClick={() => setNotifTab('all')}
+                className={`py-3 text-md font-semibold border-b-2 cursor-pointer ${notifTab === 'all' ? 'text-primary border-primary' : 'text-ink-subtle border-transparent hover:text-ink'}`}
+              >
                 Tất cả
               </span>
-              <span className="py-3 text-md text-ink-subtle border-b-2 border-transparent cursor-pointer hover:text-ink">
-                Ưu đãi
-              </span>
-              <span className="py-3 text-md text-ink-subtle border-b-2 border-transparent cursor-pointer hover:text-ink">
-                Cập nhật
+              <span
+                onClick={() => setNotifTab('failed')}
+                className={`py-3 text-md font-semibold border-b-2 cursor-pointer flex items-center gap-1.5 ${notifTab === 'failed' ? 'text-primary border-primary' : 'text-ink-subtle border-transparent hover:text-ink'}`}
+              >
+                Thất bại
+                {failedCount > 0 && (
+                  <span className="bg-danger text-white text-[11px] font-bold rounded-full px-1.5 py-0.5 leading-none">{failedCount}</span>
+                )}
               </span>
             </div>
-            <div className="flex items-center justify-center px-5 py-12 text-md text-ink-muted">
-              Không có thông báo
+
+            <div className="overflow-y-auto flex-1">
+              {notifLoading ? (
+                <div className="flex items-center justify-center py-10 text-md text-ink-muted">Đang tải...</div>
+              ) : (() => {
+                const displayed = notifLogs.filter(n => notifTab === 'all' || n.status === 'FAILED')
+                if (displayed.length === 0) {
+                  return (
+                    <div className="flex items-center justify-center px-5 py-12 text-md text-ink-muted">
+                      {notifTab === 'failed' ? 'Không có email thất bại' : 'Chưa có thông báo nào'}
+                    </div>
+                  )
+                }
+                return displayed.map(log => (
+                  <div key={log.id} className="flex items-start gap-3 px-5 py-3 border-b border-line last:border-b-0 hover:bg-[var(--kv-state-hover-bg)]">
+                    <div className="text-[1.4rem] mt-0.5 shrink-0">📧</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-md font-semibold text-ink">
+                          {TEMPLATE_LABELS[log.template] ?? log.template}
+                        </span>
+                        <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
+                          log.status === 'SENT'   ? 'bg-[var(--kv-success)] text-white' :
+                          log.status === 'FAILED' ? 'bg-danger text-white' :
+                          'bg-yellow-500 text-white'
+                        }`}>
+                          {log.status === 'SENT' ? 'Đã gửi' : log.status === 'FAILED' ? 'Thất bại' : 'Đang gửi'}
+                        </span>
+                      </div>
+                      <div className="text-sm text-ink-muted mt-0.5 truncate">{log.recipient}</div>
+                      {log.status === 'FAILED' && log.errorMessage && (
+                        <div className="text-sm text-danger/70 mt-0.5 truncate">{log.errorMessage}</div>
+                      )}
+                      <div className="text-xs text-ink-muted mt-0.5">{timeAgo(log.sentAt)}</div>
+                    </div>
+                  </div>
+                ))
+              })()}
             </div>
           </div>
         )}

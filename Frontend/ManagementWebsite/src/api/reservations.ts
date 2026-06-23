@@ -7,6 +7,7 @@ export interface ReservationDto {
   tableId: string | null
   guestName: string
   phone: string
+  guestEmail: string | null
   partySize: number
   datetime: string
   note: string | null
@@ -29,6 +30,7 @@ export const createReservation = (body: {
   datetime: string
   tableId?: string | null
   note?: string | null
+  guestEmail?: string | null
 }) =>
   apiClient.post<{ data: ReservationDto }>('/reservations', body)
 

@@ -438,6 +438,7 @@ export interface Reservation {
   arriveTime: string;  // Giờ đến định dạng dd/MM/yyyy HH:mm
   customer: string;    // Tên khách
   phone: string;       // Điện thoại
+  guestEmail: string | null;
   guests: number;      // Số khách
   table: string;       // tableId hoặc '—'
   area: string;

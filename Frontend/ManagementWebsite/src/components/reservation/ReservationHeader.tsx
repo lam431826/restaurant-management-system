@@ -1,31 +1,59 @@
 import { useState, useEffect, useRef } from 'react'
+import type { NotificationLogDto } from '../../api/notifications'
 
 type Tab = 'calendar' | 'list'
+
+const TEMPLATE_LABELS: Record<string, string> = {
+  RESERVATION_CONFIRMATION: 'Xác nhận đặt bàn',
+  RESERVATION_CANCELLATION: 'Hủy đặt bàn',
+  RESERVATION_REMINDER: 'Nhắc lịch đặt bàn',
+  RESERVATION_PENDING: 'Đặt bàn chờ duyệt',
+  PAYMENT_CONFIRMATION: 'Xác nhận thanh toán',
+  MANUAL: 'Thủ công',
+}
+
+const timeAgo = (dateStr: string): string => {
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
+  if (seconds < 60) return 'Vừa xong'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} phút trước`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} giờ trước`
+  return `${Math.floor(hours / 24)} ngày trước`
+}
 
 interface Props {
   tab: Tab
   onTab: (t: Tab) => void
   onLogout?: () => void
   onChangePassword?: () => void
+  notifLogs?: NotificationLogDto[]
+  notifLoading?: boolean
+  bellOpen?: boolean
+  onBellToggle?: () => void
 }
 
-const ReservationHeader = ({ tab, onTab, onLogout, onChangePassword }: Props) => {
+const ReservationHeader = ({ tab, onTab, onLogout, onChangePassword, notifLogs = [], notifLoading = false, bellOpen = false, onBellToggle }: Props) => {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const bellRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+      if (bellRef.current && !bellRef.current.contains(e.target as Node) && bellOpen) onBellToggle?.()
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [])
+  }, [bellOpen, onBellToggle])
 
   const tabCls = (active: boolean) =>
     [
       'h-9 px-5 rounded-t-md text-md font-semibold cursor-pointer transition-colors',
       active ? 'bg-card text-primary' : 'bg-transparent text-white/90 hover:bg-white/10',
     ].join(' ')
+
+  const failedCount = notifLogs.filter(n => n.status === 'FAILED').length
 
   return (
     <header className="shrink-0 bg-[#3a4a8c] text-white flex items-stretch h-14 pl-5 pr-4">
@@ -48,6 +76,67 @@ const ReservationHeader = ({ tab, onTab, onLogout, onChangePassword }: Props) =>
           </svg>
           Chi nhánh trung tâm
         </button>
+
+        {/* Notification bell */}
+        <div className="relative" ref={bellRef}>
+          <div className="relative inline-flex">
+            <button
+              onClick={onBellToggle}
+              className="hover:opacity-90 cursor-pointer w-8 h-8 flex items-center justify-center rounded-md hover:bg-white/10 transition-colors"
+              aria-label="Thông báo email"
+              aria-expanded={bellOpen}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+            </button>
+            {failedCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[1rem] h-4 bg-red-400 rounded-full text-white text-[10px] font-bold flex items-center justify-center px-0.5 pointer-events-none">
+                {failedCount > 9 ? '9+' : failedCount}
+              </span>
+            )}
+          </div>
+
+          {bellOpen && (
+            <div className="absolute right-0 top-full mt-2 bg-white rounded-[10px] shadow-lg border border-[#e8e8e8] w-[36rem] z-50 flex flex-col overflow-hidden max-h-[50rem]">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#e8e8e8]">
+                <span className="text-[15px] font-bold text-[#202325]">Kết quả gửi email thông báo</span>
+              </div>
+
+              <div className="overflow-y-auto flex-1">
+                {notifLoading ? (
+                  <div className="flex items-center justify-center py-10 text-[14px] text-[#797b7c]">Đang tải...</div>
+                ) : notifLogs.length === 0 ? (
+                  <div className="flex items-center justify-center py-10 text-[14px] text-[#797b7c]">Chưa có thông báo nào</div>
+                ) : notifLogs.map(log => (
+                  <div key={log.id} className="flex items-start gap-3 px-4 py-3 border-b border-[#e8e8e8] last:border-b-0 hover:bg-[#f9fafb]">
+                    <div className="text-[1.3rem] mt-0.5 shrink-0">📧</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[14px] font-semibold text-[#202325]">
+                          {TEMPLATE_LABELS[log.template] ?? log.template}
+                        </span>
+                        <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
+                          log.status === 'SENT'   ? 'bg-green-500 text-white' :
+                          log.status === 'FAILED' ? 'bg-red-500 text-white' :
+                          'bg-yellow-500 text-white'
+                        }`}>
+                          {log.status === 'SENT' ? 'Đã gửi' : log.status === 'FAILED' ? 'Thất bại' : 'Đang gửi'}
+                        </span>
+                      </div>
+                      <div className="text-[12px] text-[#636566] mt-0.5 truncate">{log.recipient}</div>
+                      {log.status === 'FAILED' && log.errorMessage && (
+                        <div className="text-[11px] text-red-400 mt-0.5 truncate">{log.errorMessage}</div>
+                      )}
+                      <div className="text-[11px] text-[#797b7c] mt-0.5">{log.sentAt ? timeAgo(log.sentAt) : ''}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         <button className="hover:opacity-90 cursor-pointer" aria-label="Thiết lập">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />

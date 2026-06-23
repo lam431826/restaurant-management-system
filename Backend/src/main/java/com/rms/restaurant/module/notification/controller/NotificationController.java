@@ -45,17 +45,19 @@ public class NotificationController {
     }
 
     // ── NM-03: Xem lịch sử thông báo ─────────────────────────────────────────
+    // WAITER/CASHIER chỉ truy vấn theo referenceId cụ thể; MANAGER/ADMIN xem toàn bộ
     @GetMapping("/log")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER','ADMIN')")
     public PageResponse<NotificationLogResponse> getLogs(
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String referenceId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return notificationService.getLogs(type, status, from, to, pageable);
+        return notificationService.getLogs(type, status, referenceId, from, to, pageable);
     }
 
     // ── NM-04: Gửi thông báo thủ công ────────────────────────────────────────

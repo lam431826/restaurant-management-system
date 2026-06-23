@@ -25,6 +25,7 @@ public class ReservationMapper {
                 reservation.getTableId(),
                 reservation.getGuestName(),
                 reservation.getPhone(),
+                reservation.getGuestEmail(),
                 reservation.getPartySize(),
                 reservation.getDatetime(),
                 reservation.getNote(),

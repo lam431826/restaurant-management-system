@@ -35,6 +35,7 @@ const defaultDate = () => {
 const ReservationModal = ({ onClose, onSaved }: Props) => {
   const [customer, setCustomer] = useState('')
   const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
   const [guests, setGuests] = useState('')
   const [date, setDate] = useState(defaultDate)
   const [time, setTime] = useState('19:00')
@@ -56,6 +57,7 @@ const ReservationModal = ({ onClose, onSaved }: Props) => {
     if (!customer.trim()) { setError('Vui lòng nhập tên khách hàng'); customerRef.current?.focus(); return }
     if (!phone.trim()) { setError('Vui lòng nhập số điện thoại'); return }
     if (!/^0\d{9,10}$/.test(phone.trim())) { setError('Số điện thoại không hợp lệ (bắt đầu bằng 0, 10-11 số)'); return }
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError('Email không hợp lệ'); return }
     if (!guests || Number(guests) < 1) { setError('Vui lòng nhập số khách (tối thiểu 1)'); return }
     setError('')
     setLoading(true)
@@ -66,6 +68,7 @@ const ReservationModal = ({ onClose, onSaved }: Props) => {
         partySize: Number(guests),
         datetime: `${date}T${time}:00`,
         note: note.trim() || null,
+        guestEmail: email.trim() || null,
       })
       onSaved()
     } catch (err: any) {
@@ -98,12 +101,18 @@ const ReservationModal = ({ onClose, onSaved }: Props) => {
           </Row>
           <div className="grid grid-cols-2 gap-4">
             <Row label="Điện thoại" required>
-              <input className={inputCls} inputMode="tel" placeholder="0xxxxxxxxx" value={phone} onChange={e => setPhone(e.target.value)} />
+              <input className={inputCls} inputMode="tel" placeholder="0xxxxxxxxx" value={phone} onChange={e => { setPhone(e.target.value); if (error) setError('') }} />
             </Row>
+            <Row label="Email khách">
+              <input className={inputCls} type="email" placeholder="guest@example.com" value={email} onChange={e => { setEmail(e.target.value); if (error) setError('') }} />
+            </Row>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <div className="flex items-center gap-3 min-h-10">
-              <div className="w-[7rem] shrink-0"><label className="text-md text-ink-subtle">Số khách<span className="text-danger ml-0.5">*</span></label></div>
+              <div className="w-[10rem] shrink-0"><label className="text-md text-ink-subtle">Số khách<span className="text-danger ml-0.5">*</span></label></div>
               <input className={`${inputCls} text-right`} inputMode="numeric" placeholder="0" value={guests} onChange={e => setGuests(e.target.value.replace(/[^\d]/g, ''))} />
             </div>
+            <div />
           </div>
           <Row label="Giờ đến" required>
             <div className="flex gap-2">

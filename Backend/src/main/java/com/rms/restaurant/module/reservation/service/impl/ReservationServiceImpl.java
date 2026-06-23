@@ -68,9 +68,21 @@ public class ReservationServiceImpl implements ReservationService {
                 .datetime(request.datetime())
                 .tableId(request.tableId())
                 .note(request.note())
+                .guestEmail(request.guestEmail())
                 .status(ReservationStatus.CONFIRMED)
                 .build();
-        return reservationMapper.toResponse(reservationRepository.save(reservation));
+        Reservation saved = reservationRepository.save(reservation);
+
+        if (saved.getGuestEmail() != null && !saved.getGuestEmail().isBlank()) {
+            try {
+                notificationService.sendReservationNotification(
+                        new ReservationNotificationRequest(saved.getId(), NotificationType.CONFIRMATION));
+            } catch (Exception e) {
+                log.warn("NM-01 CONFIRMATION trigger (create) failed for {}: {}", saved.getId(), e.getMessage());
+            }
+        }
+
+        return reservationMapper.toResponse(saved);
     }
 
     // ── Staff confirm: PENDING → CONFIRMED ───────────────────────────────────

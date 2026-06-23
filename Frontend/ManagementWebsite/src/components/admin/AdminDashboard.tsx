@@ -374,10 +374,12 @@ const TempPasswordModal = ({ user, tempPassword, onClose }: { user: UserDto; tem
 }
 
 /* ── Edit modal ───────────────────────────────────────────────────────────── */
-const EditModal = ({ user, onClose, onSaved }: { user: UserDto; onClose: () => void; onSaved: (u: UserDto) => void }) => {
+const EditModal = ({ user, isSelf, onClose, onSaved }: { user: UserDto; isSelf: boolean; onClose: () => void; onSaved: (u: UserDto) => void }) => {
   const [fullName, setFullName] = useState(user.fullName ?? '')
   const [email, setEmail] = useState(user.email ?? '')
   const [phone, setPhone] = useState(user.phone ?? '')
+  const [role, setRole] = useState(user.role)
+  const [status, setStatus] = useState(user.status)
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const fullNameRef = useRef<HTMLInputElement>(null)
@@ -396,6 +398,8 @@ const EditModal = ({ user, onClose, onSaved }: { user: UserDto; onClose: () => v
         fullName: fullName.trim() || undefined,
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
+        role: isSelf ? undefined : role,
+        status: isSelf ? undefined : status,
       })
       onSaved(res.data.data)
     } catch (err: any) {
@@ -408,28 +412,27 @@ const EditModal = ({ user, onClose, onSaved }: { user: UserDto; onClose: () => v
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-[16px] shadow-xl w-[460px] flex flex-col">
+      <div className="relative bg-white rounded-[16px] shadow-xl w-[500px] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8e8e8]">
           <h3 className="text-[18px] font-bold text-[#202325]">Cập nhật nhân viên</h3>
           <button onClick={onClose} className="text-[#797b7c] hover:text-[#202325] p-1"><XIcon /></button>
         </div>
         <form onSubmit={handleSubmit} className="px-6 py-5 flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-3 bg-[#f5f5f5] rounded-[10px] px-4 py-3">
-            <div>
-              <p className="text-[12px] text-[#797b7c]">Tên đăng nhập</p>
-              <p className="text-[14px] font-semibold text-[#202325]">{user.username}</p>
-            </div>
-            <div>
-              <p className="text-[12px] text-[#797b7c]">Vai trò</p>
-              <RoleBadge role={user.role} />
-            </div>
+          {/* Username info row */}
+          <div className="bg-[#f5f5f5] rounded-[10px] px-4 py-3">
+            <p className="text-[12px] text-[#797b7c]">Tên đăng nhập</p>
+            <p className="text-[14px] font-semibold text-[#202325]">{user.username}</p>
           </div>
+
+          {/* fullName */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[13px] font-semibold text-[#202325]">Họ và tên <span className="text-red-500">*</span></label>
             <input ref={fullNameRef} value={fullName} onChange={e => { setFullName(e.target.value); setErrors(ev => ({ ...ev, fullName: '' })) }}
               className={inputCls} placeholder="Họ và tên" />
             {errors.fullName && <p className="text-[12px] text-red-500">{errors.fullName}</p>}
           </div>
+
+          {/* email + phone */}
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-[13px] font-semibold text-[#202325]">Email</label>
@@ -444,6 +447,29 @@ const EditModal = ({ user, onClose, onSaved }: { user: UserDto; onClose: () => v
               {errors.phone && <p className="text-[12px] text-red-500">{errors.phone}</p>}
             </div>
           </div>
+
+          {/* Role + Status — hidden for self to prevent lockout */}
+          {isSelf ? (
+            <p className="text-[12px] text-[#797b7c] bg-yellow-50 border border-yellow-200 rounded-[8px] px-3 py-2">
+              Không thể thay đổi vai trò và trạng thái của chính mình.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[13px] font-semibold text-[#202325]">Vai trò</label>
+                <select value={role} onChange={e => setRole(e.target.value)} className={`${inputCls} cursor-pointer`}>
+                  {ALL_ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[13px] font-semibold text-[#202325]">Trạng thái</label>
+                <select value={status} onChange={e => setStatus(e.target.value)} className={`${inputCls} cursor-pointer`}>
+                  {ALL_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onClose} className="flex-1 h-10 border border-[#e8e8e8] rounded-[10px] text-[14px] font-medium text-[#636566] hover:bg-[#f5f5f5] transition-colors">
               Hủy
@@ -779,7 +805,7 @@ const AdminDashboard = () => {
         <TempPasswordModal user={modal.user} tempPassword={modal.pw} onClose={() => setModal(null)} />
       )}
       {modal?.type === 'edit' && (
-        <EditModal user={modal.user} onClose={() => setModal(null)} onSaved={handleSaved} />
+        <EditModal user={modal.user} isSelf={modal.user.id === me?.id} onClose={() => setModal(null)} onSaved={handleSaved} />
       )}
       {modal?.type === 'delete' && (
         <ConfirmModal

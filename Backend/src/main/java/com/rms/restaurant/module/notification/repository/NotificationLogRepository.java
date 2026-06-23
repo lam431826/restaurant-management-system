@@ -16,14 +16,16 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
     @Query("SELECT n FROM NotificationLog n WHERE " +
            "(:type IS NULL OR n.type = :type) AND " +
            "(:status IS NULL OR n.status = :status) AND " +
+           "(:referenceId IS NULL OR n.referenceId = :referenceId) AND " +
            "(:from IS NULL OR n.sentAt >= :from) AND " +
            "(:to IS NULL OR n.sentAt <= :to) " +
            "ORDER BY n.sentAt DESC")
     Page<NotificationLog> findWithFilters(
-            @Param("type")   String type,
-            @Param("status") String status,
-            @Param("from")   LocalDateTime from,
-            @Param("to")     LocalDateTime to,
+            @Param("type")        String type,
+            @Param("status")      String status,
+            @Param("referenceId") String referenceId,
+            @Param("from")        LocalDateTime from,
+            @Param("to")          LocalDateTime to,
             Pageable pageable
     );
 }

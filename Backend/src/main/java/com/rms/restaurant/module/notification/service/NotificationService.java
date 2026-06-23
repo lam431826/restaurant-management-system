@@ -16,6 +16,7 @@ public interface NotificationService {
     void sendPaymentNotification(PaymentNotificationRequest request);
 
     PageResponse<NotificationLogResponse> getLogs(String type, String status,
+                                                   String referenceId,
                                                    LocalDate from, LocalDate to,
                                                    Pageable pageable);
 

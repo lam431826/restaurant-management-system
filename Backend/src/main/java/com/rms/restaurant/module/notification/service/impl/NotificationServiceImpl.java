@@ -96,6 +96,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional(readOnly = true)
     public PageResponse<NotificationLogResponse> getLogs(String type, String status,
+                                                          String referenceId,
                                                           LocalDate from, LocalDate to,
                                                           Pageable pageable) {
         LocalDateTime fromDT = from != null ? from.atStartOfDay() : null;
@@ -103,7 +104,7 @@ public class NotificationServiceImpl implements NotificationService {
 
         return PageResponse.of(
                 notificationLogRepository
-                        .findWithFilters(type, status, fromDT, toDT, pageable)
+                        .findWithFilters(type, status, referenceId, fromDT, toDT, pageable)
                         .map(notificationMapper::toResponse)
         );
     }

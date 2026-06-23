@@ -9,6 +9,7 @@ public record ReservationResponse(
         String tableId,
         String guestName,
         String phone,
+        String guestEmail,
         int partySize,
         LocalDateTime datetime,
         String note,

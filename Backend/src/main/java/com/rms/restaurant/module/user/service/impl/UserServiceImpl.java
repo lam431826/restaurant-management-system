@@ -110,6 +110,18 @@ public class UserServiceImpl implements UserService {
             }
             user.setPhone(request.phone());
         }
+        if (request.role() != null) {
+            user.setRole(request.role());
+            log.info("Admin changed role of user '{}' to {}", user.getUsername(), request.role());
+        }
+        if (request.status() != null) {
+            user.setStatus(request.status());
+            if (request.status() == UserStatus.ACTIVE) {
+                user.setFailedLoginAttempts(0);
+                user.setLockedAt(null);
+            }
+            log.info("Admin changed status of user '{}' to {}", user.getUsername(), request.status());
+        }
 
         return userProfileMapper.toResponse(userRepository.save(user));
     }

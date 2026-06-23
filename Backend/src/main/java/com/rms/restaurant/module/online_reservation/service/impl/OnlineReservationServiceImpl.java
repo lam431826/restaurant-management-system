@@ -43,6 +43,7 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
     private final ReservationMapper reservationMapper;
     private final NotificationService notificationService;
     private final GmailService gmailService;
+    private final SecureRandom secureRandom = new SecureRandom();
 
     // ── ORM-01: Kiểm tra slot bàn trống ──────────────────────────────────────
 
@@ -109,7 +110,7 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         }
 
         // Tạo OTP và cancel token
-        String otp = String.format("%06d", new SecureRandom().nextInt(1_000_000));
+        String otp = String.format("%06d", secureRandom.nextInt(1_000_000));
         String cancelToken = UUID.randomUUID().toString();
         LocalDateTime expires = LocalDateTime.now().plusMinutes(10);
 
@@ -118,8 +119,13 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         reservation.setCancelOtpExpires(expires);
         reservationRepository.save(reservation);
 
-        // Gửi OTP (đồng bộ — khách đang chờ trên form)
-        gmailService.sendCancelOtpEmail(email, reservation.getGuestName(), otp);
+        // Gửi OTP đồng bộ — khách đang chờ; nếu gửi thất bại → transaction rollback, OTP không committed
+        try {
+            gmailService.sendCancelOtpEmail(email, reservation.getGuestName(), otp);
+        } catch (Exception e) {
+            log.warn("ORM-03 cancel OTP email failed for reservation {}: {}", reservationId, e.getMessage());
+            throw new ApplicationException(ApplicationError.INTERNAL_ERROR);
+        }
 
         return new OnlineCancelRequestResponse(maskEmail(email), expires);
     }

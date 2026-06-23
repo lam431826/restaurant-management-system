@@ -41,6 +41,8 @@ export const updateUser = (id: string, req: {
   fullName?: string
   email?: string
   phone?: string
+  role?: string
+  status?: string
 }) => apiClient.put<{ data: UserDto }>(`/users/${id}`, req)
 
 export const deleteUser = (id: string) =>

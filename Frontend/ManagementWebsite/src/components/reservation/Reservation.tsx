@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReservationHeader from './ReservationHeader'
 import type { ReservationTab } from './ReservationHeader'
@@ -16,6 +16,7 @@ import {
   noShowReservation,
   type ReservationDto,
 } from '../../api/reservations'
+import { pollReservationNotifResult, getNotificationLogs, type NotificationLogDto } from '../../api/notifications'
 import ChangePasswordModal from '../auth/ChangePasswordModal'
 
 const toDisplay = (dto: ReservationDto): Res => {
@@ -28,6 +29,7 @@ const toDisplay = (dto: ReservationDto): Res => {
     arriveTime,
     customer: dto.guestName,
     phone: dto.phone,
+    guestEmail: dto.guestEmail ?? null,
     guests: dto.partySize,
     table: dto.tableId ?? '—',
     area: '',
@@ -61,11 +63,44 @@ const Reservation = () => {
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [showModal, setShowModal] = useState(false)
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'info' | 'error' } | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [bellOpen, setBellOpen] = useState(false)
+  const [notifLogs, setNotifLogs] = useState<NotificationLogDto[]>([])
+  const [notifLoading, setNotifLoading] = useState(false)
 
-  const showToast = (msg: string, ok = true) => {
-    setToast({ msg, ok })
-    setTimeout(() => setToast(null), 3500)
+  const showToast = (msg: string, type: 'success' | 'info' | 'error' = 'success', ms = 3500) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    setToast({ msg, type })
+    toastTimer.current = setTimeout(() => setToast(null), ms)
+  }
+
+  useEffect(() => {
+    if (!bellOpen) return
+    setNotifLoading(true)
+    getNotificationLogs({ size: 20 })
+      .then(r => setNotifLogs(r.data.data))
+      .catch(() => {})
+      .finally(() => setNotifLoading(false))
+  }, [bellOpen])
+
+  const pollEmailResult = async (reservationId: string, actionLabel: string) => {
+    // Poll at 3s, retry once at 5s if still PENDING (async SMTP can be slow)
+    for (const delay of [3000, 5000]) {
+      await new Promise(r => setTimeout(r, delay))
+      try {
+        const res = await pollReservationNotifResult(reservationId)
+        const log = res.data.data[0]
+        if (!log) return
+        if (log.status === 'PENDING') continue
+        if (log.status === 'SENT') {
+          showToast(`${actionLabel} — Email đã gửi đến ${log.recipient} ✓`)
+        } else {
+          showToast(`${actionLabel} — Gửi email thất bại`, 'error')
+        }
+        return
+      } catch { return }
+    }
   }
 
   const handleLogout = async () => {
@@ -87,25 +122,52 @@ const Reservation = () => {
   useEffect(() => { load() }, [load])
 
   const handleConfirm = async (id: string) => {
-    try { await confirmReservation(id); await load(); showToast('Đã xác nhận đặt bàn') }
-    catch { showToast('Không thể xác nhận', false) }
+    const guestEmail = items.find(r => r.id === id)?.guestEmail ?? null
+    try {
+      await confirmReservation(id)
+      await load()
+      if (guestEmail) {
+        showToast('Đã xác nhận — đang gửi email cho khách...', 'info', 10000)
+        pollEmailResult(id, 'Xác nhận đặt bàn')
+      } else {
+        showToast('Đã xác nhận đặt bàn')
+      }
+    } catch { showToast('Không thể xác nhận', 'error') }
   }
   const handleCancel = async (id: string) => {
-    try { await cancelReservation(id); await load(); showToast('Đã hủy đặt bàn') }
-    catch { showToast('Không thể hủy', false) }
+    const guestEmail = items.find(r => r.id === id)?.guestEmail ?? null
+    try {
+      await cancelReservation(id)
+      await load()
+      if (guestEmail) {
+        showToast('Đã hủy — đang gửi email cho khách...', 'info', 10000)
+        pollEmailResult(id, 'Hủy đặt bàn')
+      } else {
+        showToast('Đã hủy đặt bàn')
+      }
+    } catch { showToast('Không thể hủy', 'error') }
   }
   const handleCheckIn = async (id: string) => {
     try { await checkInReservation(id); await load(); showToast('Check-in thành công') }
-    catch { showToast('Không thể check-in', false) }
+    catch { showToast('Không thể check-in', 'error') }
   }
   const handleNoShow = async (id: string) => {
     try { await noShowReservation(id); await load(); showToast('Đã đánh dấu không đến') }
-    catch { showToast('Không thể cập nhật', false) }
+    catch { showToast('Không thể cập nhật', 'error') }
   }
 
   return (
     <div className="fixed inset-0 flex flex-col bg-surface">
-      <ReservationHeader tab={tab} onTab={setTab} onLogout={handleLogout} onChangePassword={() => setShowChangePw(true)} />
+      <ReservationHeader
+        tab={tab}
+        onTab={setTab}
+        onLogout={handleLogout}
+        onChangePassword={() => setShowChangePw(true)}
+        notifLogs={notifLogs}
+        notifLoading={notifLoading}
+        bellOpen={bellOpen}
+        onBellToggle={() => setBellOpen(v => !v)}
+      />
 
       <div className="relative flex-1 min-h-0 flex flex-col">
         {/* Floating action cluster */}
@@ -145,7 +207,9 @@ const Reservation = () => {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] px-5 py-3 rounded-[10px] text-white text-[14px] font-semibold shadow-lg ${toast.ok ? 'bg-[var(--kv-success)]' : 'bg-danger'}`}>
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] px-5 py-3 rounded-[10px] text-white text-[14px] font-semibold shadow-lg ${
+          toast.type === 'error' ? 'bg-danger' : toast.type === 'info' ? 'bg-[#025cca]' : 'bg-[var(--kv-success)]'
+        }`}>
           {toast.msg}
         </div>
       )}
