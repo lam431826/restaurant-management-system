@@ -20,6 +20,9 @@ public class AssistanceRequest {
     @Column(name = "table_id", nullable = false)
     private String tableId;
 
+    @Column(name = "table_name")
+    private String tableName;
+
     @Column(nullable = false, length = 300)
     private String message;
 

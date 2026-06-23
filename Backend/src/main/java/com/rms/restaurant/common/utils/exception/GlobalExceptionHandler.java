@@ -67,9 +67,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleSystem(Exception ex, HttpServletRequest req) {
         log.error("Unhandled exception at {}", req.getRequestURI(), ex);
+        String msg = ex.getMessage() != null ? ex.getMessage() : "An unexpected error occurred";
+        if (ex.getCause() != null) msg += " | Cause: " + ex.getCause().getMessage();
         return ResponseEntity
                 .internalServerError()
-                .body(ErrorResponse.of("INTERNAL_ERROR", "An unexpected error occurred", req.getRequestURI()));
+                .body(ErrorResponse.of("INTERNAL_ERROR", msg, req.getRequestURI()));
     }
 
     public record ErrorResponse(String error, String message, String path, Instant timestamp,

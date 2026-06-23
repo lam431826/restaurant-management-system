@@ -56,6 +56,10 @@ public class SecurityConfig {
                 .requestMatchers("/api/guest/**").permitAll()
                 // Public – Payment webhook (verified via HMAC-SHA256 in controller)
                 .requestMatchers(HttpMethod.POST, "/api/webhooks/**").permitAll()
+                // Public - Orders (Temporary for testing)
+                .requestMatchers("/api/orders/**").permitAll()
+                // Public - Tables (Temporary for testing)
+                .requestMatchers("/api/tables/**").permitAll()
                 // Swagger UI
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 // Everything else requires JWT

@@ -3,12 +3,12 @@ import type { ReactNode } from 'react'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface MenuItem {
-  id: number; name: string; desc: string; price: number; originalPrice: number
+  id: any; name: string; desc: string; price: number; originalPrice: number
   popular: boolean; discount: string; qty: number; image: string
 }
 interface Category { id: string; label: string; count: number; active?: boolean }
-interface TableItem { id: number; name: string; occupied: boolean; selected: boolean; amount: number; guests: number; items: number }
-interface OrderItem { id: number; name: string; qty: number; notes: string; status: string; price: number }
+interface TableItem { id: any; name: string; occupied: boolean; selected: boolean; amount: number; guests: number; items: number; orderId?: string }
+interface OrderItem { id: any; name: string; qty: number; notes: string; status: string; price: number; orderId?: string; orderItemId?: string }
 
 /* ─── Mock data ──────────────────────────────────────────────────────────── */
 const CATEGORIES: Category[] = [
@@ -34,7 +34,7 @@ const MENU_ITEMS: MenuItem[] = Array.from({ length: 6 }, (_, i) => ({
 
 const TABLES: TableItem[] = Array.from({ length: 12 }, (_, i) => ({
   id: i + 1,
-  name: `Bàn ${i + 1}`,
+  name: `Bàn ${(i + 1).toString().padStart(2, '0')}`,
   occupied: [1, 4, 5, 7, 9].includes(i + 1),
   selected: i + 1 === 9,
   amount: i + 1 === 9 ? 267000 : 100000,
@@ -143,40 +143,112 @@ const XIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
   </svg>
 )
+const TrashIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+  </svg>
+)
 const DeleteDigitIcon = () => (
   <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.75L14.25 12m0 0l2.25 2.25M14.25 12l2.25-2.25M14.25 12L12 14.25m-2.58 4.92l-6.374-6.375a1.125 1.125 0 010-1.59L9.42 4.83c.211-.211.498-.33.796-.33H19.5a2.25 2.25 0 012.25 2.25v10.5a2.25 2.25 0 01-2.25 2.25h-9.284c-.298 0-.585-.119-.796-.33z" />
   </svg>
 )
 
-/* ─── Header / BottomNav ─────────────────────────────────────────────────── */
-const Header = ({ employeeName = 'Duy Tan' }: { employeeName?: string }) => (
-  <header className="bg-white flex items-center justify-between px-6 h-[64px] shrink-0 border-b border-[#e8e8e8]">
-    <div className="flex items-center gap-3 shrink-0">
-      <img src="/images/wasabi-logo.svg" alt="Wasabi" className="h-12 w-auto" />
-    </div>
+interface HeaderProps {
+  employeeName?: string;
+  assistanceRequests?: any[];
+  onResolveRequest?: (id: string) => void;
+}
 
-    <div className="flex items-center gap-3 bg-[#f5f5f5] rounded-[12px] px-4 h-[44px] w-[180px] md:w-[260px] lg:w-[340px]">
-      <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
-      <input placeholder="Tìm Kiếm" className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none" />
-    </div>
+const Header = ({ employeeName = 'Duy Tan', assistanceRequests = [], onResolveRequest = () => {} }: HeaderProps) => {
+  const [isBellOpen, setIsBellOpen] = useState(false);
+  const bellCount = assistanceRequests.length;
 
-    <div className="flex items-center gap-4 shrink-0">
-      <div className="relative">
-        <button className="text-[#202325]"><BellIcon /></button>
-        <span className="absolute -top-1 -right-1 bg-[#025cca] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">2</span>
+  return (
+    <header className="bg-white flex items-center justify-between px-6 h-[64px] shrink-0 border-b border-[#e8e8e8] z-[50]">
+      <div className="flex items-center gap-3 shrink-0">
+        <img src="/images/wasabi-logo.svg" alt="Wasabi" className="h-12 w-auto" />
       </div>
-      <button className="flex items-center gap-2">
-        <div className="w-9 h-9 rounded-full bg-[#5B8FE8] flex items-center justify-center text-white text-[13px] font-semibold">DT</div>
-        <div className="flex flex-col items-start leading-tight">
-          <span className="text-[14px] font-medium text-[#202325]">{employeeName}</span>
-          <span className="text-[12px] text-[#636566]">Cashier</span>
+
+      <div className="flex items-center gap-3 bg-[#f5f5f5] rounded-[12px] px-4 h-[44px] w-[180px] md:w-[260px] lg:w-[340px]">
+        <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
+        <input placeholder="Tìm Kiếm" className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none" />
+      </div>
+
+      <div className="flex items-center gap-4 shrink-0">
+        <div className="relative">
+          <button 
+            className="text-[#202325] relative p-2"
+            onClick={() => setIsBellOpen(!isBellOpen)}
+          >
+            <BellIcon />
+            {bellCount > 0 && (
+              <span className="absolute top-0 right-0 bg-[#025cca] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                {bellCount}
+              </span>
+            )}
+          </button>
+
+          {isBellOpen && (
+            <div className="absolute top-[120%] right-0 w-[380px] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col z-[9999]">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50 rounded-t-xl">
+                <h6 className="text-lg font-bold text-gray-800 m-0">Yêu cầu gọi phục vụ</h6>
+                <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-full">{bellCount} tin mới</span>
+              </div>
+              
+              <div className="flex flex-col overflow-y-auto max-h-[400px] p-2 bg-white rounded-b-xl">
+                {bellCount === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10">
+                    <span className="text-gray-400 mt-2 font-medium">Không có yêu cầu nào.</span>
+                  </div>
+                ) : (
+                  assistanceRequests.map((req: any) => {
+                    const tableNum = req.tableName || (req.tableId ? `Bàn ${req.tableId.substring(0,4)}` : 'Bàn ?');
+                    return (
+                      <div key={req.id} className="flex flex-col gap-2 p-3 mb-2 rounded-lg border border-orange-100 bg-orange-50 hover:bg-orange-100 transition-colors">
+                        <div className="flex justify-between items-center">
+                          <span className="bg-orange-500 text-white text-xs px-2.5 py-1 rounded-full font-bold shadow-sm">{tableNum}</span>
+                          <span className="text-xs text-gray-500 font-medium">
+                            {req.createdAt ? new Date(req.createdAt).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'}) : ''}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-800 font-medium ml-1">{req.message}</p>
+                        <button 
+                          onClick={async () => {
+                            try {
+                              await fetch(`http://localhost:8088/api/orders/assistance/${req.id}/respond`, { 
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' }
+                              });
+                              onResolveRequest(req.id);
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }}
+                          className="mt-1 bg-white border border-gray-300 text-gray-700 text-sm font-semibold py-1.5 px-4 rounded-lg hover:bg-gray-50 transition-colors self-end shadow-sm"
+                        >
+                          Đã Xử Lý ✓
+                        </button>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          )}
         </div>
-        <ChevronDownIcon />
-      </button>
-    </div>
-  </header>
-)
+        <button className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-full bg-[#5B8FE8] flex items-center justify-center text-white text-[13px] font-semibold">DT</div>
+          <div className="flex flex-col items-start leading-tight">
+            <span className="text-[14px] font-medium text-[#202325]">{employeeName}</span>
+            <span className="text-[12px] text-[#636566]">Cashier</span>
+          </div>
+          <ChevronDownIcon />
+        </button>
+      </div>
+    </header>
+  );
+};
 
 const BottomNav = ({ active = 'orders' }: { active?: string }) => {
   const items: { id: string; label: string | null; icon: ReactNode }[] = [
@@ -205,7 +277,7 @@ const BottomNav = ({ active = 'orders' }: { active?: string }) => {
 }
 
 /* ─── Menu view ──────────────────────────────────────────────────────────── */
-const MenuItemCard = ({ item, onQtyChange }: { item: MenuItem; onQtyChange: (id: number, d: number) => void }) => (
+const MenuItemCard = ({ item, onQtyChange }: { item: MenuItem; onQtyChange: (id: any, d: number) => void }) => (
   <div className="bg-white flex flex-col gap-4 p-4 rounded-[16px] w-[220px] shrink-0 overflow-hidden relative">
     <div className="absolute top-6 left-1/2 -translate-x-1/2 flex gap-2 z-10">
       {item.popular && (
@@ -236,7 +308,7 @@ const MenuItemCard = ({ item, onQtyChange }: { item: MenuItem; onQtyChange: (id:
   </div>
 )
 
-const MenuView = ({ items, onQtyChange }: { items: MenuItem[]; onQtyChange: (id: number, d: number) => void }) => {
+const MenuView = ({ items, onQtyChange }: { items: MenuItem[]; onQtyChange: (id: any, d: number) => void }) => {
   const [activeCategory, setActiveCategory] = useState('all')
   return (
     <div className="flex flex-col gap-2.5 h-full overflow-hidden">
@@ -266,7 +338,7 @@ const Chairs = ({ color }: { color: string }) => (
   </div>
 )
 
-const TableCard = ({ table, onSelect }: { table: TableItem; onSelect: (id: number) => void }) => {
+const TableCard = ({ table, onSelect }: { table: TableItem; onSelect: (id: any) => void }) => {
   const seatColor = table.occupied ? '#ffedd5' : table.selected ? 'white' : '#e8e8e8'
   const selectedBg = table.occupied ? 'bg-[#dceefe]' : 'bg-[#d9e7f7]'
   return (
@@ -288,7 +360,7 @@ const TableCard = ({ table, onSelect }: { table: TableItem; onSelect: (id: numbe
   )
 }
 
-const TableView = ({ tables, onSelect, filter }: { tables: TableItem[]; onSelect: (id: number) => void; filter: string }) => {
+const TableView = ({ tables, onSelect, filter }: { tables: TableItem[]; onSelect: (id: any) => void; filter: string }) => {
   const filtered = filter === 'used' ? tables.filter(t => t.occupied) : filter === 'empty' ? tables.filter(t => !t.occupied) : tables
   return (
     <div className="flex-1 overflow-y-auto">
@@ -302,13 +374,18 @@ const TableView = ({ tables, onSelect, filter }: { tables: TableItem[]; onSelect
 /* ─── Order rows / modals ────────────────────────────────────────────────── */
 const STATUS_OPTIONS = ['Đang nấu', 'Đã nấu xong', 'Đã phục vụ']
 
-const OrderItemRow = ({ item, onStatusChange, onNote }: { item: OrderItem; onStatusChange: (id: number, s: string) => void; onNote: (id: number, text: string) => void }) => (
+const OrderItemRow = ({ item, onStatusChange, onNote, onRemoveItem }: { item: OrderItem; onStatusChange: (id: any, s: string, orderItemId?: string, orderId?: string) => void; onNote: (id: any, text: string) => void; onRemoveItem: (orderItemId?: string, orderId?: string) => void }) => (
   <div className="flex flex-col gap-3 py-2 border-b border-[#e8e8e8]">
     <div className="flex items-start justify-between gap-2">
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
           <span className="text-[16px] font-medium text-[#202325]">{item.name}</span>
-          <span className="text-[16px] font-medium text-[#202325] shrink-0">x{item.qty}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[16px] font-medium text-[#202325] shrink-0">x{item.qty}</span>
+            <button onClick={() => onRemoveItem(item.orderItemId, item.orderId)} className="text-[#dc2f02] hover:text-[#9d0208] transition-colors p-1" title="Xóa món">
+              <TrashIcon />
+            </button>
+          </div>
         </div>
         {item.notes && <p className="text-[12px] text-[#636566] mt-1">{item.notes}</p>}
       </div>
@@ -319,8 +396,11 @@ const OrderItemRow = ({ item, onStatusChange, onNote }: { item: OrderItem; onSta
           <NoteIcon /><span className="text-[12px] font-medium text-[#025cca]">Ghi chú</span>
         </button>
         <div className="relative">
-          <select value={item.status} onChange={e => onStatusChange(item.id, e.target.value)} className="appearance-none bg-white border border-[#e8e8e8] rounded-[12px] text-[10px] font-medium text-[#202325] pl-3 pr-6 py-1 outline-none cursor-pointer">
-            {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
+          <select value={item.status} onChange={e => onStatusChange(item.id, e.target.value, item.orderItemId, item.orderId)} className={`appearance-none border rounded-[12px] text-[10px] font-medium pl-3 pr-6 py-1 outline-none cursor-pointer ${
+            item.status === 'Chờ duyệt' ? 'bg-[#ffedd5] text-[#f97316] border-[#f97316]' : 'bg-white text-[#202325] border-[#e8e8e8]'
+          }`}>
+            <option value="Chờ duyệt" hidden={item.status !== 'Chờ duyệt'}>Chờ duyệt</option>
+            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <ChevronDownIcon className="w-3 h-3 absolute right-1.5 top-1/2 -translate-y-1/2 text-[#636566] pointer-events-none" />
         </div>
@@ -330,7 +410,7 @@ const OrderItemRow = ({ item, onStatusChange, onNote }: { item: OrderItem; onSta
   </div>
 )
 
-const AddNoteModal = ({ itemId, initialText, onConfirm, onCancel }: { itemId: number; initialText: string; onConfirm: (id: number, text: string) => void; onCancel: () => void }) => {
+const AddNoteModal = ({ itemId, initialText, onConfirm, onCancel }: { itemid: any; initialText: string; onConfirm: (id: any, text: string) => void; onCancel: () => void }) => {
   const [text, setText] = useState(initialText)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -500,12 +580,16 @@ const PaymentModal = ({ items, table, onClose, onConfirm }: { items: OrderItem[]
 }
 
 /* ─── Order panel ────────────────────────────────────────────────────────── */
-const OrderPanel = ({ items, onStatusChange, onCheckout, onCreateOrder, onNote, selectedTable }: {
+const OrderPanel = ({ items, hasSelectedMenu, onStatusChange, onCheckout, onCreateOrder, onAddItems, onNote, selectedTable, onRemoveItem, onCancelOrder }: {
   items: OrderItem[]
-  onStatusChange: (id: number, s: string) => void
+  hasSelectedMenu: boolean
+  onStatusChange: (id: any, s: string, orderItemId?: string, orderId?: string) => void
   onCheckout: () => void
   onCreateOrder: () => void
-  onNote: (id: number, text: string) => void
+  onAddItems: () => void
+  onNote: (id: any, text: string) => void
+  onRemoveItem: (orderItemId?: string, orderId?: string) => void
+  onCancelOrder: (orderIds: string[]) => void
   selectedTable: TableItem | null
 }) => {
   const isEmpty = !!selectedTable && !selectedTable.occupied
@@ -539,7 +623,7 @@ const OrderPanel = ({ items, onStatusChange, onCheckout, onCreateOrder, onNote, 
       <div className="h-px bg-[#e8e8e8] shrink-0 mb-3" />
 
       <div className="flex-1 overflow-y-auto min-h-0">
-        {!isEmpty && items.map(item => <OrderItemRow key={item.id} item={item} onStatusChange={onStatusChange} onNote={onNote} />)}
+        {!isEmpty && items.map((item, idx) => <OrderItemRow key={(item as any).indexId || item.id || idx} item={item} onStatusChange={onStatusChange} onNote={onNote} onRemoveItem={onRemoveItem} />)}
       </div>
 
       <div className="shrink-0 mt-4 flex flex-col gap-3">
@@ -549,9 +633,25 @@ const OrderPanel = ({ items, onStatusChange, onCheckout, onCreateOrder, onNote, 
         <div className="h-px bg-[#202325]" />
         <div className="flex justify-between text-[20px]"><span className="font-medium text-[#202325]">Tổng tiền</span><span className="font-semibold text-[#202325]">{isEmpty ? '0 đ' : `${total.toLocaleString('vi-VN')} đ`}</span></div>
         {isEmpty ? (
-          <button onClick={onCreateOrder} className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1"><span className="text-[16px] font-medium text-white">Tạo Order</span></button>
+          hasSelectedMenu ? (
+            <button onClick={onCreateOrder} className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1"><span className="text-[16px] font-medium text-white">Xác nhận Tạo Order</span></button>
+          ) : (
+            <button onClick={onCreateOrder} className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1"><span className="text-[16px] font-medium text-white">Tạo Order</span></button>
+          )
         ) : (
-          <button onClick={onCheckout} className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1"><span className="text-[16px] font-medium text-white">Thanh Toán (F9)</span></button>
+          hasSelectedMenu ? (
+            <button onClick={onAddItems} className="bg-[#e85d04] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#dc2f02] transition-colors mt-1"><span className="text-[16px] font-medium text-white">Thêm món vào Đơn</span></button>
+          ) : (
+            <div className="flex flex-col gap-2 mt-1">
+              <button onClick={onCheckout} className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors"><span className="text-[16px] font-medium text-white">Thanh Toán (F9)</span></button>
+              {items.length > 0 && (
+                <button onClick={() => {
+                  const uniqueOrderIds = Array.from(new Set(items.map(i => i.orderId).filter(Boolean))) as string[];
+                  onCancelOrder(uniqueOrderIds);
+                }} className="bg-transparent border border-[#dc2f02] flex items-center justify-center h-[40px] rounded-[12px] w-full hover:bg-[#dc2f02] hover:text-white text-[#dc2f02] transition-colors"><span className="text-[14px] font-medium">Hủy đơn hàng</span></button>
+              )}
+            </div>
+          )
         )}
       </div>
     </div>
@@ -585,9 +685,55 @@ const CashierOrders = () => {
   const [tables, setTables] = useState(TABLES)
   const [orderItems, setOrderItems] = useState(ORDER_ITEMS)
   const [search, setSearch] = useState('')
-  const [noteModal, setNoteModal] = useState<{ open: boolean; itemId: number | null; text: string }>({ open: false, itemId: null, text: '' })
+  const [noteModal, setNoteModal] = useState<{ open: boolean; itemId: any | null; text: string }>({ open: false, itemId: null, text: '' })
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+  
+  // Fetch real tables
+  useEffect(() => {
+    fetch('http://localhost:8088/api/tables')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setTables(prevTables => data.map((t: any) => {
+            const existing = prevTables.find((pt: any) => pt.name === t.name);
+            return {
+              id: t.id,
+              name: t.name,
+              occupied: t.status !== 'AVAILABLE',
+              selected: existing ? existing.selected : false,
+              amount: existing ? existing.amount : 0,
+              guests: t.capacity,
+              items: existing ? existing.items : 0,
+              orderId: t.activeOrderId || (existing ? existing.orderId : undefined)
+            };
+          }));
+        }
+      })
+      .catch(err => console.error("Failed to load tables", err));
+  }, []);
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [successTotal, setSuccessTotal] = useState<number | null>(null)
+  
+  const [assistanceRequests, setAssistanceRequests] = useState<any[]>([])
+  
+  useEffect(() => {
+    const fetchAssistance = async () => {
+      try {
+        const res = await fetch('http://localhost:8088/api/orders/assistance/pending');
+        if (res.ok) {
+          const data = await res.json();
+          setAssistanceRequests(data);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    fetchAssistance();
+    const intv = setInterval(fetchAssistance, 10000);
+    return () => clearInterval(intv);
+  }, []);
+
+  const [activeOrders, setActiveOrders] = useState<any[]>([])
 
   useEffect(() => {
     if (successTotal !== null) {
@@ -596,22 +742,248 @@ const CashierOrders = () => {
     }
   }, [successTotal])
 
-  const selectedTable = tables.find(t => t.selected) ?? null
+  useEffect(() => {
+    const fetchMenu = async () => {
+      try {
+        const res = await fetch('http://localhost:8088/api/menu/public');
+        if (res.ok) {
+          const data = await res.json();
+          // The API returns an array of categories, each with an 'items' array
+          let allItems: MenuItem[] = [];
+          data.forEach((cat: any) => {
+            cat.items.filter((item: any) => item.available).forEach((item: any) => {
+              allItems.push({
+                id: item.id,
+                name: item.name,
+                desc: item.description || '',
+                price: item.price,
+                originalPrice: item.price,
+                popular: false,
+                discount: '',
+                qty: 0,
+                image: item.imageUrl || '/images/food-item.jpg'
+              });
+            });
+          });
+          setMenuItems(allItems);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    fetchMenu();
+  }, []);
 
-  const handleQtyChange = (id: number, delta: number) =>
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const res = await fetch('http://localhost:8088/api/orders?page=0&size=100');
+        if (res.ok) {
+          const json = await res.json();
+          const orders = json.data || [];
+          setActiveOrders(orders);
+          
+          // Map to tables
+          setTables(prevTables => prevTables.map(t => {
+            // Find all active orders for this table
+            const tableOrders = orders.filter((o: any) => o.tableName === t.name && ['PENDING', 'ACCEPTED', 'PREPARING', 'SERVED'].includes(o.status));
+            
+            if (tableOrders.length > 0) {
+              const itemsCount = tableOrders.reduce((total: number, order: any) => 
+                total + (order.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0)
+              , 0);
+              const totalAmount = tableOrders.reduce((total: number, order: any) => total + (order.totalAmount || 0), 0);
+              
+              return {
+                ...t,
+                occupied: true,
+                amount: totalAmount,
+                items: itemsCount,
+                orderId: tableOrders[0].id, // we might need an array of orderIds, but keep for backward compat
+                guests: 2
+              };
+            } else {
+              return { ...t, occupied: false, amount: 0, items: 0, orderId: null };
+            }
+          }));
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    fetchOrders();
+    const interval = setInterval(fetchOrders, 10000);
+    return () => clearInterval(interval);
+  }, [refreshTrigger]);
+
+  const selectedTable = tables.find(t => t.selected) ?? null
+  
+  useEffect(() => {
+    // Update order items when selected table changes or orders refresh
+    if (selectedTable && selectedTable.occupied) {
+      const tableOrders = activeOrders.filter((o: any) => o.tableName === selectedTable.name && ['PENDING', 'ACCEPTED', 'PREPARING', 'SERVED'].includes(o.status));
+      if (tableOrders.length > 0) {
+        let combinedItems: any[] = [];
+        tableOrders.forEach((order: any) => {
+          if (order.items) {
+            combinedItems = combinedItems.concat(order.items.map((i: any, index: number) => ({
+              id: i.menuItemId, 
+              indexId: `${order.id}-${index}`, // actual unique key
+              name: i.menuItemName,
+              qty: i.quantity,
+              price: i.unitPrice,
+              status: i.cookingStatus === 'PENDING' ? 'Chờ duyệt' : 
+                      i.cookingStatus === 'COOKING' ? 'Đang nấu' : 
+                      i.cookingStatus === 'READY' ? 'Đã nấu xong' : 'Đã phục vụ',
+              notes: i.note || '',
+              orderId: order.id,
+              orderItemId: i.orderItemId
+            })));
+          }
+        });
+        setOrderItems(combinedItems);
+      } else {
+        setOrderItems([]);
+      }
+    } else {
+      setOrderItems([]);
+    }
+  }, [selectedTable?.id, activeOrders]);
+
+  const handleQtyChange = (id: any, delta: number) =>
     setMenuItems(items => items.map(item => (item.id === id ? { ...item, qty: Math.max(0, item.qty + delta) } : item)))
-  const handleTableSelect = (id: number) =>
+  const handleTableSelect = (id: any) =>
     setTables(ts => ts.map(t => ({ ...t, selected: t.id === id })))
-  const handleStatusChange = (id: number, status: string) =>
-    setOrderItems(items => items.map(i => (i.id === id ? { ...i, status } : i)))
-  const handleOpenNote = (itemId: number, currentText: string) =>
+  
+  const handleStatusChange = async (id: any, status: string, orderItemId?: string, orderId?: string) => {
+    // Determine the target status in backend enum
+    let targetStatus = '';
+    if (status === 'Đang nấu') targetStatus = 'COOKING';
+    else if (status === 'Đã nấu xong') targetStatus = 'READY';
+    else if (status === 'Đã phục vụ') targetStatus = 'SERVED';
+    else targetStatus = 'PENDING';
+
+    if (orderId && orderItemId && targetStatus !== '') {
+      try {
+        const res = await fetch(`http://localhost:8088/api/orders/${orderId}/items/${orderItemId}/status`, { 
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: targetStatus })
+        });
+        if (res.ok) {
+          setRefreshTrigger(t => t + 1);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+
+  const handleRemoveItem = async (orderItemId?: string, orderId?: string) => {
+    if (orderId && orderItemId) {
+      if (!window.confirm('Bạn có chắc chắn muốn xóa món này khỏi đơn hàng?')) return;
+      try {
+        const res = await fetch(`http://localhost:8088/api/orders/${orderId}/items/${orderItemId}`, { 
+          method: 'DELETE',
+        });
+        if (res.ok) {
+          setRefreshTrigger(t => t + 1);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+
+  const handleCancelOrder = async (orderIds: string[]) => {
+    if (!window.confirm('Bạn có chắc chắn muốn hủy đơn hàng này?')) return;
+    try {
+      await Promise.all(orderIds.map(orderId => 
+        fetch(`http://localhost:8088/api/orders/${orderId}/cancel`, { 
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Hủy bởi thu ngân' })
+        })
+      ));
+      setRefreshTrigger(t => t + 1);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  const handleOpenNote = (itemId: any, currentText: string) =>
     setNoteModal({ open: true, itemId, text: currentText })
-  const handleConfirmNote = (itemId: number, text: string) => {
+  const handleConfirmNote = (itemid: any, text: string) => {
     setOrderItems(items => items.map(i => (i.id === itemId ? { ...i, notes: text } : i)))
     setNoteModal({ open: false, itemId: null, text: '' })
   }
   const handleCancelNote = () => setNoteModal({ open: false, itemId: null, text: '' })
-  const handleCreateOrder = () => setTab('menu')
+  
+  const selectedMenuItems = menuItems.filter(i => i.qty > 0);
+  const hasSelectedMenu = selectedMenuItems.length > 0;
+
+  const handleCreateOrder = async () => {
+    if (!hasSelectedMenu) {
+      setTab('menu');
+      return;
+    }
+    if (!selectedTable) return;
+    
+    // Call POST /api/orders
+    const payload = {
+      tableId: selectedTable.id,
+      items: selectedMenuItems.map(m => ({
+        menuItemId: m.id,
+        quantity: m.qty,
+        note: ''
+      })),
+      note: ''
+    };
+    try {
+      const res = await fetch('http://localhost:8088/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        // Reset qty
+        setMenuItems(items => items.map(i => ({ ...i, qty: 0 })));
+        setTab('table');
+        setRefreshTrigger(t => t + 1);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  const handleAddItems = async () => {
+    if (!selectedTable || !selectedTable.orderId) return;
+    
+    // Call PUT /api/orders/{id}/items
+    const payload = {
+      items: selectedMenuItems.map(m => ({
+        menuItemId: m.id,
+        quantity: m.qty,
+        note: ''
+      }))
+    };
+    try {
+      const res = await fetch(`http://localhost:8088/api/orders/${selectedTable.orderId}/items`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        // Reset qty
+        setMenuItems(items => items.map(i => ({ ...i, qty: 0 })));
+        setTab('table');
+        setRefreshTrigger(t => t + 1);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
   const filteredMenu = search ? menuItems.filter(i => i.name.toLowerCase().includes(search.toLowerCase())) : menuItems
   const tableCounts: Record<string, number> = {
@@ -622,7 +994,10 @@ const CashierOrders = () => {
 
   return (
     <div className="flex flex-col h-screen bg-[#f5f5f5] overflow-hidden font-sans">
-      <Header />
+      <Header 
+        assistanceRequests={assistanceRequests} 
+        onResolveRequest={(id: string) => setAssistanceRequests(prev => prev.filter(r => r.id !== id))} 
+      />
 
       <div className="flex flex-1 gap-3 lg:gap-4 p-3 lg:p-4 overflow-hidden">
         <div className="flex flex-col flex-1 gap-2.5 min-w-0 overflow-hidden">
@@ -660,7 +1035,6 @@ const CashierOrders = () => {
 
           <div className="flex items-center justify-between shrink-0">
             <h2 className="text-[24px] font-semibold text-[#202325]">{tab === 'menu' ? 'Chọn món' : 'Chọn bàn'}</h2>
-            <div className="bg-white flex items-center gap-1.5 px-2 py-1 rounded-[16px]"><BellIcon /><span className="text-[14px] font-medium">1 lượt gọi món</span></div>
           </div>
 
           <div className="flex flex-col flex-1 gap-2.5 overflow-hidden">
@@ -670,7 +1044,18 @@ const CashierOrders = () => {
           </div>
         </div>
 
-        <OrderPanel items={orderItems} onStatusChange={handleStatusChange} onCheckout={() => setPaymentOpen(true)} onCreateOrder={handleCreateOrder} onNote={handleOpenNote} selectedTable={selectedTable} />
+        <OrderPanel 
+          items={orderItems} 
+          hasSelectedMenu={hasSelectedMenu}
+          onStatusChange={handleStatusChange} 
+          onCheckout={() => setPaymentOpen(true)} 
+          onCreateOrder={handleCreateOrder} 
+          onAddItems={handleAddItems}
+          onNote={handleOpenNote} 
+          onRemoveItem={handleRemoveItem}
+          onCancelOrder={handleCancelOrder}
+          selectedTable={selectedTable} 
+        />
       </div>
 
       <BottomNav active="orders" />
