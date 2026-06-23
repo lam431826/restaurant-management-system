@@ -80,6 +80,18 @@ public class MenuManagementController {
         return ResponseEntity.noContent().build();
     }
 
+    @PatchMapping("/items/bulk-availability")
+    public ResponseEntity<Void> bulkSetAvailability(@Valid @RequestBody BulkAvailabilityRequest request) {
+        menuService.bulkSetAvailability(request.ids(), request.available());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/items/bulk-delete")
+    public ResponseEntity<Void> bulkDelete(@Valid @RequestBody BulkIdsRequest request) {
+        menuService.bulkDeleteItems(request.ids());
+        return ResponseEntity.noContent().build();
+    }
+
     // ── Categories ───────────────────────────────────────────────────────
 
     @GetMapping("/categories")

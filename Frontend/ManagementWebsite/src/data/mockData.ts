@@ -542,21 +542,6 @@ export const navItems = [
     ],
   },
   {
-    id: 12,
-    label: 'Kho hàng',
-    children: [
-      { groupTitle: 'Kho hàng' },
-      { label: 'Danh sách hàng hóa', href: '#' },
-      { label: 'Kiểm kho', href: '#' },
-      { label: 'Xuất hủy', href: '#' },
-      { groupTitle: 'Nhập hàng' },
-      { label: 'Nhập hàng', href: '#' },
-      { label: 'Hóa đơn đầu vào', href: '#' },
-      { label: 'Trả hàng nhập', href: '#' },
-      { label: 'Nhà cung cấp', href: '#' },
-    ],
-  },
-  {
     id: 3,
     label: 'Phòng/Bàn',
     children: [
@@ -573,15 +558,6 @@ export const navItems = [
     ],
   },
   {
-    id: 5,
-    label: 'Đối tác',
-    children: [
-      { label: 'Khách hàng', href: '#' },
-      { label: 'Tương tác', href: '#' },
-      { label: 'Đối tác giao hàng', href: '#' },
-    ],
-  },
-  {
     id: 8,
     label: 'Nhân viên',
     children: [
@@ -591,15 +567,6 @@ export const navItems = [
       { label: 'Bảng lương', href: '#' },
       { label: 'Bảng hoa hồng', href: '#' },
       { label: 'Thiết lập nhân viên', href: '#' },
-    ],
-  },
-  {
-    id: 10,
-    label: 'Bán Online',
-    children: [
-      { label: 'Bán hàng Zalo', href: '#' },
-      { label: 'Bán hàng Facebook', href: '#' },
-      { label: 'Website bán hàng', href: '#' },
     ],
   },
   {

@@ -88,6 +88,12 @@ export const setAvailability = (id: string, available: boolean): Promise<void> =
 
 export const deleteItem = (id: string): Promise<void> => api.del<void>(`/api/menu/items/${id}`)
 
+export const bulkSetAvailability = (ids: string[], available: boolean): Promise<void> =>
+  api.patch<void>('/api/menu/items/bulk-availability', { ids, available })
+
+export const bulkDeleteItems = (ids: string[]): Promise<void> =>
+  api.post<void>('/api/menu/items/bulk-delete', { ids })
+
 // ── Categories (MM-02) ─────────────────────────────────────────────────
 
 export const listCategories = (): Promise<MenuCategory[]> =>

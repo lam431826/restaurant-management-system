@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { MenuItem } from '../../services/menuService'
 import { assetUrl } from '../../services/api'
+import MenuItemDetail from './MenuItemDetail'
 
 const Star = ({ filled }: { filled: boolean }) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill={filled ? 'var(--kv-warning)' : 'none'} stroke={filled ? 'var(--kv-warning)' : 'currentColor'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -19,26 +20,23 @@ interface Props {
   page: number
   totalPages: number
   onPage: (p: number) => void
-  onRowClick: (item: MenuItem) => void
+  onEdit: (item: MenuItem) => void
   onToggleAvailability: (item: MenuItem) => void
   onDelete: (item: MenuItem) => void
+  selected: Set<string>
+  onToggleSelect: (id: string) => void
+  onToggleAll: () => void
 }
 
 const MenuTable = ({
-  items, loading, categoryNames, total, page, totalPages, onPage, onRowClick, onToggleAvailability, onDelete,
+  items, loading, categoryNames, total, page, totalPages, onPage, onEdit, onToggleAvailability, onDelete,
+  selected, onToggleSelect, onToggleAll,
 }: Props) => {
-  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [starred, setStarred] = useState<Set<string>>(new Set())
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  const allSelected = items.length > 0 && selected.size === items.length
+  const allSelected = items.length > 0 && items.every(p => selected.has(p.id))
 
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(items.map(p => p.id)))
-  const toggleRow = (id: string) =>
-    setSelected(s => {
-      const next = new Set(s)
-      if (next.has(id)) next.delete(id); else next.add(id)
-      return next
-    })
   const toggleStar = (id: string) =>
     setStarred(s => {
       const next = new Set(s)
@@ -54,7 +52,7 @@ const MenuTable = ({
             <tr>
               <th className={`${th} w-[4.5rem] text-center`}>
                 <label className="kv-check justify-center">
-                  <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+                  <input type="checkbox" checked={allSelected} onChange={onToggleAll} />
                   <span className="kv-check-box" />
                 </label>
               </th>
@@ -75,14 +73,14 @@ const MenuTable = ({
           </thead>
           <tbody>
             {items.map(p => (
+              <Fragment key={p.id}>
               <tr
-                key={p.id}
-                className={`cursor-pointer ${selected.has(p.id) ? 'bg-primary-50' : 'hover:bg-primary-25'}`}
-                onClick={() => onRowClick(p)}
+                className={`cursor-pointer ${expandedId === p.id ? 'bg-primary-50' : selected.has(p.id) ? 'bg-primary-50' : 'hover:bg-primary-25'}`}
+                onClick={() => setExpandedId(id => (id === p.id ? null : p.id))}
               >
                 <td className={`${td} text-center`} onClick={e => e.stopPropagation()}>
                   <label className="kv-check justify-center">
-                    <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleRow(p.id)} />
+                    <input type="checkbox" checked={selected.has(p.id)} onChange={() => onToggleSelect(p.id)} />
                     <span className="kv-check-box" />
                   </label>
                 </td>
@@ -119,14 +117,28 @@ const MenuTable = ({
                     <button
                       className="text-sm text-primary hover:underline"
                       onClick={() => onToggleAvailability(p)}
-                      title={p.available ? 'Đánh dấu hết hàng (86)' : 'Mở bán lại'}
+                      title={p.available ? 'Đánh dấu hết hàng' : 'Mở bán lại'}
                     >
-                      {p.available ? '86' : 'Mở bán'}
+                      {p.available ? 'Ngừng bán' : 'Mở bán'}
                     </button>
                     <button className="text-sm text-danger hover:underline" onClick={() => onDelete(p)}>Xóa</button>
                   </div>
                 </td>
               </tr>
+              {expandedId === p.id && (
+                <tr>
+                  <td colSpan={10} className="p-0 border-b border-line" onClick={e => e.stopPropagation()}>
+                    <MenuItemDetail
+                      item={p}
+                      categoryName={categoryNames.get(p.categoryId) ?? ''}
+                      onEdit={onEdit}
+                      onToggleAvailability={onToggleAvailability}
+                      onDelete={onDelete}
+                    />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>

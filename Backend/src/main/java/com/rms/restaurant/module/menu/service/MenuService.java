@@ -16,6 +16,8 @@ public interface MenuService {
     MenuItemResponse updateItem(String id, UpdateMenuItemRequest request);
     void setAvailability(String id, boolean available);
     void deleteItem(String id);
+    void bulkSetAvailability(List<String> ids, boolean available);
+    void bulkDeleteItems(List<String> ids);
 
     // Categories (MM-02)
     List<CategoryResponse> listCategories();

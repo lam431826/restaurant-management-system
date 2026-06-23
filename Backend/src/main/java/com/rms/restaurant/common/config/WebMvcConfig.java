@@ -5,6 +5,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -26,7 +29,18 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         Path uploadPath = Paths.get(uploadDir).toAbsolutePath().normalize();
+        try {
+            // Ensure the directory exists so the file: URI resolves with a trailing
+            // slash; otherwise resource resolution fails with NoResourceFoundException.
+            Files.createDirectories(uploadPath);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        String location = uploadPath.toUri().toString();
+        if (!location.endsWith("/")) {
+            location += "/";
+        }
         registry.addResourceHandler("/uploads/**")
-                .addResourceLocations(uploadPath.toUri().toString());
+                .addResourceLocations(location);
     }
 }

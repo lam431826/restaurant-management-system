@@ -1,0 +1,7 @@
+package com.rms.restaurant.module.menu.dto;
+
+import jakarta.validation.constraints.NotEmpty;
+
+import java.util.List;
+
+public record BulkIdsRequest(@NotEmpty List<String> ids) {}

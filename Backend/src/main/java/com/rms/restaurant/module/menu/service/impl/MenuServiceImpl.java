@@ -146,6 +146,18 @@ public class MenuServiceImpl implements MenuService {
         itemRepository.delete(item);
     }
 
+    @Override
+    public void bulkSetAvailability(List<String> ids, boolean available) {
+        List<MenuItem> items = itemRepository.findAllById(ids);
+        items.forEach(item -> item.setAvailable(available));
+        itemRepository.saveAll(items);
+    }
+
+    @Override
+    public void bulkDeleteItems(List<String> ids) {
+        itemRepository.deleteAllById(ids);
+    }
+
     // ── Categories (MM-02) ───────────────────────────────────────────────
 
     @Override
