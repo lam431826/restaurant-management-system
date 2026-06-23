@@ -1,5 +1,16 @@
 import { useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
+import {
+  applyInvoiceDiscount,
+  generateInvoice,
+  getInvoiceById,
+  getInvoices,
+  sendInvoice,
+} from '../../services/invoiceApi'
+import type { InvoiceDetail, InvoiceSummary } from '../../services/invoiceApi'
+import { getPayments, processPayment } from '../../services/paymentApi'
+import type { Payment, PaymentMethod } from '../../services/paymentApi'
+import { getStoredUser } from '../../services/tokenStorage'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface MenuItem {
@@ -49,6 +60,109 @@ const ORDER_ITEMS: OrderItem[] = [
 ]
 
 const VAT_RATE = 0.08
+
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  CASH: 'Tiền mặt',
+  CARD: 'Thẻ',
+  QR: 'Mã QR',
+  E_WALLET: 'Ví điện tử',
+}
+
+const formatDateTime = (value: string) => new Intl.DateTimeFormat('vi-VN', {
+  dateStyle: 'short',
+  timeStyle: 'short',
+}).format(new Date(value))
+
+const escapeHtml = (value: string | number) => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;')
+
+const printCashierInvoice = (invoice: InvoiceDetail, tableName: string, cashierName: string) => {
+  const printWindow = window.open('', '_blank', 'width=900,height=700')
+  if (!printWindow) return false
+
+  const rows = invoice.items.map(item => `
+    <div class="item-row">
+      <span class="item-name">${escapeHtml(item.menuItemName)}</span>
+      <span class="item-calculation">${item.quantity} x ${item.unitPrice.toLocaleString('vi-VN')} đ</span>
+      <strong>${item.lineTotal.toLocaleString('vi-VN')} đ</strong>
+    </div>
+  `).join('')
+  const printedAt = formatDateTime(new Date().toISOString())
+
+  printWindow.document.write(`
+    <!doctype html>
+    <html lang="vi">
+      <head>
+        <meta charset="utf-8" />
+        <title>Hóa đơn ${escapeHtml(invoice.id)}</title>
+        <style>
+          @page { size: 80mm auto; margin: 6mm; }
+          * { box-sizing: border-box; }
+          body { margin: 0; background: #f8f5ed; color: #202325; font-family: "Courier New", monospace; }
+          .receipt { width: 380px; max-width: 100%; margin: 24px auto; padding: 24px 22px; background: #fffdf7; }
+          .header { text-align: center; }
+          h1 { margin: 0; font-family: Georgia, serif; font-size: 27px; letter-spacing: 1px; }
+          .printed-at { margin: 7px 0 0; color: #636566; font-size: 12px; }
+          .separator { margin: 18px 0; border-top: 1px dashed #8d8d88; }
+          .order-box { padding: 12px; border: 1px dashed #8d8d88; text-align: center; }
+          .order-box span { display: block; margin-bottom: 5px; color: #636566; font-size: 12px; text-transform: uppercase; }
+          .order-box strong { font-size: 17px; overflow-wrap: anywhere; }
+          .info-row, .total-row { display: flex; justify-content: space-between; gap: 16px; padding: 4px 0; font-size: 12px; }
+          .info-row span:first-child, .total-row span:first-child { color: #636566; }
+          .info-row strong { text-align: right; font-weight: 600; }
+          .items-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; padding-bottom: 7px; color: #636566; font-size: 11px; text-transform: uppercase; }
+          .item-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: start; padding: 7px 0; font-size: 12px; }
+          .item-name { overflow-wrap: anywhere; }
+          .item-calculation { white-space: nowrap; color: #636566; }
+          .empty { padding: 12px 0; text-align: center; color: #636566; font-size: 12px; }
+          .total-row { font-size: 13px; }
+          .grand-total { margin-top: 7px; padding-top: 10px; border-top: 1px solid #202325; font-size: 16px; font-weight: 700; }
+          .grand-total span { color: #202325 !important; }
+          .footer { text-align: center; font-size: 12px; line-height: 1.7; }
+          .brand { margin-top: 8px; font-family: Georgia, serif; font-size: 17px; font-weight: 700; }
+          @media print { body { background: #fff; } .receipt { width: 100%; margin: 0; padding: 0; } }
+        </style>
+      </head>
+      <body>
+        <main class="receipt">
+          <header class="header"><h1>Wasabi Sushi</h1><p class="printed-at">${escapeHtml(printedAt)}</p></header>
+          <div class="separator"></div>
+          <section class="order-box"><span>Order Id</span><strong>${escapeHtml(invoice.orderId)}</strong></section>
+          <div class="separator"></div>
+          <section>
+            <div class="info-row"><span>Cashier</span><strong>${escapeHtml(cashierName)}</strong></div>
+            <div class="info-row"><span>Working Time</span><strong>08:00 - 17:00</strong></div>
+            <div class="info-row"><span>Customer Name</span><strong>Nguyen Van A</strong></div>
+            <div class="info-row"><span>Member Id Card</span><strong>-</strong></div>
+            <div class="info-row"><span>Order Type</span><strong>Dine In</strong></div>
+            <div class="info-row"><span>Table Number</span><strong>${escapeHtml(tableName)}</strong></div>
+          </section>
+          <div class="separator"></div>
+          <section>
+            <div class="items-heading"><span>Item</span><span>Qty x Price</span><span>Total</span></div>
+            ${rows || '<div class="empty">Không có món</div>'}
+          </section>
+          <div class="separator"></div>
+          <section>
+            <div class="total-row"><span>Subtotal</span><strong>${invoice.subtotal.toLocaleString('vi-VN')} đ</strong></div>
+            <div class="total-row"><span>Discount</span><strong>${invoice.discountAmount.toLocaleString('vi-VN')} đ</strong></div>
+            <div class="total-row grand-total"><span>Total Amount</span><strong>${invoice.totalAmount.toLocaleString('vi-VN')} đ</strong></div>
+          </section>
+          <div class="separator"></div>
+          <footer class="footer"><div>Cảm ơn quý khách. Hẹn gặp lại!</div><div class="brand">Wasabi Sushi</div></footer>
+        </main>
+      </body>
+    </html>
+  `)
+  printWindow.document.close()
+  printWindow.focus()
+  printWindow.print()
+  return true
+}
 
 /* ─── Icons ──────────────────────────────────────────────────────────────── */
 const SearchIcon = ({ className = 'w-5 h-5' }: { className?: string }) => (
@@ -349,25 +463,37 @@ const AddNoteModal = ({ itemId, initialText, onConfirm, onCancel }: { itemId: nu
 
 /* ─── Payment modal ──────────────────────────────────────────────────────── */
 const PAYMENT_METHODS = [
-  { id: 'cash', label: 'Cash' },
-  { id: 'debit', label: 'Debit Card' },
-  { id: 'qr', label: 'QR Code' },
+  { id: 'CASH' as const, label: 'Tiền mặt' },
+  { id: 'CARD' as const, label: 'Thẻ' },
+  { id: 'QR' as const, label: 'Mã QR' },
+  { id: 'E_WALLET' as const, label: 'Ví điện tử' },
 ]
 
-const PaymentModal = ({ items, table, onClose, onConfirm }: { items: OrderItem[]; table: TableItem | null; onClose: () => void; onConfirm: () => void }) => {
-  const [method, setMethod] = useState('cash')
+const PaymentModal = ({ invoice, table, processing, error, onClose, onConfirm }: {
+  invoice: InvoiceDetail
+  table: TableItem | null
+  processing: boolean
+  error: string
+  onClose: () => void
+  onConfirm: (method: PaymentMethod) => void
+}) => {
+  const [method, setMethod] = useState<PaymentMethod>('CASH')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [cashInput, setCashInput] = useState('')
 
-  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0)
-  const vat = Math.round(subtotal * VAT_RATE)
-  const total = subtotal + vat
+  const subtotal = invoice.subtotal
+  const total = invoice.totalAmount
 
   const now = new Date()
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
   const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })
 
-  const methodIcons: Record<string, ReactNode> = { cash: <CashMethodIcon />, debit: <DebitMethodIcon />, qr: <QRMethodIcon /> }
+  const methodIcons: Record<PaymentMethod, ReactNode> = {
+    CASH: <CashMethodIcon />,
+    CARD: <DebitMethodIcon />,
+    QR: <QRMethodIcon />,
+    E_WALLET: <QRMethodIcon />,
+  }
 
   const handleDigit = (key: string) => {
     if (key === 'del') setCashInput(v => v.slice(0, -1))
@@ -393,7 +519,7 @@ const PaymentModal = ({ items, table, onClose, onConfirm }: { items: OrderItem[]
             </div>
             <div className="border border-dashed border-[#b0a080] rounded px-3 py-2 text-center">
               <p className="text-[10px] tracking-widest text-black">Order Id</p>
-              <p className="text-[14px] font-bold tracking-wider text-black">ORDER001</p>
+              <p className="text-[14px] font-bold tracking-wider text-black break-all">{invoice.orderId}</p>
             </div>
             <div className="flex flex-col gap-3 text-[10px]">
               <div className="flex justify-between"><span className="text-[#6d7278]">Cashier</span><span className="text-black">Duy Tan</span></div>
@@ -408,19 +534,18 @@ const PaymentModal = ({ items, table, onClose, onConfirm }: { items: OrderItem[]
             </div>
             <div className="border-t border-dashed border-[#b0a080]" />
             <div className="flex flex-col gap-3 text-[10px]">
-              {items.map((item, i) => (
+              {invoice.items.map((item, i) => (
                 <div key={i} className="flex gap-2 justify-between">
-                  <span className="text-[#6d7278] flex-1 truncate">{item.name}</span>
-                  <span className="text-[#6d7278] shrink-0">{item.qty} x {item.price.toLocaleString('vi-VN')}đ</span>
-                  <span className="text-black shrink-0 font-bold">{(item.qty * item.price).toLocaleString('vi-VN')}đ</span>
+                  <span className="text-[#6d7278] flex-1 truncate">{item.menuItemName}</span>
+                  <span className="text-[#6d7278] shrink-0">{item.quantity} x {item.unitPrice.toLocaleString('vi-VN')}đ</span>
+                  <span className="text-black shrink-0 font-bold">{item.lineTotal.toLocaleString('vi-VN')}đ</span>
                 </div>
               ))}
             </div>
             <div className="border-t border-dashed border-[#b0a080]" />
             <div className="flex flex-col gap-3 text-[10px]">
               <div className="flex justify-between"><span className="text-[#6d7278]">Subtotal</span><span className="text-black">{subtotal.toLocaleString('vi-VN')}đ</span></div>
-              <div className="flex justify-between"><span className="text-[#6d7278]">Discount</span><span className="text-black">0đ</span></div>
-              <div className="flex justify-between"><span className="text-[#6d7278]">Vat (8%)</span><span className="text-black">{vat.toLocaleString('vi-VN')}</span></div>
+              <div className="flex justify-between"><span className="text-[#6d7278]">Discount</span><span className="text-black">{invoice.discountAmount.toLocaleString('vi-VN')}đ</span></div>
             </div>
             <div className="border-t border-dashed border-[#b0a080]" />
             <div className="flex justify-between text-[14px] font-bold text-[#a27b5c]"><span>Total Amount</span><span>{total.toLocaleString('vi-VN')}đ</span></div>
@@ -451,7 +576,7 @@ const PaymentModal = ({ items, table, onClose, onConfirm }: { items: OrderItem[]
               )}
             </div>
 
-            {method === 'cash' && (
+            {method === 'CASH' && (
               <div className="flex flex-col items-center gap-6">
                 <p className="text-[40px] font-medium text-[#202325] text-center">{displayAmount}</p>
                 <div className="grid grid-cols-3 w-full gap-y-2">
@@ -461,11 +586,11 @@ const PaymentModal = ({ items, table, onClose, onConfirm }: { items: OrderItem[]
                     </button>
                   ))}
                 </div>
-                <button onClick={onConfirm} className="w-full h-[60px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors">Thanh toán</button>
+                <button onClick={() => onConfirm(method)} disabled={processing} className="w-full h-[60px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60">{processing ? 'Đang thanh toán...' : 'Thanh toán'}</button>
               </div>
             )}
 
-            {method === 'qr' && (
+            {method === 'QR' && (
               <div className="flex flex-col items-center gap-3">
                 <div className="w-[250px] h-[250px] bg-white overflow-hidden flex items-center justify-center">
                   <img src="/images/qr-code.png" alt="QR Code" className="w-full h-full object-contain" />
@@ -477,21 +602,21 @@ const PaymentModal = ({ items, table, onClose, onConfirm }: { items: OrderItem[]
                   <p className="text-[14px] text-[#636566]"><span className="text-[#a2a4a4]">Số tiền:</span> <span className="text-[#202325]">{total.toLocaleString('vi-VN')} đ</span></p>
                   <p className="text-[14px] text-[#636566]"><span className="text-[#a2a4a4]">Nội dung:</span> <span className="text-[#202325]">#200 QR Code</span></p>
                 </div>
-                <div className="w-10 h-10 rounded-full border-4 border-[#e8e8e8] border-t-[#025cca] animate-spin" />
-                <p className="text-[14px] font-medium text-[#292c2d]">Waiting...</p>
-                <button onClick={onClose} className="w-full h-[52px] bg-[#f5f5f5] rounded-[12px] text-[16px] font-medium text-[#202325] hover:bg-[#e8e8e8] transition-colors">Hủy</button>
+                <button onClick={() => onConfirm(method)} disabled={processing} className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60">{processing ? 'Đang xác nhận...' : 'Xác nhận đã thanh toán'}</button>
               </div>
             )}
 
-            {method === 'debit' && (
+            {(method === 'CARD' || method === 'E_WALLET') && (
               <div className="flex flex-col items-center justify-center gap-6 py-10 text-[#636566]">
-                <div className="w-16 h-16 rounded-full bg-[#f5f5f5] flex items-center justify-center"><DebitMethodIcon /></div>
+                <div className="w-16 h-16 rounded-full bg-[#f5f5f5] flex items-center justify-center">{methodIcons[method]}</div>
                 <div className="flex flex-col items-center gap-2">
-                  <p className="text-[18px] font-semibold text-[#202325]">Debit Card</p>
-                  <p className="text-[14px] text-[#636566]">Payment coming soon</p>
+                  <p className="text-[18px] font-semibold text-[#202325]">{PAYMENT_METHOD_LABELS[method]}</p>
+                  <p className="text-[14px] text-[#636566]">Tổng thanh toán: {total.toLocaleString('vi-VN')} đ</p>
                 </div>
+                <button onClick={() => onConfirm(method)} disabled={processing} className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60">{processing ? 'Đang thanh toán...' : 'Xác nhận thanh toán'}</button>
               </div>
             )}
+            {error && <p className="text-[13px] text-[#d92d20] text-center mt-3">{error}</p>}
           </div>
         </div>
       </div>
@@ -499,14 +624,139 @@ const PaymentModal = ({ items, table, onClose, onConfirm }: { items: OrderItem[]
   )
 }
 
+const CashierInvoicePanel = ({
+  orderId,
+  invoiceChecked,
+  invoice,
+  detail,
+  payments,
+  promotionCode,
+  loading,
+  action,
+  message,
+  historyError,
+  onOrderIdChange,
+  onLookup,
+  onGenerate,
+  onPromotionCodeChange,
+  onApplyDiscount,
+  onPrint,
+  onSend,
+}: {
+  orderId: string
+  invoiceChecked: boolean
+  invoice: InvoiceSummary | null
+  detail: InvoiceDetail | null
+  payments: Payment[]
+  promotionCode: string
+  loading: boolean
+  action: string | null
+  message: { type: 'success' | 'error'; text: string } | null
+  historyError: string
+  onOrderIdChange: (value: string) => void
+  onLookup: () => void
+  onGenerate: () => void
+  onPromotionCodeChange: (value: string) => void
+  onApplyDiscount: () => void
+  onPrint: () => void
+  onSend: () => void
+}) => {
+  const busy = loading || action !== null
+
+  return (
+    <div className="mt-4 pt-4 border-t border-[#e8e8e8] flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[15px] font-semibold text-[#202325]">Hóa đơn backend</p>
+        {invoice && (
+          <span className={`px-2 py-1 rounded-[8px] text-[11px] font-medium ${invoice.paid ? 'bg-[#dcf7ea] text-[#286b4a]' : 'bg-[#fff3d6] text-[#8a5a00]'}`}>
+            {invoice.paid ? 'Đã thanh toán' : 'Chưa thanh toán'}
+          </span>
+        )}
+      </div>
+
+      <div className="flex gap-2">
+        <input
+          value={orderId}
+          onChange={event => onOrderIdChange(event.target.value)}
+          placeholder="Backend orderId"
+          className="flex-1 min-w-0 h-[38px] px-3 rounded-[10px] border border-[#e8e8e8] text-[13px] text-[#202325] outline-none focus:border-[#025cca]"
+        />
+        <button onClick={onLookup} disabled={busy || !orderId.trim()} className="h-[38px] px-3 rounded-[10px] bg-[#f0f8ff] text-[13px] font-medium text-[#025cca] disabled:opacity-50">
+          {loading ? 'Đang tải' : 'Tra cứu'}
+        </button>
+      </div>
+
+      {message && (
+        <div className={`px-3 py-2 rounded-[10px] text-[12px] ${message.type === 'success' ? 'bg-[#dcf7ea] text-[#286b4a]' : 'bg-[#fff0f0] text-[#d92d20]'}`}>
+          {message.text}
+        </div>
+      )}
+
+      {invoiceChecked && !invoice && !loading && (
+        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-[10px] bg-[#f5f5f5]">
+          <span className="text-[12px] text-[#636566]">Chưa có hóa đơn</span>
+          <button onClick={onGenerate} disabled={busy} className="text-[12px] font-semibold text-[#025cca] disabled:opacity-50">Tạo hóa đơn</button>
+        </div>
+      )}
+
+      {invoice && (
+        <>
+          <div className="rounded-[10px] bg-[#f5f5f5] p-3 flex flex-col gap-2 text-[12px]">
+            <div className="flex justify-between gap-3"><span className="text-[#797b7c]">Mã hóa đơn</span><span className="text-[#202325] font-medium truncate" title={invoice.id}>{invoice.id}</span></div>
+            <div className="flex justify-between"><span className="text-[#797b7c]">Tạm tính</span><span className="text-[#202325]">{invoice.subtotal.toLocaleString('vi-VN')} đ</span></div>
+            <div className="flex justify-between"><span className="text-[#797b7c]">Giảm giá</span><span className="text-[#202325]">{invoice.discountAmount.toLocaleString('vi-VN')} đ</span></div>
+            <div className="flex justify-between text-[14px] font-semibold"><span className="text-[#202325]">Cần thanh toán</span><span className="text-[#025cca]">{invoice.totalAmount.toLocaleString('vi-VN')} đ</span></div>
+            {detail?.promotionCode && <div className="flex justify-between"><span className="text-[#797b7c]">Khuyến mãi</span><span className="text-[#202325] font-medium">{detail.promotionCode}</span></div>}
+          </div>
+
+          {!invoice.paid && (
+            <div className="flex gap-2">
+              <input
+                value={promotionCode}
+                onChange={event => onPromotionCodeChange(event.target.value.toUpperCase())}
+                placeholder="Mã khuyến mãi"
+                className="flex-1 min-w-0 h-[36px] px-3 rounded-[10px] border border-[#e8e8e8] text-[12px] uppercase outline-none focus:border-[#025cca]"
+              />
+              <button onClick={onApplyDiscount} disabled={busy || !promotionCode.trim()} className="h-[36px] px-3 rounded-[10px] border border-[#025cca] text-[12px] font-medium text-[#025cca] disabled:opacity-50">
+                {action === 'discount' ? 'Đang áp dụng' : 'Áp dụng'}
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={onPrint} disabled={!detail} className="h-[36px] rounded-[10px] bg-[#f5f5f5] text-[12px] font-medium text-[#202325] disabled:opacity-50">In hóa đơn</button>
+            <button onClick={onSend} disabled={busy} className="h-[36px] rounded-[10px] bg-[#f0f8ff] text-[12px] font-medium text-[#025cca] disabled:opacity-50">{action === 'send' ? 'Đang gửi' : 'Gửi hóa đơn'}</button>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <p className="text-[13px] font-semibold text-[#202325]">Lịch sử thanh toán</p>
+            {historyError && <p className="text-[12px] text-[#d92d20]">{historyError}</p>}
+            {!historyError && payments.length === 0 && <p className="text-[12px] text-[#797b7c]">Chưa có lịch sử thanh toán</p>}
+            {payments.map(payment => (
+              <div key={payment.id} className="rounded-[10px] border border-[#e8e8e8] px-3 py-2 text-[11px] flex flex-col gap-1">
+                <div className="flex justify-between"><span className="text-[#636566]">{PAYMENT_METHOD_LABELS[payment.method]}</span><span className="font-semibold text-[#202325]">{payment.amount.toLocaleString('vi-VN')} đ</span></div>
+                <div className="flex justify-between"><span className="text-[#797b7c]">{formatDateTime(payment.createdAt)}</span><span className="text-[#286b4a]">{payment.status}</span></div>
+                {payment.gatewayRef && <span className="text-[#797b7c] break-all">{payment.gatewayRef}</span>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 /* ─── Order panel ────────────────────────────────────────────────────────── */
-const OrderPanel = ({ items, onStatusChange, onCheckout, onCreateOrder, onNote, selectedTable }: {
+const OrderPanel = ({ items, onStatusChange, onCheckout, onCreateOrder, onNote, selectedTable, invoiceTools, checkoutDisabled, checkoutLabel }: {
   items: OrderItem[]
   onStatusChange: (id: number, s: string) => void
   onCheckout: () => void
   onCreateOrder: () => void
   onNote: (id: number, text: string) => void
   selectedTable: TableItem | null
+  invoiceTools: ReactNode
+  checkoutDisabled: boolean
+  checkoutLabel: string
 }) => {
   const isEmpty = !!selectedTable && !selectedTable.occupied
   const subtotal = isEmpty ? 0 : items.reduce((s, i) => s + i.price * i.qty, 0)
@@ -540,6 +790,7 @@ const OrderPanel = ({ items, onStatusChange, onCheckout, onCreateOrder, onNote, 
 
       <div className="flex-1 overflow-y-auto min-h-0">
         {!isEmpty && items.map(item => <OrderItemRow key={item.id} item={item} onStatusChange={onStatusChange} onNote={onNote} />)}
+        {!isEmpty && invoiceTools}
       </div>
 
       <div className="shrink-0 mt-4 flex flex-col gap-3">
@@ -551,7 +802,7 @@ const OrderPanel = ({ items, onStatusChange, onCheckout, onCreateOrder, onNote, 
         {isEmpty ? (
           <button onClick={onCreateOrder} className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1"><span className="text-[16px] font-medium text-white">Tạo Order</span></button>
         ) : (
-          <button onClick={onCheckout} className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1"><span className="text-[16px] font-medium text-white">Thanh Toán (F9)</span></button>
+          <button onClick={onCheckout} disabled={checkoutDisabled} className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"><span className="text-[16px] font-medium text-white">{checkoutLabel}</span></button>
         )}
       </div>
     </div>
@@ -588,6 +839,18 @@ const CashierOrders = () => {
   const [noteModal, setNoteModal] = useState<{ open: boolean; itemId: number | null; text: string }>({ open: false, itemId: null, text: '' })
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [successTotal, setSuccessTotal] = useState<number | null>(null)
+  const [backendOrderId, setBackendOrderId] = useState('')
+  const [invoiceChecked, setInvoiceChecked] = useState(false)
+  const [invoice, setInvoice] = useState<InvoiceSummary | null>(null)
+  const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null)
+  const [payments, setPayments] = useState<Payment[]>([])
+  const [promotionCode, setPromotionCode] = useState('')
+  const [invoiceLoading, setInvoiceLoading] = useState(false)
+  const [invoiceAction, setInvoiceAction] = useState<string | null>(null)
+  const [invoiceMessage, setInvoiceMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [historyError, setHistoryError] = useState('')
+  const [paymentProcessing, setPaymentProcessing] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
 
   useEffect(() => {
     if (successTotal !== null) {
@@ -598,10 +861,144 @@ const CashierOrders = () => {
 
   const selectedTable = tables.find(t => t.selected) ?? null
 
+  const resetInvoiceLink = () => {
+    setBackendOrderId('')
+    setInvoiceChecked(false)
+    setInvoice(null)
+    setInvoiceDetail(null)
+    setPayments([])
+    setPromotionCode('')
+    setInvoiceMessage(null)
+    setHistoryError('')
+    setPaymentOpen(false)
+  }
+
+  const loadInvoiceForOrder = async (orderId: string) => {
+    const normalizedOrderId = orderId.trim()
+    if (!normalizedOrderId) {
+      setInvoiceMessage({ type: 'error', text: 'Vui lòng nhập backend orderId' })
+      return null
+    }
+
+    setInvoiceLoading(true)
+    setInvoiceMessage(null)
+    setHistoryError('')
+    try {
+      const foundInvoice = (await getInvoices({ orderId: normalizedOrderId }))[0] ?? null
+      setInvoiceChecked(true)
+      setInvoice(foundInvoice)
+      setPayments([])
+      setInvoiceDetail(null)
+
+      if (!foundInvoice) return null
+
+      const detailData = await getInvoiceById(foundInvoice.id)
+      setInvoiceDetail(detailData)
+      try {
+        setPayments(await getPayments(foundInvoice.id))
+      } catch (historyLoadError) {
+        setHistoryError(historyLoadError instanceof Error ? historyLoadError.message : 'Không thể tải lịch sử thanh toán')
+      }
+      return foundInvoice
+    } catch (loadError) {
+      setInvoiceMessage({ type: 'error', text: loadError instanceof Error ? loadError.message : 'Không thể tra cứu hóa đơn' })
+      return null
+    } finally {
+      setInvoiceLoading(false)
+    }
+  }
+
+  const handleBackendOrderIdChange = (value: string) => {
+    setBackendOrderId(value)
+    setInvoiceChecked(false)
+    setInvoice(null)
+    setInvoiceDetail(null)
+    setPayments([])
+    setPromotionCode('')
+    setInvoiceMessage(null)
+    setHistoryError('')
+  }
+
+  const handleGenerateInvoice = async () => {
+    if (!backendOrderId.trim()) return
+    setInvoiceAction('generate')
+    setInvoiceMessage(null)
+    try {
+      const created = await generateInvoice({ orderId: backendOrderId.trim(), promotionCode: null })
+      await loadInvoiceForOrder(backendOrderId)
+      setInvoiceMessage({ type: 'success', text: `Đã tạo hóa đơn ${created.id}` })
+    } catch (generateError) {
+      setInvoiceMessage({ type: 'error', text: generateError instanceof Error ? generateError.message : 'Không thể tạo hóa đơn' })
+    } finally {
+      setInvoiceAction(null)
+    }
+  }
+
+  const handleApplyDiscount = async () => {
+    if (!invoice || !promotionCode.trim()) return
+    setInvoiceAction('discount')
+    setInvoiceMessage(null)
+    try {
+      await applyInvoiceDiscount(invoice.id, promotionCode.trim())
+      await loadInvoiceForOrder(backendOrderId)
+      setPromotionCode('')
+      setInvoiceMessage({ type: 'success', text: 'Áp dụng khuyến mãi thành công' })
+    } catch (discountError) {
+      setInvoiceMessage({ type: 'error', text: discountError instanceof Error ? discountError.message : 'Không thể áp dụng khuyến mãi' })
+    } finally {
+      setInvoiceAction(null)
+    }
+  }
+
+  const handleSendInvoice = async () => {
+    if (!invoice) return
+    setInvoiceAction('send')
+    setInvoiceMessage(null)
+    try {
+      const sent = await sendInvoice(invoice.id)
+      setInvoiceMessage({ type: 'success', text: sent.message })
+    } catch (sendError) {
+      setInvoiceMessage({ type: 'error', text: sendError instanceof Error ? sendError.message : 'Không thể gửi hóa đơn' })
+    } finally {
+      setInvoiceAction(null)
+    }
+  }
+
+  const handlePrintInvoice = () => {
+    if (!invoiceDetail) return
+    const cashierName = getStoredUser()?.fullName || 'Duy Tan'
+    if (!printCashierInvoice(invoiceDetail, selectedTable?.name || '-', cashierName)) {
+      setInvoiceMessage({ type: 'error', text: 'Trình duyệt đã chặn cửa sổ in hóa đơn' })
+    }
+  }
+
+  const handleProcessPayment = async (method: PaymentMethod) => {
+    if (!invoice) {
+      setPaymentError('Không xác định được hóa đơn cần thanh toán')
+      return
+    }
+
+    setPaymentProcessing(true)
+    setPaymentError('')
+    try {
+      const createdPayment = await processPayment(invoice.id, method)
+      setPaymentOpen(false)
+      setSuccessTotal(createdPayment.amount)
+      await loadInvoiceForOrder(backendOrderId)
+      setInvoiceMessage({ type: 'success', text: 'Thanh toán thành công' })
+    } catch (processError) {
+      setPaymentError(processError instanceof Error ? processError.message : 'Không thể xử lý thanh toán')
+    } finally {
+      setPaymentProcessing(false)
+    }
+  }
+
   const handleQtyChange = (id: number, delta: number) =>
     setMenuItems(items => items.map(item => (item.id === id ? { ...item, qty: Math.max(0, item.qty + delta) } : item)))
-  const handleTableSelect = (id: number) =>
+  const handleTableSelect = (id: number) => {
     setTables(ts => ts.map(t => ({ ...t, selected: t.id === id })))
+    resetInvoiceLink()
+  }
   const handleStatusChange = (id: number, status: string) =>
     setOrderItems(items => items.map(i => (i.id === id ? { ...i, status } : i)))
   const handleOpenNote = (itemId: number, currentText: string) =>
@@ -619,6 +1016,12 @@ const CashierOrders = () => {
     used: tables.filter(t => t.occupied).length,
     empty: tables.filter(t => !t.occupied).length,
   }
+  const checkoutDisabled = !invoice || !invoiceDetail || invoice.paid || invoiceAction !== null || invoiceLoading
+  const checkoutLabel = invoice?.paid
+    ? 'Đã thanh toán'
+    : invoice
+      ? 'Thanh Toán (F9)'
+      : 'Liên kết hóa đơn trước'
 
   return (
     <div className="flex flex-col h-screen bg-[#f5f5f5] overflow-hidden font-sans">
@@ -670,17 +1073,50 @@ const CashierOrders = () => {
           </div>
         </div>
 
-        <OrderPanel items={orderItems} onStatusChange={handleStatusChange} onCheckout={() => setPaymentOpen(true)} onCreateOrder={handleCreateOrder} onNote={handleOpenNote} selectedTable={selectedTable} />
+        <OrderPanel
+          items={orderItems}
+          onStatusChange={handleStatusChange}
+          onCheckout={() => { setPaymentError(''); setPaymentOpen(true) }}
+          onCreateOrder={handleCreateOrder}
+          onNote={handleOpenNote}
+          selectedTable={selectedTable}
+          checkoutDisabled={checkoutDisabled}
+          checkoutLabel={checkoutLabel}
+          invoiceTools={(
+            <CashierInvoicePanel
+              orderId={backendOrderId}
+              invoiceChecked={invoiceChecked}
+              invoice={invoice}
+              detail={invoiceDetail}
+              payments={payments}
+              promotionCode={promotionCode}
+              loading={invoiceLoading}
+              action={invoiceAction}
+              message={invoiceMessage}
+              historyError={historyError}
+              onOrderIdChange={handleBackendOrderIdChange}
+              onLookup={() => void loadInvoiceForOrder(backendOrderId)}
+              onGenerate={() => void handleGenerateInvoice()}
+              onPromotionCodeChange={setPromotionCode}
+              onApplyDiscount={() => void handleApplyDiscount()}
+              onPrint={handlePrintInvoice}
+              onSend={() => void handleSendInvoice()}
+            />
+          )}
+        />
       </div>
 
       <BottomNav active="orders" />
 
-      {paymentOpen && (
-        <PaymentModal items={orderItems} table={selectedTable} onClose={() => setPaymentOpen(false)} onConfirm={() => {
-          const sub = orderItems.reduce((s, i) => s + i.price * i.qty, 0)
-          setSuccessTotal(sub + Math.round(sub * VAT_RATE))
-          setPaymentOpen(false)
-        }} />
+      {paymentOpen && invoiceDetail && (
+        <PaymentModal
+          invoice={invoiceDetail}
+          table={selectedTable}
+          processing={paymentProcessing}
+          error={paymentError}
+          onClose={() => setPaymentOpen(false)}
+          onConfirm={method => void handleProcessPayment(method)}
+        />
       )}
       {successTotal !== null && <SuccessToast total={successTotal} onDismiss={() => setSuccessTotal(null)} />}
       {noteModal.open && noteModal.itemId !== null && (

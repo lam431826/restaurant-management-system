@@ -3,6 +3,7 @@ import type { InvoiceDetail as InvoiceDetailData } from '../../services/invoiceA
 import { sendInvoice } from '../../services/invoiceApi'
 import { getPayments } from '../../services/paymentApi'
 import type { Payment, PaymentMethod } from '../../services/paymentApi'
+import { getStoredUser } from '../../services/tokenStorage'
 
 interface Props {
   invoice: InvoiceDetailData
@@ -67,13 +68,14 @@ const InvoiceDetail = ({ invoice, historyRefreshVersion, onApplyDiscount, onProc
     }
 
     const itemRows = invoice.items.map(item => `
-      <tr>
-        <td>${escapeHtml(item.menuItemName)}</td>
-        <td class="number">${item.quantity}</td>
-        <td class="number">${escapeHtml(money(item.unitPrice))}</td>
-        <td class="number">${escapeHtml(money(item.lineTotal))}</td>
-      </tr>
+      <div class="item-row">
+        <span class="item-name">${escapeHtml(item.menuItemName)}</span>
+        <span class="item-calculation">${item.quantity} x ${escapeHtml(money(item.unitPrice))}</span>
+        <strong>${escapeHtml(money(item.lineTotal))}</strong>
+      </div>
     `).join('')
+    const printedAt = formatDateTime(new Date().toISOString())
+    const cashierName = getStoredUser()?.fullName || 'Cashier'
 
     printWindow.document.write(`
       <!doctype html>
@@ -82,38 +84,61 @@ const InvoiceDetail = ({ invoice, historyRefreshVersion, onApplyDiscount, onProc
           <meta charset="utf-8" />
           <title>Hóa đơn ${escapeHtml(invoice.id)}</title>
           <style>
-            body { font-family: Arial, sans-serif; color: #202325; margin: 32px; }
-            h1 { margin: 0 0 8px; font-size: 24px; }
-            .subtitle { color: #636566; margin-bottom: 24px; }
-            .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-bottom: 24px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-            th, td { border: 1px solid #d9dcdf; padding: 9px; text-align: left; }
-            th { background: #f2f6ff; }
-            .number { text-align: right; }
-            .totals { width: 360px; margin: 24px 0 0 auto; }
-            .totals div { display: flex; justify-content: space-between; padding: 5px 0; }
-            .total { border-top: 1px solid #202325; margin-top: 5px; padding-top: 10px !important; font-weight: 700; }
+            @page { size: 80mm auto; margin: 6mm; }
+            * { box-sizing: border-box; }
+            body { margin: 0; background: #f8f5ed; color: #202325; font-family: "Courier New", monospace; }
+            .receipt { width: 380px; max-width: 100%; margin: 24px auto; padding: 24px 22px; background: #fffdf7; }
+            .header { text-align: center; }
+            h1 { margin: 0; font-family: Georgia, serif; font-size: 27px; letter-spacing: 1px; }
+            .printed-at { margin: 7px 0 0; color: #636566; font-size: 12px; }
+            .separator { margin: 18px 0; border-top: 1px dashed #8d8d88; }
+            .order-box { padding: 12px; border: 1px dashed #8d8d88; text-align: center; }
+            .order-box span { display: block; margin-bottom: 5px; color: #636566; font-size: 12px; text-transform: uppercase; }
+            .order-box strong { font-size: 17px; overflow-wrap: anywhere; }
+            .info-row, .total-row { display: flex; justify-content: space-between; gap: 16px; padding: 4px 0; font-size: 12px; }
+            .info-row span:first-child, .total-row span:first-child { color: #636566; }
+            .info-row strong { text-align: right; font-weight: 600; }
+            .items-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; padding-bottom: 7px; color: #636566; font-size: 11px; text-transform: uppercase; }
+            .item-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: start; padding: 7px 0; font-size: 12px; }
+            .item-name { overflow-wrap: anywhere; }
+            .item-calculation { white-space: nowrap; color: #636566; }
+            .empty { padding: 12px 0; text-align: center; color: #636566; font-size: 12px; }
+            .total-row { font-size: 13px; }
+            .grand-total { margin-top: 7px; padding-top: 10px; border-top: 1px solid #202325; font-size: 16px; font-weight: 700; }
+            .grand-total span { color: #202325 !important; }
+            .footer { text-align: center; font-size: 12px; line-height: 1.7; }
+            .brand { margin-top: 8px; font-family: Georgia, serif; font-size: 17px; font-weight: 700; }
+            @media print { body { background: #fff; } .receipt { width: 100%; margin: 0; padding: 0; } }
           </style>
         </head>
         <body>
-          <h1>HÓA ĐƠN</h1>
-          <div class="subtitle">Restaurant Management System</div>
-          <div class="meta">
-            <div><strong>Mã hóa đơn:</strong> ${escapeHtml(invoice.id)}</div>
-            <div><strong>Mã đơn hàng:</strong> ${escapeHtml(invoice.orderId)}</div>
-            <div><strong>Ngày tạo:</strong> ${escapeHtml(formatDateTime(invoice.createdAt))}</div>
-            <div><strong>Trạng thái:</strong> ${invoice.paid ? 'Đã thanh toán' : 'Chưa thanh toán'}</div>
-            <div><strong>Khuyến mãi:</strong> ${escapeHtml(invoice.promotionCode ?? 'Không áp dụng')}</div>
-          </div>
-          <table>
-            <thead><tr><th>Tên món</th><th class="number">Số lượng</th><th class="number">Đơn giá</th><th class="number">Thành tiền</th></tr></thead>
-            <tbody>${itemRows || '<tr><td colspan="4">Hóa đơn không có món</td></tr>'}</tbody>
-          </table>
-          <div class="totals">
-            <div><span>Tạm tính:</span><span>${escapeHtml(money(invoice.subtotal))}</span></div>
-            <div><span>Giảm giá:</span><span>${escapeHtml(money(invoice.discountAmount))}</span></div>
-            <div class="total"><span>Tổng thanh toán:</span><span>${escapeHtml(money(invoice.totalAmount))}</span></div>
-          </div>
+          <main class="receipt">
+            <header class="header"><h1>Wasabi Sushi</h1><p class="printed-at">${escapeHtml(printedAt)}</p></header>
+            <div class="separator"></div>
+            <section class="order-box"><span>Order Id</span><strong>${escapeHtml(invoice.orderId)}</strong></section>
+            <div class="separator"></div>
+            <section>
+              <div class="info-row"><span>Cashier</span><strong>${escapeHtml(cashierName)}</strong></div>
+              <div class="info-row"><span>Working Time</span><strong>08:00 - 17:00</strong></div>
+              <div class="info-row"><span>Customer Name</span><strong>Guest</strong></div>
+              <div class="info-row"><span>Member Id Card</span><strong>-</strong></div>
+              <div class="info-row"><span>Order Type</span><strong>Dine In</strong></div>
+              <div class="info-row"><span>Table Number</span><strong>-</strong></div>
+            </section>
+            <div class="separator"></div>
+            <section>
+              <div class="items-heading"><span>Item</span><span>Qty x Price</span><span>Total</span></div>
+              ${itemRows || '<div class="empty">Không có món</div>'}
+            </section>
+            <div class="separator"></div>
+            <section>
+              <div class="total-row"><span>Subtotal</span><strong>${escapeHtml(money(invoice.subtotal))}</strong></div>
+              <div class="total-row"><span>Discount</span><strong>${escapeHtml(money(invoice.discountAmount))}</strong></div>
+              <div class="total-row grand-total"><span>Total Amount</span><strong>${escapeHtml(money(invoice.totalAmount))}</strong></div>
+            </section>
+            <div class="separator"></div>
+            <footer class="footer"><div>Cảm ơn quý khách. Hẹn gặp lại!</div><div class="brand">Wasabi Sushi</div></footer>
+          </main>
         </body>
       </html>
     `)
