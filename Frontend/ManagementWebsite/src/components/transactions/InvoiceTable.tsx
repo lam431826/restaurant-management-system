@@ -78,6 +78,27 @@ const InvoiceTable = ({ invoices, loading, refreshVersion, onApplyDiscount, onPr
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-card border border-line rounded-t-lg overflow-hidden">
+      {!loading && invoices.length > 0 && (
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-3 px-4 py-3 bg-primary-25 border-b border-line shrink-0">
+          <div>
+            <div className="text-sm text-ink-muted">Tổng hóa đơn</div>
+            <div className="text-lg font-semibold text-ink mt-0.5">{invoices.length}</div>
+          </div>
+          <div>
+            <div className="text-sm text-ink-muted">Tổng tạm tính</div>
+            <div className="text-lg font-semibold text-ink mt-0.5">{money(totals.subtotal)}</div>
+          </div>
+          <div>
+            <div className="text-sm text-ink-muted">Tổng giảm giá</div>
+            <div className="text-lg font-semibold text-ink mt-0.5">{money(totals.discount)}</div>
+          </div>
+          <div>
+            <div className="text-sm text-ink-muted">Tổng thanh toán</div>
+            <div className="text-lg font-bold text-primary mt-0.5">{money(totals.total)}</div>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 overflow-auto">
         <table className="w-full min-w-[126rem] border-collapse">
           <thead>
@@ -93,16 +114,6 @@ const InvoiceTable = ({ invoices, loading, refreshVersion, onApplyDiscount, onPr
             </tr>
           </thead>
           <tbody>
-            {!loading && invoices.length > 0 && (
-              <tr className="border-b border-line bg-fill">
-                <td className={td} /><td className={td} /><td className={`${td} font-semibold`}>Tổng cộng</td>
-                <td className={`${td} text-right font-bold`}>{money(totals.subtotal)}</td>
-                <td className={`${td} text-right font-bold`}>{money(totals.discount)}</td>
-                <td className={`${td} text-right font-bold`}>{money(totals.total)}</td>
-                <td className={td} /><td className={td} />
-              </tr>
-            )}
-
             {!loading && invoices.map(invoice => {
               const isOpen = expandedId === invoice.id
               return (
@@ -175,10 +186,6 @@ const InvoiceTable = ({ invoices, loading, refreshVersion, onApplyDiscount, onPr
             )}
           </tbody>
         </table>
-      </div>
-
-      <div className="flex items-center px-4 py-3 border-t border-line shrink-0">
-        <span className="text-md text-ink-subtle">Tổng số {invoices.length} hóa đơn</span>
       </div>
     </div>
   )

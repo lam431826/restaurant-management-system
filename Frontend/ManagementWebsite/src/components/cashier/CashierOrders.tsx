@@ -100,22 +100,21 @@ const printCashierInvoice = (invoice: InvoiceDetail, tableName: string, cashierN
         <meta charset="utf-8" />
         <title>Hóa đơn ${escapeHtml(invoice.id)}</title>
         <style>
-          @page { size: 80mm auto; margin: 6mm; }
           * { box-sizing: border-box; }
           body { margin: 0; background: #f8f5ed; color: #202325; font-family: "Courier New", monospace; }
           .receipt { width: 380px; max-width: 100%; margin: 24px auto; padding: 24px 22px; background: #fffdf7; }
           .header { text-align: center; }
           h1 { margin: 0; font-family: Georgia, serif; font-size: 27px; letter-spacing: 1px; }
           .printed-at { margin: 7px 0 0; color: #636566; font-size: 12px; }
-          .separator { margin: 18px 0; border-top: 1px dashed #8d8d88; }
+          .separator { margin: 20px 0; border-top: 1px dashed #8d8d88; }
           .order-box { padding: 12px; border: 1px dashed #8d8d88; text-align: center; }
           .order-box span { display: block; margin-bottom: 5px; color: #636566; font-size: 12px; text-transform: uppercase; }
           .order-box strong { font-size: 17px; overflow-wrap: anywhere; }
-          .info-row, .total-row { display: flex; justify-content: space-between; gap: 16px; padding: 4px 0; font-size: 12px; }
+          .info-row, .total-row { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; font-size: 12px; }
           .info-row span:first-child, .total-row span:first-child { color: #636566; }
           .info-row strong { text-align: right; font-weight: 600; }
           .items-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; padding-bottom: 7px; color: #636566; font-size: 11px; text-transform: uppercase; }
-          .item-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: start; padding: 7px 0; font-size: 12px; }
+          .item-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: start; padding: 9px 0; font-size: 12px; }
           .item-name { overflow-wrap: anywhere; }
           .item-calculation { white-space: nowrap; color: #636566; }
           .empty { padding: 12px 0; text-align: center; color: #636566; font-size: 12px; }
@@ -500,6 +499,9 @@ const PaymentModal = ({ invoice, table, processing, error, onClose, onConfirm }:
     else setCashInput(v => (v.length < 12 ? v + key : v))
   }
   const displayAmount = cashInput ? parseInt(cashInput, 10).toLocaleString('vi-VN') + 'đ' : '0đ'
+  const confirmLabel = processing
+    ? method === 'QR' ? 'Đang xác nhận...' : 'Đang thanh toán...'
+    : method === 'QR' ? 'Xác nhận đã thanh toán' : 'Xác nhận thanh toán'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -554,8 +556,8 @@ const PaymentModal = ({ invoice, table, processing, error, onClose, onConfirm }:
           </div>
 
           {/* Payment panel */}
-          <div className="flex-1 h-full flex flex-col justify-between overflow-y-auto">
-            <div className="relative flex flex-col gap-4">
+          <div className="flex-1 h-full min-h-0 flex flex-col overflow-hidden">
+            <div className="relative flex flex-col gap-3 shrink-0">
               <p className="text-[16px] font-semibold text-[#202325]">Select a payment method</p>
               <button onClick={() => setDropdownOpen(v => !v)} className={`flex items-center justify-between px-2 py-3 rounded-[12px] border transition-colors ${dropdownOpen ? 'border-[#025cca] bg-white' : 'border-[#e8e8e8] bg-[#f5f5f5]'}`}>
                 <div className="flex items-center gap-2 px-3">
@@ -576,47 +578,50 @@ const PaymentModal = ({ invoice, table, processing, error, onClose, onConfirm }:
               )}
             </div>
 
-            {method === 'CASH' && (
-              <div className="flex flex-col items-center gap-6">
-                <p className="text-[40px] font-medium text-[#202325] text-center">{displayAmount}</p>
-                <div className="grid grid-cols-3 w-full gap-y-2">
-                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'].map(key => (
-                    <button key={key} onClick={() => key !== '.' && handleDigit(key)} disabled={key === '.'} className={`h-[54px] flex items-center justify-center rounded-[8px] active:scale-95 transition-all ${key === '.' ? 'opacity-30 cursor-default' : 'hover:bg-[#f5f5f5]'}`}>
-                      {key === 'del' ? <DeleteDigitIcon /> : <span className={`text-[28px] text-[#202325] ${key === '.' ? 'font-normal' : 'font-medium'}`}>{key}</span>}
-                    </button>
-                  ))}
+            <div className="flex-1 min-h-0 overflow-y-auto mt-6 pr-1">
+              {method === 'CASH' && (
+                <div className="flex flex-col items-center gap-5 pb-2">
+                  <p className="text-[40px] font-medium leading-none text-[#202325] text-center py-2">{displayAmount}</p>
+                  <div className="grid grid-cols-3 w-full gap-y-2">
+                    {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'].map(key => (
+                      <button key={key} onClick={() => key !== '.' && handleDigit(key)} disabled={key === '.'} className={`h-[50px] flex items-center justify-center rounded-[8px] active:scale-95 transition-all ${key === '.' ? 'opacity-30 cursor-default' : 'hover:bg-[#f5f5f5]'}`}>
+                        {key === 'del' ? <DeleteDigitIcon /> : <span className={`text-[28px] text-[#202325] ${key === '.' ? 'font-normal' : 'font-medium'}`}>{key}</span>}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <button onClick={() => onConfirm(method)} disabled={processing} className="w-full h-[60px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60">{processing ? 'Đang thanh toán...' : 'Thanh toán'}</button>
-              </div>
-            )}
+              )}
 
-            {method === 'QR' && (
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-[250px] h-[250px] bg-white overflow-hidden flex items-center justify-center">
-                  <img src="/images/qr-code.png" alt="QR Code" className="w-full h-full object-contain" />
+              {method === 'QR' && (
+                <div className="flex flex-col items-center gap-4 pb-2">
+                  <div className="w-[220px] h-[220px] bg-white overflow-hidden flex items-center justify-center shrink-0">
+                    <img src="/images/qr-code.png" alt="QR Code" className="w-full h-full object-contain" />
+                  </div>
+                  <div className="w-full border-t border-[#e8e8e8] px-3 pt-4 flex flex-col gap-2 items-center">
+                    <p className="text-[20px] font-medium text-[#202325]">MB Bank</p>
+                    <p className="text-[14px] text-[#636566]"><span className="text-[#a2a4a4]">STK</span>: <span className="text-[#202325]">7777777777</span></p>
+                    <p className="text-[14px] text-[#636566]"><span className="text-[#a2a4a4]">Chủ tài khoản:</span> <span className="text-[#202325]">Wasabi Sushi</span></p>
+                    <p className="text-[14px] text-[#636566]"><span className="text-[#a2a4a4]">Số tiền:</span> <span className="text-[#202325] font-medium">{total.toLocaleString('vi-VN')} đ</span></p>
+                    <p className="text-[14px] text-[#636566]"><span className="text-[#a2a4a4]">Nội dung:</span> <span className="text-[#202325]">#200 QR Code</span></p>
+                  </div>
                 </div>
-                <div className="w-full border-b border-[#e8e8e8] px-5 py-3 flex flex-col gap-2 items-center">
-                  <p className="text-[20px] font-medium text-[#202325]">MB Bank</p>
-                  <p className="text-[14px] text-[#636566]"><span className="text-[#a2a4a4]">STK</span>: <span className="text-[#202325]">7777777777</span></p>
-                  <p className="text-[14px] text-[#636566]"><span className="text-[#a2a4a4]">Chủ tài khoản:</span> <span className="text-[#202325]">Wasabi Sushi</span></p>
-                  <p className="text-[14px] text-[#636566]"><span className="text-[#a2a4a4]">Số tiền:</span> <span className="text-[#202325]">{total.toLocaleString('vi-VN')} đ</span></p>
-                  <p className="text-[14px] text-[#636566]"><span className="text-[#a2a4a4]">Nội dung:</span> <span className="text-[#202325]">#200 QR Code</span></p>
-                </div>
-                <button onClick={() => onConfirm(method)} disabled={processing} className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60">{processing ? 'Đang xác nhận...' : 'Xác nhận đã thanh toán'}</button>
-              </div>
-            )}
+              )}
 
-            {(method === 'CARD' || method === 'E_WALLET') && (
-              <div className="flex flex-col items-center justify-center gap-6 py-10 text-[#636566]">
-                <div className="w-16 h-16 rounded-full bg-[#f5f5f5] flex items-center justify-center">{methodIcons[method]}</div>
-                <div className="flex flex-col items-center gap-2">
-                  <p className="text-[18px] font-semibold text-[#202325]">{PAYMENT_METHOD_LABELS[method]}</p>
-                  <p className="text-[14px] text-[#636566]">Tổng thanh toán: {total.toLocaleString('vi-VN')} đ</p>
+              {(method === 'CARD' || method === 'E_WALLET') && (
+                <div className="flex flex-col items-center justify-center gap-6 py-10 text-[#636566]">
+                  <div className="w-16 h-16 rounded-full bg-[#f5f5f5] flex items-center justify-center">{methodIcons[method]}</div>
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-[18px] font-semibold text-[#202325]">{PAYMENT_METHOD_LABELS[method]}</p>
+                    <p className="text-[14px] text-[#636566]">Tổng thanh toán: {total.toLocaleString('vi-VN')} đ</p>
+                  </div>
                 </div>
-                <button onClick={() => onConfirm(method)} disabled={processing} className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60">{processing ? 'Đang thanh toán...' : 'Xác nhận thanh toán'}</button>
-              </div>
-            )}
-            {error && <p className="text-[13px] text-[#d92d20] text-center mt-3">{error}</p>}
+              )}
+            </div>
+
+            <div className="shrink-0 mt-5 pt-4 border-t border-[#e8e8e8]">
+              {error && <p className="text-[13px] text-[#d92d20] text-center mb-3">{error}</p>}
+              <button onClick={() => onConfirm(method)} disabled={processing} className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60">{confirmLabel}</button>
+            </div>
           </div>
         </div>
       </div>
@@ -664,9 +669,12 @@ const CashierInvoicePanel = ({
   const busy = loading || action !== null
 
   return (
-    <div className="mt-4 pt-4 border-t border-[#e8e8e8] flex flex-col gap-3">
+    <div className="mt-5 pt-5 border-t-2 border-[#e8e8e8] flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[15px] font-semibold text-[#202325]">Hóa đơn backend</p>
+        <div>
+          <p className="text-[15px] font-semibold text-[#202325]">Hóa đơn / Thanh toán</p>
+          <p className="text-[11px] text-[#797b7c] mt-1">Tra cứu theo backend orderId</p>
+        </div>
         {invoice && (
           <span className={`px-2 py-1 rounded-[8px] text-[11px] font-medium ${invoice.paid ? 'bg-[#dcf7ea] text-[#286b4a]' : 'bg-[#fff3d6] text-[#8a5a00]'}`}>
             {invoice.paid ? 'Đã thanh toán' : 'Chưa thanh toán'}
@@ -728,7 +736,7 @@ const CashierInvoicePanel = ({
             <button onClick={onSend} disabled={busy} className="h-[36px] rounded-[10px] bg-[#f0f8ff] text-[12px] font-medium text-[#025cca] disabled:opacity-50">{action === 'send' ? 'Đang gửi' : 'Gửi hóa đơn'}</button>
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 pt-4 border-t border-dashed border-[#d9dcdf]">
             <p className="text-[13px] font-semibold text-[#202325]">Lịch sử thanh toán</p>
             {historyError && <p className="text-[12px] text-[#d92d20]">{historyError}</p>}
             {!historyError && payments.length === 0 && <p className="text-[12px] text-[#797b7c]">Chưa có lịch sử thanh toán</p>}

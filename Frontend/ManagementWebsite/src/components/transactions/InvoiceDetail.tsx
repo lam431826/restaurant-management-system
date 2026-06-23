@@ -84,22 +84,21 @@ const InvoiceDetail = ({ invoice, historyRefreshVersion, onApplyDiscount, onProc
           <meta charset="utf-8" />
           <title>Hóa đơn ${escapeHtml(invoice.id)}</title>
           <style>
-            @page { size: 80mm auto; margin: 6mm; }
             * { box-sizing: border-box; }
             body { margin: 0; background: #f8f5ed; color: #202325; font-family: "Courier New", monospace; }
             .receipt { width: 380px; max-width: 100%; margin: 24px auto; padding: 24px 22px; background: #fffdf7; }
             .header { text-align: center; }
             h1 { margin: 0; font-family: Georgia, serif; font-size: 27px; letter-spacing: 1px; }
             .printed-at { margin: 7px 0 0; color: #636566; font-size: 12px; }
-            .separator { margin: 18px 0; border-top: 1px dashed #8d8d88; }
+            .separator { margin: 20px 0; border-top: 1px dashed #8d8d88; }
             .order-box { padding: 12px; border: 1px dashed #8d8d88; text-align: center; }
             .order-box span { display: block; margin-bottom: 5px; color: #636566; font-size: 12px; text-transform: uppercase; }
             .order-box strong { font-size: 17px; overflow-wrap: anywhere; }
-            .info-row, .total-row { display: flex; justify-content: space-between; gap: 16px; padding: 4px 0; font-size: 12px; }
+            .info-row, .total-row { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; font-size: 12px; }
             .info-row span:first-child, .total-row span:first-child { color: #636566; }
             .info-row strong { text-align: right; font-weight: 600; }
             .items-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; padding-bottom: 7px; color: #636566; font-size: 11px; text-transform: uppercase; }
-            .item-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: start; padding: 7px 0; font-size: 12px; }
+            .item-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: start; padding: 9px 0; font-size: 12px; }
             .item-name { overflow-wrap: anywhere; }
             .item-calculation { white-space: nowrap; color: #636566; }
             .empty { padding: 12px 0; text-align: center; color: #636566; font-size: 12px; }
