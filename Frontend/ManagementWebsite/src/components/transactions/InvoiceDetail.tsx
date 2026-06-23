@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { InvoiceDetail as InvoiceDetailData } from '../../services/invoiceApi'
+import { sendInvoice } from '../../services/invoiceApi'
 import { getPayments } from '../../services/paymentApi'
 import type { Payment, PaymentMethod } from '../../services/paymentApi'
 
@@ -27,11 +28,20 @@ const paymentMethodLabels: Record<PaymentMethod, string> = {
   E_WALLET: 'Ví điện tử',
 }
 
+const escapeHtml = (value: string | number) => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;')
+
 const InvoiceDetail = ({ invoice, historyRefreshVersion, onApplyDiscount, onProcessPayment }: Props) => {
   const totalQuantity = invoice.items.reduce((total, item) => total + item.quantity, 0)
   const [payments, setPayments] = useState<Payment[]>([])
   const [paymentsLoading, setPaymentsLoading] = useState(true)
   const [paymentsError, setPaymentsError] = useState('')
+  const [sending, setSending] = useState(false)
+  const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const loadPayments = useCallback(async () => {
     setPaymentsLoading(true)
@@ -48,6 +58,88 @@ const InvoiceDetail = ({ invoice, historyRefreshVersion, onApplyDiscount, onProc
   useEffect(() => {
     void loadPayments()
   }, [historyRefreshVersion, loadPayments])
+
+  const handlePrint = () => {
+    const printWindow = window.open('', '_blank', 'width=900,height=700')
+    if (!printWindow) {
+      setActionMessage({ type: 'error', text: 'Trình duyệt đã chặn cửa sổ in hóa đơn' })
+      return
+    }
+
+    const itemRows = invoice.items.map(item => `
+      <tr>
+        <td>${escapeHtml(item.menuItemName)}</td>
+        <td class="number">${item.quantity}</td>
+        <td class="number">${escapeHtml(money(item.unitPrice))}</td>
+        <td class="number">${escapeHtml(money(item.lineTotal))}</td>
+      </tr>
+    `).join('')
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html lang="vi">
+        <head>
+          <meta charset="utf-8" />
+          <title>Hóa đơn ${escapeHtml(invoice.id)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #202325; margin: 32px; }
+            h1 { margin: 0 0 8px; font-size: 24px; }
+            .subtitle { color: #636566; margin-bottom: 24px; }
+            .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-bottom: 24px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+            th, td { border: 1px solid #d9dcdf; padding: 9px; text-align: left; }
+            th { background: #f2f6ff; }
+            .number { text-align: right; }
+            .totals { width: 360px; margin: 24px 0 0 auto; }
+            .totals div { display: flex; justify-content: space-between; padding: 5px 0; }
+            .total { border-top: 1px solid #202325; margin-top: 5px; padding-top: 10px !important; font-weight: 700; }
+          </style>
+        </head>
+        <body>
+          <h1>HÓA ĐƠN</h1>
+          <div class="subtitle">Restaurant Management System</div>
+          <div class="meta">
+            <div><strong>Mã hóa đơn:</strong> ${escapeHtml(invoice.id)}</div>
+            <div><strong>Mã đơn hàng:</strong> ${escapeHtml(invoice.orderId)}</div>
+            <div><strong>Ngày tạo:</strong> ${escapeHtml(formatDateTime(invoice.createdAt))}</div>
+            <div><strong>Trạng thái:</strong> ${invoice.paid ? 'Đã thanh toán' : 'Chưa thanh toán'}</div>
+            <div><strong>Khuyến mãi:</strong> ${escapeHtml(invoice.promotionCode ?? 'Không áp dụng')}</div>
+          </div>
+          <table>
+            <thead><tr><th>Tên món</th><th class="number">Số lượng</th><th class="number">Đơn giá</th><th class="number">Thành tiền</th></tr></thead>
+            <tbody>${itemRows || '<tr><td colspan="4">Hóa đơn không có món</td></tr>'}</tbody>
+          </table>
+          <div class="totals">
+            <div><span>Tạm tính:</span><span>${escapeHtml(money(invoice.subtotal))}</span></div>
+            <div><span>Giảm giá:</span><span>${escapeHtml(money(invoice.discountAmount))}</span></div>
+            <div class="total"><span>Tổng thanh toán:</span><span>${escapeHtml(money(invoice.totalAmount))}</span></div>
+          </div>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+    printWindow.focus()
+    printWindow.print()
+  }
+
+  const handleSend = async () => {
+    setSending(true)
+    setActionMessage(null)
+    try {
+      const response = await sendInvoice(invoice.id)
+      setActionMessage({
+        type: 'success',
+        text: `${response.message} lúc ${formatDateTime(response.sentAt)}`,
+      })
+    } catch (sendError) {
+      setActionMessage({
+        type: 'error',
+        text: sendError instanceof Error ? sendError.message : 'Không thể gửi hóa đơn',
+      })
+    } finally {
+      setSending(false)
+    }
+  }
 
   return (
     <div className="bg-card border-x border-b border-primary-150 px-5 pb-5 pt-4">
@@ -107,6 +199,12 @@ const InvoiceDetail = ({ invoice, historyRefreshVersion, onApplyDiscount, onProc
               </button>
             </>
           )}
+          <button type="button" className="kv-btn kv-btn-outline-neutral h-10" onClick={handlePrint}>
+            In hóa đơn
+          </button>
+          <button type="button" className="kv-btn kv-btn-outline-primary h-10" onClick={() => void handleSend()} disabled={sending}>
+            {sending ? 'Đang gửi...' : 'Gửi hóa đơn'}
+          </button>
         </div>
         <div className="w-full md:w-[34rem] flex flex-col gap-2 text-md">
           <div className="flex justify-between gap-4"><span className="text-ink-subtle">Tạm tính:</span><span className="font-medium text-ink">{money(invoice.subtotal)}</span></div>
@@ -114,6 +212,15 @@ const InvoiceDetail = ({ invoice, historyRefreshVersion, onApplyDiscount, onProc
           <div className="flex justify-between gap-4 pt-2 border-t border-line"><span className="font-semibold text-ink">Tổng thanh toán:</span><span className="font-bold text-primary">{money(invoice.totalAmount)}</span></div>
         </div>
       </div>
+
+      {actionMessage && (
+        <div
+          className={`mt-4 px-4 py-3 rounded-md text-md ${actionMessage.type === 'success' ? 'bg-success-50 text-success-700' : 'bg-danger-50 text-danger-700'}`}
+          role={actionMessage.type === 'error' ? 'alert' : 'status'}
+        >
+          {actionMessage.text}
+        </div>
+      )}
 
       <div className="mt-5 pt-4 border-t border-line">
         <div className="flex items-center justify-between gap-4 mb-3">

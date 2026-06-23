@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -179,6 +180,23 @@ public class InvoiceServiceImpl implements InvoiceService {
                 invoice.getPromotionId(),
                 promotionCode,
                 items
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SendInvoiceResponse sendInvoice(String invoiceId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
+
+        return new SendInvoiceResponse(
+                invoice.getId(),
+                invoice.getOrderId(),
+                invoice.getTotalAmount(),
+                invoice.isPaid(),
+                LocalDateTime.now(),
+                "SIMULATED",
+                "Invoice sent successfully (simulated)"
         );
     }
 

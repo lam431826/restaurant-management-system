@@ -45,6 +45,16 @@ export interface GenerateInvoiceRequest {
   promotionCode: string | null
 }
 
+export interface SendInvoiceResponse {
+  invoiceId: string
+  orderId: string
+  totalAmount: number
+  paid: boolean
+  sentAt: string
+  deliveryMethod: string
+  message: string
+}
+
 export const getInvoices = (filters: InvoiceFilters = {}) => {
   const params = new URLSearchParams()
   if (typeof filters.paid === 'boolean') params.set('paid', String(filters.paid))
@@ -66,4 +76,9 @@ export const applyInvoiceDiscount = (invoiceId: string, promotionCode: string) =
   apiData<InvoiceMutationResponse>(`/api/invoices/${invoiceId}/discount`, {
     method: 'PUT',
     body: JSON.stringify({ promotionCode }),
+  })
+
+export const sendInvoice = (invoiceId: string) =>
+  apiData<SendInvoiceResponse>(`/api/invoices/${invoiceId}/send`, {
+    method: 'POST',
   })

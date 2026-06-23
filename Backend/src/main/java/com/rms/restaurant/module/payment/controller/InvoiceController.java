@@ -6,6 +6,7 @@ import com.rms.restaurant.module.payment.dto.GenerateInvoiceRequest;
 import com.rms.restaurant.module.payment.dto.InvoiceDetailResponse;
 import com.rms.restaurant.module.payment.dto.InvoiceResponse;
 import com.rms.restaurant.module.payment.dto.InvoiceSummaryResponse;
+import com.rms.restaurant.module.payment.dto.SendInvoiceResponse;
 import com.rms.restaurant.module.payment.service.InvoiceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +47,14 @@ public class InvoiceController {
         return ResponseEntity
                 .created(URI.create("/api/invoices/" + created.id()))
                 .body(ApiResponse.success(created));
+    }
+
+    @PostMapping("/{id}/send")
+    public ResponseEntity<ApiResponse<SendInvoiceResponse>> send(@PathVariable String id) {
+        return ResponseEntity.ok(ApiResponse.success(
+                invoiceService.sendInvoice(id),
+                "Invoice sent successfully"
+        ));
     }
 
     @PutMapping("/{id}/discount")

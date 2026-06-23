@@ -9,6 +9,7 @@ public interface InvoiceService {
     InvoiceResponse generate(GenerateInvoiceRequest request);
     InvoiceResponse applyDiscount(String invoiceId, ApplyDiscountRequest request);
     InvoiceDetailResponse getById(String invoiceId);
+    SendInvoiceResponse sendInvoice(String invoiceId);
     InvoiceResponse getByOrderId(String orderId);
     InvoiceResponse[] split(SplitBillRequest request);
     InvoiceResponse merge(MergeBillRequest request);
