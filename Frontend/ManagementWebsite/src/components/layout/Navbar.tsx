@@ -1,5 +1,6 @@
 import { useLocation } from 'react-router-dom'
 import { navItems } from '../../data/mockData'
+import { useAuth } from '../../context/AuthContext'
 
 type NavChild =
   | { label: string; href: string; divider?: undefined; groupTitle?: undefined }
@@ -37,16 +38,21 @@ const renderChild = (child: NavChild, i: number) => {
 
 const Navbar = () => {
   const { pathname } = useLocation()
+  const { user } = useAuth()
 
-  const firstChildHref = (item: (typeof navItems)[number]) => {
+  const visibleItems = navItems.filter(item =>
+    !item.allowedRoles || (user && item.allowedRoles.includes(user.role))
+  )
+
+  const firstChildHref = (item: (typeof visibleItems)[number]) => {
     const child = (item.children as NavChild[]).find(c => 'href' in c && c.href)
     return child && 'href' in child ? child.href : undefined
   }
 
-  const targetHref = (item: (typeof navItems)[number]) =>
+  const targetHref = (item: (typeof visibleItems)[number]) =>
     item.href ?? firstChildHref(item) ?? '#'
 
-  const isActive = (item: (typeof navItems)[number]) => {
+  const isActive = (item: (typeof visibleItems)[number]) => {
     if (toPath(item.href) === pathname) return true
     return (item.children as NavChild[]).some(
       c => 'href' in c && c.href && toPath(c.href) === pathname
@@ -56,7 +62,7 @@ const Navbar = () => {
   return (
     <nav className="flex items-center overflow-visible">
       <ul className="inline-flex items-center gap-0.5 p-[0.5rem] rounded-[2.4rem] bg-[linear-gradient(90deg,#5B8DFE_0%,#4A7CFB_50%,#2F6EF7_100%)] shadow-[0_0.4rem_1.2rem_rgba(47,110,247,0.25)]">
-        {navItems.map(item => {
+        {visibleItems.map(item => {
           const active = isActive(item)
           const isGroup2 = item.id === 12
           const href = targetHref(item)

@@ -1,0 +1,32 @@
+# ── CLAUDE.md — dùng nội bộ cho Claude Code, không push ─────────────────────
+CLAUDE.md
+
+# ── Tài liệu / file Office ở root — không push ──────────────────────────────
+/README.md
+/docs/
+/*.docx
+/*.xlsx
+
+# Office temp files (lock files khi đang mở)
+~$*
+
+# ── Frontend ──────────────────────────────────────────────────────────────────
+Frontend/*/node_modules/
+Frontend/*/dist/
+Frontend/*/.vite/
+Frontend/*/.env
+Frontend/*/.env.local
+
+# ── Backend ───────────────────────────────────────────────────────────────────
+Backend/target/
+Backend/.env
+Backend/.env.local
+
+# ── OS / IDE ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.class
+*.log
+.idea/
+*.iml
+.vscode/

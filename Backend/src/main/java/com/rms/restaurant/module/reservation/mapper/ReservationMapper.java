@@ -23,8 +23,11 @@ public class ReservationMapper {
         return new ReservationResponse(
                 reservation.getId(),
                 reservation.getTableId(),
+                null,   // tableName — enriched by service
+                null,   // tableArea — enriched by service
                 reservation.getGuestName(),
                 reservation.getPhone(),
+                reservation.getGuestEmail(),
                 reservation.getPartySize(),
                 reservation.getDatetime(),
                 reservation.getNote(),

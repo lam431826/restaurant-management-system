@@ -3,12 +3,21 @@ package com.rms.restaurant.module.table.repository;
 import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
 
 public interface TableRepository extends JpaRepository<RestaurantTable, String> {
     List<RestaurantTable> findByStatus(TableStatus status);
+    List<RestaurantTable> findAllByOrderByAreaAscNameAsc();
     Optional<RestaurantTable> findByQrToken(String qrToken);
     boolean existsByName(String name);
+    boolean existsByNameAndIdNot(String name, String id);
+    long countByCapacityGreaterThanEqual(int capacity);
+
+    /** Returns IDs of tables whose capacity falls in [min, max] — used for tier-based availability. */
+    @Query("SELECT t.id FROM RestaurantTable t WHERE t.capacity >= :min AND t.capacity <= :max")
+    List<String> findIdsByCapacityBetween(@Param("min") int min, @Param("max") int max);
 }

@@ -1,5 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import { logout } from '../../api/auth'
+import { listTables, type TableDto, type TableStatus } from '../../api/tables'
+import ChangePasswordModal from '../auth/ChangePasswordModal'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface MenuItem {
@@ -7,10 +12,10 @@ interface MenuItem {
   popular: boolean; discount: string; qty: number; image: string
 }
 interface Category { id: string; label: string; count: number; active?: boolean }
-interface TableItem { id: number; name: string; occupied: boolean; selected: boolean; amount: number; guests: number; items: number }
+interface TableItem { id: string; name: string; area: string; capacity: number; status: TableStatus; occupied: boolean; selected: boolean; amount: number; guests: number; items: number }
 interface OrderItem { id: number; name: string; qty: number; notes: string; status: string; price: number }
 
-/* ─── Mock data ──────────────────────────────────────────────────────────── */
+/* ─── Mock data (menu only — tables come from API) ───────────────────────── */
 const CATEGORIES: Category[] = [
   { id: 'all', label: 'Tất Cả', count: 31, active: true },
   { id: 'hot', label: 'Bán Chạy', count: 12 },
@@ -32,15 +37,20 @@ const MENU_ITEMS: MenuItem[] = Array.from({ length: 6 }, (_, i) => ({
   image: '/images/food-item.jpg',
 }))
 
-const TABLES: TableItem[] = Array.from({ length: 12 }, (_, i) => ({
-  id: i + 1,
-  name: `Bàn ${i + 1}`,
-  occupied: [1, 4, 5, 7, 9].includes(i + 1),
-  selected: i + 1 === 9,
-  amount: i + 1 === 9 ? 267000 : 100000,
-  guests: 1,
-  items: i + 1 === 9 ? 3 : 1,
-}))
+const OCCUPIED_STATUSES: TableStatus[] = ['OCCUPIED', 'BILLING']
+
+const toTableItem = (dto: TableDto): TableItem => ({
+  id: dto.id,
+  name: dto.name,
+  area: dto.area,
+  capacity: dto.capacity,
+  status: dto.status,
+  occupied: OCCUPIED_STATUSES.includes(dto.status),
+  selected: false,
+  amount: 0,
+  guests: 0,
+  items: 0,
+})
 
 const ORDER_ITEMS: OrderItem[] = [
   { id: 1, name: 'Item Name', qty: 1, notes: 'Ghi chú : Notes', status: 'Đang nấu', price: 89000 },
@@ -149,34 +159,84 @@ const DeleteDigitIcon = () => (
   </svg>
 )
 
-/* ─── Header / BottomNav ─────────────────────────────────────────────────── */
-const Header = ({ employeeName = 'Duy Tan' }: { employeeName?: string }) => (
-  <header className="bg-white flex items-center justify-between px-6 h-[64px] shrink-0 border-b border-[#e8e8e8]">
-    <div className="flex items-center gap-3 shrink-0">
-      <img src="/images/wasabi-logo.svg" alt="Wasabi" className="h-12 w-auto" />
-    </div>
-
-    <div className="flex items-center gap-3 bg-[#f5f5f5] rounded-[12px] px-4 h-[44px] w-[180px] md:w-[260px] lg:w-[340px]">
-      <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
-      <input placeholder="Tìm Kiếm" className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none" />
-    </div>
-
-    <div className="flex items-center gap-4 shrink-0">
-      <div className="relative">
-        <button className="text-[#202325]"><BellIcon /></button>
-        <span className="absolute -top-1 -right-1 bg-[#025cca] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">2</span>
-      </div>
-      <button className="flex items-center gap-2">
-        <div className="w-9 h-9 rounded-full bg-[#5B8FE8] flex items-center justify-center text-white text-[13px] font-semibold">DT</div>
-        <div className="flex flex-col items-start leading-tight">
-          <span className="text-[14px] font-medium text-[#202325]">{employeeName}</span>
-          <span className="text-[12px] text-[#636566]">Cashier</span>
-        </div>
-        <ChevronDownIcon />
-      </button>
-    </div>
-  </header>
+const LogoutIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+  </svg>
 )
+
+/* ─── Header / BottomNav ─────────────────────────────────────────────────── */
+const Header = ({ employeeName = 'Duy Tan', roleLabel = 'Thu ngân', onLogout, onChangePassword }: { employeeName?: string; roleLabel?: string; onLogout?: () => void; onChangePassword?: () => void }) => {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const initials = employeeName.split(' ').map(w => w[0]).slice(-2).join('').toUpperCase()
+
+  return (
+    <header className="bg-white flex items-center justify-between px-6 h-[64px] shrink-0 border-b border-[#e8e8e8]">
+      <div className="flex items-center gap-3 shrink-0">
+        <img src="/images/wasabi-logo.svg" alt="Wasabi" className="h-12 w-auto" />
+      </div>
+
+      <div className="flex items-center gap-3 bg-[#f5f5f5] rounded-[12px] px-4 h-[44px] w-[180px] md:w-[260px] lg:w-[340px]">
+        <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
+        <input placeholder="Tìm Kiếm" className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none" />
+      </div>
+
+      <div className="flex items-center gap-4 shrink-0">
+        <div className="relative">
+          <button className="text-[#202325]"><BellIcon /></button>
+          <span className="absolute -top-1 -right-1 bg-[#025cca] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">2</span>
+        </div>
+
+        <div className="relative" ref={ref}>
+          <button onClick={() => setOpen(v => !v)} className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-full bg-[#5B8FE8] flex items-center justify-center text-white text-[13px] font-semibold">{initials}</div>
+            <div className="flex flex-col items-start leading-tight">
+              <span className="text-[14px] font-medium text-[#202325]">{employeeName}</span>
+              <span className="text-[12px] text-[#636566]">{roleLabel}</span>
+            </div>
+            <ChevronDownIcon className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+          </button>
+
+          {open && (
+            <div className="absolute right-0 top-full mt-2 bg-white border border-[#e8e8e8] rounded-[12px] shadow-lg w-[200px] py-1 z-50">
+              <div className="px-4 py-2 border-b border-[#e8e8e8]">
+                <p className="text-[14px] font-semibold text-[#202325] truncate">{employeeName}</p>
+                <p className="text-[12px] text-[#636566]">{roleLabel}</p>
+              </div>
+              <button
+                onClick={() => { setOpen(false); onChangePassword?.() }}
+                className="flex items-center gap-2 w-full px-4 py-2.5 text-[14px] text-[#202325] hover:bg-[#f5f5f5] transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                </svg>
+                Đổi mật khẩu
+              </button>
+              <div className="h-px bg-[#e8e8e8] mx-2" />
+              <button
+                onClick={() => { setOpen(false); onLogout?.() }}
+                className="flex items-center gap-2 w-full px-4 py-2.5 text-[14px] text-red-500 hover:bg-red-50 transition-colors"
+              >
+                <LogoutIcon />
+                Đăng xuất
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+  )
+}
 
 const BottomNav = ({ active = 'orders' }: { active?: string }) => {
   const items: { id: string; label: string | null; icon: ReactNode }[] = [
@@ -266,35 +326,63 @@ const Chairs = ({ color }: { color: string }) => (
   </div>
 )
 
-const TableCard = ({ table, onSelect }: { table: TableItem; onSelect: (id: number) => void }) => {
-  const seatColor = table.occupied ? '#ffedd5' : table.selected ? 'white' : '#e8e8e8'
+const STATUS_COLOR: Record<string, string> = {
+  AVAILABLE: '#e8e8e8',
+  OCCUPIED:  '#ffedd5',
+  BILLING:   '#fde68a',
+  RESERVED:  '#dbeafe',
+  CLEANING:  '#f3f4f6',
+}
+const STATUS_LABEL_VI: Record<string, string> = {
+  AVAILABLE: 'Trống',
+  OCCUPIED:  'Đang dùng',
+  BILLING:   'Chờ thanh toán',
+  RESERVED:  'Đã đặt',
+  CLEANING:  'Đang dọn',
+}
+
+const TableCard = ({ table, onSelect }: { table: TableItem; onSelect: (id: string) => void }) => {
+  const seatColor = STATUS_COLOR[table.status] ?? '#e8e8e8'
   const selectedBg = table.occupied ? 'bg-[#dceefe]' : 'bg-[#d9e7f7]'
   return (
     <button onClick={() => onSelect(table.id)} className={`flex flex-col gap-3 items-center p-[10px] rounded-[30px] w-[184px] shrink-0 border-2 transition-colors ${table.selected ? `${selectedBg} border-[#025cca]` : 'bg-white border-transparent hover:border-[#e8e8e8]'}`}>
       <Chairs color={seatColor} />
       <div className="relative h-[80px] w-[164px] rounded-[12px] shrink-0" style={{ backgroundColor: seatColor }}>
-        {table.occupied && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
-            <p className="text-[16px] font-semibold text-black leading-tight">{table.amount.toLocaleString('vi-VN')}</p>
-            <div className="flex gap-2.5 text-[10px] text-black">
-              <span>{table.guests} người</span><span>{table.items} món</span>
-            </div>
-          </div>
-        )}
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-1">
+          {table.occupied ? (
+            <>
+              <p className="text-[16px] font-semibold text-black leading-tight">{table.amount > 0 ? table.amount.toLocaleString('vi-VN') + 'đ' : STATUS_LABEL_VI[table.status]}</p>
+              {table.items > 0 && (
+                <div className="flex gap-2.5 text-[10px] text-black">
+                  <span>{table.guests} người</span><span>{table.items} món</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-[12px] text-[#636566] font-medium">{STATUS_LABEL_VI[table.status] ?? table.status}</p>
+          )}
+        </div>
       </div>
       <Chairs color={seatColor} />
-      <p className="text-[16px] font-semibold text-center leading-[1.5] text-black">{table.name}</p>
+      <div className="flex flex-col items-center gap-0.5">
+        <p className="text-[16px] font-semibold text-center leading-[1.5] text-black">{table.name}</p>
+        <p className="text-[11px] text-[#797b7c]">{table.capacity} chỗ</p>
+      </div>
     </button>
   )
 }
 
-const TableView = ({ tables, onSelect, filter }: { tables: TableItem[]; onSelect: (id: number) => void; filter: string }) => {
+const TableView = ({ tables, onSelect, filter }: { tables: TableItem[]; onSelect: (id: string) => void; filter: string; }) => {
   const filtered = filter === 'used' ? tables.filter(t => t.occupied) : filter === 'empty' ? tables.filter(t => !t.occupied) : tables
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="flex flex-wrap gap-3 pr-2">
-        {filtered.map(table => <TableCard key={table.id} table={table} onSelect={onSelect} />)}
-      </div>
+      {filtered.length === 0 ? (
+        <p className="text-[14px] text-[#797b7c] py-8 text-center">Không có bàn</p>
+      ) : (
+        <div className="flex flex-wrap gap-3 pr-2">
+          {filtered.map(table => <TableCard key={table.id} table={table} onSelect={onSelect} />)}
+        </div>
+      )}
     </div>
   )
 }
@@ -518,7 +606,7 @@ const OrderPanel = ({ items, onStatusChange, onCheckout, onCreateOrder, onNote, 
       <div className="flex items-start justify-between shrink-0 mb-6">
         <div className="flex flex-col gap-1">
           <span className="text-[16px] font-medium text-[#202325]">{isEmpty ? 'Customer Name' : 'Nguyen Van A'}</span>
-          <span className="text-[14px] text-[#636566]">{isEmpty ? `#000 / ${selectedTable!.name}` : '#289 / Bàn 9'}</span>
+          <span className="text-[14px] text-[#636566]">{selectedTable ? selectedTable.name : '—'}</span>
         </div>
         <div className="flex flex-col items-end gap-1">
           {isEmpty ? (
@@ -577,17 +665,48 @@ const TABLE_FILTERS = [
   { id: 'empty', label: 'Còn trống' },
 ]
 
+const ROLE_LABEL: Record<string, string> = {
+  ADMIN: 'Quản trị viên',
+  MANAGER: 'Quản lý',
+  CASHIER: 'Thu ngân',
+  WAITER: 'Phục vụ',
+}
+
 const CashierOrders = () => {
+  const navigate = useNavigate()
+  const { user, signOut } = useAuth()
   const [tab, setTab] = useState<'menu' | 'table'>('menu')
-  const [floor, setFloor] = useState(0)
+  const [activeArea, setActiveArea] = useState<string>('all')
   const [tableFilter, setFilter] = useState('all')
   const [menuItems, setMenuItems] = useState(MENU_ITEMS)
-  const [tables, setTables] = useState(TABLES)
+  const [tables, setTables] = useState<TableItem[]>([])
+  const [tablesLoading, setTablesLoading] = useState(false)
   const [orderItems, setOrderItems] = useState(ORDER_ITEMS)
   const [search, setSearch] = useState('')
   const [noteModal, setNoteModal] = useState<{ open: boolean; itemId: number | null; text: string }>({ open: false, itemId: null, text: '' })
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [successTotal, setSuccessTotal] = useState<number | null>(null)
+  const [showChangePw, setShowChangePw] = useState(false)
+
+  const handleLogout = async () => {
+    try { await logout() } catch { /* ignore */ }
+    signOut()
+    navigate('/login', { replace: true })
+  }
+
+  useEffect(() => {
+    setTablesLoading(true)
+    listTables()
+      .then(res => {
+        const items = res.data.data.map(toTableItem)
+        setTables(items)
+        // default to first area
+        const firstArea = items[0]?.area
+        if (firstArea) setActiveArea(firstArea)
+      })
+      .catch(() => {/* silently keep empty */})
+      .finally(() => setTablesLoading(false))
+  }, [])
 
   useEffect(() => {
     if (successTotal !== null) {
@@ -596,11 +715,13 @@ const CashierOrders = () => {
     }
   }, [successTotal])
 
+  const areas = ['all', ...Array.from(new Set(tables.map(t => t.area)))]
+  const tablesInArea = activeArea === 'all' ? tables : tables.filter(t => t.area === activeArea)
   const selectedTable = tables.find(t => t.selected) ?? null
 
   const handleQtyChange = (id: number, delta: number) =>
     setMenuItems(items => items.map(item => (item.id === id ? { ...item, qty: Math.max(0, item.qty + delta) } : item)))
-  const handleTableSelect = (id: number) =>
+  const handleTableSelect = (id: string) =>
     setTables(ts => ts.map(t => ({ ...t, selected: t.id === id })))
   const handleStatusChange = (id: number, status: string) =>
     setOrderItems(items => items.map(i => (i.id === id ? { ...i, status } : i)))
@@ -615,22 +736,29 @@ const CashierOrders = () => {
 
   const filteredMenu = search ? menuItems.filter(i => i.name.toLowerCase().includes(search.toLowerCase())) : menuItems
   const tableCounts: Record<string, number> = {
-    all: tables.length,
-    used: tables.filter(t => t.occupied).length,
-    empty: tables.filter(t => !t.occupied).length,
+    all: tablesInArea.length,
+    used: tablesInArea.filter(t => t.occupied).length,
+    empty: tablesInArea.filter(t => !t.occupied).length,
   }
 
   return (
     <div className="flex flex-col h-screen bg-[#f5f5f5] overflow-hidden font-sans">
-      <Header />
+      <Header
+        employeeName={user?.fullName ?? user?.username ?? 'Nhân viên'}
+        roleLabel={ROLE_LABEL[user?.role ?? ''] ?? user?.role ?? 'Thu ngân'}
+        onLogout={handleLogout}
+        onChangePassword={() => setShowChangePw(true)}
+      />
 
       <div className="flex flex-1 gap-3 lg:gap-4 p-3 lg:p-4 overflow-hidden">
         <div className="flex flex-col flex-1 gap-2.5 min-w-0 overflow-hidden">
           {tab === 'table' && (
             <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 min-h-[38px]">
-              <div className="flex gap-2">
-                {['Tầng 1', 'Tầng 2', 'Tầng 3'].map((f, i) => (
-                  <button key={i} onClick={() => setFloor(i)} className={`px-4 py-1.5 rounded-[8px] border border-[#e8e8e8] text-[14px] transition-colors ${floor === i ? 'bg-white text-[#37383a]' : 'bg-[#f5f5f5] text-[#797b7c] hover:bg-white'}`}>{f}</button>
+              <div className="flex gap-2 flex-wrap">
+                {areas.map(area => (
+                  <button key={area} onClick={() => setActiveArea(area)} className={`px-4 py-1.5 rounded-[8px] border border-[#e8e8e8] text-[14px] transition-colors ${activeArea === area ? 'bg-white text-[#37383a]' : 'bg-[#f5f5f5] text-[#797b7c] hover:bg-white'}`}>
+                    {area === 'all' ? 'Tất cả khu vực' : area}
+                  </button>
                 ))}
               </div>
               <div className="flex items-center gap-5">
@@ -666,7 +794,9 @@ const CashierOrders = () => {
           <div className="flex flex-col flex-1 gap-2.5 overflow-hidden">
             {tab === 'menu'
               ? <MenuView items={filteredMenu} onQtyChange={handleQtyChange} />
-              : <TableView tables={tables} onSelect={handleTableSelect} filter={tableFilter} />}
+              : tablesLoading
+                ? <div className="flex-1 flex items-center justify-center text-[#797b7c] text-[14px]">Đang tải danh sách bàn...</div>
+                : <TableView tables={tablesInArea} onSelect={handleTableSelect} filter={tableFilter} />}
           </div>
         </div>
 
@@ -686,6 +816,7 @@ const CashierOrders = () => {
       {noteModal.open && noteModal.itemId !== null && (
         <AddNoteModal itemId={noteModal.itemId} initialText={noteModal.text} onConfirm={handleConfirmNote} onCancel={handleCancelNote} />
       )}
+      {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
     </div>
   )
 }

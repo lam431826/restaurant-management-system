@@ -42,9 +42,9 @@ public class DataSeeder implements ApplicationRunner {
 
     private static final List<SeedUser> SEED_USERS = List.of(
         new SeedUser("admin",      "System Administrator", "admin@rms.local",      "0900000001", UserRole.ADMIN,    UserStatus.ACTIVE,    "Admin@123456"),
-        new SeedUser("manager01",  "Manager One",          "manager01@rms.local",  "0900000002", UserRole.MANAGER,  UserStatus.UN_ACTIVE, "Manager@123456"),
-        new SeedUser("cashier01",  "Cashier One",          "cashier01@rms.local",  "0900000003", UserRole.CASHIER,  UserStatus.UN_ACTIVE, "Cashier@123456"),
-        new SeedUser("waiter01",   "Waiter One",           "waiter01@rms.local",   "0900000004", UserRole.WAITER,   UserStatus.UN_ACTIVE, "Waiter@123456")
+        new SeedUser("manager01",  "Manager One",          "manager01@rms.local",  "0900000002", UserRole.MANAGER,  UserStatus.ACTIVE, "Manager@123456"),
+        new SeedUser("cashier01",  "Cashier One",          "cashier01@rms.local",  "0900000003", UserRole.CASHIER,  UserStatus.ACTIVE, "Cashier@123456"),
+        new SeedUser("waiter01",   "Waiter One",           "waiter01@rms.local",   "0900000004", UserRole.WAITER,   UserStatus.ACTIVE, "Waiter@123456")
     );
 
     @Override
@@ -69,28 +69,90 @@ public class DataSeeder implements ApplicationRunner {
         if (created > 0) log.info("DataSeeder: created {} user(s)", created);
     }
 
+    /*
+     * Wasabi Restaurant — bố trí mặt bằng:
+     *
+     *  Tầng 1 (12 bàn) — khu vực ăn chính, cạnh cửa sổ & trung tâm
+     *    T1-01..T1-04 : 2 người  (bàn đôi — góc cửa sổ)
+     *    T1-05..T1-09 : 4 người  (bàn gia đình nhỏ — khu trung tâm)
+     *    T1-10..T1-12 : 6 người  (bàn nhóm — phía trong)
+     *
+     *  Tầng 2 (10 bàn) — khu vực yên tĩnh hơn
+     *    T2-01..T2-04 : 4 người
+     *    T2-05..T2-08 : 6 người
+     *    T2-09..T2-10 : 8 người  (bàn tròn lớn)
+     *
+     *  Phòng VIP (4 phòng riêng)
+     *    VIP-01       : 8  người
+     *    VIP-02       : 10 người
+     *    VIP-03       : 12 người
+     *    VIP-04       : 20 người (phòng họp / tiệc)
+     *
+     *  Tổng: 26 bàn
+     */
     private void seedTables() {
-        if (tableRepository.count() == 0) {
-            tableRepository.saveAll(List.of(
-                createTable("Bàn 01", 4, "Tầng 1", TableStatus.AVAILABLE, "token-ban-01"),
-                createTable("Bàn 02", 4, "Tầng 1", TableStatus.AVAILABLE, "token-ban-02"),
-                createTable("Bàn 03", 2, "Tầng 1", TableStatus.AVAILABLE,  "token-ban-03"),
-                createTable("Bàn 04", 6, "Tầng 2", TableStatus.AVAILABLE, "token-ban-04"),
-                createTable("Bàn 05", 8, "VIP",    TableStatus.AVAILABLE, "token-ban-05")
-            ));
+        if (tableRepository.count() > 0) {
+            logTableList();
+            return;
         }
-        
-        log.info("================= DANH SÁCH TABLE ID ==================");
-        for (RestaurantTable t : tableRepository.findAll()) {
-            log.info("[{}] ID: {} | Token: {}", t.getName(), t.getId(), t.getQrToken());
-        }
-        log.info("=======================================================");
+
+        tableRepository.saveAll(List.of(
+            // ── Tầng 1 ── bàn đôi (cạnh cửa sổ)
+            tbl("T1-01", 2, "Tầng 1", "QR-T1-01"),
+            tbl("T1-02", 2, "Tầng 1", "QR-T1-02"),
+            tbl("T1-03", 2, "Tầng 1", "QR-T1-03"),
+            tbl("T1-04", 2, "Tầng 1", "QR-T1-04"),
+            // ── Tầng 1 ── bàn 4 người (khu trung tâm)
+            tbl("T1-05", 4, "Tầng 1", "QR-T1-05"),
+            tbl("T1-06", 4, "Tầng 1", "QR-T1-06"),
+            tbl("T1-07", 4, "Tầng 1", "QR-T1-07"),
+            tbl("T1-08", 4, "Tầng 1", "QR-T1-08"),
+            tbl("T1-09", 4, "Tầng 1", "QR-T1-09"),
+            // ── Tầng 1 ── bàn 6 người (phía trong)
+            tbl("T1-10", 6, "Tầng 1", "QR-T1-10"),
+            tbl("T1-11", 6, "Tầng 1", "QR-T1-11"),
+            tbl("T1-12", 6, "Tầng 1", "QR-T1-12"),
+
+            // ── Tầng 2 ── bàn 4 người
+            tbl("T2-01", 4, "Tầng 2", "QR-T2-01"),
+            tbl("T2-02", 4, "Tầng 2", "QR-T2-02"),
+            tbl("T2-03", 4, "Tầng 2", "QR-T2-03"),
+            tbl("T2-04", 4, "Tầng 2", "QR-T2-04"),
+            // ── Tầng 2 ── bàn 6 người
+            tbl("T2-05", 6, "Tầng 2", "QR-T2-05"),
+            tbl("T2-06", 6, "Tầng 2", "QR-T2-06"),
+            tbl("T2-07", 6, "Tầng 2", "QR-T2-07"),
+            tbl("T2-08", 6, "Tầng 2", "QR-T2-08"),
+            // ── Tầng 2 ── bàn tròn lớn
+            tbl("T2-09", 8, "Tầng 2", "QR-T2-09"),
+            tbl("T2-10", 8, "Tầng 2", "QR-T2-10"),
+
+            // ── Phòng VIP ──
+            tbl("VIP-01",  8, "Phòng VIP", "QR-VIP-01"),
+            tbl("VIP-02", 10, "Phòng VIP", "QR-VIP-02"),
+            tbl("VIP-03", 12, "Phòng VIP", "QR-VIP-03"),
+            tbl("VIP-04", 20, "Phòng VIP", "QR-VIP-04")
+        ));
+        log.info("DataSeeder: seeded 26 restaurant tables (Tầng 1 / Tầng 2 / VIP)");
+        logTableList();
     }
 
-    private RestaurantTable createTable(String name, int capacity, String area, TableStatus status, String qrToken) {
+    private RestaurantTable tbl(String name, int capacity, String area, String qrToken) {
         RestaurantTable t = new RestaurantTable();
-        t.setName(name); t.setCapacity(capacity); t.setArea(area); t.setStatus(status); t.setQrToken(qrToken);
+        t.setName(name);
+        t.setCapacity(capacity);
+        t.setArea(area);
+        t.setStatus(TableStatus.AVAILABLE);
+        t.setQrToken(qrToken);
         return t;
+    }
+
+    private void logTableList() {
+        log.info("============== DANH SÁCH BÀN (TABLE ID & QR TOKEN) ==============");
+        tableRepository.findAllByOrderByAreaAscNameAsc().forEach(t ->
+            log.info("  [{}] id={} | qr={}", t.getName(), t.getId(), t.getQrToken())
+        );
+        log.info("==================================================================");
     }
 
     private void seedMenu() {

@@ -37,7 +37,11 @@ public enum ApplicationError {
     USER_NOT_UNLOCKABLE("Only locked accounts can be unlocked", HttpStatus.UNPROCESSABLE_ENTITY),
 
     // Business Rules
+    DUPLICATE_TABLE_NAME("Table name already exists", HttpStatus.CONFLICT),
     TABLE_NOT_AVAILABLE("Table is not available for this time slot", HttpStatus.CONFLICT),
+    TABLE_FULLY_BOOKED("No available tables for the requested time slot", HttpStatus.CONFLICT),
+    TABLE_CAPACITY_EXCEEDED("Party size exceeds table capacity", HttpStatus.UNPROCESSABLE_ENTITY),
+    TABLE_IN_USE("Table is currently occupied and cannot be deleted", HttpStatus.CONFLICT),
     INVALID_TABLE_TOKEN("Table token is invalid or expired", HttpStatus.UNAUTHORIZED),
     SHIFT_ALREADY_OPEN("A shift is already open", HttpStatus.CONFLICT),
     SHIFT_NOT_OPEN("No open shift found", HttpStatus.CONFLICT),
@@ -46,6 +50,9 @@ public enum ApplicationError {
     CASH_OUT_EXCEEDS_BALANCE("Cash-out amount exceeds current drawer balance", HttpStatus.UNPROCESSABLE_ENTITY),
     CASH_MOVEMENT_REASON_REQUIRED("A reason is required for cash-out transactions", HttpStatus.BAD_REQUEST),
     INVALID_CASH_MOVEMENT_TYPE("Transaction type must be CASH_IN or CASH_OUT", HttpStatus.BAD_REQUEST),
+    RESERVATION_NO_EMAIL("No email on file — contact the restaurant to cancel", HttpStatus.UNPROCESSABLE_ENTITY),
+    RESERVATION_PHONE_MISMATCH("Phone number does not match this reservation", HttpStatus.UNAUTHORIZED),
+    CANCEL_TOKEN_INVALID("Cancellation token is invalid or has expired", HttpStatus.UNAUTHORIZED),
     CANNOT_CANCEL_PAID_ORDER("Cannot cancel an order that has been paid", HttpStatus.UNPROCESSABLE_ENTITY),
     INVOICE_ALREADY_EXISTS("Invoice already exists for this order", HttpStatus.CONFLICT),
     INVALID_STATUS_TRANSITION("Invalid status transition", HttpStatus.UNPROCESSABLE_ENTITY),

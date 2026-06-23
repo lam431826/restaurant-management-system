@@ -41,8 +41,25 @@ public class Reservation {
     @Column(nullable = false, length = 20)
     private ReservationStatus status;
 
+    @Column(name = "guest_email", length = 150)
+    private String guestEmail;
+
+    @Builder.Default
+    @Column(name = "reminder_sent")
+    private boolean reminderSent = false;
+
     @Column(name = "created_by")
     private String createdBy;
+
+    // ── Cancel OTP (luồng huỷ đặt bàn online 2-bước) ─────────────────────────
+    @Column(name = "cancel_token", length = 64)
+    private String cancelToken;
+
+    @Column(name = "cancel_otp", length = 6)
+    private String cancelOtp;
+
+    @Column(name = "cancel_otp_expires")
+    private LocalDateTime cancelOtpExpires;
 
     @CreatedDate
     @Column(name = "created_at", updatable = false)

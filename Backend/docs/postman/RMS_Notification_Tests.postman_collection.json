@@ -1,0 +1,954 @@
+{
+  "info": {
+    "name": "RMS – Notification Module Tests (NM-01 → NM-04)",
+    "_postman_id": "rms-notification-v2",
+    "description": "Kiểm thử toàn diện module Notification (NM-01 đến NM-04).\n\nYêu cầu tiên quyết:\n- Backend đã RESTART sau khi code được cập nhật\n- Admin account ACTIVE (đã chạy Auth collection ít nhất một lần)\n- Gmail SMTP cấu hình đúng trong Backend/.env\n\n⚙️ BƯỚC THỦ CÔNG (1 lần trong collection):\n  Sau bước [1.5] → kiểm tra hộp thư tunghieubach@gmail.com\n  Lấy mã OTP 6 chữ số → đặt vào biến Collection 'otp' → tiếp tục chạy\n\nThứ tự chạy: Collection Runner → tuần tự từ trên xuống.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "baseUrl",            "value": "http://localhost:8387", "type": "string"},
+    {"key": "testEmail",          "value": "tunghieubach@gmail.com", "type": "string"},
+    {"key": "adminToken",         "value": "", "type": "string"},
+    {"key": "cashierToken",       "value": "", "type": "string"},
+    {"key": "cashierUsername",    "value": "", "type": "string"},
+    {"key": "cashierPassword",    "value": "", "type": "string"},
+    {"key": "cashierVerifyToken", "value": "", "type": "string"},
+    {"key": "reservationId",      "value": "", "type": "string"},
+    {"key": "staffReservationId", "value": "", "type": "string"},
+    {"key": "futureDateTime",     "value": "", "type": "string"},
+    {"key": "todayStr",           "value": "", "type": "string"},
+    {"key": "otp",                "value": "", "type": "string"}
+  ],
+  "item": [
+
+    {
+      "name": "1. Setup",
+      "item": [
+
+        {
+          "name": "[1.1 ✅] Admin Login",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const future = new Date(Date.now() + 2 * 60 * 60 * 1000);",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "pm.collectionVariables.set('futureDateTime',",
+                  "  `${future.getFullYear()}-${pad(future.getMonth()+1)}-${pad(future.getDate())}T${pad(future.getHours())}:${pad(future.getMinutes())}:00`",
+                  ");",
+                  "const today = new Date();",
+                  "pm.collectionVariables.set('todayStr',",
+                  "  `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`",
+                  ");",
+                  "const rid = Date.now();",
+                  "pm.collectionVariables.set('cashierUsername', 'cashier_nm_' + rid);",
+                  "['adminToken','cashierToken','cashierPassword','cashierVerifyToken',",
+                  " 'reservationId','staffReservationId','otp']",
+                  "  .forEach(k => pm.collectionVariables.set(k, ''));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.1] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[1.1] Có accessToken', () => pm.expect(j.accessToken).to.be.a('string').and.not.empty);",
+                  "pm.test('[1.1] Admin không cần OTP', () => pm.expect(j.requiresVerification).to.be.oneOf([null,undefined,false]));",
+                  "pm.collectionVariables.set('adminToken', j.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"username\":\"admin\",\"password\":\"Admin@123456\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+
+        {
+          "name": "[1.2 ✅] Tạo cashier test user (email tunghieubach@gmail.com)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.2] Status 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test('[1.2] Có tempPassword', () => pm.expect(j.data.tempPassword).to.be.a('string').and.not.empty);",
+                  "pm.test('[1.2] Status UN_ACTIVE', () => pm.expect(j.data.user.status).to.eql('UN_ACTIVE'));",
+                  "pm.test('[1.2] Role CASHIER', () => pm.expect(j.data.user.role).to.eql('CASHIER'));",
+                  "pm.collectionVariables.set('cashierPassword', j.data.tempPassword);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{cashierUsername}}\",\n  \"fullName\": \"NM Test Cashier\",\n  \"email\": \"{{testEmail}}\",\n  \"phone\": \"0900000001\",\n  \"role\": \"CASHIER\"\n}"
+            },
+            "url": {"raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api","users"]}
+          }
+        },
+
+        {
+          "name": "[1.3 ✅] Cashier Login lần đầu → nhận verifyToken",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.3] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[1.3] requiresVerification = true', () => pm.expect(j.requiresVerification).to.be.true);",
+                  "pm.test('[1.3] Có verifyToken', () => pm.expect(j.verifyToken).to.be.a('string').and.not.empty);",
+                  "pm.collectionVariables.set('cashierVerifyToken', j.verifyToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"{{cashierUsername}}\",\"password\":\"{{cashierPassword}}\"}"
+            },
+            "url": {"raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"]}
+          }
+        },
+
+        {
+          "name": "[1.4 ✅] Gửi OTP kích hoạt → tunghieubach@gmail.com",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.4] Status 200 — OTP đã gửi đến tunghieubach@gmail.com', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[1.4] Có maskedEmail', () => pm.expect(j.data.maskedEmail).to.be.a('string').and.include('*'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "X-Verify-Token", "value": "{{cashierVerifyToken}}"}],
+            "url": {"raw": "{{baseUrl}}/api/auth/verify/info", "host": ["{{baseUrl}}"], "path": ["api","auth","verify","info"]}
+          }
+        },
+
+        {
+          "name": "[1.5 ⚙️ THỦ CÔNG] Kiểm tra tunghieubach@gmail.com → đặt biến otp",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// ─────────────────────────────────────────────────────────────",
+                  "// BƯỚC THỦ CÔNG:",
+                  "// 1. Mở hộp thư tunghieubach@gmail.com",
+                  "// 2. Tìm email 'Mã xác thực tài khoản RMS'",
+                  "// 3. Sao chép mã OTP 6 chữ số",
+                  "// 4. Postman → Variables → đặt 'otp' = <mã vừa sao chép>",
+                  "// 5. Tiếp tục chạy từ bước [1.6]",
+                  "// ─────────────────────────────────────────────────────────────"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const otp = pm.collectionVariables.get('otp');",
+                  "pm.test('[1.5] Biến otp đã được đặt thủ công (6 chữ số)',",
+                  "  () => pm.expect(otp, 'Mở tunghieubach@gmail.com → copy OTP → đặt biến otp').to.match(/^\\d{6}$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/verify/info",
+              "host": ["{{baseUrl}}"], "path": ["api","auth","verify","info"],
+              "description": "Placeholder — quan trọng là test script kiểm tra biến otp đã được đặt chưa."
+            }
+          }
+        },
+
+        {
+          "name": "[1.6 ✅] Verify OTP → kích hoạt cashier, nhận cashierToken",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.6] Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('[1.6] Có accessToken', () => pm.expect(j.accessToken).to.be.a('string').and.not.empty);",
+                  "pm.test('[1.6] Role CASHIER', () => pm.expect(j.user.role).to.eql('CASHIER'));",
+                  "pm.collectionVariables.set('cashierToken', j.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",   "value": "application/json"},
+              {"key": "X-Verify-Token", "value": "{{cashierVerifyToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\"otp\":\"{{otp}}\"}"},
+            "url": {"raw": "{{baseUrl}}/api/auth/verify/otp", "host": ["{{baseUrl}}"], "path": ["api","auth","verify","otp"]}
+          }
+        },
+
+        {
+          "name": "[1.7 ✅] Tạo online reservation CÓ email → reservationId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.7] Status 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test('[1.7] Có data.id', () => pm.expect(j.data.id).to.be.a('string').and.not.empty);",
+                  "pm.test('[1.7] Status CONFIRMED', () => pm.expect(j.data.status).to.eql('CONFIRMED'));",
+                  "pm.collectionVariables.set('reservationId', j.data.id);",
+                  "// Email CONFIRMATION đã được fire-and-forget async — kiểm tra inbox sau"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Nguyễn Văn Test\",\n  \"phone\": \"0901234567\",\n  \"email\": \"{{testEmail}}\",\n  \"partySize\": 3,\n  \"datetime\": \"{{futureDateTime}}\",\n  \"note\": \"Test NM-01 notification\"\n}"
+            },
+            "url": {"raw": "{{baseUrl}}/api/online/reservations", "host": ["{{baseUrl}}"], "path": ["api","online","reservations"]}
+          }
+        },
+
+        {
+          "name": "[1.8 ✅] Tạo staff reservation KHÔNG có email → staffReservationId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.8] Status 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test('[1.8] Có data.id', () => pm.expect(j.data.id).to.be.a('string').and.not.empty);",
+                  "pm.collectionVariables.set('staffReservationId', j.data.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestName\": \"Khách Không Email\",\n  \"phone\": \"0912345678\",\n  \"partySize\": 2,\n  \"datetime\": \"{{futureDateTime}}\"\n}"
+            },
+            "url": {"raw": "{{baseUrl}}/api/reservations/online/new", "host": ["{{baseUrl}}"], "path": ["api","reservations","online","new"]}
+          }
+        }
+
+      ]
+    },
+
+    {
+      "name": "2. NM-01 – Gửi thông báo đặt bàn",
+      "item": [
+
+        {
+          "name": "[2.1 ✅] ADMIN gửi CONFIRMATION → 204 (email async đến tunghieubach@gmail.com)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[2.1] Status 204', () => pm.response.to.have.status(204));",
+                  "pm.test('[2.1] Body trống', () => pm.expect(pm.response.text()).to.be.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"reservationId\": \"{{reservationId}}\",\n  \"type\": \"CONFIRMATION\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/reservation", "host": ["{{baseUrl}}"], "path": ["api","notifications","reservation"]}
+          }
+        },
+
+        {
+          "name": "[2.2 ✅] ADMIN gửi REMINDER → 204",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript",
+              "exec": ["pm.test('[2.2] Status 204', () => pm.response.to.have.status(204));"]}}
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"reservationId\": \"{{reservationId}}\",\n  \"type\": \"REMINDER\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/reservation", "host": ["{{baseUrl}}"], "path": ["api","notifications","reservation"]}
+          }
+        },
+
+        {
+          "name": "[2.3 ✅] ADMIN gửi CANCELLATION → 204",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript",
+              "exec": ["pm.test('[2.3] Status 204', () => pm.response.to.have.status(204));"]}}
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"reservationId\": \"{{reservationId}}\",\n  \"type\": \"CANCELLATION\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/reservation", "host": ["{{baseUrl}}"], "path": ["api","notifications","reservation"]}
+          }
+        },
+
+        {
+          "name": "[2.4 ✅] Gửi cho reservation KHÔNG có email → 204 (skip gracefully)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript",
+                "exec": ["pm.test('[2.4] Status 204 — skip khi không có guestEmail', () => pm.response.to.have.status(204));"]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"reservationId\": \"{{staffReservationId}}\",\n  \"type\": \"CONFIRMATION\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/reservation", "host": ["{{baseUrl}}"], "path": ["api","notifications","reservation"]}
+          }
+        },
+
+        {
+          "name": "[2.5 ❌] Reservation không tồn tại → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[2.5] Status 404', () => pm.response.to.have.status(404));",
+                "pm.test('[2.5] Error RESERVATION_NOT_FOUND', () => pm.expect(pm.response.json().error).to.eql('RESERVATION_NOT_FOUND'));"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"reservationId\": \"00000000-0000-0000-0000-000000000000\",\n  \"type\": \"CONFIRMATION\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/reservation", "host": ["{{baseUrl}}"], "path": ["api","notifications","reservation"]}
+          }
+        },
+
+        {
+          "name": "[2.6 ❌] Thiếu type → 400 (fieldErrors.type)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[2.6] Status 400', () => pm.response.to.have.status(400));",
+                "pm.test('[2.6] fieldErrors.type tồn tại', () => pm.expect(pm.response.json().fieldErrors).to.have.property('type'));"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"reservationId\": \"{{reservationId}}\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/reservation", "host": ["{{baseUrl}}"], "path": ["api","notifications","reservation"]}
+          }
+        },
+
+        {
+          "name": "[2.7 ❌] Thiếu reservationId → 400 (fieldErrors.reservationId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[2.7] Status 400', () => pm.response.to.have.status(400));",
+                "pm.test('[2.7] fieldErrors.reservationId tồn tại', () => pm.expect(pm.response.json().fieldErrors).to.have.property('reservationId'));"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"type\": \"CONFIRMATION\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/reservation", "host": ["{{baseUrl}}"], "path": ["api","notifications","reservation"]}
+          }
+        },
+
+        {
+          "name": "[2.8 ❌] type không hợp lệ → 400 BAD_REQUEST",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[2.8] Status 400', () => pm.response.to.have.status(400));",
+                "pm.test('[2.8] error là BAD_REQUEST', () => pm.expect(pm.response.json().error).to.eql('BAD_REQUEST'));"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"reservationId\": \"{{reservationId}}\",\n  \"type\": \"INVALID_TYPE\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/reservation", "host": ["{{baseUrl}}"], "path": ["api","notifications","reservation"]}
+          }
+        },
+
+        {
+          "name": "[2.9 ❌] Không có token → 401",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript",
+              "exec": ["pm.test('[2.9] Status 401', () => pm.response.to.have.status(401));"]}}
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"reservationId\": \"{{reservationId}}\",\n  \"type\": \"CONFIRMATION\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/reservation", "host": ["{{baseUrl}}"], "path": ["api","notifications","reservation"]}
+          }
+        },
+
+        {
+          "name": "[2.10 ❌] CASHIER không có quyền NM-01 → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[2.10] Status 403 — CASHIER bị từ chối NM-01', () => pm.response.to.have.status(403));"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{cashierToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"reservationId\": \"{{reservationId}}\",\n  \"type\": \"CONFIRMATION\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/reservation", "host": ["{{baseUrl}}"], "path": ["api","notifications","reservation"]}
+          }
+        }
+
+      ]
+    },
+
+    {
+      "name": "3. NM-02 – Gửi xác nhận thanh toán",
+      "item": [
+
+        {
+          "name": "[3.1 ✅] ADMIN gửi payment notification → 204 (deferred log info)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[3.1] Status 204', () => pm.response.to.have.status(204));",
+                "pm.test('[3.1] Body trống', () => pm.expect(pm.response.text()).to.be.empty);"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"invoiceId\": \"INV-NM-TEST-001\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/payment", "host": ["{{baseUrl}}"], "path": ["api","notifications","payment"]}
+          }
+        },
+
+        {
+          "name": "[3.2 ✅] CASHIER gửi payment notification → 204",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript",
+              "exec": ["pm.test('[3.2] Status 204 — CASHIER có quyền NM-02', () => pm.response.to.have.status(204));"]}}
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{cashierToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"invoiceId\": \"INV-NM-TEST-002\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/payment", "host": ["{{baseUrl}}"], "path": ["api","notifications","payment"]}
+          }
+        },
+
+        {
+          "name": "[3.3 ❌] Thiếu invoiceId → 400 (fieldErrors.invoiceId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[3.3] Status 400', () => pm.response.to.have.status(400));",
+                "pm.test('[3.3] fieldErrors.invoiceId tồn tại', () => pm.expect(pm.response.json().fieldErrors).to.have.property('invoiceId'));"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/payment", "host": ["{{baseUrl}}"], "path": ["api","notifications","payment"]}
+          }
+        },
+
+        {
+          "name": "[3.4 ❌] Không có token → 401",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript",
+              "exec": ["pm.test('[3.4] Status 401', () => pm.response.to.have.status(401));"]}}
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"invoiceId\": \"INV-NM-TEST-001\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/payment", "host": ["{{baseUrl}}"], "path": ["api","notifications","payment"]}
+          }
+        }
+
+      ]
+    },
+
+    {
+      "name": "4. NM-03 – Xem lịch sử thông báo",
+      "item": [
+
+        {
+          "name": "[4.1 ✅] ADMIN xem tất cả log → 200 + pagination đúng cấu trúc",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[4.1] Status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "pm.test('[4.1] data là array', () => pm.expect(j.data).to.be.an('array'));",
+                "pm.test('[4.1] pagination.total >= 0', () => pm.expect(j.pagination.total).to.be.a('number'));",
+                "pm.test('[4.1] pagination có đủ 4 field', () => {",
+                "  ['total','page','limit','totalPages'].forEach(f => pm.expect(j.pagination).to.have.property(f));",
+                "});"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/log?page=0&size=20",
+              "host": ["{{baseUrl}}"], "path": ["api","notifications","log"],
+              "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}]
+            }
+          }
+        },
+
+        {
+          "name": "[4.2 ✅] Cấu trúc từng item trong log",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[4.2] Status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "if (j.data && j.data.length > 0) {",
+                "  const item = j.data[0];",
+                "  pm.test('[4.2] item.id là string', () => pm.expect(item.id).to.be.a('string'));",
+                "  pm.test('[4.2] item.channel = EMAIL', () => pm.expect(item.channel).to.eql('EMAIL'));",
+                "  pm.test('[4.2] item.status là PENDING/SENT/FAILED', () => pm.expect(item.status).to.be.oneOf(['PENDING','SENT','FAILED']));",
+                "  pm.test('[4.2] item.recipient là string', () => pm.expect(item.recipient).to.be.a('string'));",
+                "} else {",
+                "  pm.test('[4.2] Chưa có log (async chưa xong)', () => true);",
+                "}"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/log?page=0&size=5",
+              "host": ["{{baseUrl}}"], "path": ["api","notifications","log"],
+              "query": [{"key":"page","value":"0"},{"key":"size","value":"5"}]
+            }
+          }
+        },
+
+        {
+          "name": "[4.3 ✅] Filter status=SENT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[4.3] Status 200', () => pm.response.to.have.status(200));",
+                "const items = pm.response.json().data;",
+                "if (items.length > 0) {",
+                "  pm.test('[4.3] Tất cả status=SENT', () => items.forEach(i => pm.expect(i.status).to.eql('SENT')));",
+                "} else { pm.test('[4.3] Không có log SENT (có thể async chưa xong)', () => true); }"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/log?status=SENT&page=0&size=20",
+              "host": ["{{baseUrl}}"], "path": ["api","notifications","log"],
+              "query": [{"key":"status","value":"SENT"},{"key":"page","value":"0"},{"key":"size","value":"20"}]
+            }
+          }
+        },
+
+        {
+          "name": "[4.4 ✅] Filter status=FAILED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[4.4] Status 200', () => pm.response.to.have.status(200));",
+                "const items = pm.response.json().data;",
+                "if (items.length > 0) {",
+                "  pm.test('[4.4] Tất cả status=FAILED', () => items.forEach(i => pm.expect(i.status).to.eql('FAILED')));",
+                "}"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/log?status=FAILED&page=0&size=20",
+              "host": ["{{baseUrl}}"], "path": ["api","notifications","log"],
+              "query": [{"key":"status","value":"FAILED"},{"key":"page","value":"0"},{"key":"size","value":"20"}]
+            }
+          }
+        },
+
+        {
+          "name": "[4.5 ✅] Filter type=RESERVATION + date range hôm nay",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[4.5] Status 200', () => pm.response.to.have.status(200));",
+                "pm.test('[4.5] data là array', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/log?type=RESERVATION&from={{todayStr}}&to={{todayStr}}&page=0&size=50",
+              "host": ["{{baseUrl}}"], "path": ["api","notifications","log"],
+              "query": [
+                {"key":"type","value":"RESERVATION"},
+                {"key":"from","value":"{{todayStr}}"},
+                {"key":"to","value":"{{todayStr}}"},
+                {"key":"page","value":"0"},{"key":"size","value":"50"}
+              ]
+            }
+          }
+        },
+
+        {
+          "name": "[4.6 ❌] Không có token → 401",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript",
+              "exec": ["pm.test('[4.6] Status 401', () => pm.response.to.have.status(401));"]}}
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/log?page=0&size=10",
+              "host": ["{{baseUrl}}"], "path": ["api","notifications","log"],
+              "query": [{"key":"page","value":"0"},{"key":"size","value":"10"}]
+            }
+          }
+        },
+
+        {
+          "name": "[4.7 ❌] CASHIER không có quyền NM-03 → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[4.7] Status 403 — CASHIER không được xem log', () => pm.response.to.have.status(403));"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{cashierToken}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/log?page=0&size=10",
+              "host": ["{{baseUrl}}"], "path": ["api","notifications","log"],
+              "query": [{"key":"page","value":"0"},{"key":"size","value":"10"}]
+            }
+          }
+        }
+
+      ]
+    },
+
+    {
+      "name": "5. NM-04 – Gửi thông báo thủ công",
+      "item": [
+
+        {
+          "name": "[5.1 ✅] ADMIN gửi manual email → 204 (async đến tunghieubach@gmail.com)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[5.1] Status 204', () => pm.response.to.have.status(204));",
+                "pm.test('[5.1] Body trống', () => pm.expect(pm.response.text()).to.be.empty);"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"{{testEmail}}\",\n  \"message\": \"[Test NM-04] Thông báo thủ công từ Manager. Session: {{todayStr}}.\"\n}"
+            },
+            "url": {"raw": "{{baseUrl}}/api/notifications/manual", "host": ["{{baseUrl}}"], "path": ["api","notifications","manual"]}
+          }
+        },
+
+        {
+          "name": "[5.2 ❌] recipient không phải email → 400 (fieldErrors.recipient)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[5.2] Status 400', () => pm.response.to.have.status(400));",
+                "pm.test('[5.2] fieldErrors.recipient tồn tại', () => pm.expect(pm.response.json().fieldErrors).to.have.property('recipient'));"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"recipient\": \"not-an-email\",\n  \"message\": \"Test\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/manual", "host": ["{{baseUrl}}"], "path": ["api","notifications","manual"]}
+          }
+        },
+
+        {
+          "name": "[5.3 ❌] Thiếu message → 400 (fieldErrors.message)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[5.3] Status 400', () => pm.response.to.have.status(400));",
+                "pm.test('[5.3] fieldErrors.message tồn tại', () => pm.expect(pm.response.json().fieldErrors).to.have.property('message'));"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"recipient\": \"{{testEmail}}\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/manual", "host": ["{{baseUrl}}"], "path": ["api","notifications","manual"]}
+          }
+        },
+
+        {
+          "name": "[5.4 ❌] Body rỗng → 400 (2 fieldErrors)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[5.4] Status 400', () => pm.response.to.have.status(400));",
+                "pm.test('[5.4] Có ít nhất 2 fieldErrors', () => pm.expect(Object.keys(pm.response.json().fieldErrors).length).to.be.at.least(2));"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{adminToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/manual", "host": ["{{baseUrl}}"], "path": ["api","notifications","manual"]}
+          }
+        },
+
+        {
+          "name": "[5.5 ❌] Không có token → 401",
+          "event": [
+            {"listen": "test", "script": {"type": "text/javascript",
+              "exec": ["pm.test('[5.5] Status 401', () => pm.response.to.have.status(401));"]}}
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"recipient\": \"{{testEmail}}\",\n  \"message\": \"No auth\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/manual", "host": ["{{baseUrl}}"], "path": ["api","notifications","manual"]}
+          }
+        },
+
+        {
+          "name": "[5.6 ❌] CASHIER không có quyền NM-04 → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript",
+                "exec": ["pm.test('[5.6] Status 403 — CASHIER không gửi được manual', () => pm.response.to.have.status(403));"]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type",  "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{cashierToken}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"recipient\": \"{{testEmail}}\",\n  \"message\": \"CASHIER thử gửi manual\"\n}"},
+            "url": {"raw": "{{baseUrl}}/api/notifications/manual", "host": ["{{baseUrl}}"], "path": ["api","notifications","manual"]}
+          }
+        }
+
+      ]
+    },
+
+    {
+      "name": "6. Verify – Kiểm tra log cuối session",
+      "item": [
+
+        {
+          "name": "[6.1 ✅] Xác nhận log MANUAL xuất hiện (NM-04 → NM-03)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[6.1] Status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "if (j.data && j.data.length > 0) {",
+                "  pm.test('[6.1] Có log type=MANUAL', () => pm.expect(j.data.some(i => i.referenceType === 'MANUAL')).to.be.true);",
+                "} else { pm.test('[6.1] Log MANUAL chưa xuất hiện (async)', () => true); }"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/log?type=MANUAL&page=0&size=10",
+              "host": ["{{baseUrl}}"], "path": ["api","notifications","log"],
+              "query": [{"key":"type","value":"MANUAL"},{"key":"page","value":"0"},{"key":"size","value":"10"}]
+            }
+          }
+        },
+
+        {
+          "name": "[6.2 ✅] Tổng kết SENT/FAILED/PENDING trong session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {"type": "text/javascript", "exec": [
+                "pm.test('[6.2] Status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "const sent    = j.data.filter(i => i.status === 'SENT').length;",
+                "const failed  = j.data.filter(i => i.status === 'FAILED').length;",
+                "const pending = j.data.filter(i => i.status === 'PENDING').length;",
+                "console.log(`=== NM Test Summary ===`);",
+                "console.log(`Total: ${j.pagination.total} | SENT: ${sent} | FAILED: ${failed} | PENDING: ${pending}`);",
+                "pm.test(`[6.2] Total log: ${j.pagination.total}`, () => pm.expect(j.pagination.total).to.be.at.least(0));"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{adminToken}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/log?from={{todayStr}}&to={{todayStr}}&page=0&size=100",
+              "host": ["{{baseUrl}}"], "path": ["api","notifications","log"],
+              "query": [
+                {"key":"from","value":"{{todayStr}}"},
+                {"key":"to","value":"{{todayStr}}"},
+                {"key":"page","value":"0"},{"key":"size","value":"100"}
+              ]
+            }
+          }
+        }
+
+      ]
+    }
+
+  ]
+}

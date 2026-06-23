@@ -1,7 +1,10 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import AuthLayout from './AuthLayout'
+import { login, verifyInfo, verifyOtp, resendOtp } from '../../api/auth'
+import { useAuth, type UserRole } from '../../context/AuthContext'
 
+/* ── icons ── */
 const PersonIcon = () => (
   <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
@@ -24,6 +27,7 @@ const EyeOffIcon = () => (
   </svg>
 )
 
+/* ── shared input ── */
 interface FieldProps {
   label: string
   icon: React.ReactNode
@@ -38,70 +42,195 @@ const InputField = ({ label, icon, rightIcon, placeholder, type = 'text', value,
     <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">{label}</label>
     <div className="bg-[#f5f5f5] flex gap-3 h-[44px] items-center px-4 rounded-[12px] w-full">
       <span className="text-[#797b7c]">{icon}</span>
-      <input type={type} placeholder={placeholder} value={value} onChange={onChange} className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none leading-[1.5]" />
+      <input type={type} placeholder={placeholder} value={value} onChange={onChange}
+        className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none leading-[1.5]" />
       {rightIcon && <span className="text-[#797b7c]">{rightIcon}</span>}
     </div>
   </div>
 )
 
-type Role = 'manager' | 'waiter' | 'cashier'
-const ROLES: { id: Role; label: string; to: string }[] = [
-  { id: 'manager', label: 'Quản lý', to: '/manager/dashboard' },
-  { id: 'waiter', label: 'Phục vụ', to: '/waiter' },
-  { id: 'cashier', label: 'Thu ngân', to: '/cashier' },
-]
+/* ── route helper ── */
+function defaultRoute(role: UserRole): string {
+  if (role === 'ADMIN') return '/admin'
+  if (role === 'MANAGER') return '/manager/dashboard'
+  if (role === 'CASHIER') return '/cashier'
+  return '/waiter'
+}
+
+type Step = 'login' | 'send-otp' | 'enter-otp'
 
 const LoginPage = () => {
   const navigate = useNavigate()
+  const location = useLocation()
+  const successMsg = (location.state as { message?: string } | null)?.message ?? ''
+  const { saveSession } = useAuth()
+
+  const [step, setStep] = useState<Step>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [role, setRole] = useState<Role>('manager')
+  const [verifyToken, setVerifyToken] = useState('')
+  const [maskedEmail, setMaskedEmail] = useState('')
+  const [otp, setOtp] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [resendMsg, setResendMsg] = useState('')
 
-  const handleSubmit = (e: React.FormEvent) => {
+  /* step 1: username + password */
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    const target = ROLES.find(r => r.id === role)!.to
-    navigate(target)
+    setError('')
+    setLoading(true)
+    try {
+      const res = await login(username, password)
+      const data = res.data
+      if (data.requiresVerification) {
+        setVerifyToken(data.verifyToken)
+        setStep('send-otp')
+      } else {
+        saveSession({ accessToken: data.accessToken, refreshToken: data.refreshToken, user: data.user })
+        navigate(defaultRoute(data.user.role), { replace: true })
+      }
+    } catch (err: any) {
+      const status = err.response?.status
+      if (status === 401) setError('Tên đăng nhập hoặc mật khẩu không đúng.')
+      else if (status === 423) setError('Tài khoản đang bị khóa. Vui lòng liên hệ quản lý.')
+      else setError('Có lỗi xảy ra, vui lòng thử lại.')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  return (
-    <AuthLayout title="Welcome Back" subtitle="Đăng nhập để bắt đầu làm việc">
-      <form onSubmit={handleSubmit} className="flex flex-col gap-[10px]">
-        <InputField label="Username" icon={<PersonIcon />} placeholder="Nhập tài khoản" value={username} onChange={e => setUsername(e.target.value)} />
-        <InputField
-          label="Password"
-          icon={<LockIcon />}
-          rightIcon={<button type="button" onClick={() => setShowPassword(v => !v)} className="text-[#797b7c] hover:text-[#202325]">{showPassword ? <EyeOffIcon /> : <EyeIcon />}</button>}
-          placeholder="Nhập mật khẩu"
-          type={showPassword ? 'text' : 'password'}
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-        />
+  /* step 2: send OTP to email */
+  const handleSendOtp = async () => {
+    setError('')
+    setLoading(true)
+    try {
+      const res = await verifyInfo(verifyToken)
+      setMaskedEmail(res.data.data.maskedEmail)
+      setStep('enter-otp')
+    } catch {
+      setError('Không thể gửi OTP. Vui lòng thử lại.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
-        {/* Role selector */}
-        <div className="flex flex-col gap-2 mt-1">
-          <label className="text-[14px] font-semibold text-[#202325]">Vai trò</label>
-          <div className="grid grid-cols-3 gap-2">
-            {ROLES.map(r => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => setRole(r.id)}
-                className={`h-[44px] rounded-[12px] text-[14px] font-medium border transition-colors ${role === r.id ? 'bg-[#025cca] border-[#025cca] text-white' : 'bg-[#f5f5f5] border-[#e8e8e8] text-[#636566] hover:border-[#025cca]'}`}
-              >
-                {r.label}
+  /* step 3: verify OTP */
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const res = await verifyOtp(verifyToken, otp)
+      const data = res.data
+      saveSession({ accessToken: data.accessToken, refreshToken: data.refreshToken, user: data.user })
+      navigate(defaultRoute(data.user.role), { replace: true })
+    } catch (err: any) {
+      const status = err.response?.status
+      if (status === 400) setError('Mã OTP không đúng.')
+      else if (status === 429) setError('Đã nhập sai OTP quá nhiều lần. Tài khoản bị khóa OTP.')
+      else setError('Có lỗi xảy ra, vui lòng thử lại.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /* resend OTP */
+  const handleResend = async () => {
+    setResendMsg('')
+    setError('')
+    try {
+      await resendOtp(verifyToken)
+      setResendMsg('Đã gửi lại OTP.')
+    } catch (err: any) {
+      const status = err.response?.status
+      if (status === 429) setError('Đã đạt giới hạn gửi lại OTP (3 lần / 10 phút).')
+      else setError('Không thể gửi lại OTP.')
+    }
+  }
+
+  /* ── render ── */
+  if (step === 'login') {
+    return (
+      <AuthLayout title="Welcome Back" subtitle="Đăng nhập để bắt đầu làm việc">
+        <form onSubmit={handleLogin} className="flex flex-col gap-[10px]">
+          {successMsg && (
+            <p className="text-[13px] text-green-600 bg-green-50 border border-green-200 rounded-[8px] px-3 py-2 leading-[1.5]">
+              {successMsg}
+            </p>
+          )}
+          <InputField label="Username" icon={<PersonIcon />} placeholder="Nhập tài khoản"
+            value={username} onChange={e => setUsername(e.target.value)} />
+          <InputField
+            label="Password" icon={<LockIcon />} placeholder="Nhập mật khẩu"
+            type={showPassword ? 'text' : 'password'} value={password}
+            onChange={e => setPassword(e.target.value)}
+            rightIcon={
+              <button type="button" onClick={() => setShowPassword(v => !v)} className="text-[#797b7c] hover:text-[#202325]">
+                {showPassword ? <EyeOffIcon /> : <EyeIcon />}
               </button>
-            ))}
-          </div>
+            }
+          />
+          {error && <p className="text-[13px] text-red-500 leading-[1.5]">{error}</p>}
+          <button type="submit" disabled={loading || !username || !password}
+            className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <span className="text-[20px] font-semibold text-white leading-[1.5]">
+              {loading ? 'Đang đăng nhập...' : 'Đăng Nhập'}
+            </span>
+          </button>
+        </form>
+        <div className="flex items-center justify-between mt-1">
+          <button onClick={() => navigate('/employee-login')} className="text-[14px] text-[#357dd5] leading-[1.5] hover:underline">
+            Đăng nhập nhân viên (PIN)
+          </button>
+          <button onClick={() => navigate('/forgot-password')} className="text-[14px] text-[#357dd5] leading-[1.5] hover:underline">
+            Quên mật khẩu?
+          </button>
         </div>
+      </AuthLayout>
+    )
+  }
 
-        <button type="submit" className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors">
-          <span className="text-[20px] font-semibold text-white leading-[1.5]">Đăng Nhập</span>
+  if (step === 'send-otp') {
+    return (
+      <AuthLayout title="Xác thực tài khoản" subtitle="Đây là lần đầu bạn đăng nhập. Vui lòng xác thực email.">
+        <div className="flex flex-col gap-4">
+          <p className="text-[14px] text-[#636566] leading-[1.5]">
+            Chúng tôi sẽ gửi mã OTP đến email đã đăng ký của bạn để kích hoạt tài khoản.
+          </p>
+          {error && <p className="text-[13px] text-red-500 leading-[1.5]">{error}</p>}
+          <button onClick={handleSendOtp} disabled={loading}
+            className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <span className="text-[20px] font-semibold text-white leading-[1.5]">
+              {loading ? 'Đang gửi...' : 'Gửi OTP qua Email'}
+            </span>
+          </button>
+          <button onClick={() => setStep('login')} className="text-[14px] text-[#636566] hover:underline text-center">
+            ← Quay lại đăng nhập
+          </button>
+        </div>
+      </AuthLayout>
+    )
+  }
+
+  /* step === 'enter-otp' */
+  return (
+    <AuthLayout title="Nhập mã OTP" subtitle={`Mã OTP đã được gửi đến ${maskedEmail}`}>
+      <form onSubmit={handleVerifyOtp} className="flex flex-col gap-[10px]">
+        <InputField label="Mã OTP (6 chữ số)" icon={<LockIcon />} placeholder="Nhập mã OTP"
+          value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} />
+        {error && <p className="text-[13px] text-red-500 leading-[1.5]">{error}</p>}
+        {resendMsg && <p className="text-[13px] text-green-600 leading-[1.5]">{resendMsg}</p>}
+        <button type="submit" disabled={loading || otp.length !== 6}
+          className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          <span className="text-[20px] font-semibold text-white leading-[1.5]">
+            {loading ? 'Đang xác nhận...' : 'Xác Nhận'}
+          </span>
         </button>
       </form>
-
-      <button onClick={() => navigate('/employee-login')} className="text-[14px] text-[#357dd5] leading-[1.5] hover:underline text-left">
-        Đăng nhập nhân viên (PIN)
+      <button onClick={handleResend} className="text-[14px] text-[#357dd5] leading-[1.5] hover:underline text-center">
+        Gửi lại OTP
       </button>
     </AuthLayout>
   )

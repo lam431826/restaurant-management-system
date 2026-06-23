@@ -13,6 +13,7 @@ import java.util.Optional;
 public interface OrderRepository extends JpaRepository<Order, String> {
     List<Order> findByTableIdAndStatus(String tableId, OrderStatus status);
     Optional<Order> findTopByTableIdOrderByCreatedAtDesc(String tableId);
+    Optional<Order> findTopByTableIdAndStatusOrderByCreatedAtDesc(String tableId, OrderStatus status);
     Page<Order> findByStatus(OrderStatus status, Pageable pageable);
 
     // BR-CLOSE-06: shift cannot close when active orders exist

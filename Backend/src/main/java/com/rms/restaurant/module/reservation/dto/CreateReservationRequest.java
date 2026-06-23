@@ -10,5 +10,6 @@ public record CreateReservationRequest(
         @NotNull @Min(1) @Max(20) Integer partySize,
         @NotNull @Future LocalDateTime datetime,
         String tableId,
-        String note
+        String note,
+        @Email String guestEmail
 ) {}
