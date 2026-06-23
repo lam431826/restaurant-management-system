@@ -60,7 +60,7 @@ public class DataSeeder implements ApplicationRunner {
         seedTables();
         seedMenu();
         seedPromotions();
-        seedOrders();
+        //seedOrders();
     }
 
     private void seedUsers() {

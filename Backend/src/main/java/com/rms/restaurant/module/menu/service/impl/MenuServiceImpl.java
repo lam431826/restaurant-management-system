@@ -279,11 +279,18 @@ public class MenuServiceImpl implements MenuService {
                         continue;
                     }
                     String categoryName = column(record, "category");
-                    MenuCategory category = StringUtils.hasText(categoryName)
-                            ? categoriesByName.get(categoryName.toLowerCase()) : null;
-                    if (category == null) {
-                        errors.add(new ImportResultResponse.RowError((int) rowNumber, "Unknown category: " + categoryName));
+                    if (!StringUtils.hasText(categoryName)) {
+                        errors.add(new ImportResultResponse.RowError((int) rowNumber, "Category is required"));
                         continue;
+                    }
+                    // Auto-create the category so it appears in the menu sidebar.
+                    MenuCategory category = categoriesByName.get(categoryName.toLowerCase());
+                    if (category == null) {
+                        category = categoryRepository.save(MenuCategory.builder()
+                                .name(categoryName.trim())
+                                .displayOrder(categoriesByName.size())
+                                .build());
+                        categoriesByName.put(categoryName.toLowerCase(), category);
                     }
                     BigDecimal price;
                     try {

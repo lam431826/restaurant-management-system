@@ -1,0 +1,98 @@
+code,name,category,price,costPrice,description,imageUrl,menuType,itemType,tag,trackStock,status
+SP000001,Phu Truc Xao Nam,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/001_g16_phu_truc_xao_nam.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000002,Cu Sen Chien,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/002_g15_cu_sen_chien.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000003,Gio Chay Kho Nam,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/003_g14_gio_chay_kho_nam.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000004,Mang Truc Xao Ham Chay,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/004_g13_mang_truc_xao_ham_chay.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000005,Phu Truc Xao Dua,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/005_g12_phu_truc_xao_dua.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000006,Vegan Cali Mix 20 Pcs,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/006_vegan_cali_mix_20_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000007,Cali Nom Ngo Sen Rau Tien Vua 8 Pcs,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/014_g10_cali_nom_ngo_sen_rau_tien_vua_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000008,Cali Tom Chay Kho 8 Pcs,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/015_g7_cali_tom_chay_kho_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000009,Cali Nam Ac Biet,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/024_g11_cali_nam_ac_biet.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000010,Cali Au Kho Cot Dua 8 Pcs,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/033_g9_cali_au_kho_cot_dua_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000011,Cali Ca Tim Nuong Mo Hanh 8 Pcs,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/034_g8_cali_ca_tim_nuong_mo_hanh_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000012,Cali Cha La Lot 8 Pcs,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/040_g6_cali_cha_la_lot_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000013,Cali Mang Tay Tempura Sot Vung 8 Pcs,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/052_g2_cali_mang_tay_tempura_sot_vung_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000014,Cali Rau Cu Xao 8 Pcs,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/053_g4_cali_rau_cu_xao_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000015,Cali Mang Tay Tempura Sot Mayo Cay 8 Pcs,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/054_g1_cali_mang_tay_tempura_sot_mayo_cay_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000016,Cali Au Sot Ac Biet 8 Pcs,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/055_g5_cali_au_sot_ac_biet_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000017,Cali Nam Va Ngong Toi Xao 8 Pcs,Vegan Sushi,70000,40000,Data Test,/uploads/menu/01_Vegan_Sushi/056_g3_cali_nam_va_ngong_toi_xao_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000018,Combo Cali Mix Premium,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/010_combo_cali_mix_premium.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000019,Combo 11 68 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/023_combo_11_68_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000020,Combo Salmon Extreme 28 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/028_combo_salmon_extreme_28_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000021,Combo 10 67 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/029_combo_10_67_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000022,Combo 9 67 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/030_combo_9_67_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000023,Combo 8 41 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/031_combo_8_41_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000024,Combo 7 40 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/032_combo_7_40_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000025,Combo 3 Cali Mix 20 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/045_combo_3_cali_mix_20_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000026,Combo 6 22 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/046_combo_6_22_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000027,Combo 5 Salmon Lover 23 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/047_combo_5_salmon_lover_23_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000028,Combo 4 20 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/048_combo_4_20_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000029,Combo 2 18 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/060_combo_2_18_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000030,Combo 1 16 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/061_combo_1_16_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000031,Set Sashimi Heaven 2 20 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/062_set_sashimi_heaven_2_20_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000032,Set Sashimi Heaven 1 22 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/063_set_sashimi_heaven_1_22_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000033,Set Sashimi Ca Trich Ep Trung 10 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/064_set_sashimi_ca_trich_ep_trung_10_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000034,Set Sashimi Ca Hoi 15 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/065_set_sashimi_ca_hoi_15_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000035,Set Sashimi Ca Ngu 15 Pcs,Set Combo,250000,150000,Data Test,/uploads/menu/02_Set_Combo/066_set_sashimi_ca_ngu_15_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000036,Tom Ot Phu Ca Hoi Kho Sot Phomai 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/007_c21_tom_ot_phu_ca_hoi_kho_sot_phomai_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000037,Ca Hoi Ngu Xong Khoi Vi Go Soi 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/008_c19_ca_hoi_ngu_xong_khoi_vi_go_soi_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000038,Ca Ngu Sot Dau Dam 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/012_c12_ca_ngu_sot_dau_dam_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000039,Bach Tuoc Sot Mu Tat Mat Ong 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/013_c9_bach_tuoc_sot_mu_tat_mat_ong_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000040,Cali Ga Xao Sa Ot 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/020_cali_ga_xao_sa_ot_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000041,Ca Hoi Phu Luon 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/021_c16_ca_hoi_phu_luon_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000042,Tom Tempura Phu Cheese Sot Me 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/022_c15_tom_tempura_phu_cheese_sot_me_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000043,Thanh Cua Phu Ca Hoi Ot 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/025_c18_thanh_cua_phu_ca_hoi_ot_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000044,Cheese Phu Luon 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/026_c17_cheese_phu_luon_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000045,Naked Salmon 4 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/027_naked_salmon_4_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000046,Green Cali Bau Kho 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/035_green_cali_bau_kho_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000047,Cheese 3 Vi 6 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/036_cheese_3_vi_6_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000048,Tom Tempura Phu Ca Hoi Ot 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/037_c14_tom_tempura_phu_ca_hoi_ot_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000049,Tom Hap Phu Ca Hoi,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/038_c13_tom_hap_phu_ca_hoi.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000050,Ca Ngu Mayo 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/039_c11_ca_ngu_mayo_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000051,Cali Tom Sot Trung Muoi 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/041_cali_tom_sot_trung_muoi_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000052,Da Ca Hoi Phu Luon Nuong 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/044_c10_da_ca_hoi_phu_luon_nuong_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000053,Nguyen Ban 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/049_c2_nguyen_ban_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000054,Rainbow 9 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/050_rainbow_9_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000055,Rainbow 15 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/051_rainbow_15_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000056,Tom Tempura Phu Trung Ca Chuon 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/057_c6_tom_tempura_phu_trung_ca_chuon_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000057,Ca Hoi Sot Cay Phu Bo 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/058_c4_ca_hoi_sot_cay_phu_bo_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000058,Thanh Cua 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/068_c1_thanh_cua_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000059,Luon Ngong Hun Khoi 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/072_c8_luon_ngong_hun_khoi_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000060,Ca Hoi Va Cheese Ot 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/073_c5_ca_hoi_va_cheese_ot_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000061,Tom Tempura Phu Luon Nuong 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/084_c7_tom_tempura_phu_luon_nuong_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000062,Ba Mau 8 Pcs,California Roll,80000,40000,Data Test,/uploads/menu/03_California_Roll/085_c3_ba_mau_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000063,Maki Luon 6 Pcs,Maki,55000,25000,Data Test,/uploads/menu/04_Maki/067_maki_luon_6_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000064,Maki Bo 6 Pcs,Maki,55000,25000,Data Test,/uploads/menu/04_Maki/071_maki_bo_6_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000065,Maki Trung 6 Pcs,Maki,55000,25000,Data Test,/uploads/menu/04_Maki/082_maki_trung_6_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000066,Maki Ca Hoi 6 Pcs,Maki,55000,25000,Data Test,/uploads/menu/04_Maki/091_maki_ca_hoi_6_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000067,Maki Ca Ngu 6 Pcs,Maki,55000,25000,Data Test,/uploads/menu/04_Maki/092_maki_ca_ngu_6_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000068,Maki Thanh Cua 6 Pcs,Maki,55000,25000,Data Test,/uploads/menu/04_Maki/093_maki_thanh_cua_6_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000069,Futo Tom Tempura 8 Pcs,Futomaki,90000,50000,Data Test,/uploads/menu/05_Futomaki/074_futo_tom_tempura_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000070,Futo Ca Ngu 8 Pcs,Futomaki,90000,50000,Data Test,/uploads/menu/05_Futomaki/075_futo_ca_ngu_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000071,Futo Ca Hoi 8 Pcs,Futomaki,90000,50000,Data Test,/uploads/menu/05_Futomaki/076_futo_ca_hoi_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000072,Futo Luon 8 Pcs,Futomaki,90000,50000,Data Test,/uploads/menu/05_Futomaki/090_futo_luon_8_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000073,Sashimi Bach Tuoc 3 Pcs,Sashimi,120000,75000,Data Test,/uploads/menu/06_Sashimi/011_sashimi_bach_tuoc_3_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000074,Sashimi So O 3 Pcs,Sashimi,120000,75000,Data Test,/uploads/menu/06_Sashimi/086_sashimi_so_o_3_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000075,Sashimi Ca Hoi 3 Pcs,Sashimi,120000,75000,Data Test,/uploads/menu/06_Sashimi/094_sashimi_ca_hoi_3_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000076,Sashimi Ca Saba Ngam Dam 3 Pcs,Sashimi,120000,75000,Data Test,/uploads/menu/06_Sashimi/095_sashimi_ca_saba_ngam_dam_3_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000077,Sashimi Ca Trich Ep Trung Vang 3 Pcs,Sashimi,120000,75000,Data Test,/uploads/menu/06_Sashimi/096_sashimi_ca_trich_ep_trung_vang_3_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000078,Sashimi Ca Ngu 3 Pcs,Sashimi,120000,75000,Data Test,/uploads/menu/06_Sashimi/097_sashimi_ca_ngu_3_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000079,Nigiri Tom 2 Pcs,Nigiri,60000,35000,Data Test,/uploads/menu/07_Nigiri/059_nigiri_tom_2_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000080,Nigiri Aburi Ca Ngu 2 Pcs,Nigiri,60000,35000,Data Test,/uploads/menu/07_Nigiri/069_nigiri_aburi_ca_ngu_2_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000081,Nigiri Aburi Ca Hoi 2 Pcs,Nigiri,60000,35000,Data Test,/uploads/menu/07_Nigiri/070_nigiri_aburi_ca_hoi_2_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000082,Nigiri Luon Nuong 2 Pcs,Nigiri,60000,35000,Data Test,/uploads/menu/07_Nigiri/077_nigiri_luon_nuong_2_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000083,Nigiri Ca Saba Ngam Dam 2 Pcs,Nigiri,60000,35000,Data Test,/uploads/menu/07_Nigiri/078_nigiri_ca_saba_ngam_dam_2_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000084,Nigiri Ca Trich Ep Trung 2 Pcs,Nigiri,60000,35000,Data Test,/uploads/menu/07_Nigiri/079_nigiri_ca_trich_ep_trung_2_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000085,Nigiri Ca Ngu 2 Pcs,Nigiri,60000,35000,Data Test,/uploads/menu/07_Nigiri/080_nigiri_ca_ngu_2_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000086,Nigiri Ca Hoi 2 Pcs,Nigiri,60000,35000,Data Test,/uploads/menu/07_Nigiri/081_nigiri_ca_hoi_2_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000087,Nigiri So O 2 Pcs,Nigiri,60000,35000,Data Test,/uploads/menu/07_Nigiri/087_nigiri_so_o_2_pcs.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000088,Com Poke,Rice Bowls,75000,40000,Data Test,/uploads/menu/08_Rice_Bowls/016_com_poke.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000089,Com Ca Ri Rau Cu,Rice Bowls,75000,40000,Data Test,/uploads/menu/08_Rice_Bowls/017_com_ca_ri_rau_cu.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000090,Com Ca Ri Ga,Rice Bowls,75000,40000,Data Test,/uploads/menu/08_Rice_Bowls/018_com_ca_ri_ga.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000091,Com Ca Hoi Sot Teriyaki,Rice Bowls,75000,40000,Data Test,/uploads/menu/08_Rice_Bowls/019_com_ca_hoi_sot_teriyaki.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000092,Com Luon,Rice Bowls,75000,40000,Data Test,/uploads/menu/08_Rice_Bowls/042_com_luon.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000093,Com Ga Teriyaki,Rice Bowls,75000,40000,Data Test,/uploads/menu/08_Rice_Bowls/043_com_ga_teriyaki.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000094,Salad Ca Hoi Hun Khoi Vi Thao Moc,Salad,65000,30000,Data Test,/uploads/menu/09_Salad/009_salad_ca_hoi_hun_khoi_vi_thao_moc.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000095,Salad Rong Bien Tong Hop,Salad,65000,30000,Data Test,/uploads/menu/09_Salad/083_salad_rong_bien_tong_hop.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000096,Salad Ca Ngu,Salad,65000,30000,Data Test,/uploads/menu/09_Salad/088_salad_ca_ngu.jpg,?? ?n,Món m?i,,FALSE,Available
+SP000097,Salad Ca Hoi,Salad,65000,30000,Data Test,/uploads/menu/09_Salad/089_salad_ca_hoi.jpg,?? ?n,Món m?i,,FALSE,Available
