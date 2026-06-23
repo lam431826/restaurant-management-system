@@ -1,13 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Reservation, ReservationStatus } from '../../data/mockData'
 import { reservationStatusMeta } from '../../data/mockData'
+import type { TableDto } from '../../api/tables'
 
 interface Props {
   reservations: Reservation[]
+  tables?: TableDto[]
   onConfirm: (id: string) => Promise<void>
   onCheckIn: (id: string) => Promise<void>
   onNoShow: (id: string) => Promise<void>
   onCancel: (id: string) => Promise<void>
+  onAssignTable?: (reservationId: string, tableId: string) => void
 }
 
 /* ── Icons ────────────────────────────────────────────────────────────────── */
@@ -69,6 +72,53 @@ const fieldCls = 'w-full h-10 px-3 bg-field border border-line-default rounded-m
 const th = 'sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-3 py-2.5 whitespace-nowrap'
 const td = 'text-md text-ink px-3 py-2.5 border-b border-line align-middle'
 
+/* ── Assign-table dropdown (for detail panel) ────────────────────────────── */
+const AssignTableDropdown = ({
+  tables, partySize, onAssign, onClose,
+}: { tables: TableDto[]; partySize: number; onAssign: (id: string) => void; onClose: () => void }) => {
+  const areas = useMemo(() => [...new Set(tables.map(t => t.area))], [tables])
+  const available = tables.filter(t => t.status === 'AVAILABLE' && t.capacity >= partySize)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as Element).closest('[data-assign-dropdown]')) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  return (
+    <div data-assign-dropdown className="absolute left-0 top-full mt-1 z-50 w-64 bg-card border border-line rounded-lg shadow-lg overflow-hidden">
+      <div className="px-3 py-2 text-sm font-semibold text-ink-subtle border-b border-line">
+        Chọn bàn <span className="font-normal text-ink-muted">({partySize} khách)</span>
+      </div>
+      <div className="max-h-60 overflow-y-auto">
+        {areas.map(area => {
+          const areaAvail = available.filter(t => t.area === area)
+          if (!areaAvail.length) return null
+          return (
+            <div key={area}>
+              <div className="px-3 py-1 text-xs font-semibold text-ink-muted bg-fill">{area}</div>
+              {areaAvail.map(t => (
+                <button key={t.id} onClick={() => onAssign(t.id)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-md text-ink hover:bg-primary-25 cursor-pointer">
+                  <span>{t.name}</span>
+                  <span className="text-xs text-ink-muted">{t.capacity} chỗ</span>
+                </button>
+              ))}
+            </div>
+          )
+        })}
+        {!available.length && (
+          <div className="px-3 py-4 text-md text-ink-muted text-center">
+            Không có bàn trống phù hợp với {partySize} khách
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* ── Inline action buttons per row ───────────────────────────────────────── */
 const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onNoShow, onCancel }: {
   r: Reservation
@@ -112,12 +162,13 @@ const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onNoShow, onCancel }: {
 }
 
 /* ── Main component ───────────────────────────────────────────────────────── */
-const ListView = ({ reservations, onConfirm, onCheckIn, onNoShow, onCancel }: Props) => {
+const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onNoShow, onCancel, onAssignTable }: Props) => {
   const [code, setCode] = useState('')
   const [timeMode, setTimeMode] = useState<'all' | 'other'>('all')
   const [statuses, setStatuses] = useState<Set<ReservationStatus>>(new Set(['PENDING', 'CONFIRMED']))
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [detail, setDetail] = useState<Reservation | null>(null)
+  const [assigningInDetail, setAssigningInDetail] = useState(false)
 
   const toggleStatus = (s: ReservationStatus) =>
     setStatuses(prev => {
@@ -316,11 +367,44 @@ const ListView = ({ reservations, onConfirm, onCheckIn, onNoShow, onCancel }: Pr
                 <div className="grid grid-cols-4 gap-x-8 gap-y-3 flex-1 min-w-0">
                   <DItem label="Giờ đến" value={r.arriveTime} />
                   <DItem label="Số khách" value={`${r.guests} người`} />
-                  <DItem label="Bàn" value={
-                    r.table !== '—'
-                      ? r.table
-                      : <span className="text-ink-muted font-normal">Chưa xếp bàn</span>
-                  } />
+
+                  {/* Bàn — inline editable */}
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <span className="text-xs text-ink-muted font-medium">Bàn</span>
+                    <div className="relative" data-assign-dropdown>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <span className="text-md text-ink font-medium truncate">
+                          {r.table !== '—' ? r.table : <span className="text-ink-muted font-normal">Chưa xếp</span>}
+                        </span>
+                        {canAct && onAssignTable && (
+                          <button
+                            disabled={busy}
+                            onClick={() => setAssigningInDetail(v => !v)}
+                            className="shrink-0 w-5 h-5 flex items-center justify-center rounded text-ink-muted hover:text-primary hover:bg-primary-25 cursor-pointer disabled:opacity-40"
+                            title="Đổi bàn"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                      {assigningInDetail && (
+                        <AssignTableDropdown
+                          tables={tables}
+                          partySize={r.guests}
+                          onAssign={tableId => {
+                            onAssignTable?.(r.id, tableId)
+                            setAssigningInDetail(false)
+                            closeDetail()
+                          }}
+                          onClose={() => setAssigningInDetail(false)}
+                        />
+                      )}
+                    </div>
+                  </div>
+
                   {r.area
                     ? <DItem label="Khu vực" value={r.area} />
                     : <div />

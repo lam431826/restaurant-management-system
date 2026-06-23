@@ -48,5 +48,16 @@ export const checkInReservation = (id: string) =>
 export const noShowReservation = (id: string) =>
   apiClient.put(`/reservations/${id}/no-show`)
 
-export const updateReservation = (id: string, body: { tableId?: string | null; note?: string | null; partySize?: number; datetime?: string }) =>
+export const updateReservation = (id: string, body: {
+  tableId?: string | null
+  guestName?: string
+  phone?: string
+  guestEmail?: string | null
+  partySize?: number
+  datetime?: string
+  note?: string | null
+}) =>
   apiClient.put<{ data: ReservationDto }>(`/reservations/${id}`, body)
+
+export const transferTable = (id: string, tableId: string) =>
+  apiClient.put<{ data: ReservationDto }>(`/reservations/${id}/transfer-table`, { tableId })

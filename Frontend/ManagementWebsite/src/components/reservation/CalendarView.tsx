@@ -10,6 +10,7 @@ interface Props {
   selectedDate: Date
   onSelectDate: (d: Date) => void
   onAssignTable: (reservationId: string, tableId: string) => void
+  onTransferTable?: (reservationId: string, tableId: string) => void
   onConfirm?: (id: string) => void
   onCheckIn?: (id: string) => void
   onCancel?: (id: string) => void
@@ -125,7 +126,7 @@ const DItem = ({ label, value }: { label: string; value: React.ReactNode }) => (
 )
 
 const CalendarView = ({
-  reservations, tables, selectedDate, onSelectDate, onAssignTable,
+  reservations, tables, selectedDate, onSelectDate, onAssignTable, onTransferTable,
   onConfirm, onCheckIn, onCancel, onNoShow,
 }: Props) => {
   const [view, setView] = useState<'day' | 'week' | 'month'>('day')
@@ -135,6 +136,9 @@ const CalendarView = ({
   const [waitOpen, setWaitOpen] = useState(true)
   const [waitSearch, setWaitSearch] = useState('')
   const [assigningFor, setAssigningFor] = useState<string | null>(null)
+  const [assigningInDetail, setAssigningInDetail] = useState(false)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dropTargetTableId, setDropTargetTableId] = useState<string | null>(null)
   const [selectedRes, setSelectedRes] = useState<Reservation | null>(null)
 
   useEffect(() => {
@@ -354,43 +358,73 @@ const CalendarView = ({
                       <div className="flex-1" />
                     </div>
 
-                    {open && areaTables.map(t => (
-                      <div key={t.id} className="flex border-b border-line relative hover:bg-primary-25" style={{ height: ROW_H }}>
-                        <div className="shrink-0 flex items-center px-4 border-r border-line gap-2" style={{ width: LABEL_W }}>
-                          <span className="text-md text-ink">{t.name}</span>
-                          <span className="text-xs text-ink-muted">{t.capacity} chỗ</span>
-                        </div>
-                        {HOURS.map(h => (
-                          <div key={h} className="shrink-0 border-r border-line" style={{ width: COL_W }} />
-                        ))}
+                    {open && areaTables.map(t => {
+                      const isDropTarget = dropTargetTableId === t.id
+                      return (
+                        <div
+                          key={t.id}
+                          className={`flex border-b border-line relative transition-colors ${isDropTarget ? 'bg-primary-25' : 'hover:bg-primary-25'}`}
+                          style={{
+                            height: ROW_H,
+                            outline: isDropTarget ? '2px solid var(--kv-primary)' : undefined,
+                            outlineOffset: '-2px',
+                          }}
+                          onDragOver={e => { if (draggingId) { e.preventDefault(); setDropTargetTableId(t.id) } }}
+                          onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTargetTableId(null) }}
+                          onDrop={e => {
+                            e.preventDefault()
+                            if (draggingId) {
+                              const dragRes = reservations.find(r => r.id === draggingId)
+                              if (dragRes && dragRes.table !== t.name) {
+                                if (dragRes.status === 'CHECKED_IN') onTransferTable?.(draggingId, t.id)
+                                else onAssignTable(draggingId, t.id)
+                              }
+                            }
+                            setDraggingId(null)
+                            setDropTargetTableId(null)
+                          }}
+                        >
+                          <div className="shrink-0 flex items-center px-4 border-r border-line gap-2" style={{ width: LABEL_W }}>
+                            <span className="text-md text-ink">{t.name}</span>
+                            <span className="text-xs text-ink-muted">{t.capacity} chỗ</span>
+                          </div>
+                          {HOURS.map(h => (
+                            <div key={h} className="shrink-0 border-r border-line" style={{ width: COL_W }} />
+                          ))}
 
-                        {/* Reservation blocks */}
-                        {(resByTable.get(t.name) ?? []).map(r => {
-                          const meta = reservationStatusMeta[r.status]
-                          const isSelected = selectedRes?.id === r.id
-                          return (
-                            <div
-                              key={r.code}
-                              onClick={() => selectRes(r)}
-                              className="absolute top-1 bottom-1 rounded-md px-2 flex flex-col justify-center text-white text-sm overflow-hidden cursor-pointer shadow-sm transition-all"
-                              style={{
-                                left: LABEL_W + (r.startHour - HOURS[0]) * COL_W,
-                                width: r.durationH * COL_W - 4,
-                                background: meta.color,
-                                outline: isSelected ? '2px solid white' : undefined,
-                                boxShadow: isSelected ? `0 0 0 3px ${meta.color}` : undefined,
-                              }}
-                              title={`${r.customer} · ${r.guests} khách · ${meta.label}`}
-                            >
-                              <span className="font-semibold truncate leading-tight">{r.customer}</span>
-                              <span className="truncate leading-tight opacity-90">
-                                {r.guests} khách
-                              </span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ))}
+                          {/* Reservation blocks */}
+                          {(resByTable.get(t.name) ?? []).map(r => {
+                            const meta = reservationStatusMeta[r.status]
+                            const isSelected = selectedRes?.id === r.id
+                            const isDraggable = r.status === 'PENDING' || r.status === 'CONFIRMED' || r.status === 'CHECKED_IN'
+                            const isDragging = draggingId === r.id
+                            return (
+                              <div
+                                key={r.code}
+                                draggable={isDraggable}
+                                onDragStart={e => { setDraggingId(r.id); e.dataTransfer.effectAllowed = 'move'; e.stopPropagation() }}
+                                onDragEnd={() => { setDraggingId(null); setDropTargetTableId(null) }}
+                                onClick={() => !isDragging && selectRes(r)}
+                                className="absolute top-1 bottom-1 rounded-md px-2 flex flex-col justify-center text-white text-sm overflow-hidden shadow-sm transition-all select-none"
+                                style={{
+                                  left: LABEL_W + (r.startHour - HOURS[0]) * COL_W,
+                                  width: r.durationH * COL_W - 4,
+                                  background: meta.color,
+                                  outline: isSelected ? '2px solid white' : undefined,
+                                  boxShadow: isSelected ? `0 0 0 3px ${meta.color}` : undefined,
+                                  opacity: isDragging ? 0.4 : 1,
+                                  cursor: isDraggable ? 'grab' : 'pointer',
+                                }}
+                                title={`${r.customer} · ${r.guests} khách · ${meta.label}${isDraggable ? ' · Kéo để đổi bàn' : ''}`}
+                              >
+                                <span className="font-semibold truncate leading-tight">{r.customer}</span>
+                                <span className="truncate leading-tight opacity-90">{r.guests} khách</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
                   </div>
                 )
               })
@@ -403,6 +437,7 @@ const CalendarView = ({
           const meta = reservationStatusMeta[selectedRes.status]
           const s = selectedRes.status
           const canAct = s === 'PENDING' || s === 'CONFIRMED'
+          const isCheckedIn = s === 'CHECKED_IN'
           return (
             <div className="shrink-0 border-t-[3px] bg-card" style={{ borderColor: meta.color }}>
               {/* Header */}
@@ -431,15 +466,59 @@ const CalendarView = ({
                 <div className="grid grid-cols-4 gap-x-8 gap-y-3 flex-1 min-w-0">
                   <DItem label="Giờ đến" value={selectedRes.arriveTime} />
                   <DItem label="Số khách" value={`${selectedRes.guests} người`} />
-                  <DItem label="Bàn" value={
-                    selectedRes.table !== '—'
-                      ? selectedRes.table
-                      : <span className="text-ink-muted font-normal">Chưa xếp bàn</span>
-                  } />
+
+                  {/* Bàn — inline editable for active / checked-in reservations */}
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <span className="text-xs text-ink-muted font-medium">Bàn</span>
+                    <div className="relative" data-assign-dropdown>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <span className="text-md text-ink font-medium truncate">
+                          {selectedRes.table !== '—'
+                            ? selectedRes.table
+                            : <span className="text-ink-muted font-normal">Chưa xếp</span>
+                          }
+                        </span>
+                        {(canAct || isCheckedIn) && (
+                          <button
+                            onClick={() => setAssigningInDetail(v => !v)}
+                            className="shrink-0 w-5 h-5 flex items-center justify-center rounded text-ink-muted hover:text-primary hover:bg-primary-25 cursor-pointer"
+                            title={isCheckedIn ? 'Chuyển bàn' : 'Đổi bàn'}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                      {assigningInDetail && (
+                        <AssignTableDropdown
+                          tables={tables}
+                          partySize={selectedRes.guests}
+                          onAssign={tableId => {
+                            if (isCheckedIn) onTransferTable?.(selectedRes.id, tableId)
+                            else onAssignTable(selectedRes.id, tableId)
+                            setAssigningInDetail(false)
+                            closeDetail()
+                          }}
+                          onClose={() => setAssigningInDetail(false)}
+                        />
+                      )}
+                    </div>
+                  </div>
+
                   {selectedRes.area
                     ? <DItem label="Khu vực" value={selectedRes.area} />
                     : <div />
                   }
+                  {/* Email — always show so staff can see if notification will be sent */}
+                  <div className="col-span-2 flex flex-col gap-0.5 min-w-0">
+                    <span className="text-xs text-ink-muted font-medium">Email thông báo</span>
+                    <span className={`text-sm truncate ${selectedRes.guestEmail ? 'text-ink' : 'text-ink-muted italic'}`}>
+                      {selectedRes.guestEmail ?? 'Chưa có email'}
+                    </span>
+                  </div>
+                  <div className="col-span-2" />
                   {selectedRes.note && (
                     <div className="col-span-4 flex flex-col gap-0.5">
                       <span className="text-xs text-ink-muted font-medium">Ghi chú</span>
@@ -449,23 +528,23 @@ const CalendarView = ({
                 </div>
 
                 {/* Action buttons */}
-                {canAct && (
-                  <div className="flex flex-col gap-2 shrink-0">
-                    {s === 'PENDING' && (
-                      <button onClick={() => act(onConfirm)} className="kv-btn kv-btn-primary h-9 text-sm min-w-[7rem]">
-                        Xác nhận
-                      </button>
-                    )}
-                    {s === 'CONFIRMED' && (
-                      <button onClick={() => act(onCheckIn)} className="kv-btn kv-btn-primary h-9 text-sm min-w-[7rem]">
-                        Check-in
-                      </button>
-                    )}
-                    {s === 'CONFIRMED' && (
-                      <button onClick={() => act(onNoShow)} className="kv-btn kv-btn-outline-neutral h-9 text-sm min-w-[7rem]">
-                        Không đến
-                      </button>
-                    )}
+                <div className="flex flex-col gap-2 shrink-0">
+                  {canAct && s === 'PENDING' && (
+                    <button onClick={() => act(onConfirm)} className="kv-btn kv-btn-primary h-9 text-sm min-w-[7rem]">
+                      Xác nhận
+                    </button>
+                  )}
+                  {canAct && s === 'CONFIRMED' && (
+                    <button onClick={() => act(onCheckIn)} className="kv-btn kv-btn-primary h-9 text-sm min-w-[7rem]">
+                      Check-in
+                    </button>
+                  )}
+                  {canAct && s === 'CONFIRMED' && (
+                    <button onClick={() => act(onNoShow)} className="kv-btn kv-btn-outline-neutral h-9 text-sm min-w-[7rem]">
+                      Không đến
+                    </button>
+                  )}
+                  {canAct && (
                     <button
                       onClick={() => act(onCancel)}
                       className="kv-btn h-9 text-sm min-w-[7rem]"
@@ -473,8 +552,8 @@ const CalendarView = ({
                     >
                       Hủy đặt bàn
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           )

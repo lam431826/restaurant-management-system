@@ -4,6 +4,7 @@ import com.rms.restaurant.common.utils.wrapper.ApiResponse;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.reservation.dto.CreateReservationRequest;
 import com.rms.restaurant.module.reservation.dto.ReservationResponse;
+import com.rms.restaurant.module.reservation.dto.TransferTableRequest;
 import com.rms.restaurant.module.reservation.dto.UpdateReservationRequest;
 import com.rms.restaurant.module.reservation.service.ReservationService;
 import jakarta.validation.Valid;
@@ -82,5 +83,14 @@ public class ReservationController {
     public ResponseEntity<Void> noShow(@PathVariable String id) {
         reservationService.markNoShow(id);
         return ResponseEntity.noContent().build();
+    }
+
+    // Chuyển bàn cho CHECKED_IN reservation
+    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER')")
+    @PutMapping("/{id}/transfer-table")
+    public ResponseEntity<ApiResponse<ReservationResponse>> transferTable(
+            @PathVariable String id,
+            @Valid @RequestBody TransferTableRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(reservationService.transferTable(id, request.tableId())));
     }
 }

@@ -81,6 +81,14 @@ public class NotificationDispatcher {
                     (String) vars.get("guestName"),
                     (LocalDateTime) vars.get("datetime")
             );
+            case "RESERVATION_TABLE_UPDATE" -> gmailService.sendTableUpdateEmail(
+                    recipient,
+                    (String) vars.get("guestName"),
+                    (String) vars.getOrDefault("tableName", ""),
+                    (LocalDateTime) vars.get("datetime"),
+                    (int) vars.get("partySize"),
+                    (String) vars.get("reservationId")
+            );
             case "PAYMENT_CONFIRMATION" -> gmailService.sendPaymentConfirmationEmail(
                     recipient,
                     (String) vars.get("guestName"),

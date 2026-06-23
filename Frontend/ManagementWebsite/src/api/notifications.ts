@@ -30,5 +30,5 @@ export const getNotificationLogs = (params?: {
 
 export const pollReservationNotifResult = (reservationId: string) =>
   apiClient.get<NotifPage>('/notifications/log', {
-    params: { referenceId: reservationId, size: 1 },
+    params: { referenceId: reservationId, size: 5 },
   })

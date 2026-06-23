@@ -20,14 +20,17 @@ import com.rms.restaurant.module.reservation.dto.ReservationResponse;
 import com.rms.restaurant.module.reservation.mapper.ReservationMapper;
 import com.rms.restaurant.module.reservation.model.Reservation;
 import com.rms.restaurant.module.reservation.repository.ReservationRepository;
+import com.rms.restaurant.module.table.repository.TableRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -36,10 +39,16 @@ import java.util.UUID;
 @Transactional
 public class OnlineReservationServiceImpl implements OnlineReservationService {
 
+    private static final int WINDOW_MINUTES = 180;
+
     private static final EnumSet<ReservationStatus> CANCELLABLE =
             EnumSet.of(ReservationStatus.PENDING, ReservationStatus.CONFIRMED);
 
+    private static final List<ReservationStatus> ACTIVE_STATUSES =
+            List.of(ReservationStatus.PENDING, ReservationStatus.CONFIRMED, ReservationStatus.CHECKED_IN);
+
     private final ReservationRepository reservationRepository;
+    private final TableRepository tableRepository;
     private final ReservationMapper reservationMapper;
     private final NotificationService notificationService;
     private final GmailService gmailService;
@@ -57,9 +66,26 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
     // ── ORM-02: Khách tạo đặt bàn ────────────────────────────────────────────
 
     @Override
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public ReservationResponse create(OnlineReservationRequest request) {
         if (request.datetime().isBefore(LocalDateTime.now().plusMinutes(30))) {
             throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
+        }
+
+        // Tier-based overbooking guard.
+        // Each party size maps to a tier: only tables within that tier's capacity range are eligible.
+        // E.g. a party of 2 can only occupy a 1–2 seat table; a capacity-8 table is reserved for 7–8 guests.
+        int[] tier = getTierRange(request.partySize());
+        List<String> tierTableIds = tableRepository.findIdsByCapacityBetween(tier[0], tier[1]);
+        if (tierTableIds.isEmpty()) {
+            throw new ApplicationException(ApplicationError.TABLE_FULLY_BOOKED);
+        }
+        LocalDateTime windowStart = request.datetime().minusMinutes(WINDOW_MINUTES);
+        LocalDateTime windowEnd   = request.datetime().plusMinutes(WINDOW_MINUTES);
+        long bookedInTier = reservationRepository.countActiveInWindowForTables(
+                ACTIVE_STATUSES, windowStart, windowEnd, tierTableIds);
+        if (bookedInTier >= tierTableIds.size()) {
+            throw new ApplicationException(ApplicationError.TABLE_FULLY_BOOKED);
         }
 
         Reservation reservation = Reservation.builder()
@@ -180,5 +206,29 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         int at = email.indexOf('@');
         if (at <= 1) return email;
         return email.charAt(0) + "***" + email.substring(at);
+    }
+
+    /**
+     * Maps a party size to the capacity range [min, max] of eligible tables.
+     * Tables with capacity outside this range are not considered for the booking,
+     * preserving larger tables for larger groups (revenue optimisation).
+     * <pre>
+     *  1–2   → [1, 2]
+     *  3–4   → [3, 4]
+     *  5–6   → [5, 6]
+     *  7–8   → [7, 8]
+     *  9–10  → [9, 10]
+     * 11–12  → [11, 12]
+     * 13–20  → [13, 20]
+     * </pre>
+     */
+    private static int[] getTierRange(int partySize) {
+        if (partySize <= 2)  return new int[]{1,  2};
+        if (partySize <= 4)  return new int[]{3,  4};
+        if (partySize <= 6)  return new int[]{5,  6};
+        if (partySize <= 8)  return new int[]{7,  8};
+        if (partySize <= 10) return new int[]{9,  10};
+        if (partySize <= 12) return new int[]{11, 12};
+        return                      new int[]{13, 20};
     }
 }

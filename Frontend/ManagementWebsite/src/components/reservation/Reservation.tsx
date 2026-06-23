@@ -15,7 +15,7 @@ import {
   checkInReservation,
   noShowReservation,
   updateReservation,
-  type ReservationDto,
+  transferTable as apiTransferTable,
 } from '../../api/reservations'
 import { listTables, type TableDto } from '../../api/tables'
 import { pollReservationNotifResult, getNotificationLogs, type NotificationLogDto } from '../../api/notifications'
@@ -87,19 +87,21 @@ const Reservation = () => {
       .finally(() => setNotifLoading(false))
   }, [bellOpen])
 
-  const pollEmailResult = async (reservationId: string, actionLabel: string) => {
+  const pollEmailResult = async (reservationId: string, _actionLabel: string, expectedTemplate?: string) => {
     // Poll at 3s, retry once at 5s if still PENDING (async SMTP can be slow)
     for (const delay of [3000, 5000]) {
       await new Promise(r => setTimeout(r, delay))
       try {
         const res = await pollReservationNotifResult(reservationId)
-        const log = res.data.data[0]
+        const logs = res.data.data
+        // Look for the specific notification template we just triggered; fall back to most recent
+        const log = (expectedTemplate ? logs.find(l => l.template === expectedTemplate) : null) ?? logs[0]
         if (!log) return
         if (log.status === 'PENDING') continue
         if (log.status === 'SENT') {
-          showToast(`${actionLabel} — Email đã gửi đến ${log.recipient} ✓`)
+          showToast(`Đã gửi email đến ${log.recipient} (kiểm tra thư rác nếu không nhận được)`, 'info')
         } else {
-          showToast(`${actionLabel} — Gửi email thất bại`, 'error')
+          showToast(`Gửi email thất bại — kiểm tra lại địa chỉ email của khách`, 'error')
         }
         return
       } catch { return }
@@ -135,7 +137,7 @@ const Reservation = () => {
       await load()
       if (guestEmail) {
         showToast('Đã xác nhận — đang gửi email cho khách...', 'info', 10000)
-        pollEmailResult(id, 'Xác nhận đặt bàn')
+        pollEmailResult(id, 'Xác nhận đặt bàn', 'RESERVATION_CONFIRMATION')
       } else {
         showToast('Đã xác nhận đặt bàn')
       }
@@ -148,7 +150,7 @@ const Reservation = () => {
       await load()
       if (guestEmail) {
         showToast('Đã hủy — đang gửi email cho khách...', 'info', 10000)
-        pollEmailResult(id, 'Hủy đặt bàn')
+        pollEmailResult(id, 'Hủy đặt bàn', 'RESERVATION_CANCELLATION')
       } else {
         showToast('Đã hủy đặt bàn')
       }
@@ -164,11 +166,34 @@ const Reservation = () => {
   }
 
   const handleAssignTable = async (reservationId: string, tableId: string) => {
+    const guestEmail = items.find(r => r.id === reservationId)?.guestEmail ?? null
     try {
       await updateReservation(reservationId, { tableId })
       await load()
-      showToast('Đã xếp bàn thành công')
+      if (guestEmail) {
+        showToast('Đã xếp bàn — đang gửi email cho khách...', 'info', 10000)
+        pollEmailResult(reservationId, 'Xếp bàn', 'RESERVATION_TABLE_UPDATE')
+      } else {
+        showToast('Đã xếp bàn thành công (chưa có email để thông báo)')
+      }
     } catch { showToast('Không thể xếp bàn', 'error') }
+  }
+
+  const handleTransferTable = async (reservationId: string, tableId: string) => {
+    const guestEmail = items.find(r => r.id === reservationId)?.guestEmail ?? null
+    try {
+      await apiTransferTable(reservationId, tableId)
+      await load()
+      if (guestEmail) {
+        showToast('Đã chuyển bàn — đang gửi email cho khách...', 'info', 10000)
+        pollEmailResult(reservationId, 'Chuyển bàn', 'RESERVATION_TABLE_UPDATE')
+      } else {
+        showToast('Đã chuyển bàn thành công (chưa có email để thông báo)')
+      }
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      showToast(msg ?? 'Không thể chuyển bàn', 'error')
+    }
   }
 
   return (
@@ -214,6 +239,7 @@ const Reservation = () => {
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
             onAssignTable={handleAssignTable}
+            onTransferTable={handleTransferTable}
             onConfirm={handleConfirm}
             onCheckIn={handleCheckIn}
             onCancel={handleCancel}
@@ -222,10 +248,12 @@ const Reservation = () => {
         ) : (
           <ListView
             reservations={items}
+            tables={tables}
             onConfirm={handleConfirm}
             onCheckIn={handleCheckIn}
             onNoShow={handleNoShow}
             onCancel={handleCancel}
+            onAssignTable={handleAssignTable}
           />
         )}
       </div>

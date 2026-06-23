@@ -8,6 +8,7 @@ const TEMPLATE_LABELS: Record<string, string> = {
   RESERVATION_CANCELLATION: 'Hủy đặt bàn',
   RESERVATION_REMINDER: 'Nhắc lịch đặt bàn',
   RESERVATION_PENDING: 'Đặt bàn chờ duyệt',
+  RESERVATION_TABLE_UPDATE: 'Cập nhật bàn ngồi',
   PAYMENT_CONFIRMATION: 'Xác nhận thanh toán',
   MANUAL: 'Thủ công',
 }
@@ -116,12 +117,15 @@ const ReservationHeader = ({ tab, onTab, onLogout, onChangePassword, notifLogs =
                         <span className="text-[14px] font-semibold text-[#202325]">
                           {TEMPLATE_LABELS[log.template] ?? log.template}
                         </span>
-                        <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
-                          log.status === 'SENT'   ? 'bg-green-500 text-white' :
-                          log.status === 'FAILED' ? 'bg-red-500 text-white' :
-                          'bg-yellow-500 text-white'
-                        }`}>
-                          {log.status === 'SENT' ? 'Đã gửi' : log.status === 'FAILED' ? 'Thất bại' : 'Đang gửi'}
+                        <span
+                          className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
+                            log.status === 'SENT'   ? 'bg-green-500 text-white' :
+                            log.status === 'FAILED' ? 'bg-red-500 text-white' :
+                            'bg-yellow-500 text-white'
+                          }`}
+                          title={log.status === 'SENT' ? 'Server đã chấp nhận — không đảm bảo vào hòm thư (có thể bị bounce hoặc vào thư rác)' : undefined}
+                        >
+                          {log.status === 'SENT' ? 'Đã gửi đi' : log.status === 'FAILED' ? 'Thất bại' : 'Đang gửi'}
                         </span>
                       </div>
                       <div className="text-[12px] text-[#636566] mt-0.5 truncate">{log.recipient}</div>
@@ -132,6 +136,11 @@ const ReservationHeader = ({ tab, onTab, onLogout, onChangePassword, notifLogs =
                     </div>
                   </div>
                 ))}
+              </div>
+              <div className="px-4 py-2 border-t border-[#e8e8e8] bg-[#f9fafb]">
+                <p className="text-[11px] text-[#979899] leading-relaxed">
+                  * "Đã gửi đi" = server nhận thư thành công. Email vẫn có thể bị bounce hoặc vào thư rác nếu địa chỉ không hợp lệ.
+                </p>
               </div>
             </div>
           )}

@@ -60,7 +60,6 @@ public class GmailService {
             "Xin chào " + guestName + ",\n\n" +
             "Đặt bàn của bạn đã được xác nhận!\n\n" +
             "Chi tiết đặt bàn:\n" +
-            "  - Mã đặt bàn : " + reservationId + "\n" +
             "  - Thời gian  : " + datetime.format(DATETIME_FORMATTER) + "\n" +
             "  - Số khách   : " + partySize + " người\n\n" +
             "Vui lòng đến đúng giờ. Chúng tôi sẽ giữ bàn trong 15 phút sau giờ đặt.\n" +
@@ -97,6 +96,27 @@ public class GmailService {
             "Đặt bàn của bạn vào lúc " + datetime.format(DATETIME_FORMATTER) +
             " đã được hủy thành công.\n\n" +
             "Nếu bạn muốn đặt bàn lại, vui lòng truy cập website hoặc liên hệ nhà hàng.\n\n" +
+            "Trân trọng,\nWasabi Restaurant"
+        );
+        mailSender.send(msg);
+    }
+
+    // ── NM-01: Table assignment/transfer notification ─────────────────────────
+
+    public void sendTableUpdateEmail(String toEmail, String guestName, String tableName,
+            LocalDateTime datetime, int partySize, String reservationId) {
+        SimpleMailMessage msg = new SimpleMailMessage();
+        msg.setFrom(fromAddress);
+        msg.setTo(toEmail);
+        msg.setSubject("[Wasabi Restaurant] Cập nhật bàn ngồi");
+        msg.setText(
+            "Xin chào " + guestName + ",\n\n" +
+            "Thông tin bàn ngồi trong đặt bàn của bạn đã được cập nhật.\n\n" +
+            "Chi tiết:\n" +
+            "  - Thời gian  : " + datetime.format(DATETIME_FORMATTER) + "\n" +
+            "  - Số khách   : " + partySize + " người\n" +
+            "  - Bàn mới    : " + tableName + "\n\n" +
+            "Nếu bạn có thắc mắc, vui lòng liên hệ nhà hàng.\n\n" +
             "Trân trọng,\nWasabi Restaurant"
         );
         mailSender.send(msg);

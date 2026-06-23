@@ -14,6 +14,7 @@ import com.rms.restaurant.module.notification.service.NotificationDispatcher;
 import com.rms.restaurant.module.notification.service.NotificationService;
 import com.rms.restaurant.module.reservation.model.Reservation;
 import com.rms.restaurant.module.reservation.repository.ReservationRepository;
+import com.rms.restaurant.module.table.repository.TableRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -33,6 +35,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     private final NotificationDispatcher dispatcher;
     private final ReservationRepository reservationRepository;
+    private final TableRepository tableRepository;
     private final NotificationLogRepository notificationLogRepository;
     private final NotificationMapper notificationMapper;
 
@@ -49,12 +52,15 @@ public class NotificationServiceImpl implements NotificationService {
             return;
         }
 
-        Map<String, Object> vars = Map.of(
-                "guestName",     reservation.getGuestName(),
-                "datetime",      reservation.getDatetime(),
-                "partySize",     reservation.getPartySize(),
-                "reservationId", reservation.getId()
-        );
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("guestName",     reservation.getGuestName());
+        vars.put("datetime",      reservation.getDatetime());
+        vars.put("partySize",     reservation.getPartySize());
+        vars.put("reservationId", reservation.getId());
+        if (request.type() == NotificationType.TABLE_UPDATE && reservation.getTableId() != null) {
+            tableRepository.findById(reservation.getTableId())
+                    .ifPresent(t -> vars.put("tableName", t.getName()));
+        }
 
         // Gọi qua dispatcher bean → @Async + REQUIRES_NEW hoạt động đúng
         dispatcher.dispatch(email, templateFor(request.type()), vars,
@@ -126,6 +132,7 @@ public class NotificationServiceImpl implements NotificationService {
             case REMINDER     -> "RESERVATION_REMINDER";
             case CANCELLATION -> "RESERVATION_CANCELLATION";
             case PAYMENT      -> "PAYMENT_CONFIRMATION";
+            case TABLE_UPDATE -> "RESERVATION_TABLE_UPDATE";
         };
     }
 }

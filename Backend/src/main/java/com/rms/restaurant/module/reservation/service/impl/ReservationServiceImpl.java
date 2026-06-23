@@ -22,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -33,6 +34,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Transactional
 public class ReservationServiceImpl implements ReservationService {
+
+    // Each booking occupies [T-60min, T+120min) on a table (1h setup + 1.5h dining + 0.5h cleanup).
+    // Two bookings on the same table conflict when |T1-T2| < 180 min.
+    private static final int WINDOW_MINUTES = 180;
+
+    private static final List<ReservationStatus> ACTIVE_STATUSES =
+            List.of(ReservationStatus.PENDING, ReservationStatus.CONFIRMED, ReservationStatus.CHECKED_IN);
 
     private static final EnumSet<ReservationStatus> TERMINAL_STATUSES =
             EnumSet.of(ReservationStatus.CHECKED_IN, ReservationStatus.NO_SHOW, ReservationStatus.CANCELLED);
@@ -56,8 +64,6 @@ public class ReservationServiceImpl implements ReservationService {
         return PageResponse.of(page.map(r -> toResponse(r, tableMap)));
     }
 
-
-
     @Override
     @Transactional(readOnly = true)
     public ReservationResponse getById(String id) {
@@ -65,11 +71,12 @@ public class ReservationServiceImpl implements ReservationService {
     }
 
     @Override
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public ReservationResponse create(CreateReservationRequest request) {
         if (request.tableId() != null) {
             validateTableExists(request.tableId());
             validateTableCapacity(request.tableId(), request.partySize());
-            checkTableAvailability(request.tableId(), request.datetime(), null);
+            checkTableAvailability(request.tableId(), request.datetime(), "");
         }
         Reservation reservation = Reservation.builder()
                 .guestName(request.guestName())
@@ -127,6 +134,7 @@ public class ReservationServiceImpl implements ReservationService {
     }
 
     @Override
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public ReservationResponse update(String id, UpdateReservationRequest request) {
         Reservation reservation = findOrThrow(id);
 
@@ -145,6 +153,14 @@ public class ReservationServiceImpl implements ReservationService {
                     id);
             reservation.setTableId(request.tableId());
         }
+
+        // Edit guest info
+        if (request.guestName() != null && !request.guestName().isBlank())
+            reservation.setGuestName(request.guestName());
+        if (request.phone() != null && !request.phone().isBlank())
+            reservation.setPhone(request.phone());
+        if (request.guestEmail() != null)
+            reservation.setGuestEmail(request.guestEmail().isBlank() ? null : request.guestEmail());
         if (request.partySize() != null) reservation.setPartySize(request.partySize());
         if (request.datetime() != null) reservation.setDatetime(request.datetime());
         if (request.note() != null) reservation.setNote(request.note());
@@ -161,6 +177,14 @@ public class ReservationServiceImpl implements ReservationService {
             }
             if (saved.getStatus() == ReservationStatus.CONFIRMED) {
                 setTableStatus(saved.getTableId(), TableStatus.RESERVED, TableStatus.AVAILABLE);
+            }
+            if (saved.getGuestEmail() != null && !saved.getGuestEmail().isBlank()) {
+                try {
+                    notificationService.sendReservationNotification(
+                            new ReservationNotificationRequest(saved.getId(), NotificationType.TABLE_UPDATE));
+                } catch (Exception e) {
+                    log.warn("NM-01 TABLE_UPDATE trigger failed for reservation {}: {}", saved.getId(), e.getMessage());
+                }
             }
         }
 
@@ -248,6 +272,45 @@ public class ReservationServiceImpl implements ReservationService {
                 "{\"guestName\":\"" + esc(reservation.getGuestName()) + "\"}");
     }
 
+    /**
+     * Move a CHECKED_IN reservation to a different table (e.g. group requests larger space).
+     * Old table is freed to AVAILABLE; new table becomes OCCUPIED.
+     */
+    @Override
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public ReservationResponse transferTable(String id, String tableId) {
+        Reservation reservation = findOrThrow(id);
+        if (reservation.getStatus() != ReservationStatus.CHECKED_IN) {
+            throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
+        }
+        validateTableExists(tableId);
+        validateTableCapacity(tableId, reservation.getPartySize());
+        checkTableAvailability(tableId, reservation.getDatetime(), id);
+
+        String oldTableId = reservation.getTableId();
+        reservation.setTableId(tableId);
+        Reservation saved = reservationRepository.save(reservation);
+
+        if (oldTableId != null && !oldTableId.equals(tableId)) {
+            setTableStatus(oldTableId, TableStatus.AVAILABLE, null);
+        }
+        setTableStatus(tableId, TableStatus.OCCUPIED, null);
+
+        if (saved.getGuestEmail() != null && !saved.getGuestEmail().isBlank()) {
+            try {
+                notificationService.sendReservationNotification(
+                        new ReservationNotificationRequest(saved.getId(), NotificationType.TABLE_UPDATE));
+            } catch (Exception e) {
+                log.warn("NM-01 TABLE_UPDATE trigger (transfer) failed for reservation {}: {}", saved.getId(), e.getMessage());
+            }
+        }
+
+        audit("RESERVATION_TRANSFER_TABLE", saved.getId(),
+                "{\"from\":\"" + esc(oldTableId) + "\",\"to\":\"" + esc(tableId)
+                        + "\",\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
+        return enrich(saved);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void audit(String action, String id, String detail) {
@@ -278,16 +341,18 @@ public class ReservationServiceImpl implements ReservationService {
         });
     }
 
+    /**
+     * Uses a pessimistic write lock so concurrent table-assignment requests are serialized.
+     * Window logic: booking at T blocks [T-180min, T+180min) on its table (strict inequality
+     * means bookings exactly 180 min apart do NOT conflict).
+     */
     private void checkTableAvailability(String tableId, LocalDateTime datetime, String excludeId) {
-        boolean conflict = reservationRepository.findByTableIdAndStatus(tableId, ReservationStatus.PENDING)
-                .stream()
-                .anyMatch(r -> !r.getId().equals(excludeId) && r.getDatetime().equals(datetime));
-        if (!conflict) {
-            conflict = reservationRepository.findByTableIdAndStatus(tableId, ReservationStatus.CONFIRMED)
-                    .stream()
-                    .anyMatch(r -> !r.getId().equals(excludeId) && r.getDatetime().equals(datetime));
-        }
-        if (conflict) {
+        LocalDateTime windowStart = datetime.minusMinutes(WINDOW_MINUTES);
+        LocalDateTime windowEnd   = datetime.plusMinutes(WINDOW_MINUTES);
+        List<Reservation> conflicts = reservationRepository.findConflictingForUpdate(
+                tableId, ACTIVE_STATUSES, windowStart, windowEnd,
+                excludeId != null ? excludeId : "");
+        if (!conflicts.isEmpty()) {
             throw new ApplicationException(ApplicationError.TABLE_NOT_AVAILABLE);
         }
     }

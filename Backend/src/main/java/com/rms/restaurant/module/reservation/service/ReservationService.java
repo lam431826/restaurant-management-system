@@ -16,4 +16,5 @@ public interface ReservationService {
     void cancel(String id);                       // Staff huỷ (PENDING/CONFIRMED → CANCELLED)
     ReservationResponse checkIn(String id);       // CONFIRMED → CHECKED_IN
     void markNoShow(String id);                   // CONFIRMED → NO_SHOW
+    ReservationResponse transferTable(String id, String tableId); // CHECKED_IN: move to another table
 }
