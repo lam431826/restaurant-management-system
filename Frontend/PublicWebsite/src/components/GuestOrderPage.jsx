@@ -21,16 +21,21 @@ export default function GuestOrderPage() {
 
   useEffect(() => {
     // Fetch Table Info
-    fetch(`http://localhost:8088/api/guest/orders/table-info?token=${tableToken}`)
+    fetch(`/api/guest/orders/table-info?token=${tableToken}`)
       .then(res => res.json())
-      .then(data => setTableInfo({ id: data.tableId, name: data.tableName }))
+      .then(data => {
+        setTableInfo({ id: data.tableId, name: data.tableName })
+        if (data.activeOrderId) {
+          setCurrentOrderId(data.activeOrderId)
+        }
+      })
       .catch(err => {
         console.error('Failed to fetch table info:', err)
         setTableInfo({ id: 'T01', name: 'Bàn T01' }) // Fallback
       })
 
     // Fetch Menu
-    fetch('http://localhost:8088/api/menu/public')
+    fetch('/api/menu/public')
       .then(res => res.json())
       .then(data => {
         setMenuData(data)
@@ -82,7 +87,7 @@ export default function GuestOrderPage() {
     
     const payload = {
       tableToken: tableToken,
-      items: cart.map(item => ({
+      items: cart.filter(item => !item.isOriginal || item.cookingStatus === 'PENDING').map(item => ({
         menuItemId: item.id,
         quantity: 1, // Always 1 because we don't group
         note: item.note || ''
@@ -90,14 +95,14 @@ export default function GuestOrderPage() {
     }
 
     try {
-      let url = 'http://localhost:8088/api/guest/orders';
+      let url = '/api/guest/orders';
       let method = 'POST';
 
       if (isEditing) {
-        url = `http://localhost:8088/api/guest/orders/${currentOrderId}/items`;
+        url = `/api/guest/orders/${currentOrderId}/items`;
         method = 'PUT';
       } else if (currentOrderId) {
-        url = `http://localhost:8088/api/guest/orders/${currentOrderId}/items`;
+        url = `/api/guest/orders/${currentOrderId}/items`;
         method = 'POST'; // Append items
       }
       
@@ -115,11 +120,12 @@ export default function GuestOrderPage() {
         setIsStatusOpen(true)
         setIsEditing(false)
       } else {
-        alert('Có lỗi xảy ra khi đặt món!')
+        const text = await res.text()
+        alert('Loi HTTP ' + res.status + ': ' + text)
       }
     } catch (err) {
       console.error(err)
-      alert('Không thể kết nối đến máy chủ.')
+      alert('Khong the ket noi may chu.')
     } finally {
       setIsSubmitting(false)
     }
@@ -134,7 +140,9 @@ export default function GuestOrderPage() {
         name: item.menuItemName,
         price: item.unitPrice,
         note: item.note || '',
-        image: '/images/food-item.jpg' // Placeholder
+        image: '/images/food-item.jpg', // Placeholder
+        cookingStatus: item.cookingStatus,
+        isOriginal: true
       }))
       setCart(newCart)
       setIsEditing(true)
@@ -192,7 +200,7 @@ export default function GuestOrderPage() {
               <div key={cat.categoryId} id={`mob-cat-${cat.categoryId}`}>
                 <h2 className="text-lg font-bold text-gray-800 mb-3 px-1">{cat.categoryName}</h2>
                 <div className="bg-white rounded-xl shadow-sm overflow-hidden flex flex-col divide-y">
-                  {cat.items.filter(item => item.available).map((item) => {
+                  {cat.items.map((item) => {
                     const q = getQuantity(item.id)
                     const imgUrl = item.imageUrl || imgMakiSpicyTuna
                     return (
@@ -225,7 +233,7 @@ export default function GuestOrderPage() {
                       </div>
                     )
                   })}
-                  {cat.items.filter(item => item.available).length === 0 && (
+                  {cat.items.length === 0 && (
                     <p className="p-4 text-center text-gray-400 text-sm italic">Không có món.</p>
                   )}
                 </div>
@@ -268,24 +276,32 @@ export default function GuestOrderPage() {
           <div className="flex-1 overflow-y-auto bg-gray-50 p-4 pb-20">
             {cart.map((item, index) => (
               <div key={item.cartItemId} className="bg-white rounded-xl p-4 mb-4 shadow-sm border border-gray-100 relative">
-                <button 
-                  onClick={() => handleRemoveSpecificCartItem(item.cartItemId)}
-                  className="absolute top-3 right-3 text-red-400 p-1 hover:bg-red-50 rounded-full"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                </button>
+                {(!item.isOriginal || item.cookingStatus === 'PENDING') && (
+                  <button 
+                    onClick={() => handleRemoveSpecificCartItem(item.cartItemId)}
+                    className="absolute top-3 right-3 text-red-400 p-1 hover:bg-red-50 rounded-full"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  </button>
+                )}
                 <div className="flex justify-between mb-3 pr-8">
                   <div>
                     <h3 className="font-bold text-gray-800">{index + 1}. {item.name}</h3>
+                    {item.isOriginal && item.cookingStatus !== 'PENDING' && (
+                      <span className="text-xs text-blue-500 font-semibold bg-blue-50 px-2 py-0.5 rounded-full mt-1 inline-block">
+                        {item.cookingStatus === 'COOKING' ? 'Đang nấu' : item.cookingStatus === 'COMPLETED' ? 'Nấu xong' : item.cookingStatus === 'SERVED' ? 'Đã phục vụ' : 'Đã hủy'}
+                      </span>
+                    )}
                     <p className="text-orange-500 font-semibold text-sm mt-1">{item.price.toLocaleString('vi-VN')}đ</p>
                   </div>
                 </div>
                 <input 
                   type="text" 
                   placeholder="Ghi chú (VD: Ít đá, không cay...)"
-                  className="w-full bg-gray-50 border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-orange-500"
+                  className="w-full bg-gray-50 border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-orange-500 disabled:opacity-50"
                   value={item.note || ''}
                   onChange={(e) => handleUpdateNote(item.cartItemId, e.target.value)}
+                  disabled={item.isOriginal && item.cookingStatus !== 'PENDING'}
                 />
               </div>
             ))}
@@ -315,6 +331,7 @@ export default function GuestOrderPage() {
           orderId={currentOrderId} 
           onClose={() => setIsStatusOpen(false)} 
           onEditOrder={handleEditOrder}
+          onOrderFinished={() => setCurrentOrderId(null)}
         />
       )}
 

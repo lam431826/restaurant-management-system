@@ -87,7 +87,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
                     "Chỉ có thể cập nhật món khi đơn chưa được xác nhận.");
         }
 
-        order.getItems().clear();
+        order.getItems().removeIf(item -> item.getCookingStatus() == com.rms.restaurant.common.utils.enums.CookingStatus.PENDING);
         appendItems(order, request);
 
         Order savedOrder = orderRepository.save(order);
@@ -132,7 +132,17 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     @Override
     public TableInfoResponse getTableInfo(String token) {
         RestaurantTable table = resolveTable(token);
-        return new TableInfoResponse(table.getId(), table.getName());
+        
+        String activeOrderId = null;
+        java.util.Optional<Order> recentOrder = orderRepository.findTopByTableIdOrderByCreatedAtDesc(table.getId());
+        if (recentOrder.isPresent()) {
+            Order order = recentOrder.get();
+            if (order.getStatus() != OrderStatus.CLOSED && order.getStatus() != OrderStatus.CANCELLED) {
+                activeOrderId = order.getId();
+            }
+        }
+        
+        return new TableInfoResponse(table.getId(), table.getName(), activeOrderId);
     }
 
     // ── Helper ────────────────────────────────────────────────────────────────
