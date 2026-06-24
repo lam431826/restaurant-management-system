@@ -8,12 +8,15 @@ import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.module.guest_ordering.dto.AssistanceRequest;
 import com.rms.restaurant.module.guest_ordering.dto.GuestOrderRequest;
 import com.rms.restaurant.module.guest_ordering.dto.OrderStatusResponse;
+import com.rms.restaurant.module.guest_ordering.dto.TableInfoResponse;
 import com.rms.restaurant.module.guest_ordering.dto.UpdateOrderItemsRequest;
 import com.rms.restaurant.module.guest_ordering.service.GuestOrderingService;
 import com.rms.restaurant.module.menu.model.MenuItem;
 import com.rms.restaurant.module.menu.repository.MenuItemRepository;
+import com.rms.restaurant.module.order.mapper.OrderMapper;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
+import com.rms.restaurant.module.order.repository.AssistanceRequestRepository;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
@@ -33,6 +36,8 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     private final OrderRepository orderRepository;
     private final MenuItemRepository menuItemRepository;
     private final TableRepository tableRepository;
+    private final AssistanceRequestRepository assistanceRequestRepository;
+    private final OrderMapper orderMapper;
 
     // ── GO-03: Khách quét QR → gọi món ──────────────────────────────────────
 
@@ -40,42 +45,34 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     public OrderStatusResponse placeOrder(GuestOrderRequest request) {
         RestaurantTable table = resolveTable(request.tableToken());
 
-        // BILLING = đang chờ thanh toán; CLEANING = đang dọn — không thể gọi thêm
-        if (table.getStatus() == TableStatus.BILLING || table.getStatus() == TableStatus.CLEANING) {
-            throw new ApplicationException(ApplicationError.TABLE_NOT_AVAILABLE);
-        }
-
         Order order = new Order();
         order.setTableId(table.getId());
         order.setStatus(OrderStatus.PENDING);
         order.setNote(request.note());
         order.setItems(new ArrayList<>());
 
-        for (var itemReq : request.items()) {
-            MenuItem menuItem = menuItemRepository.findById(itemReq.menuItemId())
-                    .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND));
+        if (request.items() != null) {
+            request.items().forEach(itemRequest -> {
+                MenuItem menuItem = menuItemRepository.findById(itemRequest.menuItemId())
+                        .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND));
 
-            OrderItem orderItem = new OrderItem();
-            orderItem.setOrder(order);
-            orderItem.setMenuItemId(menuItem.getId());
-            orderItem.setMenuItemName(menuItem.getName());
-            orderItem.setQuantity(itemReq.quantity());
-            orderItem.setUnitPrice(menuItem.getPrice());
-            orderItem.setNote(itemReq.note());
-            order.getItems().add(orderItem);
+                OrderItem orderItem = new OrderItem();
+                orderItem.setOrder(order);
+                orderItem.setMenuItemId(menuItem.getId());
+                orderItem.setMenuItemName(menuItem.getName());
+                orderItem.setQuantity(itemRequest.quantity());
+                orderItem.setUnitPrice(menuItem.getPrice());
+                orderItem.setNote(itemRequest.note());
+
+                order.getItems().add(orderItem);
+            });
         }
 
-        Order saved = orderRepository.save(order);
+        table.setStatus(TableStatus.OCCUPIED);
+        tableRepository.save(table);
 
-        // Bàn chuyển sang OCCUPIED khi có đơn gọi món
-        if (table.getStatus() != TableStatus.OCCUPIED) {
-            table.setStatus(TableStatus.OCCUPIED);
-            tableRepository.save(table);
-        }
-
-        log.info("GO-03 order {} placed for table '{}' (token={})",
-                saved.getId(), table.getName(), request.tableToken());
-        return new OrderStatusResponse(saved.getId(), saved.getStatus(), null);
+        Order savedOrder = orderRepository.save(order);
+        return toStatusResponse(savedOrder, null);
     }
 
     // ── GO-02: Khách cập nhật items (chỉ khi order còn PENDING) ─────────────
@@ -91,36 +88,51 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
         }
 
         order.getItems().clear();
-        for (var itemReq : request.items()) {
-            MenuItem menuItem = menuItemRepository.findById(itemReq.menuItemId())
-                    .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND));
+        appendItems(order, request);
 
-            OrderItem orderItem = new OrderItem();
-            orderItem.setOrder(order);
-            orderItem.setMenuItemId(menuItem.getId());
-            orderItem.setMenuItemName(menuItem.getName());
-            orderItem.setQuantity(itemReq.quantity());
-            orderItem.setUnitPrice(menuItem.getPrice());
-            orderItem.setNote(itemReq.note());
-            order.getItems().add(orderItem);
-        }
+        Order savedOrder = orderRepository.save(order);
+        return toStatusResponse(savedOrder, null);
+    }
 
-        Order saved = orderRepository.save(order);
-        return new OrderStatusResponse(saved.getId(), saved.getStatus(), null);
+    // ── Khách gọi thêm món vào đơn đã có ─────────────────────────────────────
+
+    @Override
+    public OrderStatusResponse addOrderItems(String orderId, UpdateOrderItemsRequest request) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+
+        appendItems(order, request);
+
+        Order savedOrder = orderRepository.save(order);
+        return toStatusResponse(savedOrder, null);
     }
 
     @Override
-    public OrderStatusResponse getOrderStatus(String tableToken) {
-        RestaurantTable table = resolveTable(tableToken);
-        return orderRepository.findTopByTableIdAndStatusOrderByCreatedAtDesc(
-                        table.getId(), OrderStatus.PENDING)
-                .map(o -> new OrderStatusResponse(o.getId(), o.getStatus(), null))
-                .orElse(null);
+    public OrderStatusResponse getOrderStatus(String orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        return toStatusResponse(order, "15 minutes");
     }
 
     @Override
     public void requestAssistance(AssistanceRequest request) {
-        // GO-05: stub — implement khi cần
+        RestaurantTable table = resolveTable(request.tableToken());
+
+        com.rms.restaurant.module.order.model.AssistanceRequest entity =
+                com.rms.restaurant.module.order.model.AssistanceRequest.builder()
+                        .tableId(table.getId())
+                        .tableName(table.getName())
+                        .message(request.message())
+                        .resolved(false)
+                        .build();
+
+        assistanceRequestRepository.save(entity);
+    }
+
+    @Override
+    public TableInfoResponse getTableInfo(String token) {
+        RestaurantTable table = resolveTable(token);
+        return new TableInfoResponse(table.getId(), table.getName());
     }
 
     // ── Helper ────────────────────────────────────────────────────────────────
@@ -128,5 +140,31 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     private RestaurantTable resolveTable(String tableToken) {
         return tableRepository.findByQrToken(tableToken)
                 .orElseThrow(() -> new ApplicationException(ApplicationError.INVALID_TABLE_TOKEN));
+    }
+
+    private void appendItems(Order order, UpdateOrderItemsRequest request) {
+        request.items().forEach(itemRequest -> {
+            MenuItem menuItem = menuItemRepository.findById(itemRequest.menuItemId())
+                    .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND));
+
+            OrderItem orderItem = new OrderItem();
+            orderItem.setOrder(order);
+            orderItem.setMenuItemId(menuItem.getId());
+            orderItem.setMenuItemName(menuItem.getName());
+            orderItem.setQuantity(itemRequest.quantity());
+            orderItem.setUnitPrice(menuItem.getPrice());
+            orderItem.setNote(itemRequest.note());
+
+            order.getItems().add(orderItem);
+        });
+    }
+
+    private OrderStatusResponse toStatusResponse(Order order, String estimatedTime) {
+        return new OrderStatusResponse(
+                order.getId(),
+                order.getStatus(),
+                estimatedTime,
+                orderMapper.toResponse(order).items()
+        );
     }
 }

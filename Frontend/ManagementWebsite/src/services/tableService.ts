@@ -13,6 +13,7 @@ export interface TableItem {
   active: boolean
   status: string
   qrToken: string | null
+  activeOrderId: string | null
 }
 
 export interface TableArea {
@@ -42,6 +43,7 @@ interface TableResponse {
   active: boolean
   status: string
   qrToken: string | null
+  activeOrderId: string | null
 }
 
 const toItem = (t: TableResponse): TableItem => ({
@@ -54,6 +56,7 @@ const toItem = (t: TableResponse): TableItem => ({
   active: t.active,
   status: t.status,
   qrToken: t.qrToken,
+  activeOrderId: t.activeOrderId ?? null,
 })
 
 const toBody = (input: TableInput) => ({

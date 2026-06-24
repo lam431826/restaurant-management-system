@@ -7,4 +7,5 @@ import java.util.List;
 
 public interface AssistanceRequestRepository extends JpaRepository<AssistanceRequest, String> {
     List<AssistanceRequest> findByTableIdAndResolvedFalse(String tableId);
+    List<AssistanceRequest> findByResolvedFalse();
 }

@@ -11,5 +11,6 @@ public record TableResponse(
         int displayOrder,
         boolean active,
         TableStatus status,
-        String qrToken
+        String qrToken,
+        String activeOrderId
 ) {}

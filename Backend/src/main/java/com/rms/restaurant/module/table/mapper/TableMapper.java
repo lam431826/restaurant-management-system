@@ -9,6 +9,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class TableMapper {
     public TableResponse toResponse(RestaurantTable table) {
+        return toResponse(table, null);
+    }
+
+    public TableResponse toResponse(RestaurantTable table, String activeOrderId) {
         return new TableResponse(
                 table.getId(),
                 table.getName(),
@@ -18,7 +22,8 @@ public class TableMapper {
                 table.getDisplayOrder(),
                 table.isActive(),
                 table.getStatus(),
-                table.getQrToken()
+                table.getQrToken(),
+                activeOrderId
         );
     }
 

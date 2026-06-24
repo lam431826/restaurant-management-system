@@ -36,5 +36,5 @@ public class OrderItem {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "cooking_status", length = 20)
-    private CookingStatus cookingStatus;
+    private CookingStatus cookingStatus = CookingStatus.PENDING;
 }

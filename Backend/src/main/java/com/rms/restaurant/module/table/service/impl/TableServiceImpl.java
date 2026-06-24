@@ -11,6 +11,9 @@ import com.rms.restaurant.module.table.model.TableArea;
 import com.rms.restaurant.module.table.repository.TableAreaRepository;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import com.rms.restaurant.module.table.service.TableService;
+import com.rms.restaurant.module.order.repository.OrderRepository;
+import com.rms.restaurant.module.order.model.Order;
+import com.rms.restaurant.common.utils.enums.OrderStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
@@ -47,6 +50,7 @@ public class TableServiceImpl implements TableService {
     private final TableRepository tableRepository;
     private final TableAreaRepository areaRepository;
     private final TableMapper tableMapper;
+    private final OrderRepository orderRepository;
 
     // ── Tables ───────────────────────────────────────────────────────────
 
@@ -54,14 +58,15 @@ public class TableServiceImpl implements TableService {
     @Transactional(readOnly = true)
     public List<TableResponse> listAll() {
         return tableRepository.findAllByOrderByDisplayOrderAscNameAsc().stream()
-                .map(tableMapper::toResponse)
+                .map(table -> tableMapper.toResponse(table, findActiveOrderId(table.getId())))
                 .collect(Collectors.toList());
     }
 
     @Override
     @Transactional(readOnly = true)
     public TableResponse getById(String id) {
-        return tableMapper.toResponse(findTable(id));
+        RestaurantTable table = findTable(id);
+        return tableMapper.toResponse(table, findActiveOrderId(table.getId()));
     }
 
     @Override
@@ -287,6 +292,14 @@ public class TableServiceImpl implements TableService {
     private RestaurantTable findTable(String id) {
         return tableRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.TABLE_NOT_FOUND));
+    }
+
+    /** The most recent order on this table that hasn't been closed/cancelled, if any. */
+    private String findActiveOrderId(String tableId) {
+        return orderRepository.findTopByTableIdOrderByCreatedAtDesc(tableId)
+                .filter(o -> o.getStatus() != OrderStatus.CLOSED && o.getStatus() != OrderStatus.CANCELLED)
+                .map(Order::getId)
+                .orElse(null);
     }
 
     private String trimToNull(String value) {

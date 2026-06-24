@@ -1,158 +1,25 @@
+import { useState, useEffect } from 'react'
 import { useInView } from '../hooks/useInView'
 import IMG_BG from '../assets/images/menu-bg.jpg'
-import IMG_LEAF from '../assets/images/menu-leaf.svg'
 import imgMakiSpicyTuna from '../assets/images/menu-maki-spicy-tuna.jpg'
-import imgMakiMango from '../assets/images/menu-maki-mango.jpg'
-import imgMakiSalmon from '../assets/images/menu-maki-salmon.jpg'
-import imgMakiTuna from '../assets/images/menu-maki-tuna.jpg'
-import imgUramakiVolcano from '../assets/images/menu-uramaki-volcano.jpg'
-import imgUramakiRainbow from '../assets/images/menu-uramaki-rainbow.jpg'
-import imgUramakiDragon from '../assets/images/menu-uramaki-dragon.jpg'
-import imgUramakiSunset from '../assets/images/menu-uramaki-sunset.jpg'
-import imgUramakiMystic from '../assets/images/menu-uramaki-mystic.jpg'
-import imgUramakiOcean from '../assets/images/menu-uramaki-ocean.jpg'
-import imgUramakiTokyo from '../assets/images/menu-uramaki-tokyo.jpg'
-import imgSpecialSunrise from '../assets/images/menu-special-sunrise.jpg'
-import imgSpecialMangoTango from '../assets/images/menu-special-mango-tango.jpg'
-import imgSpecialTruffle from '../assets/images/menu-special-truffle.jpg'
-import imgSpecialPacific from '../assets/images/menu-special-pacific.jpg'
-import imgSpecialEel from '../assets/images/menu-special-eel.jpg'
 
-const MAKI = [
-  {
-    id: 'spicy-tuna-maki',
-    img: imgMakiSpicyTuna,
-    name: 'Spicy Tuna Maki',
-    price: '99.000Đ',
-    desc: 'Sự kết hợp hấp dẫn giữa cá ngừ cay, dưa leo và bơ, được cuộn hài hòa trong rong biển nori và cơm sushi tẩm vị.',
-    spicy: true,
-  },
-  {
-    id: 'mango-maki',
-    img: imgMakiMango,
-    name: 'Mango Maki',
-    price: '99.000đ',
-    desc: 'Tôm tempura chiên giòn, dưa leo và phô mai kem bao bọc phần bơ tươi bên trong, tạo nên sự tương phản thú vị về kết cấu.',
-  },
-  {
-    id: 'salmon-maki',
-    img: imgMakiSalmon,
-    name: 'Salmon Maki',
-    price: '109.000Đ',
-    desc: 'Nấm shiitake, bơ và củ cải trắng muối được cuộn trong lớp cơm sushi tẩm vị, phủ bên ngoài bằng mè rang thơm béo.',
-  },
-  {
-    id: 'tuna-maki',
-    img: imgMakiTuna,
-    name: 'Tuna Maki',
-    price: '89.000Đ',
-    desc: 'Sự kết hợp đầy màu sắc của cà rốt thái sợi, ớt chuông và dưa leo, được cuộn chặt trong cơm và rong biển nori.',
-  },
-]
+export default function MenuSection({ onAddToCart }) {
+  const [menuData, setMenuData] = useState([])
+  const [loading, setLoading] = useState(true)
 
-const URAMAKI = [
-  {
-    id: 'volcano-delight',
-    img: imgUramakiVolcano,
-    name: 'Volcano Delight',
-    price: '179.000Đ',
-    desc: 'Salad cua béo ngậy, bơ và dưa leo được cuộn bên trong, phủ cá ngừ cay phía trên và rưới sốt sriracha cay nồng.',
-    spicy: true,
-  },
-  {
-    id: 'rainbow-fusion',
-    img: imgUramakiRainbow,
-    name: 'Rainbow Fusion',
-    price: '165.000Đ',
-    desc: 'Sự hòa quyện đầy màu sắc của cá ngừ tươi, cá hồi, cá cam Nhật và bơ, bao quanh phần nhân dưa leo và thanh cua.',
-  },
-  {
-    id: 'dragon-elegance',
-    img: imgUramakiDragon,
-    name: 'Dragon Elegance',
-    price: '180.000Đ',
-    desc: 'Lươn nướng và bơ nằm gọn bên trong cuộn sushi, phủ lên bằng những lát bơ chín mềm trông như vảy rồng.',
-  },
-  {
-    id: 'sunset-serenity',
-    img: imgUramakiSunset,
-    name: 'Sunset Serenity',
-    price: '159.000Đ',
-    desc: 'Tôm tempura, dưa leo và sốt mayonnaise cay được cuộn trong lớp giấy đậu nành, bên trên là những lát xoài mềm mịn.',
-  },
-  {
-    id: 'mystic-garden',
-    img: imgUramakiMystic,
-    name: 'Mystic Garden',
-    price: '209.000Đ',
-    desc: 'Nấm shiitake, măng tây và dưa leo hòa quyện cùng vụn tempura giòn rụm, phủ ngoài bằng một lớp mè rang.',
-  },
-  {
-    id: 'ocean-breeze',
-    img: imgUramakiOcean,
-    name: 'Ocean Breeze',
-    price: '209.000Đ',
-    desc: 'Sự kết hợp của tôm tươi, thanh cua và bơ, điểm thêm tobiko hương yuzu thanh nhẹ. Ăn chung với gừng và mù tạt.',
-  },
-  {
-    id: 'tokyo-blossom',
-    img: imgUramakiTokyo,
-    name: 'Tokyo Blossom',
-    price: '299.000Đ',
-    desc: 'Lớp giấy đậu nành màu hồng nhẹ bao bọc hỗn hợp cá ngừ, thanh cua và dưa leo, trang trí bằng cánh hoa ăn được.',
-  },
-]
+  useEffect(() => {
+    fetch('http://localhost:8088/api/menu/public')
+      .then(res => res.json())
+      .then(data => {
+        setMenuData(data)
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error('Failed to fetch menu:', err)
+        setLoading(false)
+      })
+  }, [])
 
-const SPECIAL_ROLLS = [
-  {
-    id: 'sunrise-bliss',
-    img: imgSpecialSunrise,
-    name: 'Sunrise Bliss',
-    price: '399.000đ',
-    desc: 'Sự kết hợp tinh tế giữa cá hồi tươi, phô mai kem và măng tây, được phủ tobiko màu cam rực rỡ, mang hương vị gợi nhớ bình minh.',
-    spicy: true,
-  },
-  {
-    id: 'mango-tango-fusion',
-    img: imgSpecialMangoTango,
-    name: 'Mango Tango Fusion',
-    price: '399.000Đ',
-    desc: 'Tôm tempura, dưa leo và bơ hòa quyện cùng những lát xoài ngọt, rưới thêm sốt xoài chua nhẹ đầy hấp dẫn.',
-    spicy: true,
-  },
-  {
-    id: 'truffle-indulgence',
-    img: imgSpecialTruffle,
-    name: 'Truffle Indulgence',
-    price: '589.000Đ',
-    desc: 'Những lát nấm truffle đen thượng hạng phủ lên cuộn bò wagyu mềm mọng, kết hợp cùng dưa leo và rau mầm, tạo nên bản hòa tấu umami tinh tế.',
-    spicy: true,
-  },
-  {
-    id: 'pacific-firecracker',
-    img: imgSpecialPacific,
-    name: 'Pacific Firecracker',
-    price: '799.000Đ',
-    desc: 'Salad cua cay, tôm tempura và ớt jalapeño hòa quyện trong hương vị bùng nổ, nhấn nhá bằng sốt aioli infused ớt cay.',
-    spicy: true,
-  },
-  {
-    id: 'eternal-eel-enchantment',
-    img: imgSpecialEel,
-    name: 'Eternal Eel Enchantment',
-    price: '799.000Đ',
-    desc: 'Sự hòa quyện mê hoặc của lươn tempura, gan ngỗng foie gras và dưa leo, được hoàn thiện với dầu truffle và lá vàng sang trọng.',
-    spicy: true,
-  },
-]
-
-const CATEGORIES = [
-  { label: 'Maki', id: 'cat-maki' },
-  { label: 'UraMaki', id: 'cat-uramaki' },
-  { label: 'Special Rolls', id: 'cat-special-rolls' },
-]
-
-export default function MenuSection() {
   function scrollToCategory(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
@@ -160,7 +27,6 @@ export default function MenuSection() {
   return (
     <section id="menu" className="bg-[#0a0b0a] p-6">
       <div className="flex gap-4 items-start">
-
         {/* Left — sticky food image */}
         <div className="flex-1 sticky top-6 self-start h-[calc(100vh-3rem)] overflow-hidden rounded-2xl relative bg-black min-w-0">
           <img
@@ -179,40 +45,41 @@ export default function MenuSection() {
 
         {/* Right — content */}
         <div className="flex-1 flex flex-col gap-4 min-w-0">
+          <div className="border border-[rgba(239,231,210,0.15)] rounded-2xl pt-8 pb-20 px-16 flex flex-col gap-16 min-h-[500px]">
+            {loading ? (
+              <p className="text-[#efe7d2] text-center mt-10 text-xl" style={{ fontFamily: 'Forum, serif' }}>Đang tải thực đơn...</p>
+            ) : (
+              <>
+                {/* Category filter tabs */}
+                <div className="flex gap-2 items-center justify-center flex-wrap">
+                  {menuData.map(cat => (
+                    <button
+                      key={cat.categoryId}
+                      onClick={() => scrollToCategory(`cat-${cat.categoryId}`)}
+                      className="border border-[rgba(239,231,210,0.15)] px-4 py-2.5 rounded-lg text-[#efe7d2] text-sm tracking-[1px] uppercase cursor-pointer hover:bg-[rgba(239,231,210,0.08)] transition-colors"
+                      style={{ fontFamily: "'MJ Satoshi', sans-serif", lineHeight: 1.3 }}
+                    >
+                      {cat.categoryName}
+                    </button>
+                  ))}
+                </div>
 
-          {/* Content card */}
-          <div className="border border-[rgba(239,231,210,0.15)] rounded-2xl pt-8 pb-20 px-16 flex flex-col gap-16">
-
-            {/* Category filter tabs */}
-            <div className="flex gap-1 items-center justify-center">
-              {CATEGORIES.map(({ label, id }) => (
-                <button
-                  key={id}
-                  onClick={() => scrollToCategory(id)}
-                  className="border border-[rgba(239,231,210,0.15)] px-3 py-2 rounded-lg text-[#efe7d2] text-xs tracking-[1px] uppercase cursor-pointer hover:bg-[rgba(239,231,210,0.08)] transition-colors"
-                  style={{ fontFamily: "'MJ Satoshi', sans-serif", lineHeight: 1.3 }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {/* Menu categories */}
-            <div className="flex flex-col gap-24">
-              <CategorySection id="cat-maki" title="Maki" items={MAKI} />
-              <CategorySection id="cat-uramaki" title="UraMaki" items={URAMAKI} />
-              <CategorySection id="cat-special-rolls" title="Special Rolls" items={SPECIAL_ROLLS} />
-            </div>
+                {/* Menu categories */}
+                <div className="flex flex-col gap-24">
+                  {menuData.map(cat => (
+                    <CategorySection key={cat.categoryId} id={`cat-${cat.categoryId}`} title={cat.categoryName} items={cat.items} onAddToCart={onAddToCart} />
+                  ))}
+                </div>
+              </>
+            )}
           </div>
-
-          {/* Footer */}
         </div>
       </div>
     </section>
   )
 }
 
-function CategorySection({ id, title, items }) {
+function CategorySection({ id, title, items, onAddToCart }) {
   const [titleRef, titleIn] = useInView()
   return (
     <div id={id} className="flex flex-col gap-12">
@@ -220,9 +87,12 @@ function CategorySection({ id, title, items }) {
         <SectionTitle title={title} />
       </div>
       <div className="flex flex-col gap-8">
-        {items.map((item, i) => (
-          <MenuItem key={item.id} index={i} {...item} />
+        {items.filter(item => item.available).map((item, i) => (
+          <MenuItem key={item.id} index={i} item={item} onAddToCart={onAddToCart} />
         ))}
+        {items.filter(item => item.available).length === 0 && (
+          <p className="text-[rgba(245,242,234,0.7)] text-center text-sm italic">Không có món nào đang bán trong danh mục này.</p>
+        )}
       </div>
     </div>
   )
@@ -253,8 +123,9 @@ function SectionTitle({ title }) {
   )
 }
 
-function MenuItem({ img, name, price, desc, spicy, index = 0 }) {
+function MenuItem({ item, index = 0, onAddToCart }) {
   const [ref, inView] = useInView()
+  const imgUrl = item.imageUrl || imgMakiSpicyTuna; // Fallback image if null
   return (
     <div
       ref={ref}
@@ -262,7 +133,7 @@ function MenuItem({ img, name, price, desc, spicy, index = 0 }) {
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <div className="w-[150px] h-[100px] bg-[#0a0b0a] overflow-hidden rounded-xl shrink-0 relative">
-        <img src={img} alt={name} className="absolute inset-0 w-full h-full object-cover" />
+        <img src={imgUrl} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
       </div>
       <div className="flex-1 flex flex-col gap-1 min-w-0">
         <div className="flex items-end gap-4">
@@ -271,28 +142,32 @@ function MenuItem({ img, name, price, desc, spicy, index = 0 }) {
               className="text-[#efe7d2] text-[22px] tracking-[1px] uppercase whitespace-nowrap"
               style={{ fontFamily: 'Forum, serif', lineHeight: 1.2 }}
             >
-              {name}
+              {item.name}
             </p>
-            {spicy && (
-              <img src={IMG_LEAF} alt="spicy" className="size-4 shrink-0" />
-            )}
           </div>
           <div className="flex-1 border-b border-dashed border-[rgba(239,231,210,0.15)] mb-1" />
           <p
             className="text-[#efe7d2] text-[22px] tracking-[1px] uppercase whitespace-nowrap shrink-0"
             style={{ fontFamily: 'Forum, serif', lineHeight: 1.2 }}
           >
-            {price}
+            {item.price.toLocaleString('vi-VN')} Đ
           </p>
         </div>
-        <p
-          className="text-[rgba(245,242,234,0.7)] text-sm leading-[1.5]"
-          style={{ fontFamily: "'MJ Satoshi', sans-serif" }}
-        >
-          {desc}
-        </p>
+        <div className="flex justify-between items-center mt-2">
+          <p
+            className="text-[rgba(245,242,234,0.7)] text-sm leading-[1.5] pr-4"
+            style={{ fontFamily: "'MJ Satoshi', sans-serif" }}
+          >
+            {item.description || 'Hương vị tuyệt hảo từ bếp trưởng của chúng tôi.'}
+          </p>
+          <button 
+            onClick={() => onAddToCart && onAddToCart(item)}
+            className="border border-[#efe7d2] text-[#efe7d2] px-4 py-1.5 rounded-full hover:bg-[#efe7d2] hover:text-[#0a0b0a] transition-colors shrink-0 text-sm tracking-wide font-medium cursor-pointer"
+          >
+            Thêm vào giỏ
+          </button>
+        </div>
       </div>
     </div>
   )
 }
-

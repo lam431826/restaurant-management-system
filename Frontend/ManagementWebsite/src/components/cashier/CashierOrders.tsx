@@ -20,6 +20,22 @@ import { getStoredUser } from "../../services/tokenStorage";
 import { listCategories, searchItems } from "../../services/menuService";
 import type { MenuCategory } from "../../services/menuService";
 import { assetUrl } from "../../services/api";
+import {
+  addOrderItems,
+  cancelOrder,
+  createOrder,
+  listOrders,
+  listPendingAssistance,
+  removeOrderItem,
+  respondAssistance,
+  updateOrderItemStatus,
+} from "../../services/orderApi";
+import type {
+  AssistanceRequest,
+  CookingStatus,
+  Order,
+  OrderStatus,
+} from "../../services/orderApi";
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface MenuItem {
@@ -48,14 +64,16 @@ interface TableItem {
   amount: number;
   guests: number;
   items: number;
+  orderId: string | null;
 }
 interface OrderItem {
-  id: number;
+  id: string;
   name: string;
   qty: number;
   notes: string;
   status: string;
   price: number;
+  orderId: string;
 }
 
 const OCCUPIED_STATUSES = ["OCCUPIED", "BILLING"];
@@ -71,34 +89,8 @@ const toTableItem = (dto: TableServiceItem): TableItem => ({
   amount: 0,
   guests: 0,
   items: 0,
+  orderId: dto.activeOrderId,
 });
-
-const ORDER_ITEMS: OrderItem[] = [
-  {
-    id: 1,
-    name: "Item Name",
-    qty: 1,
-    notes: "Ghi chú : Notes",
-    status: "Đang nấu",
-    price: 89000,
-  },
-  {
-    id: 2,
-    name: "Item Name",
-    qty: 1,
-    notes: "Ghi chú : Notes",
-    status: "Đang nấu",
-    price: 89000,
-  },
-  {
-    id: 3,
-    name: "Item Name",
-    qty: 1,
-    notes: "Ghi chú : Notes",
-    status: "Đang nấu",
-    price: 89000,
-  },
-];
 
 const VAT_RATE = 0.08;
 
@@ -107,6 +99,27 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   CARD: "Thẻ",
   QR: "Mã QR",
   E_WALLET: "Ví điện tử",
+};
+
+const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
+  "PENDING",
+  "ACCEPTED",
+  "PREPARING",
+  "SERVED",
+];
+
+const COOKING_STATUS_LABEL: Record<CookingStatus, string> = {
+  PENDING: "Chờ duyệt",
+  COOKING: "Đang nấu",
+  READY: "Đã nấu xong",
+  SERVED: "Đã phục vụ",
+};
+
+const COOKING_STATUS_FROM_LABEL: Record<string, CookingStatus> = {
+  "Chờ duyệt": "PENDING",
+  "Đang nấu": "COOKING",
+  "Đã nấu xong": "READY",
+  "Đã phục vụ": "SERVED",
 };
 
 const formatDateTime = (value: string) =>
@@ -473,6 +486,11 @@ const XIcon = () => (
     />
   </svg>
 );
+const TrashIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+  </svg>
+);
 const DeleteDigitIcon = () => (
   <svg
     className="w-6 h-6"
@@ -526,23 +544,32 @@ const Header = ({
   employeeName = "Duy Tan",
   roleLabel = "Thu ngân",
   role,
+  assistanceRequests = [],
+  onResolveRequest,
   onLogout,
   onChangePassword,
 }: {
   employeeName?: string;
   roleLabel?: string;
   role?: string;
+  assistanceRequests?: AssistanceRequest[];
+  onResolveRequest?: (id: string) => void;
   onLogout?: () => void;
   onChangePassword?: () => void;
 }) => {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [isBellOpen, setIsBellOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const bellRef = useRef<HTMLDivElement>(null);
+  const bellCount = assistanceRequests.length;
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node))
         setOpen(false);
+      if (bellRef.current && !bellRef.current.contains(e.target as Node))
+        setIsBellOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -556,7 +583,7 @@ const Header = ({
     .toUpperCase();
 
   return (
-    <header className="bg-white flex items-center justify-between px-6 h-[64px] shrink-0 border-b border-[#e8e8e8]">
+    <header className="bg-white flex items-center justify-between px-6 h-[64px] shrink-0 border-b border-[#e8e8e8] z-[50]">
       <div className="flex items-center gap-3 shrink-0">
         <img
           src="/images/wasabi-logo.svg"
@@ -574,13 +601,56 @@ const Header = ({
       </div>
 
       <div className="flex items-center gap-4 shrink-0">
-        <div className="relative">
-          <button className="text-[#202325]">
+        <div className="relative" ref={bellRef}>
+          <button
+            className="text-[#202325] relative p-2"
+            onClick={() => setIsBellOpen((v) => !v)}
+          >
             <BellIcon />
+            {bellCount > 0 && (
+              <span className="absolute top-0 right-0 bg-[#025cca] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                {bellCount}
+              </span>
+            )}
           </button>
-          <span className="absolute -top-1 -right-1 bg-[#025cca] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-            2
-          </span>
+
+          {isBellOpen && (
+            <div className="absolute top-[120%] right-0 w-[380px] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col z-[9999]">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50 rounded-t-xl">
+                <h6 className="text-lg font-bold text-gray-800 m-0">Yêu cầu gọi phục vụ</h6>
+                <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-full">{bellCount} tin mới</span>
+              </div>
+
+              <div className="flex flex-col overflow-y-auto max-h-[400px] p-2 bg-white rounded-b-xl">
+                {bellCount === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10">
+                    <span className="text-gray-400 mt-2 font-medium">Không có yêu cầu nào.</span>
+                  </div>
+                ) : (
+                  assistanceRequests.map((req) => {
+                    const tableNum = req.tableName || (req.tableId ? `Bàn ${req.tableId.substring(0, 4)}` : "Bàn ?");
+                    return (
+                      <div key={req.id} className="flex flex-col gap-2 p-3 mb-2 rounded-lg border border-orange-100 bg-orange-50 hover:bg-orange-100 transition-colors">
+                        <div className="flex justify-between items-center">
+                          <span className="bg-orange-500 text-white text-xs px-2.5 py-1 rounded-full font-bold shadow-sm">{tableNum}</span>
+                          <span className="text-xs text-gray-500 font-medium">
+                            {req.createdAt ? new Date(req.createdAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : ""}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-800 font-medium ml-1">{req.message}</p>
+                        <button
+                          onClick={() => onResolveRequest?.(req.id)}
+                          className="mt-1 bg-white border border-gray-300 text-gray-700 text-sm font-semibold py-1.5 px-4 rounded-lg hover:bg-gray-50 transition-colors self-end shadow-sm"
+                        >
+                          Đã Xử Lý ✓
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="relative" ref={ref}>
@@ -949,10 +1019,12 @@ const OrderItemRow = ({
   item,
   onStatusChange,
   onNote,
+  onRemoveItem,
 }: {
   item: OrderItem;
-  onStatusChange: (id: number, s: string) => void;
-  onNote: (id: number, text: string) => void;
+  onStatusChange: (orderId: string, orderItemId: string, status: string) => void;
+  onNote: (id: string, text: string) => void;
+  onRemoveItem: (orderId: string, orderItemId: string) => void;
 }) => (
   <div className="flex flex-col gap-3 py-2 border-b border-[#e8e8e8]">
     <div className="flex items-start justify-between gap-2">
@@ -961,9 +1033,18 @@ const OrderItemRow = ({
           <span className="text-[16px] font-medium text-[#202325]">
             {item.name}
           </span>
-          <span className="text-[16px] font-medium text-[#202325] shrink-0">
-            x{item.qty}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[16px] font-medium text-[#202325] shrink-0">
+              x{item.qty}
+            </span>
+            <button
+              onClick={() => onRemoveItem(item.orderId, item.id)}
+              className="text-[#dc2f02] hover:text-[#9d0208] transition-colors p-1"
+              title="Xóa món"
+            >
+              <TrashIcon />
+            </button>
+          </div>
         </div>
         {item.notes && (
           <p className="text-[12px] text-[#636566] mt-1">{item.notes}</p>
@@ -984,11 +1065,20 @@ const OrderItemRow = ({
         <div className="relative">
           <select
             value={item.status}
-            onChange={(e) => onStatusChange(item.id, e.target.value)}
-            className="appearance-none bg-white border border-[#e8e8e8] rounded-[12px] text-[10px] font-medium text-[#202325] pl-3 pr-6 py-1 outline-none cursor-pointer"
+            onChange={(e) => onStatusChange(item.orderId, item.id, e.target.value)}
+            className={`appearance-none border rounded-[12px] text-[10px] font-medium pl-3 pr-6 py-1 outline-none cursor-pointer ${
+              item.status === "Chờ duyệt"
+                ? "bg-[#ffedd5] text-[#f97316] border-[#f97316]"
+                : "bg-white text-[#202325] border-[#e8e8e8]"
+            }`}
           >
+            <option value="Chờ duyệt" hidden={item.status !== "Chờ duyệt"}>
+              Chờ duyệt
+            </option>
             {STATUS_OPTIONS.map((s) => (
-              <option key={s}>{s}</option>
+              <option key={s} value={s}>
+                {s}
+              </option>
             ))}
           </select>
           <ChevronDownIcon className="w-3 h-3 absolute right-1.5 top-1/2 -translate-y-1/2 text-[#636566] pointer-events-none" />
@@ -1007,9 +1097,9 @@ const AddNoteModal = ({
   onConfirm,
   onCancel,
 }: {
-  itemId: number;
+  itemId: string;
   initialText: string;
-  onConfirm: (id: number, text: string) => void;
+  onConfirm: (id: string, text: string) => void;
   onCancel: () => void;
 }) => {
   const [text, setText] = useState(initialText);
@@ -1610,20 +1700,28 @@ const CashierInvoicePanel = ({
 /* ─── Order panel ────────────────────────────────────────────────────────── */
 const OrderPanel = ({
   items,
+  hasSelectedMenu,
   onStatusChange,
   onCheckout,
   onCreateOrder,
+  onAddItems,
   onNote,
+  onRemoveItem,
+  onCancelOrder,
   selectedTable,
   invoiceTools,
   checkoutDisabled,
   checkoutLabel,
 }: {
   items: OrderItem[];
-  onStatusChange: (id: number, s: string) => void;
+  hasSelectedMenu: boolean;
+  onStatusChange: (orderId: string, orderItemId: string, status: string) => void;
   onCheckout: () => void;
   onCreateOrder: () => void;
-  onNote: (id: number, text: string) => void;
+  onAddItems: () => void;
+  onNote: (id: string, text: string) => void;
+  onRemoveItem: (orderId: string, orderItemId: string) => void;
+  onCancelOrder: (orderIds: string[]) => void;
   selectedTable: TableItem | null;
   invoiceTools: ReactNode;
   checkoutDisabled: boolean;
@@ -1693,6 +1791,7 @@ const OrderPanel = ({
               item={item}
               onStatusChange={onStatusChange}
               onNote={onNote}
+              onRemoveItem={onRemoveItem}
             />
           ))}
         {!isEmpty && invoiceTools}
@@ -1727,19 +1826,43 @@ const OrderPanel = ({
             className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1"
           >
             <span className="text-[16px] font-medium text-white">
-              Tạo Order
+              {hasSelectedMenu ? "Xác nhận Tạo Order" : "Tạo Order"}
+            </span>
+          </button>
+        ) : hasSelectedMenu ? (
+          <button
+            onClick={onAddItems}
+            className="bg-[#e85d04] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#dc2f02] transition-colors mt-1"
+          >
+            <span className="text-[16px] font-medium text-white">
+              Thêm món vào Đơn
             </span>
           </button>
         ) : (
-          <button
-            onClick={onCheckout}
-            disabled={checkoutDisabled}
-            className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span className="text-[16px] font-medium text-white">
-              {checkoutLabel}
-            </span>
-          </button>
+          <div className="flex flex-col gap-2 mt-1">
+            <button
+              onClick={onCheckout}
+              disabled={checkoutDisabled}
+              className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="text-[16px] font-medium text-white">
+                {checkoutLabel}
+              </span>
+            </button>
+            {items.length > 0 && (
+              <button
+                onClick={() => {
+                  const uniqueOrderIds = Array.from(
+                    new Set(items.map((i) => i.orderId).filter(Boolean)),
+                  );
+                  onCancelOrder(uniqueOrderIds);
+                }}
+                className="bg-transparent border border-[#dc2f02] flex items-center justify-center h-[40px] rounded-[12px] w-full hover:bg-[#dc2f02] hover:text-white text-[#dc2f02] transition-colors"
+              >
+                <span className="text-[14px] font-medium">Hủy đơn hàng</span>
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -1803,11 +1926,14 @@ const CashierOrders = () => {
   const [activeMenuCategory, setActiveMenuCategory] = useState("all");
   const [tables, setTables] = useState<TableItem[]>([]);
   const [tablesLoading, setTablesLoading] = useState(false);
-  const [orderItems, setOrderItems] = useState(ORDER_ITEMS);
+  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
+  const [activeOrders, setActiveOrders] = useState<Order[]>([]);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [assistanceRequests, setAssistanceRequests] = useState<AssistanceRequest[]>([]);
   const [search, setSearch] = useState("");
   const [noteModal, setNoteModal] = useState<{
     open: boolean;
-    itemId: number | null;
+    itemId: string | null;
     text: string;
   }>({ open: false, itemId: null, text: "" });
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -1874,6 +2000,65 @@ const CashierOrders = () => {
     loadMenu();
   }, []);
 
+  // "Call waiter" assistance requests raised by guests, polled for the bell dropdown.
+  useEffect(() => {
+    const fetchAssistance = async () => {
+      try {
+        setAssistanceRequests(await listPendingAssistance());
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    void fetchAssistance();
+    const intv = setInterval(fetchAssistance, 10000);
+    return () => clearInterval(intv);
+  }, []);
+
+  // Live orders, polled to keep table occupancy and the order panel in sync with the kitchen.
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const res = await listOrders(0, 100);
+        setActiveOrders(res.data);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    void fetchOrders();
+    const interval = setInterval(fetchOrders, 10000);
+    return () => clearInterval(interval);
+  }, [refreshTrigger]);
+
+  // Overlay live order totals onto the table grid (amount/guests/item count, orderId link).
+  useEffect(() => {
+    setTables((prevTables) =>
+      prevTables.map((t) => {
+        const tableOrders = activeOrders.filter(
+          (o) => o.tableId === t.id && ACTIVE_ORDER_STATUSES.includes(o.status),
+        );
+        if (tableOrders.length === 0) {
+          return { ...t, orderId: null };
+        }
+        const itemsCount = tableOrders.reduce(
+          (total, order) =>
+            total + order.items.reduce((sum, item) => sum + item.quantity, 0),
+          0,
+        );
+        const totalAmount = tableOrders.reduce(
+          (total, order) => total + order.totalAmount,
+          0,
+        );
+        return {
+          ...t,
+          occupied: true,
+          amount: totalAmount,
+          items: itemsCount,
+          orderId: tableOrders[0].id,
+        };
+      }),
+    );
+  }, [activeOrders]);
+
   useEffect(() => {
     if (successTotal !== null) {
       const t = setTimeout(() => setSuccessTotal(null), 3500);
@@ -1885,6 +2070,36 @@ const CashierOrders = () => {
   const tablesInArea =
     activeArea === "all" ? tables : tables.filter((t) => t.area === activeArea);
   const selectedTable = tables.find((t) => t.selected) ?? null;
+
+  // Build the order panel's item list for the selected table from the live orders feed.
+  useEffect(() => {
+    if (!selectedTable || !selectedTable.occupied) {
+      setOrderItems([]);
+      return;
+    }
+    const tableOrders = activeOrders.filter(
+      (o) => o.tableId === selectedTable.id && ACTIVE_ORDER_STATUSES.includes(o.status),
+    );
+    if (tableOrders.length === 0) {
+      setOrderItems([]);
+      return;
+    }
+    const combinedItems: OrderItem[] = tableOrders.flatMap((order) =>
+      order.items.map((i) => ({
+        id: i.orderItemId,
+        name: i.menuItemName,
+        qty: i.quantity,
+        price: i.unitPrice,
+        status: COOKING_STATUS_LABEL[i.cookingStatus],
+        notes: i.note || "",
+        orderId: order.id,
+      })),
+    );
+    setOrderItems(combinedItems);
+  }, [selectedTable?.id, selectedTable?.occupied, activeOrders]);
+
+  const selectedMenuItems = menuItems.filter((i) => i.qty > 0);
+  const hasSelectedMenu = selectedMenuItems.length > 0;
 
   const resetInvoiceLink = () => {
     setBackendOrderId("");
@@ -2082,13 +2297,45 @@ const CashierOrders = () => {
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
     resetInvoiceLink();
   };
-  const handleStatusChange = (id: number, status: string) =>
-    setOrderItems((items) =>
-      items.map((i) => (i.id === id ? { ...i, status } : i)),
-    );
-  const handleOpenNote = (itemId: number, currentText: string) =>
+
+  const handleStatusChange = async (
+    orderId: string,
+    orderItemId: string,
+    statusLabel: string,
+  ) => {
+    const status = COOKING_STATUS_FROM_LABEL[statusLabel];
+    if (!status) return;
+    try {
+      await updateOrderItemStatus(orderId, orderItemId, status);
+      setRefreshTrigger((t) => t + 1);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRemoveItem = async (orderId: string, orderItemId: string) => {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa món này khỏi đơn hàng?")) return;
+    try {
+      await removeOrderItem(orderId, orderItemId);
+      setRefreshTrigger((t) => t + 1);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleCancelOrder = async (orderIds: string[]) => {
+    if (!window.confirm("Bạn có chắc chắn muốn hủy đơn hàng này?")) return;
+    try {
+      await Promise.all(orderIds.map((orderId) => cancelOrder(orderId, "Hủy bởi thu ngân")));
+      setRefreshTrigger((t) => t + 1);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleOpenNote = (itemId: string, currentText: string) =>
     setNoteModal({ open: true, itemId, text: currentText });
-  const handleConfirmNote = (itemId: number, text: string) => {
+  const handleConfirmNote = (itemId: string, text: string) => {
     setOrderItems((items) =>
       items.map((i) => (i.id === itemId ? { ...i, notes: text } : i)),
     );
@@ -2096,7 +2343,49 @@ const CashierOrders = () => {
   };
   const handleCancelNote = () =>
     setNoteModal({ open: false, itemId: null, text: "" });
-  const handleCreateOrder = () => setTab("menu");
+
+  const handleCreateOrder = async () => {
+    if (!hasSelectedMenu) {
+      setTab("menu");
+      return;
+    }
+    if (!selectedTable) return;
+    try {
+      await createOrder(
+        selectedTable.id,
+        selectedMenuItems.map((m) => ({ menuItemId: m.id, quantity: m.qty })),
+      );
+      setMenuItems((items) => items.map((i) => ({ ...i, qty: 0 })));
+      setTab("table");
+      setRefreshTrigger((t) => t + 1);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAddItems = async () => {
+    if (!selectedTable || !selectedTable.orderId) return;
+    try {
+      await addOrderItems(
+        selectedTable.orderId,
+        selectedMenuItems.map((m) => ({ menuItemId: m.id, quantity: m.qty })),
+      );
+      setMenuItems((items) => items.map((i) => ({ ...i, qty: 0 })));
+      setTab("table");
+      setRefreshTrigger((t) => t + 1);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleResolveAssistance = async (id: string) => {
+    try {
+      await respondAssistance(id);
+      setAssistanceRequests((reqs) => reqs.filter((r) => r.id !== id));
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const filteredMenu = menuItems.filter((i) => {
     const matchesCategory =
@@ -2136,6 +2425,8 @@ const CashierOrders = () => {
         employeeName={user?.fullName ?? user?.username ?? "Nhân viên"}
         roleLabel={ROLE_LABEL[user?.role ?? ""] ?? user?.role ?? "Thu ngân"}
         role={user?.role}
+        assistanceRequests={assistanceRequests}
+        onResolveRequest={handleResolveAssistance}
         onLogout={handleLogout}
         onChangePassword={() => setShowChangePw(true)}
       />
@@ -2213,10 +2504,6 @@ const CashierOrders = () => {
             <h2 className="text-[24px] font-semibold text-[#202325]">
               {tab === "menu" ? "Chọn món" : "Chọn bàn"}
             </h2>
-            <div className="bg-white flex items-center gap-1.5 px-2 py-1 rounded-[16px]">
-              <BellIcon />
-              <span className="text-[14px] font-medium">1 lượt gọi món</span>
-            </div>
           </div>
 
           <div className="flex flex-col flex-1 gap-2.5 overflow-hidden">
@@ -2245,13 +2532,17 @@ const CashierOrders = () => {
 
         <OrderPanel
           items={orderItems}
+          hasSelectedMenu={hasSelectedMenu}
           onStatusChange={handleStatusChange}
           onCheckout={() => {
             setPaymentError("");
             setPaymentOpen(true);
           }}
           onCreateOrder={handleCreateOrder}
+          onAddItems={handleAddItems}
           onNote={handleOpenNote}
+          onRemoveItem={handleRemoveItem}
+          onCancelOrder={handleCancelOrder}
           selectedTable={selectedTable}
           checkoutDisabled={checkoutDisabled}
           checkoutLabel={checkoutLabel}
