@@ -60,9 +60,9 @@ const BranchSelect = () => {
 }
 
 const DashboardHeader = () => (
-  <header className="flex justify-between items-center mb-4">
-    <h1 className="text-h1 font-bold text-ink m-0">Bức tranh kinh doanh</h1>
-    <div className="w-[21rem] shrink-0">
+  <header className="flex flex-wrap justify-between items-center gap-x-4 gap-y-3 mb-4">
+    <h1 className="text-h1 font-bold text-ink m-0 min-w-0">Bức tranh kinh doanh</h1>
+    <div className="w-[21rem] max-w-full shrink-0 max-sm:w-full">
       <BranchSelect />
     </div>
   </header>

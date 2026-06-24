@@ -6,6 +6,7 @@ import MenuTable from './MenuTable'
 import AddItemModal from './AddItemModal'
 import type { NewItemKind } from './AddItemModal'
 import ConfirmDialog from './ConfirmDialog'
+import CategoryManagerModal from './CategoryManagerModal'
 import { searchItems, listCategories, setAvailability, deleteItem, bulkSetAvailability, bulkDeleteItems } from '../../services/menuService'
 import type { MenuItem, MenuCategory } from '../../services/menuService'
 import { ApiError } from '../../services/api'
@@ -34,6 +35,7 @@ const Menu = () => {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [showCategoryManager, setShowCategoryManager] = useState(false)
 
   const categoryNames = useMemo(() => new Map(categories.map(c => [c.id, c.name])), [categories])
 
@@ -172,6 +174,7 @@ const Menu = () => {
           status={status}
           onCategory={setCategoryId}
           onStatus={setStatus}
+          onManageCategories={() => setShowCategoryManager(true)}
         />
       </aside>
 
@@ -261,6 +264,14 @@ const Menu = () => {
           loading={bulkBusy}
           onConfirm={confirmBulkDelete}
           onCancel={() => setBulkDeleteOpen(false)}
+        />
+      )}
+
+      {showCategoryManager && (
+        <CategoryManagerModal
+          categories={categories}
+          onClose={() => setShowCategoryManager(false)}
+          onChanged={reload}
         />
       )}
     </div>

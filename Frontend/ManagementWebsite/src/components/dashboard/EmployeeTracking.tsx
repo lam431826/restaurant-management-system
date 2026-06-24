@@ -23,24 +23,26 @@ const EmployeeTracking = () => (
         ))}
       </div>
 
-      <table className="w-full border-collapse">
-        <thead>
-          <tr>
-            <th className="w-[4rem] text-left text-sm font-medium text-ink-subtle px-3 py-2 border-b border-line whitespace-nowrap">STT</th>
-            <th className="text-left text-sm font-medium text-ink-subtle px-3 py-2 border-b border-line whitespace-nowrap">Top 5 nhân viên làm nhiều giờ nhất</th>
-            <th className="text-right text-sm font-medium text-ink-subtle px-3 py-2 border-b border-line whitespace-nowrap">Số giờ làm</th>
-          </tr>
-        </thead>
-        <tbody>
-          {employeeData.top5.map(emp => (
-            <tr key={emp.rank} className="hover:bg-fill">
-              <td className="text-ink-subtle text-md px-3 py-3 border-b border-line">{emp.rank}</td>
-              <td className="text-md text-ink px-3 py-3 border-b border-line">{emp.name}</td>
-              <td className="text-right whitespace-nowrap text-ink-subtle text-md px-3 py-3 border-b border-line">{emp.hours}</td>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr>
+              <th className="w-[4rem] text-left text-sm font-medium text-ink-subtle px-3 py-2 border-b border-line whitespace-nowrap">STT</th>
+              <th className="text-left text-sm font-medium text-ink-subtle px-3 py-2 border-b border-line whitespace-nowrap">Top 5 nhân viên làm nhiều giờ nhất</th>
+              <th className="text-right text-sm font-medium text-ink-subtle px-3 py-2 border-b border-line whitespace-nowrap">Số giờ làm</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {employeeData.top5.map(emp => (
+              <tr key={emp.rank} className="hover:bg-fill">
+                <td className="text-ink-subtle text-md px-3 py-3 border-b border-line">{emp.rank}</td>
+                <td className="text-md text-ink px-3 py-3 border-b border-line">{emp.name}</td>
+                <td className="text-right whitespace-nowrap text-ink-subtle text-md px-3 py-3 border-b border-line">{emp.hours}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </CardBody>
     <CardFooter className="flex items-center gap-2 text-sm text-ink-subtle [&_a]:text-primary [&_a]:font-medium">
       <span className="text-lg">💡</span>

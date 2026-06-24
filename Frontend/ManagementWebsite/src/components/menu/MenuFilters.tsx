@@ -8,6 +8,7 @@ interface Props {
   status: MenuStatusFilter
   onCategory: (id: string) => void
   onStatus: (s: MenuStatusFilter) => void
+  onManageCategories: () => void
 }
 
 const ChevronDown = () => (
@@ -28,11 +29,16 @@ const FilterSelect = ({ placeholder }: { placeholder: string }) => (
 
 const MENU_TYPES = ['Đồ ăn', 'Đồ uống', 'Dịch vụ', 'Khác']
 
-const MenuFilters = ({ categories, categoryId, status, onCategory, onStatus }: Props) => (
+const MenuFilters = ({ categories, categoryId, status, onCategory, onStatus, onManageCategories }: Props) => (
   <div className="flex flex-col gap-5">
     {/* Nhóm món (danh mục) — functional */}
     <div className="flex flex-col gap-2">
-      <div className="text-md font-semibold text-ink">Nhóm món</div>
+      <div className="flex items-center justify-between">
+        <span className="text-md font-semibold text-ink">Nhóm món</span>
+        <button className="text-sm font-medium text-primary hover:underline" onClick={onManageCategories}>
+          Quản lý
+        </button>
+      </div>
       <div className="flex flex-col gap-0.5">
         <button
           className={`text-left px-3 py-2 rounded-md text-md transition-colors ${categoryId === '' ? 'bg-primary-25 text-primary font-medium' : 'text-ink hover:bg-fill'}`}

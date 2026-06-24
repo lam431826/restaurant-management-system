@@ -204,6 +204,10 @@
   .kv-dashboard-kpi.kv-card-group-horizontal > * + * > .kv-card {
     border-left: var(--kv-border-width) solid var(--kv-border-subtle) !important;
   }
+  /* Stack the KPI cards vertically on small screens instead of squeezing them. */
+  @media (max-width: 900px) {
+    .kv-dashboard-kpi.kv-card-group-horizontal { flex-direction: column; }
+  }
 
   .kv-dashboard-kpi .kv-card.net-revenue {
     background: linear-gradient(90deg, var(--kv-primary-50) 0%, var(--kv-primary-75) 100%);

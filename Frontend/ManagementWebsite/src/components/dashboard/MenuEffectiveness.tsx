@@ -141,6 +141,7 @@ const MenuEffectiveness = () => {
               </div>
             </div>
 
+            <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
                 <tr>
@@ -161,6 +162,7 @@ const MenuEffectiveness = () => {
                 ))}
               </tbody>
             </table>
+            </div>
 
             <div className="flex items-center justify-between mt-3 text-sm text-ink-subtle">
               <span>1-{detail.length} trong {detail.length}</span>
