@@ -4,19 +4,20 @@ import com.rms.restaurant.common.utils.wrapper.ApiResponse;
 import com.rms.restaurant.module.payment.dto.ApplyDiscountRequest;
 import com.rms.restaurant.module.payment.dto.GenerateInvoiceRequest;
 import com.rms.restaurant.module.payment.dto.InvoiceDetailResponse;
-import com.rms.restaurant.module.payment.dto.InvoiceListItem;
 import com.rms.restaurant.module.payment.dto.InvoiceResponse;
+import com.rms.restaurant.module.payment.dto.InvoiceSummaryResponse;
+import com.rms.restaurant.module.payment.dto.SendInvoiceResponse;
 import com.rms.restaurant.module.payment.service.InvoiceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
@@ -29,15 +30,15 @@ public class InvoiceController {
     private final InvoiceService invoiceService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','CASHIER')")
-    public ResponseEntity<ApiResponse<List<InvoiceListItem>>> list() {
-        return ResponseEntity.ok(ApiResponse.success(invoiceService.listInvoices()));
+    public ResponseEntity<ApiResponse<List<InvoiceSummaryResponse>>> getAll(
+            @RequestParam(required = false) Boolean paid,
+            @RequestParam(required = false) String orderId) {
+        return ResponseEntity.ok(ApiResponse.success(invoiceService.getAll(paid, orderId)));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','CASHIER')")
-    public ResponseEntity<ApiResponse<InvoiceDetailResponse>> getDetail(@PathVariable String id) {
-        return ResponseEntity.ok(ApiResponse.success(invoiceService.getDetail(id)));
+    public ResponseEntity<ApiResponse<InvoiceDetailResponse>> getById(@PathVariable String id) {
+        return ResponseEntity.ok(ApiResponse.success(invoiceService.getById(id)));
     }
 
     @PostMapping
@@ -46,6 +47,14 @@ public class InvoiceController {
         return ResponseEntity
                 .created(URI.create("/api/invoices/" + created.id()))
                 .body(ApiResponse.success(created));
+    }
+
+    @PostMapping("/{id}/send")
+    public ResponseEntity<ApiResponse<SendInvoiceResponse>> send(@PathVariable String id) {
+        return ResponseEntity.ok(ApiResponse.success(
+                invoiceService.sendInvoice(id),
+                "Invoice sent successfully"
+        ));
     }
 
     @PutMapping("/{id}/discount")

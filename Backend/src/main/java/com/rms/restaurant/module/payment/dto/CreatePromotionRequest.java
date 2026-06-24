@@ -17,5 +17,6 @@ public record CreatePromotionRequest(
         BigDecimal discountPercent,
         BigDecimal discountAmount,
         LocalDate validFrom,
-        LocalDate validTo
+        LocalDate validTo,
+        Integer usageLimit
 ) {}

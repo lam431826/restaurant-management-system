@@ -18,5 +18,6 @@ public record UpdatePromotionRequest(
         BigDecimal discountAmount,
         LocalDate validFrom,
         LocalDate validTo,
+        Integer usageLimit,
         Boolean active
 ) {}

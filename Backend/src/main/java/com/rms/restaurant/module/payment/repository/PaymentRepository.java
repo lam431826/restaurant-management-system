@@ -10,6 +10,8 @@ import java.util.List;
 
 public interface PaymentRepository extends JpaRepository<Payment, String> {
     List<Payment> findByInvoiceId(String invoiceId);
+    List<Payment> findAllByOrderByCreatedAtDesc();
+    List<Payment> findByInvoiceIdOrderByCreatedAtDesc(String invoiceId);
 
     @Query("SELECT p FROM Payment p WHERE p.status = 'PAID' AND p.createdAt >= :from AND p.createdAt <= :to")
     List<Payment> findPaidPaymentsBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);

@@ -11,5 +11,8 @@ public record PromotionResponse(
         BigDecimal discountAmount,
         LocalDate validFrom,
         LocalDate validTo,
-        boolean active
+        boolean active,
+        Integer usageLimit,
+        Integer usedCount,
+        Integer remainingUses
 ) {}

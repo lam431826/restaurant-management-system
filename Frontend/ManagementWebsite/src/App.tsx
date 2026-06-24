@@ -15,6 +15,8 @@ import LoginPage from "./components/auth/LoginPage";
 import EmployeeLoginPage from "./components/auth/EmployeeLoginPage";
 import ForgotPasswordPage from "./components/auth/ForgotPasswordPage";
 import NewPasswordPage from "./components/auth/NewPasswordPage";
+import PromotionManagement from "./components/promotions/PromotionManagement";
+
 //import { ProtectedRoute } from './contexts/AuthContext'
 
 function App() {
@@ -57,19 +59,13 @@ function App() {
           }
         />
         {/* ── Manager role (dashboard chrome) ── */}
-        <Route
-          path="/manager"
-          element={
-            <ProtectedRoute>
-              <Layout />
-            </ProtectedRoute>
-          }
-        >
+        <Route path="/manager" element={<Layout />}>
           <Route index element={<Navigate to="/manager/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="products" element={<Menu />} />
           <Route path="rooms" element={<Rooms />} />
           <Route path="invoices" element={<Invoices />} />
+          <Route path="promotions" element={<PromotionManagement />} />
           <Route path="employees" element={<Employees />} />
         </Route>
 
