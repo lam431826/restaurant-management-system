@@ -34,7 +34,7 @@ export default function AssistanceButton({ tableToken }) {
     }
 
     try {
-      const res = await fetch('http://localhost:8088/api/guest/assistance', {
+      const res = await fetch('/api/guest/assistance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
