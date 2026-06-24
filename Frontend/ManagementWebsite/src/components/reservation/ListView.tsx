@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import type { Reservation, ReservationStatus } from '../../data/mockData'
 import { reservationStatusMeta } from '../../data/mockData'
 import type { TableDto } from '../../api/tables'
@@ -78,44 +79,98 @@ const AssignTableDropdown = ({
 }: { tables: TableDto[]; partySize: number; onAssign: (id: string) => void; onClose: () => void }) => {
   const areas = useMemo(() => [...new Set(tables.map(t => t.area))], [tables])
   const available = tables.filter(t => t.status === 'AVAILABLE' && t.capacity >= partySize)
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const [coords, setCoords] = useState<{ top: number; bottom: number; left: number; width: number } | null>(null)
+
+  useEffect(() => {
+    const update = () => {
+      if (anchorRef.current) {
+        const parent = anchorRef.current.parentElement
+        if (parent) {
+          const rect = parent.getBoundingClientRect()
+          setCoords({
+            top: rect.top,
+            bottom: rect.bottom,
+            left: rect.left,
+            width: rect.width,
+          })
+        }
+      }
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (!(e.target as Element).closest('[data-assign-dropdown]')) onClose()
+      const target = e.target as Element
+      if (anchorRef.current && anchorRef.current.parentElement?.contains(target)) return
+      if (dropdownRef.current && dropdownRef.current.contains(target)) return
+      onClose()
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [onClose])
 
+  const preferTop = coords ? (window.innerHeight - coords.bottom < 280 && coords.top > 280) : false
+
+  const style: React.CSSProperties = coords ? {
+    position: 'fixed',
+    left: `${coords.left}px`,
+    zIndex: 9999,
+    ...(preferTop ? {
+      bottom: `${window.innerHeight - coords.top + 4}px`,
+    } : {
+      top: `${coords.bottom + 4}px`,
+    })
+  } : { visibility: 'hidden' }
+
   return (
-    <div data-assign-dropdown className="absolute left-0 top-full mt-1 z-50 w-64 bg-card border border-line rounded-lg shadow-lg overflow-hidden">
-      <div className="px-3 py-2 text-sm font-semibold text-ink-subtle border-b border-line">
-        Chọn bàn <span className="font-normal text-ink-muted">({partySize} khách)</span>
-      </div>
-      <div className="max-h-60 overflow-y-auto">
-        {areas.map(area => {
-          const areaAvail = available.filter(t => t.area === area)
-          if (!areaAvail.length) return null
-          return (
-            <div key={area}>
-              <div className="px-3 py-1 text-xs font-semibold text-ink-muted bg-fill">{area}</div>
-              {areaAvail.map(t => (
-                <button key={t.id} onClick={() => onAssign(t.id)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-md text-ink hover:bg-primary-25 cursor-pointer">
-                  <span>{t.name}</span>
-                  <span className="text-xs text-ink-muted">{t.capacity} chỗ</span>
-                </button>
-              ))}
-            </div>
-          )
-        })}
-        {!available.length && (
-          <div className="px-3 py-4 text-md text-ink-muted text-center">
-            Không có bàn trống phù hợp với {partySize} khách
+    <>
+      <div ref={anchorRef} className="hidden" />
+      {createPortal(
+        <div
+          ref={dropdownRef}
+          data-assign-dropdown
+          className="w-64 bg-card border border-line rounded-lg shadow-lg overflow-hidden"
+          style={style}
+        >
+          <div className="px-3 py-2 text-sm font-semibold text-ink-subtle border-b border-line">
+            Chọn bàn <span className="font-normal text-ink-muted">({partySize} khách)</span>
           </div>
-        )}
-      </div>
-    </div>
+          <div className="max-h-60 overflow-y-auto">
+            {areas.map(area => {
+              const areaAvail = available.filter(t => t.area === area)
+              if (!areaAvail.length) return null
+              return (
+                <div key={area}>
+                  <div className="px-3 py-1 text-xs font-semibold text-ink-muted bg-fill">{area}</div>
+                  {areaAvail.map(t => (
+                    <button key={t.id} onClick={() => onAssign(t.id)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-md text-ink hover:bg-primary-25 cursor-pointer">
+                      <span>{t.name}</span>
+                      <span className="text-xs text-ink-muted">{t.capacity} chỗ</span>
+                    </button>
+                  ))}
+                </div>
+              )
+            })}
+            {!available.length && (
+              <div className="px-3 py-4 text-md text-ink-muted text-center">
+                Không có bàn trống phù hợp với {partySize} khách
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
   )
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 export type EmpStatus = 'active' | 'inactive'
 
@@ -32,11 +33,56 @@ const PickerSelect = ({
 }) => {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const [coords, setCoords] = useState<{ top: number; bottom: number; left: number; width: number } | null>(null)
+
   useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    if (!open) return
+    const update = () => {
+      if (ref.current) {
+        const rect = ref.current.getBoundingClientRect()
+        setCoords({
+          top: rect.top,
+          bottom: rect.bottom,
+          left: rect.left,
+          width: rect.width,
+        })
+      }
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [open])
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (ref.current && ref.current.contains(target)) return
+      if (dropdownRef.current && dropdownRef.current.contains(target)) return
+      setOpen(false)
+    }
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [])
+
+  const preferTop = coords ? (window.innerHeight - coords.bottom < 250 && coords.top > 250) : false
+
+  const dropdownStyle: React.CSSProperties = coords ? {
+    position: 'fixed',
+    left: `${coords.left}px`,
+    width: `${coords.width}px`,
+    zIndex: 9999,
+    ...(preferTop ? {
+      bottom: `${window.innerHeight - coords.top + 4}px`,
+    } : {
+      top: `${coords.bottom + 4}px`,
+    })
+  } : { visibility: 'hidden' }
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -59,8 +105,12 @@ const PickerSelect = ({
           <ChevronDown />
         </span>
       </button>
-      {open && (
-        <div className="absolute top-[calc(100%+0.4rem)] left-0 right-0 bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] max-h-[24rem] overflow-y-auto py-1">
+      {open && createPortal(
+        <div
+          ref={dropdownRef}
+          className="bg-card border border-line-default rounded-md shadow-md max-h-[24rem] overflow-y-auto py-1"
+          style={dropdownStyle}
+        >
           {options.map(opt => (
             <div
               key={opt}
@@ -70,7 +120,8 @@ const PickerSelect = ({
               {opt}
             </div>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

@@ -16,6 +16,7 @@ import {
   noShowReservation,
   updateReservation,
   transferTable as apiTransferTable,
+  type ReservationDto,
 } from '../../api/reservations'
 import { listTables, type TableDto } from '../../api/tables'
 import { pollReservationNotifResult, getNotificationLogs, type NotificationLogDto } from '../../api/notifications'
