@@ -15,5 +15,5 @@ public record OrderResponse(
         BigDecimal totalAmount,
         LocalDateTime createdAt
 ) {
-    public record ItemLine(String orderItemId, String menuItemId, String menuItemName, int quantity, BigDecimal unitPrice, String note, com.rms.restaurant.common.utils.enums.CookingStatus cookingStatus) {}
+    public record ItemLine(String orderItemId, String menuItemId, String menuItemName, int quantity, BigDecimal unitPrice, String note, com.rms.restaurant.common.utils.enums.CookingStatus cookingStatus, String rejectionNote) {}
 }

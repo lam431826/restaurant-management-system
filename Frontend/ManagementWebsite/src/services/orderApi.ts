@@ -2,7 +2,7 @@ import { api } from './api'
 import type { PageResponse } from './api'
 
 export type OrderStatus = 'PENDING' | 'ACCEPTED' | 'PREPARING' | 'SERVED' | 'CLOSED' | 'CANCELLED'
-export type CookingStatus = 'PENDING' | 'COOKING' | 'READY' | 'SERVED'
+export type CookingStatus = 'PENDING' | 'COOKING' | 'READY' | 'SERVED' | 'REJECTED'
 
 export interface OrderItemLine {
   orderItemId: string
@@ -12,6 +12,7 @@ export interface OrderItemLine {
   unitPrice: number
   note: string | null
   cookingStatus: CookingStatus
+  rejectionNote?: string | null
 }
 
 export interface Order {
@@ -61,10 +62,14 @@ export const updateOrderItemStatus = (
   orderId: string,
   orderItemId: string,
   status: CookingStatus,
-): Promise<Order> => api.put<Order>(`/api/orders/${orderId}/items/${orderItemId}/status`, { status })
+  rejectionNote?: string
+): Promise<Order> => api.put<Order>(`/api/orders/${orderId}/items/${orderItemId}/status`, { status, rejectionNote })
 
 export const acceptOrder = (orderId: string): Promise<Order> =>
   api.put<Order>(`/api/orders/${orderId}/accept`, {})
+
+export const closeOrder = (orderId: string): Promise<Order> =>
+  api.put<Order>(`/api/orders/${orderId}/close`, {})
 
 export const updateOrderStatus = (orderId: string, status: OrderStatus): Promise<Order> =>
   api.put<Order>(`/api/orders/${orderId}/status`, { status })
