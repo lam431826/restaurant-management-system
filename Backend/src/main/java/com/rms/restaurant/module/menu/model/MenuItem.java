@@ -18,6 +18,9 @@ public class MenuItem {
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
+    @Column(length = 50)
+    private String code;
+
     @Column(name = "category_id", nullable = false)
     private String categoryId;
 
@@ -27,11 +30,27 @@ public class MenuItem {
     @Column(nullable = false, precision = 12, scale = 0)
     private BigDecimal price;
 
+    @Column(name = "cost_price", precision = 12, scale = 0)
+    private BigDecimal costPrice;
+
     @Column(columnDefinition = "NVARCHAR(MAX)")
     private String description;
 
     @Column(name = "image_url", length = 500)
     private String imageUrl;
+
+    @Column(name = "menu_type", length = 50)
+    private String menuType;
+
+    @Column(name = "item_type", length = 50)
+    private String itemType;
+
+    @Column(length = 50)
+    private String tag;
+
+    @Builder.Default
+    @Column(name = "track_stock", nullable = false)
+    private boolean trackStock = false;
 
     @Builder.Default
     @Column(nullable = false)

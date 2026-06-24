@@ -87,7 +87,9 @@ const Navbar = () => {
               {item.children.length > 0 && (
                 <div
                   className={[
-                    'kv-float-container hidden group-hover:flex left-0 right-auto top-[calc(100%+0.9rem)]',
+                    "kv-float-container hidden group-hover:flex left-0 right-auto top-[calc(100%+0.9rem)]",
+                    // Transparent bridge over the gap so moving from the tab to the menu keeps it open
+                    "before:content-[''] before:absolute before:left-0 before:right-0 before:-top-[0.9rem] before:h-[0.9rem]",
                     isGroup2 ? 'flex-row min-w-[38rem]' : 'flex-col',
                   ].join(' ')}
                 >

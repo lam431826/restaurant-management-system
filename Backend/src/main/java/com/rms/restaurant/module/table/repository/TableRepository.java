@@ -20,4 +20,8 @@ public interface TableRepository extends JpaRepository<RestaurantTable, String> 
     /** Returns IDs of tables whose capacity falls in [min, max] — used for tier-based availability. */
     @Query("SELECT t.id FROM RestaurantTable t WHERE t.capacity >= :min AND t.capacity <= :max")
     List<String> findIdsByCapacityBetween(@Param("min") int min, @Param("max") int max);
+    List<RestaurantTable> findAllByOrderByDisplayOrderAscNameAsc();
+    boolean existsByNameIgnoreCase(String name);
+    boolean existsByArea(String area);
+    Optional<RestaurantTable> findByNameIgnoreCase(String name);
 }

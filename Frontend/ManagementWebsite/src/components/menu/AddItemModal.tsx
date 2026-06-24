@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Product } from '../../data/mockData'
+import { createItem, updateItem, createCategory, uploadImage } from '../../services/menuService'
+import type { MenuItem, MenuCategory, CreateItemInput } from '../../services/menuService'
+import { ApiError, assetUrl } from '../../services/api'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 export type NewItemKind = 'mon' | 'topping' | 'dichvu' | 'combo'
@@ -7,13 +9,9 @@ export type NewItemKind = 'mon' | 'topping' | 'dichvu' | 'combo'
 interface KindConfig {
   title: string
   nameLabel: string
-  /** show Giá vốn field */
   cost: boolean
-  /** show the "Chọn loại món" preparation cards */
   prep: boolean
-  /** show "Quản lý tồn tại Kho hàng" toggle */
   inventory: boolean
-  /** show combo component picker */
   components: boolean
   defaultMenuType: string
 }
@@ -44,11 +42,6 @@ const InfoIcon = () => (
     <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
   </svg>
 )
-const ImagePlaceholderIcon = ({ size = 26 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" />
-  </svg>
-)
 const TrashIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
@@ -74,7 +67,6 @@ const FieldLabel = ({ children, required, info }: { children: React.ReactNode; r
   </span>
 )
 
-/* Inline dropdown select */
 const FormSelect = ({
   value, options, placeholder, onChange, footer, bold,
 }: {
@@ -99,7 +91,7 @@ const FormSelect = ({
         onClick={() => setOpen(o => !o)}
         className={`flex items-center justify-between gap-2 w-full h-12 px-4 bg-field border rounded-lg cursor-pointer transition-colors ${open ? 'border-primary' : 'border-line-default hover:border-line-strong'}`}
       >
-        <span className={`text-md truncate ${value ? `text-ink ${bold ? 'font-semibold' : ''}` : 'text-ink-muted'} ${bold && !value ? 'mx-auto font-semibold' : ''}`}>
+        <span className={`text-md truncate ${value ? `text-ink ${bold ? 'font-semibold' : ''}` : 'text-ink-muted'}`}>
           {value || placeholder}
         </span>
         <ChevronDown />
@@ -129,7 +121,6 @@ const FormSelect = ({
   )
 }
 
-/* Money input (thousands separators) */
 const MoneyInput = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => {
   const display = value === '' ? '' : Number(value).toLocaleString('vi-VN')
   return (
@@ -143,7 +134,6 @@ const MoneyInput = ({ value, onChange }: { value: string; onChange: (v: string) 
   )
 }
 
-/* Toggle switch */
 const Switch = ({ on, onToggle }: { on: boolean; onToggle: () => void }) => (
   <button
     type="button"
@@ -160,36 +150,57 @@ interface ComboLine { id: number; name: string; qty: number; price: number }
 /* ─── Main modal ─────────────────────────────────────────────────────────── */
 interface Props {
   kind: NewItemKind
+  item?: MenuItem
+  categories: MenuCategory[]
   nextCode: string
-  groups: string[]
   onClose: () => void
-  onSave: (product: Product, addAnother: boolean) => void
+  onSaved: () => void
+  onCategoryCreated: () => void
 }
 
 const TABS = ['Thông tin', 'Mô tả chi tiết', 'Chi nhánh kinh doanh'] as const
 type Tab = (typeof TABS)[number]
 
-const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
+const AddItemModal = ({ kind, item, categories, nextCode, onClose, onSaved, onCategoryCreated }: Props) => {
+  const isEdit = !!item
   const cfg = KIND_CONFIG[kind]
 
-  const [name, setName] = useState('')
-  const [code, setCode] = useState('')
-  const [group, setGroup] = useState('')
-  const [tag, setTag] = useState('')
-  const [menuType, setMenuType] = useState(cfg.defaultMenuType)
-  const [cost, setCost] = useState('')
-  const [price, setPrice] = useState('')
-  const [description, setDescription] = useState('')
-  const [prep, setPrep] = useState<'che-bien' | 'thuong'>('thuong')
-  const [trackStock, setTrackStock] = useState(false)
-  const [allowSell, setAllowSell] = useState(true)
-  const [image, setImage] = useState<string | null>(null)
+  const [cats, setCats] = useState<MenuCategory[]>(categories)
+  const [name, setName] = useState(item?.name ?? '')
+  const [code, setCode] = useState(item?.code ?? '')
+  const [categoryId, setCategoryId] = useState(item?.categoryId ?? categories[0]?.id ?? '')
+  const [tag, setTag] = useState(item?.tag ?? '')
+  const [menuType, setMenuType] = useState(item?.menuType ?? cfg.defaultMenuType)
+  const [cost, setCost] = useState(item?.costPrice != null ? String(item.costPrice) : '')
+  const [price, setPrice] = useState(item != null ? String(item.price) : '')
+  const [description, setDescription] = useState(item?.description ?? '')
+  const [prep, setPrep] = useState<'che-bien' | 'thuong'>(item?.itemType === 'Món chế biến' ? 'che-bien' : 'thuong')
+  const [trackStock, setTrackStock] = useState(item?.trackStock ?? false)
+  const [allowSell, setAllowSell] = useState(item?.available ?? true)
+  const [image, setImage] = useState(item?.imageUrl ?? '')
   const [components, setComponents] = useState<ComboLine[]>([])
   const [tab, setTab] = useState<Tab>('Thông tin')
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
 
-  const fileRef = useRef<HTMLInputElement>(null)
   const nameRef = useRef<HTMLInputElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const handlePickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUploading(true)
+    setError('')
+    try {
+      setImage(await uploadImage(file))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Tải ảnh thất bại.')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   useEffect(() => {
     nameRef.current?.focus()
@@ -203,9 +214,19 @@ const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
     }
   }, [onClose])
 
-  const pickImage = (file?: File) => {
-    if (!file) return
-    setImage(URL.createObjectURL(file))
+  const selectedCategoryName = cats.find(c => c.id === categoryId)?.name ?? ''
+
+  const handleCreateCategory = async () => {
+    const nameInput = window.prompt('Tên nhóm món mới:')?.trim()
+    if (!nameInput) return
+    try {
+      const created = await createCategory({ name: nameInput, displayOrder: cats.length })
+      setCats(prev => [...prev, created])
+      setCategoryId(created.id)
+      onCategoryCreated()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Tạo nhóm thất bại.')
+    }
   }
 
   const addComponentLine = () => setComponents(c => [...c, { id: Date.now(), name: '', qty: 1, price: 0 }])
@@ -219,42 +240,53 @@ const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
     : kind === 'combo' ? 'Combo - Buffet'
     : prep === 'che-bien' ? 'Món chế biến' : 'Món thường'
 
-  const buildProduct = (): Product | null => {
-    if (!name.trim()) {
-      setError('Vui lòng nhập tên')
-      setTab('Thông tin')
-      nameRef.current?.focus()
-      return null
-    }
+  const buildInput = (): CreateItemInput | null => {
+    if (!name.trim()) { setError('Vui lòng nhập tên'); setTab('Thông tin'); nameRef.current?.focus(); return null }
+    if (!categoryId) { setError('Vui lòng chọn nhóm món'); setTab('Thông tin'); return null }
     const finalPrice = cfg.components ? (price === '' ? comboTotal : Number(price)) : Number(price || 0)
     return {
-      code: code.trim() || nextCode,
+      categoryId,
       name: name.trim(),
-      group: group || 'Chưa phân nhóm',
+      price: finalPrice,
+      code: code.trim() || nextCode,
+      costPrice: cost === '' ? undefined : Number(cost),
+      description: description.trim() || undefined,
+      imageUrl: image.trim() || undefined,
       menuType,
       itemType,
-      price: finalPrice,
-      img: image ?? '/assets/products/placeholder.jpg',
+      tag: tag || undefined,
+      trackStock,
+      available: allowSell,
     }
   }
 
-  const handleSave = (addAnother: boolean) => {
-    const p = buildProduct()
-    if (!p) return
-    onSave(p, addAnother)
-    if (addAnother) {
-      setName(''); setCode(''); setGroup(''); setTag(''); setCost(''); setPrice('')
-      setDescription(''); setImage(null); setComponents([]); setMenuType(cfg.defaultMenuType)
-      setPrep('thuong'); setTrackStock(false); setError(''); setTab('Thông tin')
-      nameRef.current?.focus()
-    }
+  const resetForm = () => {
+    setName(''); setCode(''); setTag(''); setCost(''); setPrice('')
+    setDescription(''); setImage(''); setComponents([]); setMenuType(cfg.defaultMenuType)
+    setPrep('thuong'); setTrackStock(false); setAllowSell(true); setError(''); setTab('Thông tin')
+    nameRef.current?.focus()
   }
 
-  const Thumb = () => (
-    <button type="button" onClick={() => fileRef.current?.click()} className="w-[3.6rem] h-[3.6rem] rounded-lg bg-fill border border-line-default flex items-center justify-center text-ink-disabled hover:border-primary hover:text-primary transition-colors">
-      <ImagePlaceholderIcon size={18} />
-    </button>
-  )
+  const handleSave = async (addAnother: boolean) => {
+    const input = buildInput()
+    if (!input) return
+    setSaving(true)
+    setError('')
+    try {
+      if (isEdit && item) {
+        await updateItem(item.id, input)
+      } else {
+        await createItem(input)
+      }
+      onSaved()
+      if (addAnother && !isEdit) resetForm()
+      else onClose()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Lưu món thất bại.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div
@@ -265,7 +297,7 @@ const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
       <div className="w-full max-w-[100rem] my-4 bg-card rounded-xl shadow-lg flex flex-col max-h-[calc(100vh-4rem)]">
         {/* Header */}
         <div className="flex items-center justify-between px-7 h-18 border-b border-line shrink-0">
-          <h2 className="text-h2 font-bold text-ink">{cfg.title}</h2>
+          <h2 className="text-h2 font-bold text-ink">{isEdit ? 'Cập nhật món' : cfg.title}</h2>
           <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-lg text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">
             <CloseIcon />
           </button>
@@ -291,7 +323,6 @@ const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
             <div className="flex gap-7">
               {/* Form column */}
               <div className="flex-1 min-w-0 flex flex-col gap-5">
-                {/* Tên */}
                 <div className="flex flex-col gap-2">
                   <FieldLabel required>{cfg.nameLabel}</FieldLabel>
                   <input
@@ -303,25 +334,20 @@ const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
                   />
                 </div>
 
-                {/* Nhóm món + Tag món */}
                 <div className="grid grid-cols-2 gap-5">
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between">
-                      <FieldLabel>Nhóm món</FieldLabel>
-                      <button
-                        type="button"
-                        className="text-md font-medium text-primary hover:underline"
-                        onClick={() => { const g = window.prompt('Tên nhóm món mới:')?.trim(); if (g) setGroup(g) }}
-                      >
+                      <FieldLabel required>Nhóm món</FieldLabel>
+                      <button type="button" className="text-md font-medium text-primary hover:underline" onClick={handleCreateCategory}>
                         Tạo mới
                       </button>
                     </div>
                     <FormSelect
-                      value={group}
-                      options={groups}
+                      value={selectedCategoryName}
+                      options={cats.map(c => c.name)}
                       placeholder="Chọn nhóm món"
-                      onChange={setGroup}
-                      footer={{ label: 'Tạo nhóm mới', onClick: () => { const g = window.prompt('Tên nhóm món mới:')?.trim(); if (g) setGroup(g) } }}
+                      onChange={n => { const c = cats.find(x => x.name === n); if (c) setCategoryId(c.id) }}
+                      footer={{ label: 'Tạo nhóm mới', onClick: handleCreateCategory }}
                     />
                   </div>
                   <div className="flex flex-col gap-2">
@@ -330,7 +356,6 @@ const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
                   </div>
                 </div>
 
-                {/* Loại thực đơn + Mã món */}
                 <div className="grid grid-cols-2 gap-5">
                   <div className="flex flex-col gap-2">
                     <FieldLabel>Loại thực đơn</FieldLabel>
@@ -338,20 +363,13 @@ const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
                   </div>
                   <div className="flex flex-col gap-2">
                     <FieldLabel>Mã món</FieldLabel>
-                    <input className={inputCls} placeholder="Tự động" value={code} onChange={e => setCode(e.target.value)} />
+                    <input className={inputCls} placeholder={nextCode + ' (tự động)'} value={code} onChange={e => setCode(e.target.value)} />
                   </div>
                 </div>
 
                 {/* Giá & Thuế card */}
                 <div className="border border-line-default rounded-xl p-5 flex flex-col gap-4">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <h3 className="text-lg font-bold text-ink">Giá &amp; Thuế</h3>
-                    <div className="flex items-center gap-3 text-sm text-ink-subtle">
-                      <span>Lợi nhuận ròng dự kiến: <span className="text-ink font-medium">-</span></span>
-                      <span className="w-px h-4 bg-line" />
-                      <span className="inline-flex items-center gap-1">Tỷ lệ giá vốn/giá trước thuế: <span className="text-ink font-medium">-</span> <InfoIcon /></span>
-                    </div>
-                  </div>
+                  <h3 className="text-lg font-bold text-ink">Giá &amp; Thuế</h3>
                   {cfg.cost && (
                     <div className="flex flex-col gap-2 max-w-[26rem]">
                       <FieldLabel info>Giá vốn</FieldLabel>
@@ -361,9 +379,9 @@ const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
                   <div className="flex flex-col gap-2 max-w-[26rem]">
                     <div className="flex items-center justify-between">
                       <FieldLabel>Giá bán</FieldLabel>
-                      <button type="button" className="inline-flex items-center gap-1 text-md font-medium text-primary hover:underline" onClick={() => window.alert('Thiết lập giá theo bảng giá')}>
-                        <TagIcon /> Thiết lập giá
-                      </button>
+                      <span className="inline-flex items-center gap-1 text-md font-medium text-ink-muted">
+                        <TagIcon /> {cfg.components ? `Gợi ý: ${comboTotal.toLocaleString('vi-VN')}` : ''}
+                      </span>
                     </div>
                     <MoneyInput value={price} onChange={setPrice} />
                   </div>
@@ -404,7 +422,7 @@ const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
                   </div>
                 )}
 
-                {/* Quản lý tồn tại Kho hàng */}
+                {/* Quản lý tồn kho */}
                 {cfg.inventory && (
                   <div className="border border-line-default rounded-xl px-5 py-4 flex items-center justify-between gap-4">
                     <div>
@@ -415,7 +433,7 @@ const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
                   </div>
                 )}
 
-                {/* Combo components */}
+                {/* Combo components (cosmetic — not yet persisted) */}
                 {cfg.components && (
                   <div className="border border-line-default rounded-xl p-5 flex flex-col gap-3">
                     <div className="flex items-center justify-between">
@@ -445,28 +463,28 @@ const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
               </div>
 
               {/* Image column */}
-              <div className="w-[24rem] shrink-0 flex gap-3">
-                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => pickImage(e.target.files?.[0])} />
+              <div className="w-[24rem] shrink-0 flex flex-col gap-3">
+                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={handlePickFile} />
                 <div
-                  onClick={() => fileRef.current?.click()}
-                  className="relative flex-1 aspect-square rounded-xl bg-fill flex flex-col items-center justify-center gap-2 text-ink-muted cursor-pointer transition-colors hover:bg-fill-default overflow-hidden"
+                  onClick={() => !uploading && fileRef.current?.click()}
+                  className="relative aspect-square rounded-xl bg-fill flex flex-col items-center justify-center gap-2 text-ink-muted cursor-pointer transition-colors hover:bg-fill-default overflow-hidden"
                 >
-                  {image ? (
+                  {image.trim() ? (
                     <>
-                      <img src={image} alt="" className="absolute inset-0 w-full h-full object-cover" />
-                      <button type="button" onClick={e => { e.stopPropagation(); setImage(null) }} className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-lg bg-[rgba(0,0,0,0.5)] text-white cursor-pointer hover:bg-[rgba(0,0,0,0.7)]" aria-label="Xóa ảnh">
+                      <img src={assetUrl(image)} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                      <button type="button" onClick={e => { e.stopPropagation(); setImage('') }} className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-lg bg-[rgba(0,0,0,0.5)] text-white cursor-pointer hover:bg-[rgba(0,0,0,0.7)]" aria-label="Xóa ảnh">
                         <TrashIcon />
                       </button>
                     </>
                   ) : (
                     <>
                       <span className="px-4 py-1.5 rounded-lg bg-card border border-line-default text-md font-medium text-ink">Thêm ảnh</span>
-                      <span className="text-md text-center px-4">Mỗi ảnh không quá 2 MB</span>
+                      <span className="text-md text-center px-4">JPEG, PNG, WEBP, GIF · tối đa 5 MB</span>
                     </>
                   )}
-                </div>
-                <div className="flex flex-col gap-3 shrink-0">
-                  {Array.from({ length: 4 }).map((_, i) => <Thumb key={i} />)}
+                  {uploading && (
+                    <div className="absolute inset-0 bg-[rgba(255,255,255,0.65)] flex items-center justify-center text-md font-medium text-ink">Đang tải ảnh…</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -501,9 +519,11 @@ const AddItemModal = ({ kind, nextCode, groups, onClose, onSave }: Props) => {
           </label>
           <div className="flex items-center gap-3">
             {error && <span className="text-md text-danger mr-2">{error}</span>}
-            <button className="kv-btn kv-btn-text-primary h-11 text-ink-subtle" onClick={onClose}>Bỏ qua</button>
-            <button className="kv-btn kv-btn-outline-neutral h-11" onClick={() => handleSave(true)}>Lưu &amp; Tạo thêm món</button>
-            <button className="kv-btn kv-btn-primary h-11 px-6" onClick={() => handleSave(false)}>Lưu</button>
+            <button className="kv-btn kv-btn-text-primary h-11 text-ink-subtle" disabled={saving} onClick={onClose}>Bỏ qua</button>
+            {!isEdit && (
+              <button className="kv-btn kv-btn-outline-neutral h-11" disabled={saving} onClick={() => handleSave(true)}>Lưu &amp; Tạo thêm món</button>
+            )}
+            <button className="kv-btn kv-btn-primary h-11 px-6" disabled={saving} onClick={() => handleSave(false)}>{saving ? 'Đang lưu…' : 'Lưu'}</button>
           </div>
         </div>
       </div>

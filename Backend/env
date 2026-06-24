@@ -1,0 +1,33 @@
+# ============================================================
+# Database
+# ============================================================
+DB_USERNAME=sa
+DB_PASSWORD=123
+
+# ============================================================
+# JWT
+# ============================================================
+JWT_SECRET=pY6x9W4VhN8vU1sLQ3mZ7eT2cR5kJ0bFqX9nD4gH8wP1yM6tS3uK7aC2rV5zE0lN
+
+# ============================================================
+# Mail
+# ============================================================
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=chiswiub2@gmail.com
+MAIL_PASSWORD=lzga jcfm oehg bkwl
+
+# ============================================================
+# Integration — Messaging
+# ============================================================
+MESSAGING_PROVIDER=sendgrid
+SENDGRID_API_KEY=
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+
+# ============================================================
+# Integration — Payment
+# ============================================================
+PAYMENT_PROVIDER=vnpay
+VNPAY_TMN_CODE=
+VNPAY_HASH_SECRET=

@@ -27,6 +27,17 @@ public class RestaurantTable {
     @Column(length = 50)
     private String area;
 
+    @Column(length = 255)
+    private String note;
+
+    @Builder.Default
+    @Column(name = "display_order", nullable = false)
+    private int displayOrder = 0;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean active = true;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private TableStatus status;

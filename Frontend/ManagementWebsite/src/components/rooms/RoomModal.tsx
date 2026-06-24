@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Room } from '../../data/mockData'
+import { createTable, updateTable } from '../../services/tableService'
+import type { TableItem, TableInput } from '../../services/tableService'
+import { ApiError } from '../../services/api'
 
 interface Props {
-  /** undefined = create mode, a Room = edit mode */
-  room?: Room
+  /** undefined = create mode, a TableItem = edit mode */
+  table?: TableItem
   areas: string[]
   onClose: () => void
-  onSave: (room: Room, addAnother: boolean) => void
-  onCreateArea: () => string | undefined
+  onSaved: () => void
+  onCreateArea: () => void
 }
 
 const CloseIcon = () => (
@@ -86,15 +88,16 @@ const AreaSelect = ({
   )
 }
 
-const RoomModal = ({ room, areas, onClose, onSave, onCreateArea }: Props) => {
-  const isEdit = !!room
-  const [name, setName] = useState(room?.name ?? '')
-  const [area, setArea] = useState(room?.area ?? '')
-  const [seats, setSeats] = useState(room ? String(room.seats) : '')
-  const [order, setOrder] = useState(room ? String(room.order) : '')
-  const [note, setNote] = useState(room?.note ?? '')
-  const [active, setActive] = useState(room?.active ?? true)
+const RoomModal = ({ table, areas, onClose, onSaved, onCreateArea }: Props) => {
+  const isEdit = !!table
+  const [name, setName] = useState(table?.name ?? '')
+  const [area, setArea] = useState(table?.area ?? '')
+  const [seats, setSeats] = useState(table ? String(table.seats) : '')
+  const [order, setOrder] = useState(table ? String(table.order) : '')
+  const [note, setNote] = useState(table?.note ?? '')
+  const [active, setActive] = useState(table?.active ?? true)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const nameRef = useRef<HTMLInputElement>(null)
 
@@ -110,25 +113,36 @@ const RoomModal = ({ room, areas, onClose, onSave, onCreateArea }: Props) => {
     }
   }, [onClose])
 
-  const handleSave = (addAnother: boolean) => {
+  const handleSave = async (addAnother: boolean) => {
     if (!name.trim()) {
       setError('Vui lòng nhập tên phòng/bàn')
       nameRef.current?.focus()
       return
     }
-    const result: Room = {
-      id: room?.id ?? Date.now(),
+    setSaving(true)
+    setError('')
+    const input: TableInput = {
       name: name.trim(),
-      note: note.trim(),
-      area: area || 'Chưa phân khu',
+      note: note.trim() || undefined,
+      area: area || undefined,
       seats: Number(seats || 0),
-      active,
       order: Number(order || 0),
+      active,
     }
-    onSave(result, addAnother)
-    if (addAnother && !isEdit) {
-      setName(''); setSeats(''); setOrder(''); setNote(''); setActive(true); setError('')
-      nameRef.current?.focus()
+    try {
+      if (isEdit && table) await updateTable(table.id, input)
+      else await createTable(input)
+      onSaved()
+      if (addAnother && !isEdit) {
+        setName(''); setSeats(''); setOrder(''); setNote(''); setActive(true); setError('')
+        nameRef.current?.focus()
+      } else {
+        onClose()
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Lưu phòng/bàn thất bại.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -163,7 +177,7 @@ const RoomModal = ({ room, areas, onClose, onSave, onCreateArea }: Props) => {
               <button
                 type="button"
                 className="text-md text-primary font-medium cursor-pointer hover:underline"
-                onClick={() => { const a = onCreateArea(); if (a) setArea(a) }}
+                onClick={onCreateArea}
               >
                 Tạo mới
               </button>
@@ -173,7 +187,7 @@ const RoomModal = ({ room, areas, onClose, onSave, onCreateArea }: Props) => {
               value={area}
               options={areas}
               onChange={setArea}
-              onCreate={() => { const a = onCreateArea(); if (a) setArea(a) }}
+              onCreate={onCreateArea}
             />
           </Field>
 
@@ -217,11 +231,11 @@ const RoomModal = ({ room, areas, onClose, onSave, onCreateArea }: Props) => {
         <div className="flex items-center justify-between gap-4 px-6 py-3 border-t border-line shrink-0">
           <span className="text-md text-danger">{error}</span>
           <div className="flex items-center gap-2">
-            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose}>Bỏ qua</button>
+            <button className="kv-btn kv-btn-outline-neutral h-10" disabled={saving} onClick={onClose}>Bỏ qua</button>
             {!isEdit && (
-              <button className="kv-btn kv-btn-outline-primary h-10" onClick={() => handleSave(true)}>Lưu &amp; Thêm mới</button>
+              <button className="kv-btn kv-btn-outline-primary h-10" disabled={saving} onClick={() => handleSave(true)}>Lưu &amp; Thêm mới</button>
             )}
-            <button className="kv-btn kv-btn-primary h-10" onClick={() => handleSave(false)}>Lưu</button>
+            <button className="kv-btn kv-btn-primary h-10" disabled={saving} onClick={() => handleSave(false)}>{saving ? 'Đang lưu…' : 'Lưu'}</button>
           </div>
         </div>
       </div>

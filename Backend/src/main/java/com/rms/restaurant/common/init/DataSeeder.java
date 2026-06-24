@@ -1,5 +1,7 @@
 package com.rms.restaurant.common.init;
 
+import com.rms.restaurant.common.utils.enums.CookingStatus;
+import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.enums.UserRole;
 import com.rms.restaurant.common.utils.enums.UserStatus;
@@ -9,6 +11,9 @@ import com.rms.restaurant.module.menu.model.MenuCategory;
 import com.rms.restaurant.module.menu.model.MenuItem;
 import com.rms.restaurant.module.menu.repository.MenuCategoryRepository;
 import com.rms.restaurant.module.menu.repository.MenuItemRepository;
+import com.rms.restaurant.module.order.model.Order;
+import com.rms.restaurant.module.order.model.OrderItem;
+import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.payment.model.Promotion;
 import com.rms.restaurant.module.payment.repository.PromotionRepository;
 import com.rms.restaurant.module.table.model.RestaurantTable;
@@ -36,6 +41,7 @@ public class DataSeeder implements ApplicationRunner {
     private final MenuCategoryRepository menuCategoryRepository;
     private final MenuItemRepository menuItemRepository;
     private final PromotionRepository promotionRepository;
+    private final OrderRepository orderRepository;
 
     record SeedUser(String username, String fullName, String email, String phone,
                     UserRole role, UserStatus status, String rawPassword) {}
@@ -54,6 +60,7 @@ public class DataSeeder implements ApplicationRunner {
         seedTables();
         seedMenu();
         seedPromotions();
+        //seedOrders();
     }
 
     private void seedUsers() {
@@ -245,5 +252,89 @@ public class DataSeeder implements ApplicationRunner {
                 .build()
         ));
         log.info("DataSeeder: created 4 promotion(s)");
+    }
+
+    private void seedOrders() {
+        if (orderRepository.count() > 0) return;
+
+        List<RestaurantTable> tables = tableRepository.findAll();
+        List<MenuItem> menuItems = menuItemRepository.findAll();
+        if (tables.isEmpty() || menuItems.isEmpty()) return;
+
+        String cashierId = userRepository.findByUsername("cashier01").map(User::getId).orElse(null);
+
+        RestaurantTable table1 = findTableByName(tables, "Bàn 01");
+        RestaurantTable table2 = findTableByName(tables, "Bàn 02");
+        RestaurantTable table3 = findTableByName(tables, "Bàn 03");
+        RestaurantTable table4 = findTableByName(tables, "Bàn 04");
+        RestaurantTable table5 = findTableByName(tables, "Bàn 05");
+        if (table1 == null || table2 == null || table3 == null || table4 == null || table5 == null) return;
+
+        Order order1 = Order.builder()
+                .tableId(table1.getId())
+                .status(OrderStatus.PENDING)
+                .note("Khách yêu cầu không hành")
+                .build();
+        addOrderItem(order1, menuItems, "Salad Cá Hồi", 2, CookingStatus.PENDING);
+        addOrderItem(order1, menuItems, "Coca Cola", 2, CookingStatus.PENDING);
+
+        Order order2 = Order.builder()
+                .tableId(table2.getId())
+                .cashierId(cashierId)
+                .status(OrderStatus.ACCEPTED)
+                .build();
+        addOrderItem(order2, menuItems, "Súp Cua Măng Tây", 1, CookingStatus.PENDING);
+        addOrderItem(order2, menuItems, "Nước Cam Ép", 2, CookingStatus.PENDING);
+
+        Order order3 = Order.builder()
+                .tableId(table3.getId())
+                .cashierId(cashierId)
+                .status(OrderStatus.PREPARING)
+                .build();
+        addOrderItem(order3, menuItems, "Bò Bít Tết Úc", 1, CookingStatus.COOKING);
+        addOrderItem(order3, menuItems, "Cá Chẽm Sốt Cam", 1, CookingStatus.COOKING);
+
+        Order order4 = Order.builder()
+                .tableId(table4.getId())
+                .cashierId(cashierId)
+                .status(OrderStatus.SERVED)
+                .build();
+        addOrderItem(order4, menuItems, "Gà Nướng Mật Ong", 2, CookingStatus.SERVED);
+        addOrderItem(order4, menuItems, "Pizza Hải Sản", 1, CookingStatus.SERVED);
+
+        Order order5 = Order.builder()
+                .tableId(table5.getId())
+                .cashierId(cashierId)
+                .status(OrderStatus.CLOSED)
+                .build();
+        addOrderItem(order5, menuItems, "Bánh Flan Caramen", 2, CookingStatus.SERVED);
+        addOrderItem(order5, menuItems, "Dĩa Trái Cây Thập Cẩm", 1, CookingStatus.SERVED);
+
+        Order order6 = Order.builder()
+                .tableId(table1.getId())
+                .status(OrderStatus.CANCELLED)
+                .note("Khách đổi ý hủy đơn")
+                .build();
+        addOrderItem(order6, menuItems, "Coca Cola", 1, CookingStatus.PENDING);
+
+        orderRepository.saveAll(List.of(order1, order2, order3, order4, order5, order6));
+        log.info("DataSeeder: created 6 order(s) covering all order statuses");
+    }
+
+    private RestaurantTable findTableByName(List<RestaurantTable> tables, String name) {
+        return tables.stream().filter(t -> name.equals(t.getName())).findFirst().orElse(null);
+    }
+
+    private void addOrderItem(Order order, List<MenuItem> menuItems, String menuItemName, int quantity, CookingStatus cookingStatus) {
+        MenuItem menuItem = menuItems.stream().filter(m -> menuItemName.equals(m.getName())).findFirst().orElse(null);
+        if (menuItem == null) return;
+        order.getItems().add(OrderItem.builder()
+                .order(order)
+                .menuItemId(menuItem.getId())
+                .menuItemName(menuItem.getName())
+                .quantity(quantity)
+                .unitPrice(menuItem.getPrice())
+                .cookingStatus(cookingStatus)
+                .build());
     }
 }

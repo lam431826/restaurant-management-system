@@ -27,6 +27,7 @@ public enum ApplicationError {
     RESERVATION_NOT_FOUND("Reservation not found", HttpStatus.NOT_FOUND),
     INVOICE_NOT_FOUND("Invoice not found", HttpStatus.NOT_FOUND),
     MENU_ITEM_NOT_FOUND("Menu item not found", HttpStatus.NOT_FOUND),
+    CATEGORY_NOT_FOUND("Menu category not found", HttpStatus.NOT_FOUND),
     SHIFT_NOT_FOUND("Shift not found", HttpStatus.NOT_FOUND),
     PROMOTION_NOT_FOUND("Promotion not found", HttpStatus.NOT_FOUND),
 
@@ -36,8 +37,19 @@ public enum ApplicationError {
     DUPLICATE_PHONE("Phone number already in use", HttpStatus.CONFLICT),
     USER_NOT_UNLOCKABLE("Only locked accounts can be unlocked", HttpStatus.UNPROCESSABLE_ENTITY),
 
+    // Menu Management
+    DUPLICATE_CATEGORY_NAME("A category with this name already exists", HttpStatus.CONFLICT),
+    CATEGORY_HAS_ITEMS("Category still has items; reassign or remove them first", HttpStatus.CONFLICT),
+    MENU_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
+
+    // Table Management
+    DUPLICATE_TABLE_NAME("A table with this name already exists", HttpStatus.CONFLICT),
+    AREA_NOT_FOUND("Area not found", HttpStatus.NOT_FOUND),
+    DUPLICATE_AREA_NAME("An area with this name already exists", HttpStatus.CONFLICT),
+    AREA_HAS_TABLES("Area still has tables; reassign or remove them first", HttpStatus.CONFLICT),
+    TABLE_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
+
     // Business Rules
-    DUPLICATE_TABLE_NAME("Table name already exists", HttpStatus.CONFLICT),
     TABLE_NOT_AVAILABLE("Table is not available for this time slot", HttpStatus.CONFLICT),
     TABLE_FULLY_BOOKED("No available tables for the requested time slot", HttpStatus.CONFLICT),
     TABLE_CAPACITY_EXCEEDED("Party size exceeds table capacity", HttpStatus.UNPROCESSABLE_ENTITY),

@@ -1,4 +1,14 @@
-import { useState } from 'react'
+import type { MenuCategory } from '../../services/menuService'
+
+export type MenuStatusFilter = 'all' | 'active' | 'inactive'
+
+interface Props {
+  categories: MenuCategory[]
+  categoryId: string
+  status: MenuStatusFilter
+  onCategory: (id: string) => void
+  onStatus: (s: MenuStatusFilter) => void
+}
 
 const ChevronDown = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-ink-muted shrink-0">
@@ -16,106 +26,67 @@ const FilterSelect = ({ placeholder }: { placeholder: string }) => (
   </button>
 )
 
-const segBtn = (active: boolean) =>
-  [
-    'flex-1 h-8 px-3 border rounded-full text-md font-medium cursor-pointer transition-colors',
-    active
-      ? 'bg-primary border-primary text-white font-semibold'
-      : 'bg-field border-line-default text-ink-subtle hover:border-primary hover:text-primary',
-  ].join(' ')
-
 const MENU_TYPES = ['Đồ ăn', 'Đồ uống', 'Dịch vụ', 'Khác']
 
-const MenuFilters = () => {
-  const [checked, setChecked] = useState<Record<string, boolean>>({})
-  const [direct, setDirect] = useState<'all' | 'yes' | 'no'>('all')
-  const [status, setStatus] = useState<'active' | 'inactive' | 'all'>('active')
-
-  const toggle = (k: string) => setChecked(c => ({ ...c, [k]: !c[k] }))
-
-  return (
-    <div className="flex flex-col gap-5">
-      {/* Loại thực đơn */}
-      <div className="flex flex-col gap-2">
-        <div className="text-md font-semibold text-ink">Loại thực đơn</div>
-        <div className="flex flex-col gap-1.5 mt-1">
-          {MENU_TYPES.map(t => (
-            <label key={t} className="kv-check">
-              <input type="checkbox" checked={!!checked[t]} onChange={() => toggle(t)} />
-              <span className="kv-check-box" />
-              <span className="kv-check-text">{t}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {/* Loại món */}
-      <div className="flex flex-col gap-2">
-        <div className="text-md font-semibold text-ink">Loại món</div>
-        <FilterSelect placeholder="Chọn loại món" />
-      </div>
-
-      {/* Nhóm món */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between text-md font-semibold text-ink">
-          <span>Nhóm món</span>
-          <a href="#" className="text-sm font-medium text-primary">Tạo mới</a>
-        </div>
-        <FilterSelect placeholder="Chọn nhóm món" />
-      </div>
-
-      {/* Tồn kho */}
-      <div className="flex flex-col gap-2">
-        <div className="text-md font-semibold text-ink">Tồn kho</div>
+const MenuFilters = ({ categories, categoryId, status, onCategory, onStatus }: Props) => (
+  <div className="flex flex-col gap-5">
+    {/* Nhóm món (danh mục) — functional */}
+    <div className="flex flex-col gap-2">
+      <div className="text-md font-semibold text-ink">Nhóm món</div>
+      <div className="flex flex-col gap-0.5">
         <button
-          className="flex items-center justify-between w-full h-10 px-3 bg-field border border-line-default rounded-md cursor-pointer transition-colors hover:border-line-strong"
-          type="button"
+          className={`text-left px-3 py-2 rounded-md text-md transition-colors ${categoryId === '' ? 'bg-primary-25 text-primary font-medium' : 'text-ink hover:bg-fill'}`}
+          onClick={() => onCategory('')}
         >
-          <span className="text-md text-ink">Tất cả</span>
-          <ChevronDown />
+          Tất cả nhóm
         </button>
-      </div>
-
-      {/* Bán trực tiếp */}
-      <div className="flex flex-col gap-2">
-        <div className="text-md font-semibold text-ink">Bán trực tiếp</div>
-        <div className="flex gap-2">
-          {([['all', 'Tất cả'], ['yes', 'Có'], ['no', 'Không']] as const).map(([id, label]) => (
-            <button key={id} className={segBtn(direct === id)} onClick={() => setDirect(id)}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Thuộc tính */}
-      <div className="flex flex-col gap-2">
-        <div className="text-md font-semibold text-ink">Thuộc tính</div>
-        <FilterSelect placeholder="Size" />
-      </div>
-
-      {/* Trạng thái */}
-      <div className="flex flex-col gap-2">
-        <div className="text-md font-semibold text-ink">Trạng thái</div>
-        <div className="flex flex-col gap-1.5 mt-1">
-          {([['active', 'Đang kinh doanh'], ['inactive', 'Ngừng kinh doanh'], ['all', 'Tất cả']] as const).map(
-            ([id, label]) => (
-              <label key={id} className="kv-radio">
-                <input
-                  type="radio"
-                  name="menu-status"
-                  checked={status === id}
-                  onChange={() => setStatus(id)}
-                />
-                <span className="kv-radio-dot" />
-                <span className="kv-radio-text">{label}</span>
-              </label>
-            )
-          )}
-        </div>
+        {categories.map(c => (
+          <button
+            key={c.id}
+            className={`flex items-center justify-between px-3 py-2 rounded-md text-md transition-colors ${categoryId === c.id ? 'bg-primary-25 text-primary font-medium' : 'text-ink hover:bg-fill'}`}
+            onClick={() => onCategory(c.id)}
+          >
+            <span className="truncate">{c.name}</span>
+            <span className="text-sm text-ink-muted ml-2 shrink-0">{c.itemCount}</span>
+          </button>
+        ))}
       </div>
     </div>
-  )
-}
+
+    {/* Trạng thái — functional */}
+    <div className="flex flex-col gap-2">
+      <div className="text-md font-semibold text-ink">Trạng thái</div>
+      <div className="flex flex-col gap-1.5 mt-1">
+        {([['active', 'Đang bán'], ['inactive', 'Hết hàng'], ['all', 'Tất cả']] as const).map(([id, label]) => (
+          <label key={id} className="kv-radio">
+            <input type="radio" name="menu-status" checked={status === id} onChange={() => onStatus(id)} />
+            <span className="kv-radio-dot" />
+            <span className="kv-radio-text">{label}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+
+    {/* Loại thực đơn (cosmetic) */}
+    <div className="flex flex-col gap-2">
+      <div className="text-md font-semibold text-ink">Loại thực đơn</div>
+      <div className="flex flex-col gap-1.5 mt-1">
+        {MENU_TYPES.map(t => (
+          <label key={t} className="kv-check">
+            <input type="checkbox" disabled />
+            <span className="kv-check-box" />
+            <span className="kv-check-text">{t}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+
+    {/* Tồn kho (cosmetic) */}
+    <div className="flex flex-col gap-2">
+      <div className="text-md font-semibold text-ink">Tồn kho</div>
+      <FilterSelect placeholder="Tất cả" />
+    </div>
+  </div>
+)
 
 export default MenuFilters

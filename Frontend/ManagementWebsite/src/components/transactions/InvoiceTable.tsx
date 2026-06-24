@@ -1,36 +1,27 @@
 import { Fragment, useState } from 'react'
-import type { Invoice } from '../../data/mockData'
-import { invoiceTotals } from '../../data/mockData'
+import type { InvoiceListItem } from '../../services/invoiceService'
+import { formatDateTime, paymentMethodLabel } from '../../services/invoiceService'
 import InvoiceDetail from './InvoiceDetail'
 
 interface Props {
-  invoices: Invoice[]
+  invoices: InvoiceListItem[]
+  loading: boolean
+  total: number
 }
 
-const vnd = (n: number) => n.toLocaleString('vi-VN')
+const vnd = (n: number | null | undefined) => (n == null ? '0' : n.toLocaleString('vi-VN'))
 
 const th = 'sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-3 py-3 whitespace-nowrap'
 const td = 'text-md text-ink px-3 py-3 align-middle'
 
-const InvoiceTable = ({ invoices }: Props) => {
-  const [expanded, setExpanded] = useState<string | null>(invoices[0]?.code ?? null)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-
-  const allSelected = invoices.length > 0 && selected.size === invoices.length
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(invoices.map(i => i.code)))
-  const toggleRow = (code: string) =>
-    setSelected(s => {
-      const next = new Set(s)
-      if (next.has(code)) next.delete(code); else next.add(code)
-      return next
-    })
+const InvoiceTable = ({ invoices, loading, total }: Props) => {
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   const sum = invoices.reduce(
     (acc, inv) => {
-      const { totalAmount } = invoiceTotals(inv)
-      acc.total += totalAmount
-      acc.discount += inv.discount
-      acc.paid += inv.paid
+      acc.total += inv.totalAmount
+      acc.discount += inv.discountAmount ?? 0
+      acc.paid += inv.paid ? inv.totalAmount : 0
       return acc
     },
     { total: 0, discount: 0, paid: 0 }
@@ -42,57 +33,51 @@ const InvoiceTable = ({ invoices }: Props) => {
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              <th className={`${th} w-[4rem] text-center`}>
-                <label className="kv-check justify-center">
-                  <input type="checkbox" checked={allSelected} onChange={toggleAll} />
-                  <span className="kv-check-box" />
-                </label>
-              </th>
-              <th className={`${th} w-[13rem]`}>Mã hóa đơn</th>
-              <th className={`${th} w-[15rem]`}>Thời gian (Giờ đi)</th>
-              <th className={th}>Khách hàng</th>
+              <th className={`${th} w-[15rem]`}>Mã hóa đơn</th>
+              <th className={`${th} w-[16rem]`}>Thời gian</th>
+              <th className={th}>Phòng/bàn</th>
+              <th className={`${th} w-[13rem]`}>Phương thức</th>
+              <th className={`${th} w-[14rem]`}>Trạng thái</th>
               <th className={`${th} text-right w-[15rem]`}>Tổng tiền hàng</th>
               <th className={`${th} text-right w-[11rem]`}>Giảm giá</th>
               <th className={`${th} text-right w-[13rem]`}>Khách đã trả</th>
             </tr>
           </thead>
           <tbody>
-            {/* Summary row */}
-            <tr className="border-b border-line">
-              <td className={td} /><td className={td} /><td className={td} /><td className={td} />
-              <td className={`${td} text-right font-bold`}>{vnd(sum.total)}</td>
-              <td className={`${td} text-right font-bold`}>{vnd(sum.discount)}</td>
-              <td className={`${td} text-right font-bold`}>{vnd(sum.paid)}</td>
-            </tr>
+            {invoices.length > 0 && (
+              <tr className="border-b border-line">
+                <td className={td} /><td className={td} /><td className={td} /><td className={td} /><td className={td} />
+                <td className={`${td} text-right font-bold`}>{vnd(sum.total)}</td>
+                <td className={`${td} text-right font-bold`}>{vnd(sum.discount)}</td>
+                <td className={`${td} text-right font-bold`}>{vnd(sum.paid)}</td>
+              </tr>
+            )}
 
             {invoices.map(inv => {
-              const { totalAmount } = invoiceTotals(inv)
-              const isOpen = expanded === inv.code
+              const isOpen = expanded === inv.id
               return (
-                <Fragment key={inv.code}>
+                <Fragment key={inv.id}>
                   <tr
                     className={`border-b border-line cursor-pointer ${isOpen ? 'bg-primary-50' : 'hover:bg-primary-25'}`}
-                    onClick={() => setExpanded(isOpen ? null : inv.code)}
+                    onClick={() => setExpanded(isOpen ? null : inv.id)}
                   >
-                    <td className={`${td} text-center`} onClick={e => e.stopPropagation()}>
-                      <label className="kv-check justify-center">
-                        <input type="checkbox" checked={selected.has(inv.code)} onChange={() => toggleRow(inv.code)} />
-                        <span className="kv-check-box" />
-                      </label>
-                    </td>
-                    <td className={`${td} font-medium ${isOpen ? 'text-primary' : 'text-ink'}`}>{inv.code}</td>
+                    <td className={`${td} font-medium ${isOpen ? 'text-primary' : 'text-ink'}`}>{inv.id}</td>
+                    <td className={td}>{formatDateTime(inv.createdAt)}</td>
+                    <td className={td}>{inv.tableName || <span className="text-ink-muted">—</span>}</td>
+                    <td className={td}>{paymentMethodLabel(inv.paymentMethod)}</td>
                     <td className={td}>
-                      <span className="whitespace-pre-line">{inv.time.replace(' ', '\n')}</span>
+                      <span className={`inline-flex items-center text-sm font-medium rounded-full px-2 py-0.5 ${inv.paid ? 'bg-primary-50 text-primary-700' : 'bg-fill text-ink-muted'}`}>
+                        {inv.paid ? 'Đã thanh toán' : 'Chưa thanh toán'}
+                      </span>
                     </td>
-                    <td className={td}>{inv.customer}</td>
-                    <td className={`${td} text-right`}>{vnd(totalAmount)}</td>
-                    <td className={`${td} text-right`}>{vnd(inv.discount)}</td>
-                    <td className={`${td} text-right`}>{vnd(inv.paid)}</td>
+                    <td className={`${td} text-right`}>{vnd(inv.totalAmount)}</td>
+                    <td className={`${td} text-right`}>{vnd(inv.discountAmount)}</td>
+                    <td className={`${td} text-right`}>{vnd(inv.paid ? inv.totalAmount : 0)}</td>
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td colSpan={7} className="p-0">
-                        <InvoiceDetail invoice={inv} />
+                      <td colSpan={8} className="p-0" onClick={e => e.stopPropagation()}>
+                        <InvoiceDetail invoiceId={inv.id} />
                       </td>
                     </tr>
                   )}
@@ -102,7 +87,9 @@ const InvoiceTable = ({ invoices }: Props) => {
 
             {invoices.length === 0 && (
               <tr>
-                <td className={`${td} text-center text-ink-muted`} colSpan={7}>Không tìm thấy hóa đơn nào</td>
+                <td className={`${td} text-center text-ink-muted`} colSpan={8}>
+                  {loading ? 'Đang tải…' : 'Không tìm thấy hóa đơn nào'}
+                </td>
               </tr>
             )}
           </tbody>
@@ -110,7 +97,7 @@ const InvoiceTable = ({ invoices }: Props) => {
       </div>
 
       <div className="flex items-center gap-4 px-4 py-3 border-t border-line shrink-0">
-        <span className="text-md text-ink-subtle">Hiển thị 1 - {invoices.length} trên tổng số {invoices.length}</span>
+        <span className="text-md text-ink-subtle">Hiển thị {invoices.length} trên tổng số {total}</span>
       </div>
     </div>
   )

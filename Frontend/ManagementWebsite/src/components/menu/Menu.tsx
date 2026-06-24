@@ -1,47 +1,178 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import MenuFilters from './MenuFilters'
+import type { MenuStatusFilter } from './MenuFilters'
 import MenuToolbar from './MenuToolbar'
 import MenuTable from './MenuTable'
 import AddItemModal from './AddItemModal'
 import type { NewItemKind } from './AddItemModal'
-import { products as initialProducts } from '../../data/mockData'
-import type { Product } from '../../data/mockData'
+import ConfirmDialog from './ConfirmDialog'
+import { searchItems, listCategories, setAvailability, deleteItem, bulkSetAvailability, bulkDeleteItems } from '../../services/menuService'
+import type { MenuItem, MenuCategory } from '../../services/menuService'
+import { ApiError } from '../../services/api'
+
+const PAGE_SIZE = 20
 
 const Menu = () => {
+  const [categories, setCategories] = useState<MenuCategory[]>([])
+  const [items, setItems] = useState<MenuItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+
   const [search, setSearch] = useState('')
-  const [items, setItems] = useState<Product[]>(initialProducts)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [categoryId, setCategoryId] = useState('')
+  const [status, setStatus] = useState<MenuStatusFilter>('all')
+
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
   const [modalKind, setModalKind] = useState<NewItemKind | null>(null)
+  const [editItem, setEditItem] = useState<MenuItem | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<MenuItem | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
-  const filtered = items.filter(
-    p =>
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.code.toLowerCase().includes(search.toLowerCase())
-  )
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
 
-  // Next auto product code (SP000026, …) based on the highest existing number
+  const categoryNames = useMemo(() => new Map(categories.map(c => [c.id, c.name])), [categories])
+
+  const loadCategories = useCallback(async () => {
+    try {
+      setCategories(await listCategories())
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không tải được danh mục.')
+    }
+  }, [])
+
+  const loadItems = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    setSelected(new Set())
+    try {
+      const available = status === 'all' ? undefined : status === 'active'
+      const res = await searchItems({
+        q: debouncedSearch || undefined,
+        categoryId: categoryId || undefined,
+        available,
+        page,
+        size: PAGE_SIZE,
+      })
+      setItems(res.data)
+      setTotal(res.pagination.total)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không tải được danh sách món.')
+      setItems([])
+      setTotal(0)
+    } finally {
+      setLoading(false)
+    }
+  }, [debouncedSearch, categoryId, status, page])
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  useEffect(() => { setPage(1) }, [debouncedSearch, categoryId, status])
+
+  useEffect(() => { void loadCategories() }, [loadCategories])
+  useEffect(() => { void loadItems() }, [loadItems])
+
+  // Auto product code (SP000026, …) based on the highest existing numeric code.
   const nextCode = useMemo(() => {
     const max = items.reduce((m, p) => {
-      const n = parseInt(p.code.replace(/\D/g, ''), 10)
+      const n = parseInt((p.code ?? '').replace(/\D/g, ''), 10)
       return Number.isFinite(n) ? Math.max(m, n) : m
-    }, 0)
+    }, 25)
     return 'SP' + String(max + 1).padStart(6, '0')
   }, [items])
 
-  const groups = useMemo(
-    () => Array.from(new Set(items.map(p => p.group))).filter(Boolean),
-    [items]
-  )
+  const reload = () => { void loadItems(); void loadCategories() }
 
-  const handleSave = (product: Product, addAnother: boolean) => {
-    setItems(prev => [product, ...prev])
-    if (!addAnother) setModalKind(null)
+  const handleToggleAvailability = async (item: MenuItem) => {
+    try {
+      await setAvailability(item.id, !item.available)
+      setItems(prev => prev.map(i => (i.id === item.id ? { ...i, available: !i.available } : i)))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không cập nhật được trạng thái.')
+    }
   }
+
+  const toggleSelect = (id: string) =>
+    setSelected(s => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+
+  const toggleSelectAll = () =>
+    setSelected(prev => (items.length > 0 && items.every(i => prev.has(i.id)) ? new Set() : new Set(items.map(i => i.id))))
+
+  const handleBulkAvailability = async (available: boolean) => {
+    const ids = Array.from(selected)
+    if (ids.length === 0) return
+    setBulkBusy(true)
+    setError('')
+    try {
+      await bulkSetAvailability(ids, available)
+      setItems(prev => prev.map(i => (selected.has(i.id) ? { ...i, available } : i)))
+      setSelected(new Set())
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không cập nhật được trạng thái.')
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  const confirmBulkDelete = async () => {
+    const ids = Array.from(selected)
+    if (ids.length === 0) return
+    setBulkBusy(true)
+    setError('')
+    try {
+      await bulkDeleteItems(ids)
+      setBulkDeleteOpen(false)
+      reload()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không xóa được món.')
+      setBulkDeleteOpen(false)
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setError('')
+    try {
+      await deleteItem(deleteTarget.id)
+      setDeleteTarget(null)
+      reload()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không xóa được món.')
+      setDeleteTarget(null)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const closeModal = () => { setModalKind(null); setEditItem(null) }
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <div className="flex h-[calc(100vh-var(--kv-header-height))] bg-surface overflow-hidden">
       <aside className="w-[26rem] shrink-0 flex flex-col px-5 pt-5 pb-4 overflow-y-auto">
         <h1 className="text-h2 font-extrabold text-ink mb-5">Món</h1>
-        <MenuFilters />
+        <MenuFilters
+          categories={categories}
+          categoryId={categoryId}
+          status={status}
+          onCategory={setCategoryId}
+          onStatus={setStatus}
+        />
       </aside>
 
       <section className="flex-1 min-w-0 flex flex-col pt-5 pr-5 gap-4">
@@ -49,18 +180,87 @@ const Menu = () => {
           search={search}
           onSearch={setSearch}
           onNew={setModalKind}
-          products={items}
+          onImported={reload}
+          onError={setError}
         />
-        <MenuTable products={filtered} total={items.length} />
+
+        {error && (
+          <div className="px-4 py-2 rounded-md bg-danger-50 text-danger text-md border border-danger/30">{error}</div>
+        )}
+
+        {selected.size > 0 && (
+          <div className="flex items-center gap-3 px-4 py-2 rounded-md bg-primary-25 border border-primary-150">
+            <span className="text-md font-medium text-ink">Đã chọn {selected.size} món</span>
+            <div className="flex-1" />
+            <button className="kv-btn kv-btn-outline-neutral h-9" disabled={bulkBusy} onClick={() => handleBulkAvailability(false)}>
+              Ngừng bán
+            </button>
+            <button className="kv-btn kv-btn-outline-neutral h-9" disabled={bulkBusy} onClick={() => handleBulkAvailability(true)}>
+              Mở bán
+            </button>
+            <button
+              className="h-9 px-4 rounded-md bg-danger text-white font-medium transition-colors hover:bg-danger-600 disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={bulkBusy}
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              Xóa
+            </button>
+            <button className="kv-btn kv-btn-text-primary h-9" disabled={bulkBusy} onClick={() => setSelected(new Set())}>
+              Bỏ chọn
+            </button>
+          </div>
+        )}
+
+        <MenuTable
+          items={items}
+          loading={loading}
+          categoryNames={categoryNames}
+          total={total}
+          page={page}
+          totalPages={totalPages}
+          onPage={setPage}
+          onEdit={setEditItem}
+          onToggleAvailability={handleToggleAvailability}
+          onDelete={setDeleteTarget}
+          selected={selected}
+          onToggleSelect={toggleSelect}
+          onToggleAll={toggleSelectAll}
+        />
       </section>
 
-      {modalKind && (
+      {(modalKind || editItem) && (
         <AddItemModal
-          kind={modalKind}
+          kind={modalKind ?? 'mon'}
+          item={editItem ?? undefined}
+          categories={categories}
           nextCode={nextCode}
-          groups={groups}
-          onClose={() => setModalKind(null)}
-          onSave={handleSave}
+          onClose={closeModal}
+          onSaved={reload}
+          onCategoryCreated={loadCategories}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Xóa món"
+          message={<>Bạn có chắc muốn xóa món <b className="text-ink">{deleteTarget.name}</b>? Hành động này không thể hoàn tác.</>}
+          confirmLabel="Xóa"
+          cancelLabel="Hủy"
+          loading={deleting}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {bulkDeleteOpen && (
+        <ConfirmDialog
+          title="Xóa nhiều món"
+          message={<>Bạn có chắc muốn xóa <b className="text-ink">{selected.size} món</b> đã chọn? Hành động này không thể hoàn tác.</>}
+          confirmLabel="Xóa"
+          cancelLabel="Hủy"
+          loading={bulkBusy}
+          onConfirm={confirmBulkDelete}
+          onCancel={() => setBulkDeleteOpen(false)}
         />
       )}
     </div>
