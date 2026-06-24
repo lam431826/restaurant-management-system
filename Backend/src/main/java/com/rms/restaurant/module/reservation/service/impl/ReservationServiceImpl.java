@@ -285,7 +285,12 @@ public class ReservationServiceImpl implements ReservationService {
         }
         validateTableExists(tableId);
         validateTableCapacity(tableId, reservation.getPartySize());
-        checkTableAvailability(tableId, reservation.getDatetime(), id);
+        // For table transfer, only PENDING/CONFIRMED reservations on the target table
+        // can block the move. A CHECKED_IN reservation on the same table at the same
+        // time would already be a data-integrity issue, and including CHECKED_IN in the
+        // conflict check was incorrectly blocking legitimate transfers.
+        checkTableAvailabilityForStatuses(tableId, reservation.getDatetime(), id,
+                List.of(ReservationStatus.PENDING, ReservationStatus.CONFIRMED));
 
         String oldTableId = reservation.getTableId();
         reservation.setTableId(tableId);
@@ -347,10 +352,19 @@ public class ReservationServiceImpl implements ReservationService {
      * means bookings exactly 180 min apart do NOT conflict).
      */
     private void checkTableAvailability(String tableId, LocalDateTime datetime, String excludeId) {
+        checkTableAvailabilityForStatuses(tableId, datetime, excludeId, ACTIVE_STATUSES);
+    }
+
+    /**
+     * Flexible variant — caller chooses which statuses count as conflicts.
+     * Used by transferTable() to avoid blocking on CHECKED_IN rows.
+     */
+    private void checkTableAvailabilityForStatuses(String tableId, LocalDateTime datetime,
+                                                    String excludeId, List<ReservationStatus> statuses) {
         LocalDateTime windowStart = datetime.minusMinutes(WINDOW_MINUTES);
         LocalDateTime windowEnd   = datetime.plusMinutes(WINDOW_MINUTES);
         List<Reservation> conflicts = reservationRepository.findConflictingForUpdate(
-                tableId, ACTIVE_STATUSES, windowStart, windowEnd,
+                tableId, statuses, windowStart, windowEnd,
                 excludeId != null ? excludeId : "");
         if (!conflicts.isEmpty()) {
             throw new ApplicationException(ApplicationError.TABLE_NOT_AVAILABLE);
