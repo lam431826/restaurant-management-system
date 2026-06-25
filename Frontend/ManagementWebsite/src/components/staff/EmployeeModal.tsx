@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Employee } from '../../data/mockData'
+import { employeeBranches } from '../../data/mockData'
 
 interface Props {
-  employee?: Employee
   nextCode: string
   departments: string[]
   positions: string[]
@@ -75,18 +75,17 @@ const Picker = ({
   )
 }
 
-const EmployeeModal = ({ employee, nextCode, departments, positions, onClose, onSave }: Props) => {
-  const isEdit = !!employee
-  const [name, setName] = useState(employee?.name ?? '')
-  const [code, setCode] = useState(employee?.code ?? '')
-  const [timekeepCode, setTimekeepCode] = useState(employee?.timekeepCode ?? '')
-  const [phone, setPhone] = useState(employee?.phone ?? '')
-  const [idNumber, setIdNumber] = useState(employee?.idNumber ?? '')
-  const [department, setDepartment] = useState(employee?.department ?? '')
-  const [position, setPosition] = useState(employee?.position ?? '')
-  const [debt, setDebt] = useState(employee ? String(employee.debt) : '')
-  const [note, setNote] = useState(employee?.note ?? '')
-  const [active, setActive] = useState(employee?.active ?? true)
+const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Props) => {
+  const [name, setName] = useState('')
+  const [code, setCode] = useState('')
+  const [timekeepCode, setTimekeepCode] = useState('')
+  const [phone, setPhone] = useState('')
+  const [idNumber, setIdNumber] = useState('')
+  const [department, setDepartment] = useState('')
+  const [position, setPosition] = useState('')
+  const [debt, setDebt] = useState('')
+  const [note, setNote] = useState('')
+  const [active, setActive] = useState(true)
   const [error, setError] = useState('')
 
   const nameRef = useRef<HTMLInputElement>(null)
@@ -110,20 +109,31 @@ const EmployeeModal = ({ employee, nextCode, departments, positions, onClose, on
       return
     }
     const result: Employee = {
-      id: employee?.id ?? Date.now(),
+      id: Date.now(),
       code: code.trim() || nextCode,
       timekeepCode: timekeepCode.trim(),
       name: name.trim(),
       phone: phone.trim(),
+      phoneVerified: false,
       idNumber: idNumber.trim(),
       debt: Number(debt || 0),
       note: note.trim(),
       department: department || 'Chưa phân phòng',
       position: position || 'Nhân viên',
       active,
+      branchPay: employeeBranches[0],
+      branchWork: employeeBranches[0],
+      birthday: '',
+      gender: '',
+      address: '',
+      email: '',
+      facebook: '',
+      startDate: '',
+      account: '',
+      mobileDevice: '',
     }
     onSave(result, addAnother)
-    if (addAnother && !isEdit) {
+    if (addAnother) {
       setName(''); setCode(''); setTimekeepCode(''); setPhone(''); setIdNumber('')
       setDebt(''); setNote(''); setError('')
       nameRef.current?.focus()
@@ -138,7 +148,7 @@ const EmployeeModal = ({ employee, nextCode, departments, positions, onClose, on
     >
       <div className="w-full max-w-[64rem] my-6 bg-card rounded-lg shadow-lg flex flex-col max-h-[calc(100vh-6rem)]">
         <div className="flex items-center justify-between px-6 h-16 border-b border-line shrink-0">
-          <h2 className="text-h3 font-bold text-ink">{isEdit ? 'Cập nhật nhân viên' : 'Thêm nhân viên'}</h2>
+          <h2 className="text-h3 font-bold text-ink">Thêm nhân viên</h2>
           <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">
             <CloseIcon />
           </button>
@@ -193,9 +203,7 @@ const EmployeeModal = ({ employee, nextCode, departments, positions, onClose, on
           <span className="text-md text-danger">{error}</span>
           <div className="flex items-center gap-2">
             <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose}>Bỏ qua</button>
-            {!isEdit && (
-              <button className="kv-btn kv-btn-outline-primary h-10" onClick={() => handleSave(true)}>Lưu &amp; Thêm mới</button>
-            )}
+            <button className="kv-btn kv-btn-outline-primary h-10" onClick={() => handleSave(true)}>Lưu &amp; Thêm mới</button>
             <button className="kv-btn kv-btn-primary h-10" onClick={() => handleSave(false)}>Lưu</button>
           </div>
         </div>

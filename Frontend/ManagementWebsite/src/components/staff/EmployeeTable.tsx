@@ -1,10 +1,15 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { Employee } from '../../data/mockData'
+import EmployeeDetail from './EmployeeDetail'
 
 interface Props {
   employees: Employee[]
+  departments: string[]
+  positions: string[]
+  branches: string[]
   onAdd: () => void
-  onRowClick: (emp: Employee) => void
+  onSave: (emp: Employee) => void
+  onToggleActive: (emp: Employee) => void
 }
 
 const th = 'sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-3 py-3 whitespace-nowrap'
@@ -24,8 +29,9 @@ const EmptyState = ({ onAdd }: { onAdd: () => void }) => (
   </div>
 )
 
-const EmployeeTable = ({ employees, onAdd, onRowClick }: Props) => {
+const EmployeeTable = ({ employees, departments, positions, branches, onAdd, onSave, onToggleActive }: Props) => {
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [expandedCode, setExpandedCode] = useState<string | null>(null)
 
   const allSelected = employees.length > 0 && selected.size === employees.length
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(employees.map(e => e.code)))
@@ -60,21 +66,50 @@ const EmployeeTable = ({ employees, onAdd, onRowClick }: Props) => {
           {employees.length > 0 && (
             <tbody>
               {employees.map(e => (
-                <tr key={e.code} className="cursor-pointer hover:bg-primary-25" onClick={() => onRowClick(e)}>
-                  <td className={`${td} text-center`} onClick={ev => ev.stopPropagation()}>
-                    <label className="kv-check justify-center">
-                      <input type="checkbox" checked={selected.has(e.code)} onChange={() => toggleRow(e.code)} />
-                      <span className="kv-check-box" />
-                    </label>
-                  </td>
-                  <td className={`${td} text-primary font-medium`}>{e.code}</td>
-                  <td className={td}>{e.timekeepCode}</td>
-                  <td className={td}>{e.name}</td>
-                  <td className={td}>{e.phone}</td>
-                  <td className={td}>{e.idNumber}</td>
-                  <td className={`${td} text-right ${e.debt > 0 ? 'text-danger font-medium' : ''}`}>{e.debt.toLocaleString('vi-VN')}</td>
-                  <td className={`${td} text-ink-muted`}>{e.note}</td>
-                </tr>
+                <Fragment key={e.code}>
+                  <tr
+                    className={`cursor-pointer ${expandedCode === e.code ? 'bg-primary-50' : 'hover:bg-primary-25'}`}
+                    onClick={() => setExpandedCode(c => (c === e.code ? null : e.code))}
+                  >
+                    <td className={`${td} text-center`} onClick={ev => ev.stopPropagation()}>
+                      <label className="kv-check justify-center">
+                        <input type="checkbox" checked={selected.has(e.code)} onChange={() => toggleRow(e.code)} />
+                        <span className="kv-check-box" />
+                      </label>
+                    </td>
+                    <td className={`${td} text-primary font-medium`}>{e.code}</td>
+                    <td className={td}>{e.timekeepCode}</td>
+                    <td className={td}>{e.name}</td>
+                    <td className={td}>
+                      <span className="flex items-center gap-1.5">
+                        {e.phone}
+                        {!e.phoneVerified && (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-warning shrink-0">
+                            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                          </svg>
+                        )}
+                      </span>
+                    </td>
+                    <td className={td}>{e.idNumber}</td>
+                    <td className={`${td} text-right ${e.debt > 0 ? 'text-danger font-medium' : ''}`}>{e.debt.toLocaleString('vi-VN')}</td>
+                    <td className={`${td} text-ink-muted`}>{e.note}</td>
+                  </tr>
+                  {expandedCode === e.code && (
+                    <tr>
+                      <td colSpan={8} className="p-0 border-b border-line" onClick={ev => ev.stopPropagation()}>
+                        <EmployeeDetail
+                          employee={e}
+                          departments={departments}
+                          positions={positions}
+                          branches={branches}
+                          onSave={onSave}
+                          onToggleActive={onToggleActive}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           )}

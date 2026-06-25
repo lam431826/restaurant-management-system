@@ -13,6 +13,7 @@ public record ShiftSummaryResponse(
         LocalDateTime openedAt,
         LocalDateTime closedAt,
         BigDecimal openingCash,
+        BigDecimal handoverAmount,
         BigDecimal totalCashIn,
         BigDecimal totalCashOut,
         BigDecimal totalRevenue,

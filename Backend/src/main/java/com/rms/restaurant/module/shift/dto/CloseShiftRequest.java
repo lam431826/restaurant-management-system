@@ -11,10 +11,12 @@ import java.util.List;
 
 public record CloseShiftRequest(
 
-        // BR-CLOSE-02: actual counted amount for each payment method
         @NotEmpty @Valid List<PaymentActualAmount> actualAmounts,
 
-        // BR-CLOSE-05: required when any variance exceeds tolerance
+        // BR-CS-09: handover amount passed to next cashier as opening float suggestion
+        @NotNull @PositiveOrZero BigDecimal handoverAmount,
+
+        // BR-CS-05: required when any variance exceeds tolerance
         String closingNote
 
 ) {

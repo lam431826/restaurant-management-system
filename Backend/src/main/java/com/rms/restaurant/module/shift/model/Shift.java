@@ -39,6 +39,9 @@ public class Shift {
     @Column(name = "closed_by")
     private String closedBy;
 
+    @Column(name = "handover_amount", precision = 12, scale = 0)
+    private BigDecimal handoverAmount;
+
     @Column(name = "closing_note", length = 500)
     private String closingNote;
 }

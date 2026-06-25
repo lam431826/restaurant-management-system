@@ -19,6 +19,7 @@ export const OrderPanel = ({
   invoiceTools,
   checkoutDisabled,
   checkoutLabel,
+  shiftOpen,
 }: {
   items: OrderItem[];
   hasSelectedMenu: boolean;
@@ -33,6 +34,7 @@ export const OrderPanel = ({
   invoiceTools: ReactNode;
   checkoutDisabled: boolean;
   checkoutLabel: string;
+  shiftOpen?: boolean;
 }) => {
   const isEmpty = !!selectedTable && !selectedTable.occupied;
   const subtotal = isEmpty ? 0 : items.reduce((s, i) => s + i.price * i.qty, 0);
@@ -130,7 +132,8 @@ export const OrderPanel = ({
         {isEmpty ? (
           <button
             onClick={onCreateOrder}
-            className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1"
+            disabled={!shiftOpen}
+            className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="text-[16px] font-medium text-white">
               {hasSelectedMenu ? "Xác nhận Tạo Order" : "Tạo Order"}
@@ -139,7 +142,8 @@ export const OrderPanel = ({
         ) : hasSelectedMenu ? (
           <button
             onClick={onAddItems}
-            className="bg-[#e85d04] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#dc2f02] transition-colors mt-1"
+            disabled={!shiftOpen}
+            className="bg-[#e85d04] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#dc2f02] transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="text-[16px] font-medium text-white">
               Thêm món vào Đơn

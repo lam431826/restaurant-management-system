@@ -2,6 +2,10 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { logout } from "../../api/auth";
+import { getMyShift } from "../../services/shiftService";
+import type { ShiftSummary } from "../../services/shiftService";
+import { OpenShiftModal } from "./orders/OpenShiftModal";
+import { CloseShiftModal } from "./orders/CloseShiftModal";
 import { listTables } from "../../services/tableService";
 import ChangePasswordModal from "../auth/ChangePasswordModal";
 import {
@@ -100,6 +104,20 @@ const CashierOrders = () => {
   const [historyError, setHistoryError] = useState("");
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+
+  // ── Cash shift state ──────────────────────────────────────────────────────
+  const [shift, setShift]                   = useState<ShiftSummary | null>(null);
+  const [shiftLoading, setShiftLoading]     = useState(true);
+  const [showCloseShift, setShowCloseShift] = useState(false);
+  const [shiftModalOpen, setShiftModalOpen] = useState(false);
+
+  useEffect(() => {
+    getMyShift()
+      .then((s) => { setShift(s); if (!s) setShiftModalOpen(true); })
+      .catch(() => { setShift(null); setShiftModalOpen(true); })
+      .finally(() => setShiftLoading(false));
+  }, []);
+
   const handleLogout = async () => {
     try {
       await logout();
@@ -563,17 +581,52 @@ const CashierOrders = () => {
       ? "Thanh Toán (F9)"
       : "Liên kết hóa đơn trước";
 
+  if (shiftLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#f5f5f5] font-sans">
+        <span className="text-[#636566] text-[16px]">Đang tải ca làm việc...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-[#f5f5f5] overflow-hidden font-sans">
+      {!shift && shiftModalOpen && (
+        <OpenShiftModal
+          onOpened={(s) => { setShift(s); setShiftModalOpen(false); }}
+          onLogout={handleLogout}
+          onClose={() => setShiftModalOpen(false)}
+        />
+      )}
+
       <Header
         employeeName={user?.fullName ?? user?.username ?? "Nhân viên"}
         roleLabel={ROLE_LABEL[user?.role ?? ""] ?? user?.role ?? "Thu ngân"}
         role={user?.role}
+        shift={shift}
         assistanceRequests={assistanceRequests}
         onResolveRequest={handleResolveAssistance}
         onLogout={handleLogout}
         onChangePassword={() => setShowChangePw(true)}
+        onCloseShift={() => setShowCloseShift(true)}
       />
+
+      {!shift && !shiftModalOpen && (
+        <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-amber-700 text-[14px]">
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            <span>Ca thu ngân chưa mở — không thể tạo đơn hàng mới.</span>
+          </div>
+          <button
+            onClick={() => setShiftModalOpen(true)}
+            className="shrink-0 h-8 px-3 rounded-lg bg-amber-500 text-white text-[13px] font-medium hover:bg-amber-600 transition-colors"
+          >
+            Mở ca
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-1 gap-3 lg:gap-4 p-3 lg:p-4 overflow-hidden">
         <div className="flex flex-col flex-1 gap-2.5 min-w-0 overflow-hidden">
@@ -690,6 +743,7 @@ const CashierOrders = () => {
           selectedTable={selectedTable}
           checkoutDisabled={checkoutDisabled}
           checkoutLabel={checkoutLabel}
+          shiftOpen={!!shift}
           invoiceTools={
             <CashierInvoicePanel
               orderId={backendOrderId}
@@ -742,6 +796,16 @@ const CashierOrders = () => {
       )}
       {showChangePw && (
         <ChangePasswordModal onClose={() => setShowChangePw(false)} />
+      )}
+      {showCloseShift && shift && (
+        <CloseShiftModal
+          shift={shift}
+          onClosed={() => {
+            setShift(null);
+            setShowCloseShift(false);
+          }}
+          onCancel={() => setShowCloseShift(false)}
+        />
       )}
     </div>
   );

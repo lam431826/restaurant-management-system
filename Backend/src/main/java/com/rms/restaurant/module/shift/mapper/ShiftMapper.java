@@ -56,6 +56,7 @@ public class ShiftMapper {
                 shift.getOpenedAt(),
                 shift.getClosedAt(),
                 shift.getOpeningCash(),
+                shift.getHandoverAmount(),
                 totalCashIn,
                 totalCashOut,
                 totalRevenue,

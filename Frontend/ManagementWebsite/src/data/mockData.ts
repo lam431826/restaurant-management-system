@@ -469,16 +469,28 @@ export interface Employee {
   timekeepCode: string;  // Mã chấm công
   name: string;          // Tên nhân viên
   phone: string;         // Số điện thoại
+  phoneVerified: boolean;// Số điện thoại đã xác thực
   idNumber: string;      // Số CMND/CCCD
   debt: number;          // Nợ và tạm ứng
   note: string;          // Ghi chú
   department: string;    // Phòng ban
   position: string;      // Chức danh
   active: boolean;       // Đang làm việc / Đã nghỉ
+  branchPay: string;     // Chi nhánh trả lương
+  branchWork: string;    // Chi nhánh làm việc
+  birthday: string;      // Ngày sinh
+  gender: string;        // Giới tính
+  address: string;       // Địa chỉ
+  email: string;         // Email
+  facebook: string;      // Facebook
+  startDate: string;     // Ngày bắt đầu làm việc
+  account: string;       // Tài khoản hệ thống
+  mobileDevice: string;  // Thiết bị di động
 }
 
 export const departments = ['Quản lý', 'Thu ngân', 'Phục vụ', 'Bếp', 'Kế toán'];
 export const positions = ['Quản lý cửa hàng', 'Nhân viên thu ngân', 'Nhân viên phục vụ', 'Đầu bếp', 'Kế toán'];
+export const employeeBranches = branches.map(b => b.name);
 
 const rawEmployees: [string, string, string, string, number, string, string][] = [
   // name, phone, idNumber, department, debt, position, timekeepCode
@@ -498,12 +510,23 @@ export const employees: Employee[] = rawEmployees.map(
     timekeepCode,
     name,
     phone,
+    phoneVerified: i !== 0,
     idNumber,
     debt,
     note: '',
     department,
     position,
     active: true,
+    branchPay: employeeBranches[0],
+    branchWork: employeeBranches[0],
+    birthday: '',
+    gender: '',
+    address: '',
+    email: '',
+    facebook: '',
+    startDate: '',
+    account: '',
+    mobileDevice: '',
   })
 );
 
@@ -567,10 +590,10 @@ export const navItems = [
   {
     id: 8,
     label: 'Nhân viên',
-    allowedRoles: ['ADMIN'] as string[],
+    allowedRoles: ['MANAGER', 'ADMIN'] as string[],
     children: [
       { label: 'Danh sách nhân viên', href: '#/manager/employees' },
-      { label: 'Lịch làm việc', href: '#' },
+      { label: 'Lịch làm việc', href: '#/manager/schedule' },
       { label: 'Bảng chấm công', href: '#' },
       { label: 'Bảng lương', href: '#' },
       { label: 'Bảng hoa hồng', href: '#' },
@@ -592,7 +615,7 @@ export const navItems = [
       { label: 'Hàng hóa', href: '#' },
       { label: 'Khách hàng', href: '#' },
       { label: 'Nhà cung cấp', href: '#' },
-      { label: 'Nhân viên', href: '#' },
+      { label: 'Nhân viên', href: '#/manager/reports/attendance' },
       { label: 'Kênh bán hàng', href: '#' },
       { label: 'Tài chính', href: '#' },
     ],

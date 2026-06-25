@@ -40,6 +40,7 @@ public enum ApplicationError {
     // Menu Management
     DUPLICATE_CATEGORY_NAME("A category with this name already exists", HttpStatus.CONFLICT),
     CATEGORY_HAS_ITEMS("Category still has items; reassign or remove them first", HttpStatus.CONFLICT),
+    MENU_ITEM_HAS_ORDERS("Item has existing orders and cannot be deleted; deactivate it instead", HttpStatus.CONFLICT),
     MENU_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
 
     // Table Management
@@ -56,9 +57,12 @@ public enum ApplicationError {
     TABLE_IN_USE("Table is currently occupied and cannot be deleted", HttpStatus.CONFLICT),
     INVALID_TABLE_TOKEN("Table token is invalid or expired", HttpStatus.UNAUTHORIZED),
     SHIFT_ALREADY_OPEN("A shift is already open", HttpStatus.CONFLICT),
-    SHIFT_NOT_OPEN("No open shift found", HttpStatus.CONFLICT),
+    SHIFT_NOT_OPEN("No open shift found", HttpStatus.NOT_FOUND),
     SHIFT_CLOSED("Shift is already closed", HttpStatus.UNPROCESSABLE_ENTITY),
     SHIFT_VARIANCE_NOTE_REQUIRED("A closing note is required when variance exceeds tolerance", HttpStatus.UNPROCESSABLE_ENTITY),
+    SHIFT_HANDOVER_EXCEEDS_CASH("Handover amount cannot exceed actual cash counted", HttpStatus.UNPROCESSABLE_ENTITY),
+    CASHIER_NOT_CHECKED_IN("You must be clocked in on a work shift before opening a cash shift", HttpStatus.CONFLICT),
+    CLOCK_OUT_OPEN_SHIFT("Bạn còn ca thu ngân đang mở. Vui lòng đóng ca thu ngân trước khi chấm công ra.", HttpStatus.CONFLICT),
     CASH_OUT_EXCEEDS_BALANCE("Cash-out amount exceeds current drawer balance", HttpStatus.UNPROCESSABLE_ENTITY),
     CASH_MOVEMENT_REASON_REQUIRED("A reason is required for cash-out transactions", HttpStatus.BAD_REQUEST),
     INVALID_CASH_MOVEMENT_TYPE("Transaction type must be CASH_IN or CASH_OUT", HttpStatus.BAD_REQUEST),
@@ -74,6 +78,22 @@ public enum ApplicationError {
     INVALID_STATUS_TRANSITION("Invalid status transition", HttpStatus.UNPROCESSABLE_ENTITY),
     ORDER_NOT_CLOSEABLE("Order cannot be closed in its current state", HttpStatus.UNPROCESSABLE_ENTITY),
     FORBIDDEN("You do not have permission to perform this action", HttpStatus.FORBIDDEN),
+
+    // Roster (Work Shift) — WS-01..09, BR-WS-*
+    TEMPLATE_NOT_FOUND("Shift template not found", HttpStatus.NOT_FOUND),
+    DUPLICATE_TEMPLATE_NAME("A shift template with this name already exists", HttpStatus.CONFLICT),
+    TEMPLATE_INVALID_TIME_RANGE("End time must be after start time", HttpStatus.BAD_REQUEST),
+    TEMPLATE_BREAK_TOO_LONG("Break time must be shorter than the total shift duration", HttpStatus.BAD_REQUEST),
+    TEMPLATE_IN_USE("Cannot delete: this shift template is used in the roster", HttpStatus.CONFLICT),
+    ASSIGNMENT_NOT_FOUND("Shift assignment not found", HttpStatus.NOT_FOUND),
+    SHIFT_OVERLAP("Shift times overlap", HttpStatus.CONFLICT),
+    MIN_REST_VIOLATION("Minimum rest period between shifts is violated", HttpStatus.CONFLICT),
+    CLOCK_ACTION_OUT_OF_WINDOW("Clock-in/out is only allowed within the configured time window", HttpStatus.UNPROCESSABLE_ENTITY),
+    ATTENDANCE_NOT_CHECKED_IN("Not clocked in for this shift", HttpStatus.CONFLICT),
+    ROSTER_REQUEST_FREEZE_WINDOW("Cannot submit a request this close to shift start", HttpStatus.UNPROCESSABLE_ENTITY),
+    ROSTER_REQUEST_DUPLICATE_PENDING("A pending request already exists for this shift", HttpStatus.CONFLICT),
+    ROSTER_REQUEST_NOT_FOUND("Shift request not found", HttpStatus.NOT_FOUND),
+    ROSTER_REQUEST_NOT_PENDING("This request has already been decided", HttpStatus.CONFLICT),
 
     // System
     INTERNAL_ERROR("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR);

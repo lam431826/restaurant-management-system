@@ -1,17 +1,21 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import EmployeeFilters from './EmployeeFilters'
 import type { EmpStatus } from './EmployeeFilters'
 import EmployeeToolbar from './EmployeeToolbar'
 import EmployeeTable from './EmployeeTable'
 import EmployeeModal from './EmployeeModal'
+import RequestsInboxModal from './schedule/RequestsInboxModal'
+import { listRequests } from '../../services/rosterService'
 import {
   employees as initialEmployees,
   departments as initialDepartments,
   positions as initialPositions,
+  employeeBranches,
 } from '../../data/mockData'
 import type { Employee } from '../../data/mockData'
 
 const Employees = () => {
+  const [pendingApprovals, setPendingApprovals] = useState(0)
   const [items, setItems] = useState<Employee[]>(initialEmployees)
   const [departments, setDepartments] = useState<string[]>(initialDepartments)
   const [positions, setPositions] = useState<string[]>(initialPositions)
@@ -22,7 +26,13 @@ const Employees = () => {
   const [position, setPosition] = useState('')
 
   const [showAdd, setShowAdd] = useState(false)
-  const [editEmp, setEditEmp] = useState<Employee | null>(null)
+  const [showRequests, setShowRequests] = useState(false)
+
+  useEffect(() => {
+    listRequests()
+      .then(reqs => setPendingApprovals(reqs.filter(r => r.status === 'PENDING').length))
+      .catch(() => {})
+  }, [showRequests])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -53,17 +63,23 @@ const Employees = () => {
     if (name) setPositions(prev => (prev.includes(name) ? prev : [...prev, name]))
   }
 
-  const handleSave = (emp: Employee, addAnother: boolean) => {
-    setItems(prev => {
-      const exists = prev.some(e => e.id === emp.id)
-      return exists ? prev.map(e => (e.id === emp.id ? emp : e)) : [emp, ...prev]
-    })
+  const handleCreate = (emp: Employee, addAnother: boolean) => {
+    setItems(prev => [emp, ...prev])
     if (emp.department && !departments.includes(emp.department)) setDepartments(prev => [...prev, emp.department])
     if (emp.position && !positions.includes(emp.position)) setPositions(prev => [...prev, emp.position])
-    if (!addAnother) {
-      setShowAdd(false)
-      setEditEmp(null)
-    }
+    if (!addAnother) setShowAdd(false)
+  }
+
+  const handleUpdate = (emp: Employee) => {
+    setItems(prev => prev.map(e => (e.id === emp.id ? emp : e)))
+    if (emp.department && !departments.includes(emp.department)) setDepartments(prev => [...prev, emp.department])
+    if (emp.position && !positions.includes(emp.position)) setPositions(prev => [...prev, emp.position])
+  }
+
+  const handleToggleActive = (emp: Employee) => {
+    const verb = emp.active ? 'ngừng làm việc' : 'tiếp tục làm việc'
+    if (!window.confirm(`Xác nhận ${verb} đối với nhân viên ${emp.name}?`)) return
+    handleUpdate({ ...emp, active: !emp.active })
   }
 
   return (
@@ -93,11 +109,17 @@ const Employees = () => {
           onSearch={setSearch}
           onAdd={() => setShowAdd(true)}
           employees={items}
+          onApprovalsClick={() => setShowRequests(true)}
+          pendingApprovals={pendingApprovals}
         />
         <EmployeeTable
           employees={filtered}
+          departments={departments}
+          positions={positions}
+          branches={employeeBranches}
           onAdd={() => setShowAdd(true)}
-          onRowClick={setEditEmp}
+          onSave={handleUpdate}
+          onToggleActive={handleToggleActive}
         />
       </section>
 
@@ -107,19 +129,11 @@ const Employees = () => {
           departments={departments}
           positions={positions}
           onClose={() => setShowAdd(false)}
-          onSave={handleSave}
+          onSave={handleCreate}
         />
       )}
-      {editEmp && (
-        <EmployeeModal
-          employee={editEmp}
-          nextCode={nextCode}
-          departments={departments}
-          positions={positions}
-          onClose={() => setEditEmp(null)}
-          onSave={handleSave}
-        />
-      )}
+
+      {showRequests && <RequestsInboxModal onClose={() => setShowRequests(false)} />}
     </div>
   )
 }
