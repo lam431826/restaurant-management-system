@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { logout } from "../../api/auth";
+import { ApiError } from "../../services/api";
 import { getMyShift } from "../../services/shiftService";
 import type { ShiftSummary } from "../../services/shiftService";
 import { OpenShiftModal } from "./orders/OpenShiftModal";
@@ -68,6 +69,32 @@ const TABLE_FILTERS = [
   { id: "empty", label: "Còn trống" },
 ];
 
+const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_NOT_FOUND: "Không thể đóng đơn vì đơn chưa có hóa đơn.",
+  ORDER_NOT_CLOSEABLE:
+    "Không thể đóng đơn khi hóa đơn chưa được thanh toán hoặc đơn không còn hợp lệ để đóng.",
+  CANNOT_CANCEL_INVOICED_ORDER:
+    "Không thể hủy đơn vì đơn đã có hóa đơn.",
+  CANNOT_CANCEL_PAID_ORDER:
+    "Không thể hủy đơn vì hóa đơn đã được thanh toán.",
+  CANNOT_CANCEL_ORDER_ITEMS_NOT_PENDING:
+    "Không thể hủy đơn vì có món đã được bếp xử lý hoặc phục vụ.",
+  INVALID_STATUS_TRANSITION:
+    "Thao tác đổi trạng thái không hợp lệ. Vui lòng dùng đúng luồng xử lý.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+};
+
+const ORDER_ACTION_FALLBACK_ERROR =
+  "Thao tác thất bại. Vui lòng thử lại hoặc kiểm tra trạng thái đơn.";
+
+const getOrderActionErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiError && error.code) {
+    return ORDER_ACTION_ERROR_MESSAGES[error.code] ?? ORDER_ACTION_FALLBACK_ERROR;
+  }
+
+  return ORDER_ACTION_FALLBACK_ERROR;
+};
+
 const CashierOrders = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -118,6 +145,10 @@ const CashierOrders = () => {
   const [historyError, setHistoryError] = useState("");
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [orderActionMessage, setOrderActionMessage] = useState<{
+    type: "error";
+    text: string;
+  } | null>(null);
 
   // ── Cash shift state ──────────────────────────────────────────────────────
   const [shift, setShift] = useState<ShiftSummary | null>(null);
@@ -304,6 +335,7 @@ const CashierOrders = () => {
     setInvoiceMessage(null);
     setHistoryError("");
     setPaymentOpen(false);
+    setOrderActionMessage(null);
   };
 
   const loadInvoiceForOrder = async (orderId: string) => {
@@ -572,13 +604,19 @@ const CashierOrders = () => {
 
   const handleCancelOrder = async (orderIds: string[]) => {
     if (!window.confirm("Bạn có chắc chắn muốn hủy đơn hàng này?")) return;
+    setOrderActionMessage(null);
     try {
       await Promise.all(
         orderIds.map((orderId) => cancelOrder(orderId, "Hủy bởi thu ngân")),
       );
+      setOrderActionMessage(null);
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -626,12 +664,17 @@ const CashierOrders = () => {
 
   const handleCloseOrder = async () => {
     if (!backendOrderId) return;
+    setOrderActionMessage(null);
     try {
       await closeOrder(backendOrderId);
       setRefreshTrigger((t) => t + 1);
       resetInvoiceLink();
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -898,6 +941,7 @@ const CashierOrders = () => {
           hasSelectedMenu={hasSelectedMenu}
           onStatusChange={handleStatusChange}
           onCheckout={() => {
+            setOrderActionMessage(null);
             setPaymentError("");
             setPaymentOpen(true);
           }}
@@ -912,6 +956,7 @@ const CashierOrders = () => {
           checkoutLabel={checkoutLabel}
           shiftOpen={!!shift}
           invoicePaid={invoice?.paid}
+          orderActionMessage={orderActionMessage}
           onCloseOrder={handleCloseOrder}
           invoiceTools={
             <CashierInvoicePanel
