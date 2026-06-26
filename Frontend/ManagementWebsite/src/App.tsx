@@ -10,6 +10,7 @@ import Employees from "./components/staff/Employees";
 import Schedule from "./components/staff/schedule/Schedule";
 import MySchedule from "./components/staff/schedule/MySchedule";
 import AttendanceReport from "./components/staff/schedule/AttendanceReport";
+import DailySummary from "./components/reports/DailySummary";
 import Reservation from "./components/reservation/Reservation";
 import CashierOrders from "./components/cashier/CashierOrders";
 import AdminDashboard from "./components/admin/AdminDashboard";
@@ -82,6 +83,7 @@ function App() {
           <Route path="employees" element={<Employees />} />
           <Route path="schedule" element={<Schedule />} />
           <Route path="reports/attendance" element={<AttendanceReport />} />
+          <Route path="reports/daily-summary" element={<DailySummary />} />
         </Route>
 
         {/* ── Manager dashboard ── */}
@@ -101,6 +103,7 @@ function App() {
           <Route path="employees" element={<Employees />} />
           <Route path="schedule" element={<Schedule />} />
           <Route path="reports/attendance" element={<AttendanceReport />} />
+          <Route path="reports/daily-summary" element={<DailySummary />} />
           <Route path="audit-logs" element={<AuditLogPage />} />
         </Route>
 

@@ -15,6 +15,7 @@ export const Header = ({
   onLogout,
   onChangePassword,
   onCloseShift,
+  onCashMovement,
 }: {
   employeeName?: string;
   roleLabel?: string;
@@ -25,6 +26,7 @@ export const Header = ({
   onLogout?: () => void;
   onChangePassword?: () => void;
   onCloseShift?: () => void;
+  onCashMovement?: () => void;
 }) => {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -82,6 +84,12 @@ export const Header = ({
                 })}
               </span>
             </div>
+            <button
+              onClick={onCashMovement}
+              className="h-8 px-3 rounded-lg bg-[#eef4ff] border border-[#cdddff] text-[#025cca] text-[13px] font-medium hover:bg-[#dceefe] transition-colors"
+            >
+              Thu / Chi quỹ
+            </button>
             <button
               onClick={onCloseShift}
               className="h-8 px-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-[13px] font-medium hover:bg-red-100 transition-colors"

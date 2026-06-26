@@ -4,6 +4,8 @@ import com.rms.restaurant.module.shift.dto.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.time.LocalDate;
+
 public interface ShiftService {
 
     // SM-01: BR-CS-01 (per-cashier)
@@ -23,4 +25,7 @@ public interface ShiftService {
 
     // manager list
     Page<ShiftSummaryResponse> listAll(Pageable pageable, String requestingUsername);
+
+    // CS-05: manager daily summary aggregating all cashiers' shifts for a date
+    DailySummaryResponse dailySummary(LocalDate date, String requestingUsername);
 }

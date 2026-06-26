@@ -74,6 +74,45 @@ export const closeShift = (
     closingNote: closingNote ?? null,
   })
 
+// ── CS-05: Manager daily summary ────────────────────────────────────────────
+export interface DailyMethodTotal {
+  method: PaymentMethodKey
+  expected: number
+  actual: number
+  variance: number
+}
+
+export interface DailyCashierShiftRow {
+  shiftId: string
+  cashierId: string
+  cashierName: string
+  status: 'OPEN' | 'CLOSED' | 'PENDING_RECON'
+  openedAt: string
+  closedAt: string | null
+  openingCash: number
+  handoverAmount: number | null
+  totalRevenue: number
+  totalCashIn: number
+  totalCashOut: number
+  totalVariance: number
+  paymentBreakdown: PaymentBreakdown[]
+}
+
+export interface DailySummary {
+  date: string
+  incomplete: boolean
+  shiftCount: number
+  totalRevenue: number
+  totalCashIn: number
+  totalCashOut: number
+  totalVariance: number
+  methodTotals: DailyMethodTotal[]
+  shifts: DailyCashierShiftRow[]
+}
+
+export const getDailySummary = (date: string): Promise<DailySummary> =>
+  api.get<DailySummary>('/api/shifts/daily-summary', { date })
+
 export const addCashMovement = (
   id: string,
   type: 'CASH_IN' | 'CASH_OUT',

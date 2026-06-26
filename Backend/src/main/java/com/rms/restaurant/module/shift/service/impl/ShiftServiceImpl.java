@@ -247,6 +247,87 @@ public class ShiftServiceImpl implements ShiftService {
                 movements, totalCashIn, totalCashOut);
     }
 
+    // ── CS-05: Manager Daily Summary ──────────────────────────────────────────
+
+    @Override
+    @Transactional(readOnly = true)
+    public DailySummaryResponse dailySummary(LocalDate date, String requestingUsername) {
+        User user = resolveUser(requestingUsername);
+        boolean isManager = user.getRole() == UserRole.MANAGER || user.getRole() == UserRole.ADMIN;
+        if (!isManager) {
+            throw new ApplicationException(ApplicationError.FORBIDDEN);
+        }
+
+        List<Shift> shifts = shiftRepo.findByOpenedAtBetweenOrderByOpenedAtAsc(
+                date.atStartOfDay(), date.plusDays(1).atStartOfDay());
+
+        // Resolve cashier display names in one query
+        List<String> cashierIds = shifts.stream().map(Shift::getCashierId).distinct().toList();
+        Map<String, String> names = new HashMap<>();
+        userRepo.findAllById(cashierIds).forEach(u -> names.put(u.getId(), u.getFullName()));
+
+        Map<PaymentMethod, BigDecimal> dayExpected = new EnumMap<>(PaymentMethod.class);
+        Map<PaymentMethod, BigDecimal> dayActual   = new EnumMap<>(PaymentMethod.class);
+        for (PaymentMethod m : PaymentMethod.values()) {
+            dayExpected.put(m, BigDecimal.ZERO);
+            dayActual.put(m, BigDecimal.ZERO);
+        }
+
+        BigDecimal totalRevenue  = BigDecimal.ZERO;
+        BigDecimal totalCashIn   = BigDecimal.ZERO;
+        BigDecimal totalCashOut  = BigDecimal.ZERO;
+        BigDecimal totalVariance = BigDecimal.ZERO;
+        boolean incomplete = false;
+
+        List<DailySummaryResponse.CashierShiftRow> rows = new ArrayList<>();
+
+        for (Shift shift : shifts) {
+            List<ShiftCashMovement> movements    = cashMovRepo.findByShiftId(shift.getId());
+            List<ShiftPaymentReconciliation> recs = reconciliationRepo.findByShiftId(shift.getId());
+            BigDecimal cashIn  = sumMovements(movements, "CASH_IN");
+            BigDecimal cashOut = sumMovements(movements, "CASH_OUT");
+
+            if (recs.isEmpty() && STATUS_OPEN.equals(shift.getStatus())) {
+                recs = buildProvisionalRecs(shift, cashIn, cashOut);
+            }
+            // BR-CS-10: any non-CLOSED shift makes the day partial
+            if (!STATUS_CLOSED.equals(shift.getStatus())) {
+                incomplete = true;
+            }
+
+            ShiftSummaryResponse s = shiftMapper.toSummary(shift, recs, movements, cashIn, cashOut);
+
+            rows.add(new DailySummaryResponse.CashierShiftRow(
+                    s.id(), s.cashierId(), names.getOrDefault(s.cashierId(), s.cashierId()),
+                    s.status(), s.openedAt(), s.closedAt(),
+                    s.openingCash(), s.handoverAmount(),
+                    s.totalRevenue(), s.totalCashIn(), s.totalCashOut(), s.totalVariance(),
+                    s.paymentBreakdown()));
+
+            totalRevenue  = totalRevenue.add(nz(s.totalRevenue()));
+            totalCashIn   = totalCashIn.add(nz(s.totalCashIn()));
+            totalCashOut  = totalCashOut.add(nz(s.totalCashOut()));
+            totalVariance = totalVariance.add(nz(s.totalVariance()));
+
+            for (PaymentMethodBreakdown b : s.paymentBreakdown()) {
+                dayExpected.merge(b.method(), nz(b.expectedAmount()), BigDecimal::add);
+                dayActual.merge(b.method(), nz(b.actualAmount()), BigDecimal::add);
+            }
+        }
+
+        List<DailySummaryResponse.MethodTotal> methodTotals = new ArrayList<>();
+        for (PaymentMethod m : PaymentMethod.values()) {
+            BigDecimal exp = dayExpected.get(m);
+            BigDecimal act = dayActual.get(m);
+            methodTotals.add(new DailySummaryResponse.MethodTotal(m, exp, act, act.subtract(exp)));
+        }
+
+        return new DailySummaryResponse(
+                date, incomplete, shifts.size(),
+                totalRevenue, totalCashIn, totalCashOut, totalVariance,
+                methodTotals, rows);
+    }
+
     @Override
     @Transactional(readOnly = true)
     public Page<ShiftSummaryResponse> listAll(Pageable pageable, String requestingUsername) {
@@ -346,6 +427,10 @@ public class ShiftServiceImpl implements ShiftService {
                     .build());
         }
         return recs;
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
     }
 
     private BigDecimal sumMovements(List<ShiftCashMovement> movements, String type) {

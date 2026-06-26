@@ -610,7 +610,7 @@ export const navItems = [
     id: 7,
     label: 'Báo cáo',
     children: [
-      { label: 'Cuối ngày', href: '#' },
+      { label: 'Cuối ngày', href: '#/manager/reports/daily-summary' },
       { label: 'Bán hàng', href: '#' },
       { label: 'Hàng hóa', href: '#' },
       { label: 'Khách hàng', href: '#' },

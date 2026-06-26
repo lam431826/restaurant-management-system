@@ -6,6 +6,7 @@ import { getMyShift } from "../../services/shiftService";
 import type { ShiftSummary } from "../../services/shiftService";
 import { OpenShiftModal } from "./orders/OpenShiftModal";
 import { CloseShiftModal } from "./orders/CloseShiftModal";
+import { CashMovementModal } from "./orders/CashMovementModal";
 import { listTables } from "../../services/tableService";
 import ChangePasswordModal from "../auth/ChangePasswordModal";
 import {
@@ -110,6 +111,7 @@ const CashierOrders = () => {
   const [shiftLoading, setShiftLoading]     = useState(true);
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
+  const [showCashMovement, setShowCashMovement] = useState(false);
 
   useEffect(() => {
     getMyShift()
@@ -609,6 +611,7 @@ const CashierOrders = () => {
         onLogout={handleLogout}
         onChangePassword={() => setShowChangePw(true)}
         onCloseShift={() => setShowCloseShift(true)}
+        onCashMovement={() => setShowCashMovement(true)}
       />
 
       {!shift && !shiftModalOpen && (
@@ -805,6 +808,13 @@ const CashierOrders = () => {
             setShowCloseShift(false);
           }}
           onCancel={() => setShowCloseShift(false)}
+        />
+      )}
+      {showCashMovement && shift && (
+        <CashMovementModal
+          shift={shift}
+          onUpdated={(s) => setShift(s)}
+          onClose={() => setShowCashMovement(false)}
         />
       )}
     </div>

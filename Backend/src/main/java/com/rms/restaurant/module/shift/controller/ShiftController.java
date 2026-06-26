@@ -7,11 +7,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/shifts")
@@ -66,6 +69,16 @@ public class ShiftController {
             @AuthenticationPrincipal UserDetails principal) {
 
         return ResponseEntity.ok(shiftService.getMyOpenShift(principal.getUsername()));
+    }
+
+    // CS-05: Manager daily summary – GET /api/shifts/daily-summary?date=YYYY-MM-DD
+    @GetMapping("/daily-summary")
+    public ResponseEntity<DailySummaryResponse> dailySummary(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @AuthenticationPrincipal UserDetails principal) {
+
+        LocalDate target = date != null ? date : LocalDate.now();
+        return ResponseEntity.ok(shiftService.dailySummary(target, principal.getUsername()));
     }
 
     // CS-06: List all shifts (manager only) – GET /api/shifts
