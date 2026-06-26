@@ -18,7 +18,7 @@ const ClockIcon = () => (
   </svg>
 )
 
-export default function OrderStatusModal({ orderId, onClose, onEditOrder }) {
+export default function OrderStatusModal({ orderId, onClose, onEditOrder, onOrderFinished }) {
   const [statusData, setStatusData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -27,7 +27,7 @@ export default function OrderStatusModal({ orderId, onClose, onEditOrder }) {
 
     const fetchStatus = async () => {
       try {
-        const res = await fetch(`http://localhost:8088/api/guest/orders/${orderId}/status`)
+        const res = await fetch(`/api/guest/orders/${orderId}/status`)
         if (res.ok) {
           const data = await res.json()
           setStatusData(data)
@@ -110,6 +110,36 @@ export default function OrderStatusModal({ orderId, onClose, onEditOrder }) {
                   />
                 </div>
               )}
+
+              {/* Items List */}
+              {statusData.items && statusData.items.length > 0 && (
+                <div className="w-full mt-2 flex flex-col gap-2 max-h-[30vh] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(239,231,210,0.3) transparent' }}>
+                  <div className="h-px bg-[rgba(239,231,210,0.15)] w-full mb-1" />
+                  {statusData.items.map((item, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-[rgba(239,231,210,0.05)] p-3 rounded-xl border border-[rgba(239,231,210,0.1)]">
+                      <div className="flex flex-col text-left">
+                        <span className="text-[#efe7d2] font-semibold">{item.menuItemName} <span className="text-[rgba(245,242,234,0.7)] font-normal text-sm ml-1">x{item.quantity}</span></span>
+                        {item.note && <span className="text-[rgba(245,242,234,0.5)] text-xs mt-1">Ghi chú: {item.note}</span>}
+                        {item.rejectionNote && <span className="text-[#ef4444] text-xs mt-1">Lý do hủy: {item.rejectionNote}</span>}
+                      </div>
+                      <div className="flex flex-col items-end shrink-0 ml-2">
+                        <span className={`text-xs font-semibold px-2 py-1 rounded-md ${
+                          item.cookingStatus === 'PENDING' ? 'bg-[#ffedd5] text-[#f97316]' :
+                          item.cookingStatus === 'COOKING' ? 'bg-[#dbeafe] text-[#2563eb]' :
+                          item.cookingStatus === 'COMPLETED' ? 'bg-[#dcf7ea] text-[#286b4a]' :
+                          item.cookingStatus === 'SERVED' ? 'bg-[#e0e7ff] text-[#4f46e5]' :
+                          'bg-[#fee2e2] text-[#ef4444]'
+                        }`}>
+                          {item.cookingStatus === 'PENDING' ? 'Chờ duyệt' :
+                           item.cookingStatus === 'COOKING' ? 'Đang nấu' :
+                           item.cookingStatus === 'COMPLETED' ? 'Nấu xong' :
+                           item.cookingStatus === 'SERVED' ? 'Đã phục vụ' : 'Đã hủy'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-red-400">Không tìm thấy thông tin đơn hàng.</p>
@@ -128,7 +158,12 @@ export default function OrderStatusModal({ orderId, onClose, onEditOrder }) {
               </button>
             )}
             <button 
-              onClick={onClose}
+              onClick={() => {
+                onClose();
+                if (statusData && (statusData.status === 'CLOSED' || statusData.status === 'CANCELLED')) {
+                  if (onOrderFinished) onOrderFinished();
+                }
+              }}
               className="flex-1 bg-[rgba(24,24,24,0.8)] border border-[rgba(239,231,210,0.3)] text-[#efe7d2] py-3 rounded-xl hover:bg-[rgba(239,231,210,0.1)] transition-colors"
             >
               Đóng

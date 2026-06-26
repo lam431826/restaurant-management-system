@@ -143,7 +143,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderResponse updateItemStatus(String orderId, String itemId, com.rms.restaurant.common.utils.enums.CookingStatus status) {
+    public OrderResponse updateItemStatus(String orderId, String itemId, com.rms.restaurant.module.order.dto.UpdateOrderItemStatusRequest request) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         
@@ -151,7 +151,10 @@ public class OrderServiceImpl implements OrderService {
         if (order.getItems() != null) {
             for (OrderItem item : order.getItems()) {
                 if (item.getId().equals(itemId)) {
-                    item.setCookingStatus(status);
+                    item.setCookingStatus(request.status());
+                    if (request.status() == com.rms.restaurant.common.utils.enums.CookingStatus.REJECTED) {
+                        item.setRejectionNote(request.rejectionNote());
+                    }
                     found = true;
                     break;
                 }
@@ -169,6 +172,19 @@ public class OrderServiceImpl implements OrderService {
 
     @Override 
     public OrderResponse cancel(String id, CancelOrderRequest request) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        
+        // If the reason is NOT "Khách không đến", we must check item statuses
+        if (!"Khách không đến".equalsIgnoreCase(request.reason().trim()) && !"Khách bỏ về".equalsIgnoreCase(request.reason().trim())) {
+            boolean hasNonPending = order.getItems().stream()
+                    .anyMatch(item -> item.getCookingStatus() != com.rms.restaurant.common.utils.enums.CookingStatus.PENDING 
+                                   && item.getCookingStatus() != com.rms.restaurant.common.utils.enums.CookingStatus.REJECTED);
+            if (hasNonPending) {
+                throw new ApplicationException(ApplicationError.CANNOT_CANCEL_ORDER_ITEMS_NOT_PENDING);
+            }
+        }
+        
         return updateStatus(id, OrderStatus.CANCELLED);
     }
     @Override public void respondAssistance(AssistanceRespondRequest request) {

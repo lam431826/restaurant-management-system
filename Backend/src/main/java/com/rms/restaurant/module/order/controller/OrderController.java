@@ -68,7 +68,7 @@ public class OrderController {
 
     @PutMapping("/{id}/items/{itemId}/status")
     public ResponseEntity<OrderResponse> updateItemStatus(@PathVariable String id, @PathVariable String itemId, @RequestBody com.rms.restaurant.module.order.dto.UpdateOrderItemStatusRequest request) {
-        return ResponseEntity.ok(orderService.updateItemStatus(id, itemId, request.status()));
+        return ResponseEntity.ok(orderService.updateItemStatus(id, itemId, request));
     }
 
     @PutMapping("/{id}/cancel")
@@ -86,5 +86,10 @@ public class OrderController {
     @GetMapping("/assistance/pending")
     public ResponseEntity<java.util.List<com.rms.restaurant.module.order.model.AssistanceRequest>> getPendingAssistanceRequests() {
         return ResponseEntity.ok(orderService.getPendingAssistanceRequests());
+    }
+
+    @PutMapping("/{id}/close")
+    public ResponseEntity<OrderResponse> closeOrder(@PathVariable String id) {
+        return ResponseEntity.ok(orderService.updateStatus(id, com.rms.restaurant.common.utils.enums.OrderStatus.CLOSED));
     }
 }

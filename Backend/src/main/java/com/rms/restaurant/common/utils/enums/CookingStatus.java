@@ -4,5 +4,6 @@ public enum CookingStatus {
     PENDING,
     COOKING,
     READY,
-    SERVED
+    SERVED,
+    REJECTED
 }

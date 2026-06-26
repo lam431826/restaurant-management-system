@@ -26,18 +26,22 @@ import {
   addOrderItems,
   cancelOrder,
   createOrder,
+  closeOrder,
   listOrders,
   listPendingAssistance,
   removeOrderItem,
   respondAssistance,
   updateOrderItemStatus,
 } from "../../services/orderApi";
-import type {
-  AssistanceRequest,
-  Order,
-} from "../../services/orderApi";
+import type { AssistanceRequest, Order } from "../../services/orderApi";
 
-import type { MenuItem, Category, TableItem, OrderItem } from "./orders/types";
+import type {
+  MenuItem,
+  Category,
+  TableItem,
+  OrderItem,
+  CartItem,
+} from "./orders/types";
 import {
   toTableItem,
   ACTIVE_ORDER_STATUSES,
@@ -77,14 +81,23 @@ const CashierOrders = () => {
   const [tablesLoading, setTablesLoading] = useState(false);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [assistanceRequests, setAssistanceRequests] = useState<AssistanceRequest[]>([]);
+  const [assistanceRequests, setAssistanceRequests] = useState<
+    AssistanceRequest[]
+  >([]);
   const [search, setSearch] = useState("");
   const [noteModal, setNoteModal] = useState<{
     open: boolean;
     itemId: string | null;
     text: string;
   }>({ open: false, itemId: null, text: "" });
+  const [rejectModal, setRejectModal] = useState<{
+    open: boolean;
+    orderId: string | null;
+    itemId: string | null;
+    text: string;
+  }>({ open: false, orderId: null, itemId: null, text: "" });
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [successTotal, setSuccessTotal] = useState<number | null>(null);
   const [showChangePw, setShowChangePw] = useState(false);
@@ -107,16 +120,22 @@ const CashierOrders = () => {
   const [paymentError, setPaymentError] = useState("");
 
   // ── Cash shift state ──────────────────────────────────────────────────────
-  const [shift, setShift]                   = useState<ShiftSummary | null>(null);
-  const [shiftLoading, setShiftLoading]     = useState(true);
+  const [shift, setShift] = useState<ShiftSummary | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [showCashMovement, setShowCashMovement] = useState(false);
 
   useEffect(() => {
     getMyShift()
-      .then((s) => { setShift(s); if (!s) setShiftModalOpen(true); })
-      .catch(() => { setShift(null); setShiftModalOpen(true); })
+      .then((s) => {
+        setShift(s);
+        if (!s) setShiftModalOpen(true);
+      })
+      .catch(() => {
+        setShift(null);
+        setShiftModalOpen(true);
+      })
       .finally(() => setShiftLoading(false));
   }, []);
 
@@ -201,7 +220,14 @@ const CashierOrders = () => {
           (o) => o.tableId === t.id && ACTIVE_ORDER_STATUSES.includes(o.status),
         );
         if (tableOrders.length === 0) {
-          return { ...t, orderId: null };
+          return {
+            ...t,
+            orderId: null,
+            occupied: false,
+            amount: 0,
+            items: 0,
+            status: "AVAILABLE",
+          };
         }
         const itemsCount = tableOrders.reduce(
           (total, order) =>
@@ -215,6 +241,7 @@ const CashierOrders = () => {
         return {
           ...t,
           occupied: true,
+          status: "OCCUPIED",
           amount: totalAmount,
           items: itemsCount,
           orderId: tableOrders[0].id,
@@ -242,7 +269,9 @@ const CashierOrders = () => {
       return;
     }
     const tableOrders = activeOrders.filter(
-      (o) => o.tableId === selectedTable.id && ACTIVE_ORDER_STATUSES.includes(o.status),
+      (o) =>
+        o.tableId === selectedTable.id &&
+        ACTIVE_ORDER_STATUSES.includes(o.status),
     );
     if (tableOrders.length === 0) {
       setOrderItems([]);
@@ -256,14 +285,14 @@ const CashierOrders = () => {
         price: i.unitPrice,
         status: COOKING_STATUS_LABEL[i.cookingStatus],
         notes: i.note || "",
+        rejectionNote: i.rejectionNote,
         orderId: order.id,
       })),
     );
     setOrderItems(combinedItems);
   }, [selectedTable?.id, selectedTable?.occupied, activeOrders]);
 
-  const selectedMenuItems = menuItems.filter((i) => i.qty > 0);
-  const hasSelectedMenu = selectedMenuItems.length > 0;
+  const hasSelectedMenu = cart.length > 0;
 
   const resetInvoiceLink = () => {
     setBackendOrderId("");
@@ -451,16 +480,55 @@ const CashierOrders = () => {
     }
   };
 
-  const handleQtyChange = (id: string, delta: number) =>
+  const handleQtyChange = (id: string, delta: number) => {
+    if (delta > 0) {
+      const menuItem = menuItems.find((m) => m.id === id);
+      if (menuItem) {
+        setCart((prev) => [
+          ...prev,
+          {
+            cartItemId: Math.random().toString(36).substring(2, 11),
+            menuItemId: menuItem.id,
+            name: menuItem.name,
+            price: menuItem.price,
+            qty: 1,
+            note: "",
+          },
+        ]);
+      }
+    } else {
+      setCart((prev) => {
+        const index = [...prev].reverse().findIndex((c) => c.menuItemId === id);
+        if (index !== -1) {
+          const realIndex = prev.length - 1 - index;
+          return prev.filter((_, i) => i !== realIndex);
+        }
+        return prev;
+      });
+    }
     setMenuItems((items) =>
       items.map((item) =>
         item.id === id ? { ...item, qty: Math.max(0, item.qty + delta) } : item,
       ),
     );
+  };
+
   const handleTableSelect = (id: string) => {
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
     resetInvoiceLink();
   };
+
+  useEffect(() => {
+    if (
+      selectedTable &&
+      selectedTable.occupied &&
+      selectedTable.orderId &&
+      !backendOrderId
+    ) {
+      setBackendOrderId(selectedTable.orderId);
+      loadInvoiceForOrder(selectedTable.orderId);
+    }
+  }, [selectedTable?.orderId, selectedTable?.occupied, backendOrderId]);
 
   const handleStatusChange = async (
     orderId: string,
@@ -478,7 +546,22 @@ const CashierOrders = () => {
   };
 
   const handleRemoveItem = async (orderId: string, orderItemId: string) => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa món này khỏi đơn hàng?")) return;
+    if (!window.confirm("Bạn có chắc chắn muốn xóa món này khỏi đơn hàng?"))
+      return;
+    if (orderId === "cart") {
+      const itemToRemove = cart.find((c) => c.cartItemId === orderItemId);
+      if (itemToRemove) {
+        setCart((prev) => prev.filter((c) => c.cartItemId !== orderItemId));
+        setMenuItems((items) =>
+          items.map((item) =>
+            item.id === itemToRemove.menuItemId
+              ? { ...item, qty: Math.max(0, item.qty - 1) }
+              : item,
+          ),
+        );
+      }
+      return;
+    }
     try {
       await removeOrderItem(orderId, orderItemId);
       setRefreshTrigger((t) => t + 1);
@@ -490,7 +573,9 @@ const CashierOrders = () => {
   const handleCancelOrder = async (orderIds: string[]) => {
     if (!window.confirm("Bạn có chắc chắn muốn hủy đơn hàng này?")) return;
     try {
-      await Promise.all(orderIds.map((orderId) => cancelOrder(orderId, "Hủy bởi thu ngân")));
+      await Promise.all(
+        orderIds.map((orderId) => cancelOrder(orderId, "Hủy bởi thu ngân")),
+      );
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
@@ -500,16 +585,58 @@ const CashierOrders = () => {
   const handleOpenNote = (itemId: string, currentText: string) =>
     setNoteModal({ open: true, itemId, text: currentText });
   const handleConfirmNote = (itemId: string, text: string) => {
-    setOrderItems((items) =>
-      items.map((i) => (i.id === itemId ? { ...i, notes: text } : i)),
-    );
+    let updatedCart = false;
+    setCart((prevCart) => {
+      const newCart = prevCart.map((i) =>
+        i.cartItemId === itemId ? { ...i, note: text } : i,
+      );
+      if (newCart !== prevCart) updatedCart = true;
+      return newCart;
+    });
+
+    if (!updatedCart) {
+      setOrderItems((items) =>
+        items.map((i) => (i.id === itemId ? { ...i, notes: text } : i)),
+      );
+    }
     setNoteModal({ open: false, itemId: null, text: "" });
   };
   const handleCancelNote = () =>
     setNoteModal({ open: false, itemId: null, text: "" });
 
+  const handleOpenReject = (orderId: string, itemId: string) =>
+    setRejectModal({ open: true, orderId, itemId, text: "" });
+
+  const handleConfirmReject = async (
+    orderId: string,
+    itemId: string,
+    text: string,
+  ) => {
+    try {
+      await updateOrderItemStatus(orderId, itemId, "REJECTED", text);
+      setRefreshTrigger((t) => t + 1);
+      setRejectModal({ open: false, orderId: null, itemId: null, text: "" });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleCancelReject = () =>
+    setRejectModal({ open: false, orderId: null, itemId: null, text: "" });
+
+  const handleCloseOrder = async () => {
+    if (!backendOrderId) return;
+    try {
+      await closeOrder(backendOrderId);
+      setRefreshTrigger((t) => t + 1);
+      resetInvoiceLink();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleCreateOrder = async () => {
-    if (!hasSelectedMenu) {
+    if (cart.length === 0) {
       setTab("menu");
       return;
     }
@@ -517,8 +644,13 @@ const CashierOrders = () => {
     try {
       await createOrder(
         selectedTable.id,
-        selectedMenuItems.map((m) => ({ menuItemId: m.id, quantity: m.qty })),
+        cart.map((c) => ({
+          menuItemId: c.menuItemId,
+          quantity: 1,
+          note: c.note,
+        })),
       );
+      setCart([]);
       setMenuItems((items) => items.map((i) => ({ ...i, qty: 0 })));
       setTab("table");
       setRefreshTrigger((t) => t + 1);
@@ -532,8 +664,13 @@ const CashierOrders = () => {
     try {
       await addOrderItems(
         selectedTable.orderId,
-        selectedMenuItems.map((m) => ({ menuItemId: m.id, quantity: m.qty })),
+        cart.map((c) => ({
+          menuItemId: c.menuItemId,
+          quantity: 1,
+          note: c.note,
+        })),
       );
+      setCart([]);
       setMenuItems((items) => items.map((i) => ({ ...i, qty: 0 })));
       setTab("table");
       setRefreshTrigger((t) => t + 1);
@@ -586,7 +723,9 @@ const CashierOrders = () => {
   if (shiftLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#f5f5f5] font-sans">
-        <span className="text-[#636566] text-[16px]">Đang tải ca làm việc...</span>
+        <span className="text-[#636566] text-[16px]">
+          Đang tải ca làm việc...
+        </span>
       </div>
     );
   }
@@ -595,7 +734,10 @@ const CashierOrders = () => {
     <div className="flex flex-col h-screen bg-[#f5f5f5] overflow-hidden font-sans">
       {!shift && shiftModalOpen && (
         <OpenShiftModal
-          onOpened={(s) => { setShift(s); setShiftModalOpen(false); }}
+          onOpened={(s) => {
+            setShift(s);
+            setShiftModalOpen(false);
+          }}
           onLogout={handleLogout}
           onClose={() => setShiftModalOpen(false)}
         />
@@ -617,8 +759,18 @@ const CashierOrders = () => {
       {!shift && !shiftModalOpen && (
         <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2 text-amber-700 text-[14px]">
-            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            <svg
+              className="w-4 h-4 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+              />
             </svg>
             <span>Ca thu ngân chưa mở — không thể tạo đơn hàng mới.</span>
           </div>
@@ -731,7 +883,18 @@ const CashierOrders = () => {
         </div>
 
         <OrderPanel
-          items={orderItems}
+          items={[
+            ...orderItems,
+            ...cart.map((c) => ({
+              id: c.cartItemId,
+              name: c.name,
+              qty: c.qty,
+              notes: c.note,
+              status: "MỚI",
+              price: c.price,
+              orderId: "cart",
+            })),
+          ]}
           hasSelectedMenu={hasSelectedMenu}
           onStatusChange={handleStatusChange}
           onCheckout={() => {
@@ -742,11 +905,14 @@ const CashierOrders = () => {
           onAddItems={handleAddItems}
           onNote={handleOpenNote}
           onRemoveItem={handleRemoveItem}
+          onRejectItem={handleOpenReject}
           onCancelOrder={handleCancelOrder}
           selectedTable={selectedTable}
           checkoutDisabled={checkoutDisabled}
           checkoutLabel={checkoutLabel}
           shiftOpen={!!shift}
+          invoicePaid={invoice?.paid}
+          onCloseOrder={handleCloseOrder}
           invoiceTools={
             <CashierInvoicePanel
               orderId={backendOrderId}
@@ -797,6 +963,19 @@ const CashierOrders = () => {
           onCancel={handleCancelNote}
         />
       )}
+      {rejectModal.open &&
+        rejectModal.itemId !== null &&
+        rejectModal.orderId !== null && (
+          <AddNoteModal
+            itemId={rejectModal.itemId}
+            initialText=""
+            onConfirm={(itemId, text) =>
+              handleConfirmReject(rejectModal.orderId!, itemId, text)
+            }
+            onCancel={handleCancelReject}
+            title="Lý do hủy món"
+          />
+        )}
       {showChangePw && (
         <ChangePasswordModal onClose={() => setShowChangePw(false)} />
       )}

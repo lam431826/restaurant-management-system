@@ -39,6 +39,16 @@ export interface OrderItem {
   status: string;
   price: number;
   orderId: string;
+  rejectionNote?: string | null;
+}
+
+export interface CartItem {
+  cartItemId: string;
+  menuItemId: string;
+  name: string;
+  price: number;
+  qty: number;
+  note: string;
 }
 
 export const OCCUPIED_STATUSES = ["OCCUPIED", "BILLING"];
@@ -78,6 +88,7 @@ export const COOKING_STATUS_LABEL: Record<CookingStatus, string> = {
   COOKING: "Đang nấu",
   READY: "Đã nấu xong",
   SERVED: "Đã phục vụ",
+  REJECTED: "Đã hủy",
 };
 
 export const COOKING_STATUS_FROM_LABEL: Record<string, CookingStatus> = {
@@ -85,6 +96,7 @@ export const COOKING_STATUS_FROM_LABEL: Record<string, CookingStatus> = {
   "Đang nấu": "COOKING",
   "Đã nấu xong": "READY",
   "Đã phục vụ": "SERVED",
+  "Đã hủy": "REJECTED",
 };
 
 export const STATUS_OPTIONS = ["Đang nấu", "Đã nấu xong", "Đã phục vụ"];

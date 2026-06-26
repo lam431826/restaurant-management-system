@@ -24,44 +24,9 @@ const NoteIcon = () => (
   </svg>
 )
 
-export default function CartSidebar({ isOpen, onClose, cart, updateQuantity, updateNote, tableId, onOrderSuccess }) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+export default function CartSidebar({ isOpen, onClose, cart, updateQuantity, updateNote, tableId, onSubmitOrder, isSubmitting }) {
 
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
-
-  const handleCheckout = async () => {
-    if (cart.length === 0) return;
-    setLoading(true)
-    setError(null)
-    
-    const requestBody = {
-      tableId: tableId || "T01", // Fallback for local testing
-      tableToken: "token123", // Dummy token
-      items: cart.map(item => ({
-        menuItemId: item.id,
-        quantity: item.quantity,
-        note: item.note || ""
-      })),
-      note: ""
-    }
-
-    try {
-      const res = await fetch('http://localhost:8088/api/guest/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      })
-      if (!res.ok) throw new Error('Order failed')
-      const data = await res.json()
-      onOrderSuccess(data.orderId)
-    } catch (err) {
-      setError('Có lỗi xảy ra khi đặt món. Vui lòng thử lại.')
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   return (
     <>
@@ -127,13 +92,13 @@ export default function CartSidebar({ isOpen, onClose, cart, updateQuantity, upd
               <span className="text-[#efe7d2] text-lg">Tổng cộng</span>
               <span className="text-[#efe7d2] text-2xl font-bold" style={{ fontFamily: 'Forum, serif' }}>{total.toLocaleString('vi-VN')}Đ</span>
             </div>
-            {error && <p className="text-red-400 text-sm mb-3 text-center">{error}</p>}
+            {/* error && <p className="text-red-400 text-sm mb-3 text-center">{error}</p> */}
             <button 
-              onClick={handleCheckout}
-              disabled={loading}
+              onClick={onSubmitOrder}
+              disabled={isSubmitting}
               className="w-full bg-[#efe7d2] text-[#0a0b0a] py-4 rounded-xl font-bold tracking-wide uppercase hover:bg-white transition-colors disabled:opacity-70"
             >
-              {loading ? 'Đang gửi...' : 'Chốt Order'}
+              {isSubmitting ? 'Đang gửi...' : 'Chốt Order'}
             </button>
           </div>
         )}

@@ -8,7 +8,7 @@ export default function MenuSection({ onAddToCart }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('http://localhost:8088/api/menu/public')
+    fetch('/api/menu/public')
       .then(res => res.json())
       .then(data => {
         setMenuData(data)

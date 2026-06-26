@@ -70,6 +70,7 @@ public enum ApplicationError {
     RESERVATION_PHONE_MISMATCH("Phone number does not match this reservation", HttpStatus.UNAUTHORIZED),
     CANCEL_TOKEN_INVALID("Cancellation token is invalid or has expired", HttpStatus.UNAUTHORIZED),
     CANNOT_CANCEL_PAID_ORDER("Cannot cancel an order that has been paid", HttpStatus.UNPROCESSABLE_ENTITY),
+    CANNOT_CANCEL_ORDER_ITEMS_NOT_PENDING("Cannot cancel order because some items are already being prepared or served", HttpStatus.UNPROCESSABLE_ENTITY),
     INVOICE_ALREADY_EXISTS("Invoice already exists for this order", HttpStatus.CONFLICT),
     INVOICE_ALREADY_PAID("Cannot apply a promotion to a paid invoice", HttpStatus.UNPROCESSABLE_ENTITY),
     PROMOTION_USAGE_LIMIT_REACHED("Promotion usage limit has been reached", HttpStatus.CONFLICT),
