@@ -361,8 +361,8 @@ public class ReservationServiceImpl implements ReservationService {
      */
     private void checkTableAvailabilityForStatuses(String tableId, LocalDateTime datetime,
                                                     String excludeId, List<ReservationStatus> statuses) {
-        LocalDateTime windowStart = datetime.minusMinutes(WINDOW_MINUTES);
-        LocalDateTime windowEnd   = datetime.plusMinutes(WINDOW_MINUTES);
+        LocalDateTime windowStart = datetime.minusMinutes(60);
+        LocalDateTime windowEnd   = datetime.plusMinutes(120);
         List<Reservation> conflicts = reservationRepository.findConflictingForUpdate(
                 tableId, statuses, windowStart, windowEnd,
                 excludeId != null ? excludeId : "");
