@@ -89,24 +89,26 @@ const Reservation = () => {
   }, [bellOpen])
 
   const pollEmailResult = async (reservationId: string, _actionLabel: string, expectedTemplate?: string) => {
-    // Poll at 3s, retry once at 5s if still PENDING (async SMTP can be slow)
-    for (const delay of [3000, 5000]) {
+    // Poll at 3s / 5s / 7s — async SMTP can be slow; FAILED may only appear after ~10s
+    for (const delay of [3000, 5000, 7000]) {
       await new Promise(r => setTimeout(r, delay))
       try {
         const res = await pollReservationNotifResult(reservationId)
         const logs = res.data.data
         // Look for the specific notification template we just triggered; fall back to most recent
         const log = (expectedTemplate ? logs.find(l => l.template === expectedTemplate) : null) ?? logs[0]
-        if (!log) return
+        if (!log) continue   // async task hasn't written the log yet — retry
         if (log.status === 'PENDING') continue
         if (log.status === 'SENT') {
-          showToast(`Đã gửi email đến ${log.recipient} (kiểm tra thư rác nếu không nhận được)`, 'info')
+          showToast(`Email đã được gửi đến ${log.recipient}`, 'info')
         } else {
           showToast(`Gửi email thất bại — kiểm tra lại địa chỉ email của khách`, 'error')
         }
         return
       } catch { return }
     }
+    // All retries exhausted without a conclusive status
+    showToast('Không xác nhận được trạng thái email — vui lòng kiểm tra nhật ký thông báo', 'info')
   }
 
   const handleLogout = async () => {
