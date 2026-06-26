@@ -85,7 +85,9 @@ const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, onAd
                   </td>
                   {weekDays.map(d => {
                     const dayEntries = entriesOn(entries, emp.id, d)
-                    const hasRoom = dayEntries.length < shiftTypes.length
+                    // Allow adding when the day still has an unassigned template,
+                    // or when no templates exist yet (the add modal can create one).
+                    const hasRoom = shiftTypes.length === 0 || dayEntries.length < shiftTypes.length
                     return (
                       <td key={d.toISOString()} className="group px-1.5 py-2 align-top border-l border-line">
                         <div className="flex flex-col gap-1.5">
