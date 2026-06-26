@@ -15,6 +15,8 @@ import com.rms.restaurant.module.table.repository.TableRepository;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
+import com.rms.restaurant.module.payment.model.Invoice;
+import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.menu.model.MenuItem;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
@@ -32,6 +34,7 @@ public class OrderServiceImpl implements OrderService {
     private final com.rms.restaurant.module.order.repository.AssistanceRequestRepository assistanceRequestRepository;
     private final MenuItemRepository menuItemRepository;
     private final TableRepository tableRepository;
+    private final InvoiceRepository invoiceRepository;
 
     @Override 
     public PageResponse<OrderResponse> list(Pageable pageable) { 
@@ -46,6 +49,10 @@ public class OrderServiceImpl implements OrderService {
     }
     @Override
     public OrderResponse updateStatus(String id, OrderStatus status) {
+        if (status == OrderStatus.CLOSED) {
+            return closeOrder(id);
+        }
+
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         order.setStatus(status);
@@ -62,6 +69,47 @@ public class OrderServiceImpl implements OrderService {
                 }
             }
         }
+        return orderMapper.toResponse(orderRepository.save(order));
+    }
+
+    @Override
+    public OrderResponse closeOrder(String id) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+
+        if (order.getStatus() == OrderStatus.CLOSED) {
+            return orderMapper.toResponse(order);
+        }
+
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            throw new ApplicationException(
+                    ApplicationError.ORDER_NOT_CLOSEABLE,
+                    "Cancelled order cannot be closed"
+            );
+        }
+
+        Invoice invoice = invoiceRepository.findByOrderId(order.getId())
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
+
+        if (!invoice.isPaid()) {
+            throw new ApplicationException(
+                    ApplicationError.ORDER_NOT_CLOSEABLE,
+                    "Cannot close order before invoice is paid"
+            );
+        }
+
+        order.setStatus(OrderStatus.CLOSED);
+        RestaurantTable table = tableRepository.findById(order.getTableId()).orElse(null);
+        if (table != null) {
+            Order activeOrder = orderRepository.findTopByTableIdOrderByCreatedAtDesc(table.getId())
+                    .filter(o -> o.getStatus() != OrderStatus.CLOSED && o.getStatus() != OrderStatus.CANCELLED)
+                    .orElse(null);
+            if (activeOrder == null || activeOrder.getId().equals(order.getId())) {
+                table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.AVAILABLE);
+                tableRepository.save(table);
+            }
+        }
+
         return orderMapper.toResponse(orderRepository.save(order));
     }
 

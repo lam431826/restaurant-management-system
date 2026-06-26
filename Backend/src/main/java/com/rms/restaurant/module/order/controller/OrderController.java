@@ -90,6 +90,6 @@ public class OrderController {
 
     @PutMapping("/{id}/close")
     public ResponseEntity<OrderResponse> closeOrder(@PathVariable String id) {
-        return ResponseEntity.ok(orderService.updateStatus(id, com.rms.restaurant.common.utils.enums.OrderStatus.CLOSED));
+        return ResponseEntity.ok(orderService.closeOrder(id));
     }
 }
