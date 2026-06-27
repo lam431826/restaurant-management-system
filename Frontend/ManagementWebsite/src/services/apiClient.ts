@@ -12,6 +12,20 @@ interface ApiErrorBody {
   fieldErrors?: Record<string, string>
 }
 
+export class ApiClientError extends Error {
+  status: number
+  code?: string
+  fieldErrors?: Record<string, string>
+
+  constructor(status: number, message: string, code?: string, fieldErrors?: Record<string, string>) {
+    super(message)
+    this.name = 'ApiClientError'
+    this.status = status
+    this.code = code
+    this.fieldErrors = fieldErrors
+  }
+}
+
 interface ApiRequestOptions extends RequestInit {
   auth?: boolean
 }
@@ -46,9 +60,12 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
   }
 
   if (!response.ok) {
-    const errorBody = responseBody as ApiErrorBody | null
+    const errorBody =
+      responseBody && typeof responseBody === 'object'
+        ? (responseBody as ApiErrorBody)
+        : null
     const message = errorBody?.message || errorBody?.error || responseText || `Request failed (${response.status})`
-    throw new Error(message)
+    throw new ApiClientError(response.status, message, errorBody?.error, errorBody?.fieldErrors)
   }
 
   return responseBody as T
