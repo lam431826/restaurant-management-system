@@ -18,6 +18,7 @@ import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
 import com.rms.restaurant.module.order.repository.AssistanceRequestRepository;
 import com.rms.restaurant.module.order.repository.OrderRepository;
+import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     private final TableRepository tableRepository;
     private final AssistanceRequestRepository assistanceRequestRepository;
     private final OrderMapper orderMapper;
+    private final InvoiceRepository invoiceRepository;
 
     // ── GO-03: Khách quét QR → gọi món ──────────────────────────────────────
 
@@ -81,6 +83,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     public OrderStatusResponse updateOrderItems(String orderId, UpdateOrderItemsRequest request) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        ensureOrderItemsCanBeModified(order);
 
         if (order.getStatus() != OrderStatus.PENDING) {
             throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION,
@@ -100,6 +103,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     public OrderStatusResponse addOrderItems(String orderId, UpdateOrderItemsRequest request) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        ensureOrderItemsCanBeModified(order);
 
         appendItems(order, request);
 
@@ -167,6 +171,19 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
 
             order.getItems().add(orderItem);
         });
+    }
+
+    private void ensureOrderItemsCanBeModified(Order order) {
+        if (order.getStatus() == OrderStatus.CLOSED || order.getStatus() == OrderStatus.CANCELLED) {
+            throw new ApplicationException(
+                    ApplicationError.INVALID_STATUS_TRANSITION,
+                    "Closed or cancelled order cannot be modified"
+            );
+        }
+
+        if (invoiceRepository.findByOrderId(order.getId()).isPresent()) {
+            throw new ApplicationException(ApplicationError.ORDER_ALREADY_INVOICED);
+        }
     }
 
     private OrderStatusResponse toStatusResponse(Order order, String estimatedTime) {

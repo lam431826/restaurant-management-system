@@ -131,6 +131,7 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse removeItem(String orderId, String itemId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        ensureOrderItemsCanBeModified(order);
         if (order.getItems() != null) {
             order.getItems().removeIf(item -> item.getId().equals(itemId));
         }
@@ -176,6 +177,7 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse addItems(String id, AddOrderItemsRequest request) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        ensureOrderItemsCanBeModified(order);
 
         if (request.items() != null) {
             request.items().forEach(itemRequest -> {
@@ -202,6 +204,7 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse updateItemStatus(String orderId, String itemId, com.rms.restaurant.module.order.dto.UpdateOrderItemStatusRequest request) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        ensureOrderItemsCanBeModified(order);
         
         boolean found = false;
         if (order.getItems() != null) {
@@ -224,6 +227,19 @@ public class OrderServiceImpl implements OrderService {
         // Optional: auto-update order status based on items? We'll keep it simple for now or implement if needed.
         Order savedOrder = orderRepository.save(order);
         return orderMapper.toResponse(savedOrder);
+    }
+
+    private void ensureOrderItemsCanBeModified(Order order) {
+        if (order.getStatus() == OrderStatus.CLOSED || order.getStatus() == OrderStatus.CANCELLED) {
+            throw new ApplicationException(
+                    ApplicationError.INVALID_STATUS_TRANSITION,
+                    "Closed or cancelled order cannot be modified"
+            );
+        }
+
+        if (invoiceRepository.findByOrderId(order.getId()).isPresent()) {
+            throw new ApplicationException(ApplicationError.ORDER_ALREADY_INVOICED);
+        }
     }
 
     @Override 
