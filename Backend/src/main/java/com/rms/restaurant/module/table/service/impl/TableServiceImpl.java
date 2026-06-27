@@ -14,6 +14,8 @@ import com.rms.restaurant.module.table.service.TableService;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
+import com.rms.restaurant.module.reservation.repository.ReservationRepository;
+import com.rms.restaurant.common.utils.enums.ReservationStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
@@ -51,6 +53,7 @@ public class TableServiceImpl implements TableService {
     private final TableAreaRepository areaRepository;
     private final TableMapper tableMapper;
     private final OrderRepository orderRepository;
+    private final ReservationRepository reservationRepository;
 
     // ── Tables ───────────────────────────────────────────────────────────
 
@@ -58,7 +61,12 @@ public class TableServiceImpl implements TableService {
     @Transactional(readOnly = true)
     public List<TableResponse> listAll() {
         return tableRepository.findAllByOrderByDisplayOrderAscNameAsc().stream()
-                .map(table -> tableMapper.toResponse(table, findActiveOrderId(table.getId())))
+                .map(table -> {
+                    String orderId = findActiveOrderId(table.getId());
+                    TableResponse.ReservationSummary res = table.getStatus() == TableStatus.RESERVED
+                            ? findUpcomingReservation(table.getId()) : null;
+                    return tableMapper.toResponse(table, orderId, res);
+                })
                 .collect(Collectors.toList());
     }
 
@@ -66,7 +74,9 @@ public class TableServiceImpl implements TableService {
     @Transactional(readOnly = true)
     public TableResponse getById(String id) {
         RestaurantTable table = findTable(id);
-        return tableMapper.toResponse(table, findActiveOrderId(table.getId()));
+        TableResponse.ReservationSummary res = table.getStatus() == TableStatus.RESERVED
+                ? findUpcomingReservation(table.getId()) : null;
+        return tableMapper.toResponse(table, findActiveOrderId(table.getId()), res);
     }
 
     @Override
@@ -292,6 +302,14 @@ public class TableServiceImpl implements TableService {
     private RestaurantTable findTable(String id) {
         return tableRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.TABLE_NOT_FOUND));
+    }
+
+    private TableResponse.ReservationSummary findUpcomingReservation(String tableId) {
+        return reservationRepository
+                .findFirstByTableIdAndStatusOrderByDatetimeAsc(tableId, ReservationStatus.CONFIRMED)
+                .map(r -> new TableResponse.ReservationSummary(
+                        r.getId(), r.getGuestName(), r.getPhone(), r.getPartySize(), r.getDatetime()))
+                .orElse(null);
     }
 
     /** The most recent order on this table that hasn't been closed/cancelled, if any. */

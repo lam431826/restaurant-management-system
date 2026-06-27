@@ -1,6 +1,15 @@
 import type { TableItem } from "./types";
 
 /* ─── Table view ─────────────────────────────────────────────────────────── */
+
+function formatResTime(dt: string): string {
+  const d = new Date(dt);
+  const hh = d.getHours().toString().padStart(2, "0");
+  const mm = d.getMinutes().toString().padStart(2, "0");
+  const day = d.getDate().toString().padStart(2, "0");
+  const mon = (d.getMonth() + 1).toString().padStart(2, "0");
+  return `${hh}:${mm} ${day}/${mon}`;
+}
 const Chairs = ({ color }: { color: string }) => (
   <div className="flex gap-[15px] shrink-0">
     <div
@@ -48,8 +57,20 @@ const TableCard = ({
         className="relative h-[80px] w-[164px] rounded-[12px] shrink-0"
         style={{ backgroundColor: seatColor }}
       >
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-1">
-          {table.occupied ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-2">
+          {table.status === "RESERVED" && table.upcomingReservation ? (
+            <>
+              <p className="text-[11px] font-semibold text-blue-800 leading-tight truncate w-full text-center">
+                {table.upcomingReservation.guestName}
+              </p>
+              <p className="text-[10px] text-blue-700">
+                {formatResTime(table.upcomingReservation.datetime)}
+              </p>
+              <p className="text-[10px] text-blue-600">
+                {table.upcomingReservation.partySize} người
+              </p>
+            </>
+          ) : table.occupied ? (
             <>
               <p className="text-[16px] font-semibold text-black leading-tight">
                 {table.amount > 0
