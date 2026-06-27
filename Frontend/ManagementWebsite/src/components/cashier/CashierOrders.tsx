@@ -161,8 +161,14 @@ const PROMOTION_DISCOUNT_ERROR_MESSAGES: Record<string, string> = {
   INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
   INVOICE_ALREADY_PAID:
     "Không thể áp dụng khuyến mãi cho hóa đơn đã thanh toán.",
+  INVOICE_PROMOTION_ALREADY_APPLIED:
+    "Hóa đơn này đã được áp dụng mã khuyến mãi này rồi.",
   PROMOTION_CHANGE_NOT_ALLOWED:
-    "Không thể thay đổi mã khuyến mãi đã áp dụng cho hóa đơn.",
+    "Không thể thay đổi mã khuyến mãi sau khi đã áp dụng.",
+  ORDER_NOT_DISCOUNTABLE:
+    "Không thể áp dụng khuyến mãi cho đơn đã đóng hoặc đã hủy.",
+  INVOICE_ALREADY_DISCOUNTED:
+    "Hóa đơn này đã có khuyến mãi, không thể áp dụng thêm.",
 };
 
 const PROMOTION_DISCOUNT_MESSAGE_FALLBACKS: Record<string, string> = {
@@ -174,8 +180,14 @@ const PROMOTION_DISCOUNT_MESSAGE_FALLBACKS: Record<string, string> = {
   "Invoice not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_NOT_FOUND,
   "Cannot apply a promotion to a paid invoice":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "This promotion has already been applied to this invoice":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_PROMOTION_ALREADY_APPLIED,
   "Changing the promotion on an invoice is not allowed":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_CHANGE_NOT_ALLOWED,
+  "Order cannot apply discount in its current status":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.ORDER_NOT_DISCOUNTABLE,
+  "Invoice already has a promotion discount":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_DISCOUNTED,
 };
 
 const PROMOTION_DISCOUNT_FALLBACK_ERROR =
