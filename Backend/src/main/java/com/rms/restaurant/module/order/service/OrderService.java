@@ -9,6 +9,7 @@ public interface OrderService {
     OrderResponse getById(String id);
     OrderResponse accept(String id);
     OrderResponse updateStatus(String id, com.rms.restaurant.common.utils.enums.OrderStatus status);
+    OrderResponse closeOrder(String id);
     OrderResponse addItem(String id, com.rms.restaurant.module.order.dto.AddOrderItemRequest request);
     OrderResponse removeItem(String orderId, String itemId);
     OrderResponse updateItemStatus(String orderId, String itemId, com.rms.restaurant.module.order.dto.UpdateOrderItemStatusRequest request);

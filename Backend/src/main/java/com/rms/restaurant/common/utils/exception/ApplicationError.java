@@ -70,6 +70,7 @@ public enum ApplicationError {
     RESERVATION_PHONE_MISMATCH("Phone number does not match this reservation", HttpStatus.UNAUTHORIZED),
     CANCEL_TOKEN_INVALID("Cancellation token is invalid or has expired", HttpStatus.UNAUTHORIZED),
     CANNOT_CANCEL_PAID_ORDER("Cannot cancel an order that has been paid", HttpStatus.UNPROCESSABLE_ENTITY),
+    CANNOT_CANCEL_INVOICED_ORDER("Cannot cancel an order after invoice has been created", HttpStatus.UNPROCESSABLE_ENTITY),
     CANNOT_CANCEL_ORDER_ITEMS_NOT_PENDING("Cannot cancel order because some items are already being prepared or served", HttpStatus.UNPROCESSABLE_ENTITY),
     INVOICE_ALREADY_EXISTS("Invoice already exists for this order", HttpStatus.CONFLICT),
     INVOICE_ALREADY_PAID("Cannot apply a promotion to a paid invoice", HttpStatus.UNPROCESSABLE_ENTITY),
@@ -78,6 +79,10 @@ public enum ApplicationError {
     INVALID_PROMOTION_USAGE_LIMIT("Promotion usage limit is invalid", HttpStatus.UNPROCESSABLE_ENTITY),
     INVALID_STATUS_TRANSITION("Invalid status transition", HttpStatus.UNPROCESSABLE_ENTITY),
     ORDER_NOT_CLOSEABLE("Order cannot be closed in its current state", HttpStatus.UNPROCESSABLE_ENTITY),
+    ORDER_NOT_INVOICEABLE("Order cannot be invoiced in its current status", HttpStatus.UNPROCESSABLE_ENTITY),
+    ORDER_NOT_READY_FOR_INVOICE("Order is not ready for invoice because some items are still pending or cooking", HttpStatus.UNPROCESSABLE_ENTITY),
+    INVALID_INVOICE_ITEMS("Order contains invalid invoice items", HttpStatus.UNPROCESSABLE_ENTITY),
+    INVALID_INVOICE_TOTAL("Invoice subtotal must be greater than zero and total amount cannot be negative", HttpStatus.UNPROCESSABLE_ENTITY),
     FORBIDDEN("You do not have permission to perform this action", HttpStatus.FORBIDDEN),
 
     // Roster (Work Shift) — WS-01..09, BR-WS-*

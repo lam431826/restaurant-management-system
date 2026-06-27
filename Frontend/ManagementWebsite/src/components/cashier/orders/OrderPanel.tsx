@@ -22,6 +22,7 @@ export const OrderPanel = ({
   checkoutLabel,
   shiftOpen,
   invoicePaid,
+  orderActionMessage,
   onCloseOrder,
 }: {
   items: OrderItem[];
@@ -44,6 +45,7 @@ export const OrderPanel = ({
   checkoutLabel: string;
   shiftOpen?: boolean;
   invoicePaid?: boolean;
+  orderActionMessage?: { type: "error"; text: string } | null;
   onCloseOrder?: () => void;
 }) => {
   const isTableEmpty = !!selectedTable && !selectedTable.occupied;
@@ -165,6 +167,11 @@ export const OrderPanel = ({
           </button>
         ) : (
           <div className="flex flex-col gap-2 mt-1">
+            {orderActionMessage && (
+              <div className="px-3 py-2 rounded-[10px] bg-[#fff0f0] text-[#d92d20] text-[12px] leading-5">
+                {orderActionMessage.text}
+              </div>
+            )}
             {invoicePaid ? (
               <button
                 onClick={onCloseOrder}

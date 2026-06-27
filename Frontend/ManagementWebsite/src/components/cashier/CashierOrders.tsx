@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { logout } from "../../api/auth";
+import { ApiError } from "../../services/api";
+import { ApiClientError } from "../../services/apiClient";
 import { getMyShift } from "../../services/shiftService";
 import type { ShiftSummary } from "../../services/shiftService";
 import { OpenShiftModal } from "./orders/OpenShiftModal";
@@ -68,6 +70,133 @@ const TABLE_FILTERS = [
   { id: "empty", label: "Còn trống" },
 ];
 
+const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_NOT_FOUND: "Không thể đóng đơn vì đơn chưa có hóa đơn.",
+  ORDER_NOT_CLOSEABLE:
+    "Không thể đóng đơn khi hóa đơn chưa được thanh toán hoặc đơn không còn hợp lệ để đóng.",
+  CANNOT_CANCEL_INVOICED_ORDER:
+    "Không thể hủy đơn vì đơn đã có hóa đơn.",
+  CANNOT_CANCEL_PAID_ORDER:
+    "Không thể hủy đơn vì hóa đơn đã được thanh toán.",
+  CANNOT_CANCEL_ORDER_ITEMS_NOT_PENDING:
+    "Không thể hủy đơn vì có món đã được bếp xử lý hoặc phục vụ.",
+  INVALID_STATUS_TRANSITION:
+    "Thao tác đổi trạng thái không hợp lệ. Vui lòng dùng đúng luồng xử lý.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+};
+
+const ORDER_ACTION_FALLBACK_ERROR =
+  "Thao tác thất bại. Vui lòng thử lại hoặc kiểm tra trạng thái đơn.";
+
+const getOrderActionErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiError && error.code) {
+    return ORDER_ACTION_ERROR_MESSAGES[error.code] ?? ORDER_ACTION_FALLBACK_ERROR;
+  }
+
+  return ORDER_ACTION_FALLBACK_ERROR;
+};
+
+const INVOICE_GENERATION_ERROR_MESSAGES: Record<string, string> = {
+  ORDER_NOT_INVOICEABLE:
+    "Không thể tạo hóa đơn cho đơn đã hủy hoặc đã đóng.",
+  ORDER_NOT_READY_FOR_INVOICE:
+    "Không thể tạo hóa đơn vì còn món chưa được duyệt hoặc đang chế biến.",
+  INVALID_INVOICE_ITEMS:
+    "Không thể tạo hóa đơn vì dữ liệu món không hợp lệ.",
+  INVALID_INVOICE_TOTAL:
+    "Không thể tạo hóa đơn vì tổng tiền không hợp lệ.",
+  INVOICE_ALREADY_EXISTS: "Đơn này đã có hóa đơn.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  PROMOTION_NOT_FOUND: "Không tìm thấy mã khuyến mãi.",
+  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã hết lượt sử dụng.",
+  INVALID_STATUS_TRANSITION: "Mã khuyến mãi không hợp lệ hoặc đã hết hạn.",
+};
+
+const INVOICE_GENERATION_MESSAGE_FALLBACKS: Record<string, string> = {
+  "Order cannot be invoiced in its current status":
+    INVOICE_GENERATION_ERROR_MESSAGES.ORDER_NOT_INVOICEABLE,
+  "Order is not ready for invoice because some items are still pending or cooking":
+    INVOICE_GENERATION_ERROR_MESSAGES.ORDER_NOT_READY_FOR_INVOICE,
+  "Order contains invalid invoice items":
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_ITEMS,
+  "Order must contain at least one item before invoice generation":
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_ITEMS,
+  "Order does not contain any payable items":
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_ITEMS,
+  "Invoice subtotal must be greater than zero and total amount cannot be negative":
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  "Invoice already exists for this order":
+    INVOICE_GENERATION_ERROR_MESSAGES.INVOICE_ALREADY_EXISTS,
+  "Order not found": INVOICE_GENERATION_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Promotion not found": INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_NOT_FOUND,
+  "Promotion usage limit has been reached":
+    INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_USAGE_LIMIT_REACHED,
+  "Promotion is not valid":
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_STATUS_TRANSITION,
+};
+
+const INVOICE_GENERATION_FALLBACK_ERROR =
+  "Không thể tạo hóa đơn. Vui lòng kiểm tra trạng thái đơn và thử lại.";
+
+const getInvoiceGenerationErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return (
+      INVOICE_GENERATION_ERROR_MESSAGES[error.code] ??
+      INVOICE_GENERATION_FALLBACK_ERROR
+    );
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  const fallback = Object.entries(INVOICE_GENERATION_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  );
+
+  return fallback?.[1] ?? INVOICE_GENERATION_FALLBACK_ERROR;
+};
+
+const PROMOTION_DISCOUNT_ERROR_MESSAGES: Record<string, string> = {
+  PROMOTION_NOT_FOUND: "Không tìm thấy mã khuyến mãi.",
+  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã hết lượt sử dụng.",
+  INVALID_STATUS_TRANSITION: "Mã khuyến mãi không hợp lệ hoặc đã hết hạn.",
+  INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
+  INVOICE_ALREADY_PAID:
+    "Không thể áp dụng khuyến mãi cho hóa đơn đã thanh toán.",
+  PROMOTION_CHANGE_NOT_ALLOWED:
+    "Không thể thay đổi mã khuyến mãi đã áp dụng cho hóa đơn.",
+};
+
+const PROMOTION_DISCOUNT_MESSAGE_FALLBACKS: Record<string, string> = {
+  "Promotion not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_NOT_FOUND,
+  "Promotion usage limit has been reached":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_USAGE_LIMIT_REACHED,
+  "Promotion is not valid":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVALID_STATUS_TRANSITION,
+  "Invoice not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Cannot apply a promotion to a paid invoice":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "Changing the promotion on an invoice is not allowed":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_CHANGE_NOT_ALLOWED,
+};
+
+const PROMOTION_DISCOUNT_FALLBACK_ERROR =
+  "Không thể áp dụng mã khuyến mãi. Vui lòng kiểm tra lại mã và thử lại.";
+
+const getPromotionDiscountErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return (
+      PROMOTION_DISCOUNT_ERROR_MESSAGES[error.code] ??
+      PROMOTION_DISCOUNT_FALLBACK_ERROR
+    );
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  const fallback = Object.entries(PROMOTION_DISCOUNT_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  );
+
+  return fallback?.[1] ?? PROMOTION_DISCOUNT_FALLBACK_ERROR;
+};
+
 const CashierOrders = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -118,6 +247,10 @@ const CashierOrders = () => {
   const [historyError, setHistoryError] = useState("");
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [orderActionMessage, setOrderActionMessage] = useState<{
+    type: "error";
+    text: string;
+  } | null>(null);
 
   // ── Cash shift state ──────────────────────────────────────────────────────
   const [shift, setShift] = useState<ShiftSummary | null>(null);
@@ -304,6 +437,7 @@ const CashierOrders = () => {
     setInvoiceMessage(null);
     setHistoryError("");
     setPaymentOpen(false);
+    setOrderActionMessage(null);
   };
 
   const loadInvoiceForOrder = async (orderId: string) => {
@@ -383,10 +517,7 @@ const CashierOrders = () => {
     } catch (generateError) {
       setInvoiceMessage({
         type: "error",
-        text:
-          generateError instanceof Error
-            ? generateError.message
-            : "Không thể tạo hóa đơn",
+        text: getInvoiceGenerationErrorMessage(generateError),
       });
     } finally {
       setInvoiceAction(null);
@@ -408,10 +539,7 @@ const CashierOrders = () => {
     } catch (discountError) {
       setInvoiceMessage({
         type: "error",
-        text:
-          discountError instanceof Error
-            ? discountError.message
-            : "Không thể áp dụng khuyến mãi",
+        text: getPromotionDiscountErrorMessage(discountError),
       });
     } finally {
       setInvoiceAction(null);
@@ -572,13 +700,19 @@ const CashierOrders = () => {
 
   const handleCancelOrder = async (orderIds: string[]) => {
     if (!window.confirm("Bạn có chắc chắn muốn hủy đơn hàng này?")) return;
+    setOrderActionMessage(null);
     try {
       await Promise.all(
         orderIds.map((orderId) => cancelOrder(orderId, "Hủy bởi thu ngân")),
       );
+      setOrderActionMessage(null);
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -626,12 +760,17 @@ const CashierOrders = () => {
 
   const handleCloseOrder = async () => {
     if (!backendOrderId) return;
+    setOrderActionMessage(null);
     try {
       await closeOrder(backendOrderId);
       setRefreshTrigger((t) => t + 1);
       resetInvoiceLink();
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -898,6 +1037,7 @@ const CashierOrders = () => {
           hasSelectedMenu={hasSelectedMenu}
           onStatusChange={handleStatusChange}
           onCheckout={() => {
+            setOrderActionMessage(null);
             setPaymentError("");
             setPaymentOpen(true);
           }}
@@ -912,6 +1052,7 @@ const CashierOrders = () => {
           checkoutLabel={checkoutLabel}
           shiftOpen={!!shift}
           invoicePaid={invoice?.paid}
+          orderActionMessage={orderActionMessage}
           onCloseOrder={handleCloseOrder}
           invoiceTools={
             <CashierInvoicePanel
