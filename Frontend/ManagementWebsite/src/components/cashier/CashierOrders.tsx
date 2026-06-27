@@ -209,6 +209,53 @@ const getPromotionDiscountErrorMessage = (error: unknown): string => {
   return fallback?.[1] ?? PROMOTION_DISCOUNT_FALLBACK_ERROR;
 };
 
+const PAYMENT_PROCESS_ERROR_MESSAGES: Record<string, string> = {
+  ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
+  INVALID_INVOICE_TOTAL:
+    "Hóa đơn có tổng tiền không hợp lệ, không thể thanh toán.",
+  INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn cần thanh toán.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng liên quan đến hóa đơn.",
+  VALIDATION_ERROR: "Vui lòng chọn phương thức thanh toán hợp lệ.",
+  BAD_REQUEST: "Vui lòng chọn phương thức thanh toán hợp lệ.",
+};
+
+const PAYMENT_PROCESS_MESSAGE_FALLBACKS: Record<string, string> = {
+  "Order cannot be paid in its current status":
+    PAYMENT_PROCESS_ERROR_MESSAGES.ORDER_NOT_PAYABLE,
+  "Invoice subtotal must be greater than zero and total amount cannot be negative":
+    PAYMENT_PROCESS_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  "Invoice has already been paid":
+    PAYMENT_PROCESS_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "A paid payment already exists for this invoice":
+    PAYMENT_PROCESS_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "Invoice not found": PAYMENT_PROCESS_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Order not found": PAYMENT_PROCESS_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Validation failed": PAYMENT_PROCESS_ERROR_MESSAGES.VALIDATION_ERROR,
+  "Invalid enum value": PAYMENT_PROCESS_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body":
+    PAYMENT_PROCESS_ERROR_MESSAGES.BAD_REQUEST,
+};
+
+const PAYMENT_PROCESS_FALLBACK_ERROR =
+  "Không thể xử lý thanh toán. Vui lòng thử lại.";
+
+const getPaymentProcessErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return (
+      PAYMENT_PROCESS_ERROR_MESSAGES[error.code] ??
+      PAYMENT_PROCESS_FALLBACK_ERROR
+    );
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  const fallback = Object.entries(PAYMENT_PROCESS_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  );
+
+  return fallback?.[1] ?? PAYMENT_PROCESS_FALLBACK_ERROR;
+};
+
 const CashierOrders = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -610,11 +657,7 @@ const CashierOrders = () => {
       await loadInvoiceForOrder(backendOrderId);
       setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
     } catch (processError) {
-      setPaymentError(
-        processError instanceof Error
-          ? processError.message
-          : "Không thể xử lý thanh toán",
-      );
+      setPaymentError(getPaymentProcessErrorMessage(processError));
     } finally {
       setPaymentProcessing(false);
     }
