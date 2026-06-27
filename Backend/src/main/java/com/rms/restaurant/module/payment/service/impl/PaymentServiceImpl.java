@@ -81,7 +81,11 @@ public class PaymentServiceImpl implements PaymentService {
         if (invoiceId == null || invoiceId.isBlank()) {
             payments = paymentRepository.findAllByOrderByCreatedAtDesc();
         } else {
-            payments = paymentRepository.findByInvoiceIdOrderByCreatedAtDesc(invoiceId.trim());
+            String normalizedInvoiceId = invoiceId.trim();
+            if (!invoiceRepository.existsById(normalizedInvoiceId)) {
+                throw new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND);
+            }
+            payments = paymentRepository.findByInvoiceIdOrderByCreatedAtDesc(normalizedInvoiceId);
         }
 
         List<PaymentResponse> responses = new ArrayList<>();

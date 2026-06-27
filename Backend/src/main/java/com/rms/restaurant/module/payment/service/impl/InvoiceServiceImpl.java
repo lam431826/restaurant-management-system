@@ -165,6 +165,10 @@ public class InvoiceServiceImpl implements InvoiceService {
         List<InvoiceItemResponse> items = new ArrayList<>();
 
         for (OrderItem orderItem : orderItems) {
+            if (!isPayableItem(orderItem)) {
+                continue;
+            }
+
             BigDecimal lineTotal = orderItem.getUnitPrice()
                     .multiply(BigDecimal.valueOf(orderItem.getQuantity()));
 
@@ -279,6 +283,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 : null;
 
         List<InvoiceDetailItem.LineItem> lines = orderItemRepository.findByOrderId(inv.getOrderId()).stream()
+                .filter(this::isPayableItem)
                 .map(oi -> new InvoiceDetailItem.LineItem(
                         oi.getMenuItemName(),
                         oi.getQuantity(),
