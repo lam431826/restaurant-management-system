@@ -3,6 +3,14 @@ import type { ApiResponse } from './api'
 
 // ── Frontend-facing types (seats↔capacity, order↔displayOrder) ─────────
 
+export interface ReservationSummary {
+  id: string
+  guestName: string
+  phone: string
+  partySize: number
+  datetime: string
+}
+
 export interface TableItem {
   id: string
   name: string
@@ -14,6 +22,7 @@ export interface TableItem {
   status: string
   qrToken: string | null
   activeOrderId: string | null
+  upcomingReservation: ReservationSummary | null
 }
 
 export interface TableArea {
@@ -44,6 +53,7 @@ interface TableResponse {
   status: string
   qrToken: string | null
   activeOrderId: string | null
+  upcomingReservation: ReservationSummary | null
 }
 
 const toItem = (t: TableResponse): TableItem => ({
@@ -57,6 +67,7 @@ const toItem = (t: TableResponse): TableItem => ({
   status: t.status,
   qrToken: t.qrToken,
   activeOrderId: t.activeOrderId ?? null,
+  upcomingReservation: t.upcomingReservation ?? null,
 })
 
 const toBody = (input: TableInput) => ({

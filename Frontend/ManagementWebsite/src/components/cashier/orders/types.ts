@@ -30,6 +30,13 @@ export interface TableItem {
   guests: number;
   items: number;
   orderId: string | null;
+  upcomingReservation: {
+    id: string;
+    guestName: string;
+    phone: string;
+    partySize: number;
+    datetime: string;
+  } | null;
 }
 export interface OrderItem {
   id: string;
@@ -55,6 +62,7 @@ export const toTableItem = (dto: TableServiceItem): TableItem => ({
   guests: 0,
   items: 0,
   orderId: dto.activeOrderId,
+  upcomingReservation: dto.upcomingReservation ?? null,
 });
 
 export const VAT_RATE = 0.08;
