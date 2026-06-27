@@ -18,6 +18,7 @@ public record ShiftSummaryResponse(
         BigDecimal totalCashOut,
         BigDecimal totalRevenue,
         BigDecimal totalVariance,
+        BigDecimal cardBatchTotal,
         List<PaymentMethodBreakdown> paymentBreakdown,
         List<CashMovementDetail> cashMovements,
         String closingNote

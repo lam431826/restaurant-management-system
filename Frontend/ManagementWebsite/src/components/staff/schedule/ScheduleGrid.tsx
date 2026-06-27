@@ -8,6 +8,7 @@ interface Props {
   shiftTypes: ShiftTemplate[]
   viewMode: 'employee' | 'shift'
   onAddClick: (employee: StaffSummary, date: Date) => void
+  onAddStaff: (date: Date, shift: ShiftTemplate) => void
   onEditClick: (employee: StaffSummary, date: Date, entry: Assignment) => void
 }
 
@@ -35,7 +36,7 @@ const weeklyTotal = (entries: Assignment[], shiftTypes: ShiftTemplate[], employe
   return { total, count }
 }
 
-const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, onAddClick, onEditClick }: Props) => {
+const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, onAddClick, onAddStaff, onEditClick }: Props) => {
   const today = new Date()
 
   const grandTotal = employees.reduce((sum, e) => sum + weeklyTotal(entries, shiftTypes, e.id, weekDays).total, 0)
@@ -131,26 +132,33 @@ const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, onAd
             {shiftTypes.map(st => (
               <tr key={st.id} className="border-b border-line align-top">
                 <td className="px-3 py-3">
-                  <div className={`inline-flex items-center h-7 px-3 rounded-md text-md font-medium ${shiftPillCls(shiftTypes, st.id)}`}>{st.name}</div>
-                  <div className="text-sm text-ink-subtle mt-1">{formatTime(st.startTime)} - {formatTime(st.endTime)}</div>
+                  <div className="text-md font-semibold text-ink">{st.name}</div>
+                  <div className="text-sm text-ink-subtle">{formatTime(st.startTime)} - {formatTime(st.endTime)}</div>
                 </td>
                 {weekDays.map(d => {
                   const staff = employees.filter(emp => entriesOn(entries, emp.id, d).some(e => e.shiftTemplateId === st.id))
                   return (
-                    <td key={d.toISOString()} className="px-1.5 py-2 align-top border-l border-line">
-                      <div className="flex flex-col gap-1">
+                    <td key={d.toISOString()} className="group px-1.5 py-2 align-top border-l border-line">
+                      <div className="flex flex-col gap-1.5">
                         {staff.map(emp => {
                           const entry = entriesOn(entries, emp.id, d).find(e => e.shiftTemplateId === st.id)!
                           return (
                             <button
                               key={emp.id}
                               onClick={() => onEditClick(emp, d, entry)}
-                              className="text-left text-sm text-ink px-2 py-1 rounded-md cursor-pointer hover:bg-primary-25"
+                              className="h-9 px-3 rounded-md text-md font-medium text-left text-primary-700 bg-primary-50 cursor-pointer transition-opacity hover:opacity-80"
                             >
                               {emp.fullName}
                             </button>
                           )
                         })}
+                        <button
+                          onClick={() => onAddStaff(d, st)}
+                          className="h-7 px-1 flex items-center gap-1 text-sm font-medium text-primary cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                          Thêm nhân viên
+                        </button>
                       </div>
                     </td>
                   )

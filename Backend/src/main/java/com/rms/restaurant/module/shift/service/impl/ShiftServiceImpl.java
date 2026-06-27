@@ -22,6 +22,7 @@ import com.rms.restaurant.module.shift.repository.ShiftPaymentReconciliationRepo
 import com.rms.restaurant.module.shift.repository.ShiftRepository;
 import com.rms.restaurant.module.shift.service.ShiftService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -37,10 +38,18 @@ import java.util.*;
 @Transactional
 public class ShiftServiceImpl implements ShiftService {
 
-    private static final String STATUS_OPEN   = "OPEN";
-    private static final String STATUS_CLOSED = "CLOSED";
+    private static final String STATUS_OPEN          = "OPEN";
+    private static final String STATUS_CLOSED        = "CLOSED";
+    private static final String STATUS_PENDING_RECON = "PENDING_RECON";
     private static final List<OrderStatus> ACTIVE_ORDER_STATUSES =
             List.of(OrderStatus.PENDING, OrderStatus.ACCEPTED, OrderStatus.PREPARING, OrderStatus.SERVED);
+
+    // BR-CS-06: when the restaurant matches online channels against bank/PSP
+    // settlement reports, a closed shift sits in PENDING_RECON until a manager
+    // finalizes it. When disabled (default), online actuals = recorded and the
+    // shift closes straight to CLOSED.
+    @Value("${rms.shift.settlement-matching-enabled:false}")
+    private boolean settlementMatchingEnabled;
 
     private final ShiftRepository shiftRepo;
     private final ShiftCashMovementRepository cashMovRepo;
@@ -153,20 +162,27 @@ public class ShiftServiceImpl implements ShiftService {
         Map<PaymentMethod, BigDecimal> expectedAmounts = buildExpectedAmounts(
                 shift.getOpeningCash(), salesByMethod, totalCashIn, totalCashOut);
 
-        Map<PaymentMethod, BigDecimal> actualAmounts = new EnumMap<>(PaymentMethod.class);
-        request.actualAmounts().forEach(a -> actualAmounts.put(a.method(), a.amount()));
+        // BR-CS-04 / BR-CS-13: the cashier reconciles CASH only. The three online
+        // channels are auto-recorded at close (actual = recorded, zero variance);
+        // true reconciliation happens later against settlement reports (BR-CS-06).
+        BigDecimal actualCash   = request.cashActual();
+        BigDecimal expectedCash = expectedAmounts.getOrDefault(PaymentMethod.CASH, BigDecimal.ZERO);
+        BigDecimal cashVariance = actualCash.subtract(expectedCash);
 
-        // BR-CS-04: variance per method
         List<ShiftPaymentReconciliation> reconciliations = new ArrayList<>();
-        BigDecimal totalRevenue  = salesByMethod.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalVariance = BigDecimal.ZERO;
+        BigDecimal totalRevenue = salesByMethod.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
 
         for (PaymentMethod method : PaymentMethod.values()) {
             BigDecimal expected = expectedAmounts.getOrDefault(method, BigDecimal.ZERO);
-            BigDecimal actual   = actualAmounts.getOrDefault(method, BigDecimal.ZERO);
-            BigDecimal variance = actual.subtract(expected);
-            totalVariance = totalVariance.add(variance.abs());
-
+            BigDecimal actual;
+            BigDecimal variance;
+            if (method == PaymentMethod.CASH) {
+                actual   = actualCash;
+                variance = cashVariance;
+            } else {
+                actual   = expected;            // online: actual = recorded
+                variance = BigDecimal.ZERO;     // no cashier discrepancy
+            }
             reconciliations.add(ShiftPaymentReconciliation.builder()
                     .shiftId(shiftId)
                     .paymentMethod(method)
@@ -176,15 +192,13 @@ public class ShiftServiceImpl implements ShiftService {
                     .build());
         }
 
-        // BR-CS-05: closing note required when any variance exists
-        boolean hasVariance = reconciliations.stream()
-                .anyMatch(r -> r.getVariance().compareTo(BigDecimal.ZERO) != 0);
-        if (hasVariance && (request.closingNote() == null || request.closingNote().isBlank())) {
+        // BR-CS-05: closing note required when the cash variance is non-zero
+        if (cashVariance.compareTo(BigDecimal.ZERO) != 0
+                && (request.closingNote() == null || request.closingNote().isBlank())) {
             throw new ApplicationException(ApplicationError.SHIFT_VARIANCE_NOTE_REQUIRED);
         }
 
         // BR-CS-09: handover must not exceed actual cash on hand
-        BigDecimal actualCash = actualAmounts.getOrDefault(PaymentMethod.CASH, BigDecimal.ZERO);
         if (request.handoverAmount().compareTo(actualCash) > 0) {
             throw new ApplicationException(ApplicationError.SHIFT_HANDOVER_EXCEEDS_CASH,
                     "Handover " + request.handoverAmount() + " exceeds actual cash " + actualCash);
@@ -192,11 +206,19 @@ public class ShiftServiceImpl implements ShiftService {
 
         reconciliationRepo.saveAll(reconciliations);
 
-        shift.setStatus(STATUS_CLOSED);
+        // BR-CS-06: sit in PENDING_RECON only when settlement matching is tracked
+        // AND there are online sales to settle; otherwise close straight to CLOSED.
+        BigDecimal onlineSales = totalRevenue.subtract(
+                salesByMethod.getOrDefault(PaymentMethod.CASH, BigDecimal.ZERO));
+        boolean pendingRecon = settlementMatchingEnabled
+                && onlineSales.compareTo(BigDecimal.ZERO) > 0;
+
+        shift.setStatus(pendingRecon ? STATUS_PENDING_RECON : STATUS_CLOSED);
         shift.setClosedAt(closedAt);
         shift.setClosedBy(closingUser.getId());
         shift.setClosingCash(actualCash);
         shift.setHandoverAmount(request.handoverAmount());
+        shift.setCardBatchTotal(request.cardBatchTotal());     // BR-CS-12
         shift.setTotalRevenue(totalRevenue);
         shift.setClosingNote(request.closingNote());
         shiftRepo.save(shift);

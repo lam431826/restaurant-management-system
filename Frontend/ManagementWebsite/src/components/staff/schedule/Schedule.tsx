@@ -14,9 +14,11 @@ import { ApiError } from '../../../services/api'
 
 interface ModalState {
   mode: 'add' | 'edit'
-  employee: StaffSummary
+  employee?: StaffSummary
   date: Date
   entry?: Assignment
+  // Shift-first add ("Xem theo ca" → Thêm nhân viên): the shift the chosen staff are added to.
+  lockedShift?: ShiftTemplate
 }
 
 const Schedule = () => {
@@ -84,7 +86,18 @@ const Schedule = () => {
           repeatEnd: payload.repeatEnd,
           holidayWork: payload.holidayWork,
         })
-      } else {
+      } else if (modal.lockedShift) {
+        // Shift-first add: the chosen staff are all added to the locked shift.
+        await createAssignments({
+          employeeIds: payload.staffIds ?? [],
+          date: toYMD(modal.date),
+          shiftTemplateIds: [modal.lockedShift.id],
+          repeatWeekly: payload.repeatWeekly,
+          repeatDays: payload.repeatDays,
+          repeatEnd: payload.repeatEnd,
+          holidayWork: payload.holidayWork,
+        })
+      } else if (modal.employee) {
         await createAssignments({
           employeeIds: [modal.employee.id, ...payload.applyToEmployeeIds],
           date: toYMD(modal.date),
@@ -135,8 +148,12 @@ const Schedule = () => {
     URL.revokeObjectURL(url)
   }
 
-  const dayEntriesForModal = modal ? entriesOn(entries, modal.employee.id, modal.date) : []
+  const dayEntriesForModal = modal?.employee ? entriesOn(entries, modal.employee.id, modal.date) : []
   const availableShiftTypes = shiftTypes.filter(st => !dayEntriesForModal.some(e => e.shiftTemplateId === st.id))
+  // Shift-first add: only offer staff not already on this shift that day.
+  const lockedShiftStaffOptions = modal?.lockedShift
+    ? employees.filter(emp => !entriesOn(entries, emp.id, modal.date).some(e => e.shiftTemplateId === modal.lockedShift!.id))
+    : []
 
   return (
     <div className="flex flex-col h-[calc(100vh-var(--kv-header-height))] bg-surface overflow-hidden p-5 gap-4">
@@ -175,6 +192,7 @@ const Schedule = () => {
         shiftTypes={shiftTypes}
         viewMode={viewMode}
         onAddClick={(employee, date) => setModal({ mode: 'add', employee, date })}
+        onAddStaff={(date, shift) => setModal({ mode: 'add', date, lockedShift: shift })}
         onEditClick={(employee, date, entry) => setModal({ mode: 'edit', employee, date, entry })}
       />
 
@@ -186,7 +204,9 @@ const Schedule = () => {
           entry={modal.entry}
           shiftTypes={shiftTypes}
           availableShiftTypes={availableShiftTypes}
-          otherEmployees={employees.filter(e => e.id !== modal.employee.id)}
+          otherEmployees={employees.filter(e => e.id !== modal.employee?.id)}
+          lockedShift={modal.lockedShift}
+          staffOptions={lockedShiftStaffOptions}
           error={modalError}
           onClose={closeModal}
           onSave={handleSave}

@@ -61,6 +61,7 @@ public class ShiftMapper {
                 totalCashOut,
                 totalRevenue,
                 totalVariance,
+                shift.getCardBatchTotal(),
                 breakdown,
                 cashMovements,
                 shift.getClosingNote());

@@ -30,7 +30,7 @@ export interface ShiftSummary {
   id: string
   cashierId: string
   closedBy: string | null
-  status: 'OPEN' | 'CLOSED'
+  status: 'OPEN' | 'CLOSED' | 'PENDING_RECON'
   openedAt: string
   closedAt: string | null
   openingCash: number
@@ -39,14 +39,10 @@ export interface ShiftSummary {
   totalCashOut: number
   totalRevenue: number
   totalVariance: number
+  cardBatchTotal: number | null
   paymentBreakdown: PaymentBreakdown[]
   cashMovements: CashMovementDetail[]
   closingNote: string | null
-}
-
-export interface PaymentActualAmount {
-  method: PaymentMethodKey
-  amount: number
 }
 
 // Returns the caller's own open shift, or null if none.
@@ -62,15 +58,20 @@ export const getMyShift = async (): Promise<ShiftSummary | null> => {
 export const openShift = (openingCash: number): Promise<ShiftSummary> =>
   api.post<ShiftSummary>('/api/shifts', { openingCash })
 
+// CS-04: cashier submits only the counted physical cash. The three online
+// channels are auto-recorded server-side (actual = recorded). cardBatchTotal is
+// an optional informational cross-check (BR-CS-12).
 export const closeShift = (
   id: string,
-  actualAmounts: PaymentActualAmount[],
+  cashActual: number,
   handoverAmount: number,
+  cardBatchTotal?: number,
   closingNote?: string,
 ): Promise<ShiftSummary> =>
   api.put<ShiftSummary>(`/api/shifts/${id}/close`, {
-    actualAmounts,
+    cashActual,
     handoverAmount,
+    cardBatchTotal: cardBatchTotal ?? null,
     closingNote: closingNote ?? null,
   })
 

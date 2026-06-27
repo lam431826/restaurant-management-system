@@ -9,16 +9,22 @@ export interface ScheduleSavePayload {
   repeatEnd: string | null
   holidayWork: boolean
   applyToEmployeeIds: string[]
+  // Shift-first add ("Xem theo ca" → Thêm nhân viên): the employees chosen for the locked shift.
+  staffIds?: string[]
 }
 
 interface Props {
   mode: 'add' | 'edit'
-  employee: StaffSummary
+  employee?: StaffSummary
   date: Date
   entry?: Assignment
   shiftTypes: ShiftTemplate[]
   availableShiftTypes: ShiftTemplate[]
   otherEmployees: StaffSummary[]
+  // When set, the modal adds staff to this fixed shift (shift-first flow).
+  lockedShift?: ShiftTemplate
+  // Candidate employees for the shift-first picker (those not yet on the shift that day).
+  staffOptions?: StaffSummary[]
   error?: string
   onClose: () => void
   onSave: (payload: ScheduleSavePayload) => void
@@ -55,7 +61,7 @@ const Toggle = ({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 )
 
 const ScheduleModal = ({
-  mode, employee, date, entry, shiftTypes, availableShiftTypes, otherEmployees, error, onClose, onSave, onDelete, onManageTemplates,
+  mode, employee, date, entry, shiftTypes, availableShiftTypes, otherEmployees, lockedShift, staffOptions = [], error, onClose, onSave, onDelete, onManageTemplates,
 }: Props) => {
   const [selectedShiftIds, setSelectedShiftIds] = useState<Set<string>>(new Set())
   const [repeatWeekly, setRepeatWeekly] = useState(entry?.repeatWeekly ?? false)
@@ -64,6 +70,8 @@ const ScheduleModal = ({
   const [holidayWork, setHolidayWork] = useState(entry?.holidayWork ?? false)
   const [applyToOthers, setApplyToOthers] = useState(false)
   const [otherIds, setOtherIds] = useState<Set<string>>(new Set())
+  // Shift-first flow: which employees to add to the locked shift.
+  const [staffIds, setStaffIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const prev = document.body.style.overflow
@@ -93,19 +101,29 @@ const ScheduleModal = ({
       return next
     })
 
+  const toggleStaff = (id: string) =>
+    setStaffIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+
   const editingShift = entry ? shiftTypes.find(s => s.id === entry.shiftTemplateId) : undefined
 
-  const canSave = mode === 'edit' ? true : selectedShiftIds.size > 0
+  const canSave = lockedShift
+    ? staffIds.size > 0
+    : mode === 'edit' ? true : selectedShiftIds.size > 0
 
   const handleSave = () => {
     if (!canSave) return
     onSave({
-      shiftIds: mode === 'edit' ? [entry!.shiftTemplateId] : Array.from(selectedShiftIds),
+      shiftIds: lockedShift ? [lockedShift.id] : mode === 'edit' ? [entry!.shiftTemplateId] : Array.from(selectedShiftIds),
       repeatWeekly,
       repeatDays: repeatWeekly ? repeatDays : [],
       repeatEnd: repeatWeekly ? (repeatEnd || null) : null,
       holidayWork,
-      applyToEmployeeIds: mode === 'add' && applyToOthers ? Array.from(otherIds) : [],
+      applyToEmployeeIds: !lockedShift && mode === 'add' && applyToOthers ? Array.from(otherIds) : [],
+      staffIds: lockedShift ? Array.from(staffIds) : undefined,
     })
   }
 
@@ -117,18 +135,45 @@ const ScheduleModal = ({
     >
       <div className="w-full max-w-[42rem] my-6 bg-card rounded-lg shadow-lg flex flex-col max-h-[calc(100vh-6rem)]">
         <div className="flex items-center justify-between px-6 pt-5 shrink-0">
-          <h2 className="text-h3 font-bold text-ink">{mode === 'add' ? 'Thêm lịch làm việc' : 'Cập nhật lịch làm việc'}</h2>
+          <h2 className="text-h3 font-bold text-ink">{lockedShift ? 'Thêm nhân viên vào ca' : mode === 'add' ? 'Thêm lịch làm việc' : 'Cập nhật lịch làm việc'}</h2>
           <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">
             <CloseIcon />
           </button>
         </div>
         <div className="flex items-center gap-2 px-6 pb-4 text-md text-ink-subtle">
-          <span>{employee.fullName}</span>
+          <span>{lockedShift ? lockedShift.name : employee?.fullName}</span>
           <span className="w-px h-4 bg-line" />
           <span>{WEEKDAY_LABELS[(date.getDay() + 6) % 7]}, {String(date.getDate()).padStart(2, '0')}/{String(date.getMonth() + 1).padStart(2, '0')}/{date.getFullYear()}</span>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 flex flex-col gap-5">
+          {lockedShift ? (
+            <div className="flex flex-col gap-4">
+              <div>
+                <span className="text-md font-semibold text-ink">Ca làm việc</span>
+                <div className="bg-fill rounded-md p-4 mt-2">
+                  <div className="text-md font-semibold text-ink">{lockedShift.name}</div>
+                  <div className="text-sm text-ink-subtle">{formatTime(lockedShift.startTime)} - {formatTime(lockedShift.endTime)}</div>
+                </div>
+              </div>
+              <div>
+                <span className="text-md font-semibold text-ink">Chọn nhân viên</span>
+                {staffOptions.length === 0 ? (
+                  <p className="bg-fill rounded-md p-4 mt-2 text-md text-ink-subtle">Tất cả nhân viên đã được xếp vào ca này.</p>
+                ) : (
+                  <div className="bg-fill rounded-md p-4 mt-2 flex flex-col gap-1 max-h-[16rem] overflow-y-auto">
+                    {staffOptions.map(s => (
+                      <label key={s.id} className="kv-check py-1">
+                        <input type="checkbox" checked={staffIds.has(s.id)} onChange={() => toggleStaff(s.id)} />
+                        <span className="kv-check-box" />
+                        <span className="kv-check-text">{s.fullName}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-md font-semibold text-ink">Chọn ca làm việc</span>
@@ -166,6 +211,7 @@ const ScheduleModal = ({
               </div>
             )}
           </div>
+          )}
 
           <div className="border-t border-line pt-4">
             <div className="flex items-center justify-between gap-4">
@@ -213,7 +259,7 @@ const ScheduleModal = ({
             )}
           </div>
 
-          {mode === 'add' && otherEmployees.length > 0 && (
+          {!lockedShift && mode === 'add' && otherEmployees.length > 0 && (
             <div className="border-t border-line pt-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
