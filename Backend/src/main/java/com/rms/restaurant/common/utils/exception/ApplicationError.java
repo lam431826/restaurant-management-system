@@ -79,6 +79,10 @@ public enum ApplicationError {
     INVALID_PROMOTION_USAGE_LIMIT("Promotion usage limit is invalid", HttpStatus.UNPROCESSABLE_ENTITY),
     INVALID_STATUS_TRANSITION("Invalid status transition", HttpStatus.UNPROCESSABLE_ENTITY),
     ORDER_NOT_CLOSEABLE("Order cannot be closed in its current state", HttpStatus.UNPROCESSABLE_ENTITY),
+    ORDER_NOT_INVOICEABLE("Order cannot be invoiced in its current status", HttpStatus.UNPROCESSABLE_ENTITY),
+    ORDER_NOT_READY_FOR_INVOICE("Order is not ready for invoice because some items are still pending or cooking", HttpStatus.UNPROCESSABLE_ENTITY),
+    INVALID_INVOICE_ITEMS("Order contains invalid invoice items", HttpStatus.UNPROCESSABLE_ENTITY),
+    INVALID_INVOICE_TOTAL("Invoice subtotal must be greater than zero and total amount cannot be negative", HttpStatus.UNPROCESSABLE_ENTITY),
     FORBIDDEN("You do not have permission to perform this action", HttpStatus.FORBIDDEN),
 
     // Roster (Work Shift) — WS-01..09, BR-WS-*
