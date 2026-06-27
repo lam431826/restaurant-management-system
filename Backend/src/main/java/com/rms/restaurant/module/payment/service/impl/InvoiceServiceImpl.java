@@ -43,6 +43,7 @@ import java.util.stream.Collectors;
 public class InvoiceServiceImpl implements InvoiceService {
 
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
+    private static final String PAYMENT_STATUS_PAID = "PAID";
 
     private final InvoiceRepository invoiceRepository;
     private final OrderRepository orderRepository;
@@ -125,36 +126,31 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     @Override
     public InvoiceResponse applyDiscount(String invoiceId, ApplyDiscountRequest request) {
-        Invoice invoice = invoiceRepository.findById(invoiceId)
+        Invoice invoice = invoiceRepository.findByIdForUpdate(invoiceId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
 
-        if (invoice.isPaid()) {
-            throw new ApplicationException(ApplicationError.INVOICE_ALREADY_PAID);
-        }
+        validateInvoiceCanApplyDiscount(invoice);
+
+        Order order = orderRepository.findById(invoice.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        validateOrderCanApplyDiscount(order);
+        validateInvoiceHasNoOrphanDiscount(invoice);
 
         Promotion promotion = findActivePromotionForUpdate(request.promotionCode());
-        boolean samePromotion = promotion.getId().equals(invoice.getPromotionId());
-
-        if (invoice.getPromotionId() != null && !samePromotion) {
-            throw new ApplicationException(ApplicationError.PROMOTION_CHANGE_NOT_ALLOWED);
-        }
-
+        validateExistingPromotionForApply(invoice, promotion);
         validatePromotionDate(promotion);
-        if (!samePromotion) {
-            validatePromotionUsage(promotion);
-        }
+        validatePromotionUsage(promotion);
 
         BigDecimal discountAmount = calculateDiscount(promotion, invoice.getSubtotal());
         BigDecimal totalAmount = invoice.getSubtotal().subtract(discountAmount);
+        validateInvoiceTotal(totalAmount);
 
         invoice.setPromotionId(promotion.getId());
         invoice.setDiscountAmount(discountAmount);
         invoice.setTotalAmount(totalAmount);
 
         Invoice savedInvoice = invoiceRepository.save(invoice);
-        if (!samePromotion) {
-            incrementUsedCount(promotion);
-        }
+        incrementUsedCount(promotion);
 
         return invoiceMapper.toResponse(savedInvoice);
     }
@@ -367,6 +363,45 @@ public class InvoiceServiceImpl implements InvoiceService {
     private void validateInvoiceTotal(BigDecimal amount) {
         if (amount.compareTo(BigDecimal.ZERO) < 0) {
             throw new ApplicationException(ApplicationError.INVALID_INVOICE_TOTAL);
+        }
+    }
+
+    private void validateInvoiceCanApplyDiscount(Invoice invoice) {
+        if (invoice.isPaid() || hasPaidPayment(invoice.getId())) {
+            throw new ApplicationException(ApplicationError.INVOICE_ALREADY_PAID);
+        }
+
+        validateInvoiceSubtotal(invoice.getSubtotal());
+    }
+
+    private boolean hasPaidPayment(String invoiceId) {
+        return paymentRepository.findByInvoiceId(invoiceId).stream()
+                .anyMatch(payment -> PAYMENT_STATUS_PAID.equals(payment.getStatus()));
+    }
+
+    private void validateInvoiceHasNoOrphanDiscount(Invoice invoice) {
+        if ((invoice.getPromotionId() == null || invoice.getPromotionId().isBlank())
+                && invoice.getDiscountAmount() != null
+                && invoice.getDiscountAmount().compareTo(BigDecimal.ZERO) > 0) {
+            throw new ApplicationException(ApplicationError.INVOICE_ALREADY_DISCOUNTED);
+        }
+    }
+
+    private void validateExistingPromotionForApply(Invoice invoice, Promotion promotion) {
+        if (invoice.getPromotionId() == null || invoice.getPromotionId().isBlank()) {
+            return;
+        }
+
+        if (invoice.getPromotionId().equals(promotion.getId())) {
+            throw new ApplicationException(ApplicationError.INVOICE_PROMOTION_ALREADY_APPLIED);
+        }
+
+        throw new ApplicationException(ApplicationError.PROMOTION_CHANGE_NOT_ALLOWED);
+    }
+
+    private void validateOrderCanApplyDiscount(Order order) {
+        if (order.getStatus() == OrderStatus.CLOSED || order.getStatus() == OrderStatus.CANCELLED) {
+            throw new ApplicationException(ApplicationError.ORDER_NOT_DISCOUNTABLE);
         }
     }
 
