@@ -51,11 +51,20 @@ const TableCard = ({
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-1">
           {table.occupied ? (
             <>
-              <p className="text-[16px] font-semibold text-black leading-tight">
-                {table.amount > 0
-                  ? table.amount.toLocaleString("vi-VN") + "đ"
-                  : STATUS_LABEL_VI[table.status]}
-              </p>
+              {table.amount > 0 ? (
+                <div className="flex flex-col items-center leading-tight">
+                  <span className="text-[10px] font-medium text-black/70">
+                    Tạm tính
+                  </span>
+                  <span className="text-[16px] font-semibold text-black">
+                    {table.amount.toLocaleString("vi-VN")}đ
+                  </span>
+                </div>
+              ) : (
+                <p className="text-[16px] font-semibold text-black leading-tight">
+                  {STATUS_LABEL_VI[table.status]}
+                </p>
+              )}
               {table.items > 0 && (
                 <div className="flex gap-2.5 text-[10px] text-black">
                   <span>{table.guests} người</span>

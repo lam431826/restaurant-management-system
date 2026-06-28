@@ -67,8 +67,6 @@ export const toTableItem = (dto: TableServiceItem): TableItem => ({
   orderId: dto.activeOrderId,
 });
 
-export const VAT_RATE = 0.08;
-
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   CASH: "Tiền mặt",
   CARD: "Thẻ",

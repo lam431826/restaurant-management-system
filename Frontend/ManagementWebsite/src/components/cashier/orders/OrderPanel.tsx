@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import type { OrderItem, TableItem } from "./types";
-import { VAT_RATE } from "./types";
 import { OrderItemRow } from "./OrderItemRow";
 import { CheckIcon, ReceiptIcon } from "./icons";
 
@@ -57,8 +56,6 @@ export const OrderPanel = ({
   const subtotal = hasItems
     ? items.reduce((s, i) => s + i.price * i.qty, 0)
     : 0;
-  const vat = Math.round(subtotal * VAT_RATE);
-  const total = subtotal + vat;
 
   return (
     <div className="bg-white rounded-[12px] flex flex-col p-4 lg:p-6 w-[260px] md:w-[300px] lg:w-[360px] xl:w-[400px] shrink-0 h-full overflow-hidden">
@@ -132,23 +129,17 @@ export const OrderPanel = ({
         <div className="h-px bg-[#e8e8e8]" />
         <div className="flex justify-between text-[14px]">
           <span className="font-medium text-[#636566]">
-            Tổng ({hasItems ? items.length : 0} món)
+            Số món
           </span>
           <span className="font-semibold text-[#202325]">
-            {hasItems ? `${subtotal.toLocaleString("vi-VN")} đ` : "0 đ"}
-          </span>
-        </div>
-        <div className="flex justify-between text-[14px]">
-          <span className="font-medium text-[#636566]">Vat (8%)</span>
-          <span className="font-semibold text-[#202325]">
-            {hasItems ? `${vat.toLocaleString("vi-VN")} đ` : "0 đ"}
+            {hasItems ? items.length : 0} món
           </span>
         </div>
         <div className="h-px bg-[#202325]" />
         <div className="flex justify-between text-[20px]">
-          <span className="font-medium text-[#202325]">Tổng tiền</span>
+          <span className="font-medium text-[#202325]">Tạm tính</span>
           <span className="font-semibold text-[#202325]">
-            {hasItems ? `${total.toLocaleString("vi-VN")} đ` : "0 đ"}
+            {hasItems ? `${subtotal.toLocaleString("vi-VN")} đ` : "0 đ"}
           </span>
         </div>
         {isTableEmpty ? (
