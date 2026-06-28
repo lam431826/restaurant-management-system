@@ -5,6 +5,7 @@ import type {
   InvoiceDetail as InvoiceDetailData,
   InvoiceSummary,
 } from "../../services/invoiceApi";
+import { ApiClientError } from "../../services/apiClient";
 
 interface Props {
   invoices: InvoiceSummary[];
@@ -24,6 +25,40 @@ const formatDateTime = (value: string) =>
 const th =
   "sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-3 py-3 whitespace-nowrap";
 const td = "text-md text-ink px-3 py-3 border-b border-line align-middle";
+
+const INVOICE_DETAIL_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+};
+
+const INVOICE_DETAIL_MESSAGE_FALLBACKS: Record<string, string> = {
+  "Invoice not found": INVOICE_DETAIL_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Order not found": INVOICE_DETAIL_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Validation failed": INVOICE_DETAIL_ERROR_MESSAGES.VALIDATION_ERROR,
+  "Invalid enum value": INVOICE_DETAIL_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body":
+    INVOICE_DETAIL_ERROR_MESSAGES.BAD_REQUEST,
+};
+
+const INVOICE_DETAIL_FALLBACK_ERROR = "Không thể tải chi tiết hóa đơn.";
+
+const getInvoiceDetailErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return (
+      INVOICE_DETAIL_ERROR_MESSAGES[error.code] ??
+      INVOICE_DETAIL_FALLBACK_ERROR
+    );
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  const fallback = Object.entries(INVOICE_DETAIL_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  );
+
+  return fallback?.[1] ?? INVOICE_DETAIL_FALLBACK_ERROR;
+};
 
 const DiscountIcon = () => (
   <svg
@@ -80,11 +115,7 @@ const InvoiceTable = ({
     try {
       setDetail(await getInvoiceById(invoiceId));
     } catch (loadError) {
-      setDetailError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Không thể tải chi tiết hóa đơn",
-      );
+      setDetailError(getInvoiceDetailErrorMessage(loadError));
     } finally {
       setDetailLoading(false);
     }

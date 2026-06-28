@@ -104,18 +104,26 @@ const getOrderActionErrorMessage = (error: unknown): string => {
 
 const INVOICE_GENERATION_ERROR_MESSAGES: Record<string, string> = {
   ORDER_NOT_INVOICEABLE:
-    "Không thể tạo hóa đơn cho đơn đã hủy hoặc đã đóng.",
+    "Đơn hàng chưa đủ điều kiện tạo hóa đơn.",
   ORDER_NOT_READY_FOR_INVOICE:
-    "Không thể tạo hóa đơn vì còn món chưa được duyệt hoặc đang chế biến.",
+    "Đơn hàng chưa đủ điều kiện tạo hóa đơn.",
+  INVALID_ORDER_ITEMS:
+    "Đơn hàng không có món hợp lệ để tạo hóa đơn.",
   INVALID_INVOICE_ITEMS:
-    "Không thể tạo hóa đơn vì dữ liệu món không hợp lệ.",
+    "Đơn hàng không có món hợp lệ để tạo hóa đơn.",
   INVALID_INVOICE_TOTAL:
-    "Không thể tạo hóa đơn vì tổng tiền không hợp lệ.",
-  INVOICE_ALREADY_EXISTS: "Đơn này đã có hóa đơn.",
+    "Hóa đơn có tổng tiền không hợp lệ.",
+  INVOICE_ALREADY_EXISTS: "Đơn hàng này đã có hóa đơn.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
   PROMOTION_NOT_FOUND: "Không tìm thấy mã khuyến mãi.",
-  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã hết lượt sử dụng.",
-  INVALID_STATUS_TRANSITION: "Mã khuyến mãi không hợp lệ hoặc đã hết hạn.",
+  PROMOTION_INACTIVE: "Mã khuyến mãi không còn hoạt động.",
+  PROMOTION_EXPIRED: "Mã khuyến mãi đã hết hạn.",
+  PROMOTION_NOT_STARTED: "Mã khuyến mãi chưa đến thời gian áp dụng.",
+  PROMOTION_USAGE_LIMIT_REACHED:
+    "Mã khuyến mãi đã đạt giới hạn sử dụng.",
+  INVALID_STATUS_TRANSITION: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
 };
 
 const INVOICE_GENERATION_MESSAGE_FALLBACKS: Record<string, string> = {
@@ -124,25 +132,35 @@ const INVOICE_GENERATION_MESSAGE_FALLBACKS: Record<string, string> = {
   "Order is not ready for invoice because some items are still pending or cooking":
     INVOICE_GENERATION_ERROR_MESSAGES.ORDER_NOT_READY_FOR_INVOICE,
   "Order contains invalid invoice items":
-    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_ITEMS,
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_ORDER_ITEMS,
   "Order must contain at least one item before invoice generation":
-    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_ITEMS,
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_ORDER_ITEMS,
   "Order does not contain any payable items":
-    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_ITEMS,
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_ORDER_ITEMS,
   "Invoice subtotal must be greater than zero and total amount cannot be negative":
     INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
   "Invoice already exists for this order":
     INVOICE_GENERATION_ERROR_MESSAGES.INVOICE_ALREADY_EXISTS,
   "Order not found": INVOICE_GENERATION_ERROR_MESSAGES.ORDER_NOT_FOUND,
   "Promotion not found": INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_NOT_FOUND,
+  "Promotion is inactive":
+    INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_INACTIVE,
+  "Promotion has expired":
+    INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_EXPIRED,
+  "Promotion has not started":
+    INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_NOT_STARTED,
   "Promotion usage limit has been reached":
     INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_USAGE_LIMIT_REACHED,
   "Promotion is not valid":
     INVOICE_GENERATION_ERROR_MESSAGES.INVALID_STATUS_TRANSITION,
+  "Validation failed": INVOICE_GENERATION_ERROR_MESSAGES.VALIDATION_ERROR,
+  "Invalid enum value": INVOICE_GENERATION_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body":
+    INVOICE_GENERATION_ERROR_MESSAGES.BAD_REQUEST,
 };
 
 const INVOICE_GENERATION_FALLBACK_ERROR =
-  "Không thể tạo hóa đơn. Vui lòng kiểm tra trạng thái đơn và thử lại.";
+  "Không thể tạo hóa đơn. Vui lòng thử lại.";
 
 const getInvoiceGenerationErrorMessage = (error: unknown): string => {
   if (error instanceof ApiClientError && error.code) {
@@ -162,11 +180,16 @@ const getInvoiceGenerationErrorMessage = (error: unknown): string => {
 
 const PROMOTION_DISCOUNT_ERROR_MESSAGES: Record<string, string> = {
   PROMOTION_NOT_FOUND: "Không tìm thấy mã khuyến mãi.",
-  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã hết lượt sử dụng.",
-  INVALID_STATUS_TRANSITION: "Mã khuyến mãi không hợp lệ hoặc đã hết hạn.",
+  PROMOTION_INACTIVE: "Mã khuyến mãi không còn hoạt động.",
+  PROMOTION_EXPIRED: "Mã khuyến mãi đã hết hạn.",
+  PROMOTION_NOT_STARTED: "Mã khuyến mãi chưa đến thời gian áp dụng.",
+  PROMOTION_USAGE_LIMIT_REACHED:
+    "Mã khuyến mãi đã đạt giới hạn sử dụng.",
+  INVALID_STATUS_TRANSITION: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
   INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
   INVOICE_ALREADY_PAID:
-    "Không thể áp dụng khuyến mãi cho hóa đơn đã thanh toán.",
+    "Hóa đơn này đã được thanh toán.",
   INVOICE_PROMOTION_ALREADY_APPLIED:
     "Hóa đơn này đã được áp dụng mã khuyến mãi này rồi.",
   PROMOTION_CHANGE_NOT_ALLOWED:
@@ -179,25 +202,43 @@ const PROMOTION_DISCOUNT_ERROR_MESSAGES: Record<string, string> = {
 
 const PROMOTION_DISCOUNT_MESSAGE_FALLBACKS: Record<string, string> = {
   "Promotion not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_NOT_FOUND,
+  "Promotion is inactive":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_INACTIVE,
+  "Promotion has expired":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_EXPIRED,
+  "Promotion has not started":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_NOT_STARTED,
   "Promotion usage limit has been reached":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_USAGE_LIMIT_REACHED,
   "Promotion is not valid":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.INVALID_STATUS_TRANSITION,
   "Invoice not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Order not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Invoice already paid": PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "Invoice has already been paid":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
   "Cannot apply a promotion to a paid invoice":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "The same promotion has already been applied to this invoice":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_PROMOTION_ALREADY_APPLIED,
   "This promotion has already been applied to this invoice":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_PROMOTION_ALREADY_APPLIED,
+  "Cannot change promotion after one has already been applied":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_CHANGE_NOT_ALLOWED,
   "Changing the promotion on an invoice is not allowed":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_CHANGE_NOT_ALLOWED,
+  "Order is not discountable":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.ORDER_NOT_DISCOUNTABLE,
   "Order cannot apply discount in its current status":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.ORDER_NOT_DISCOUNTABLE,
+  "Invoice already has a discount":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_DISCOUNTED,
   "Invoice already has a promotion discount":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_DISCOUNTED,
 };
 
 const PROMOTION_DISCOUNT_FALLBACK_ERROR =
-  "Không thể áp dụng mã khuyến mãi. Vui lòng kiểm tra lại mã và thử lại.";
+  "Không thể áp dụng khuyến mãi. Vui lòng thử lại.";
 
 const getPromotionDiscountErrorMessage = (error: unknown): string => {
   if (error instanceof ApiClientError && error.code) {
@@ -218,12 +259,12 @@ const getPromotionDiscountErrorMessage = (error: unknown): string => {
 const PAYMENT_PROCESS_ERROR_MESSAGES: Record<string, string> = {
   ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
   INVALID_INVOICE_TOTAL:
-    "Hóa đơn có tổng tiền không hợp lệ, không thể thanh toán.",
+    "Hóa đơn có tổng tiền không hợp lệ.",
   INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
-  INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn cần thanh toán.",
-  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng liên quan đến hóa đơn.",
-  VALIDATION_ERROR: "Vui lòng chọn phương thức thanh toán hợp lệ.",
-  BAD_REQUEST: "Vui lòng chọn phương thức thanh toán hợp lệ.",
+  INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
 };
 
 const PAYMENT_PROCESS_MESSAGE_FALLBACKS: Record<string, string> = {
@@ -260,6 +301,60 @@ const getPaymentProcessErrorMessage = (error: unknown): string => {
   );
 
   return fallback?.[1] ?? PAYMENT_PROCESS_FALLBACK_ERROR;
+};
+
+const INVOICE_UI_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  ORDER_ALREADY_INVOICED:
+    "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.",
+  INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
+  INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
+  VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+};
+
+const INVOICE_UI_MESSAGE_FALLBACKS: Record<string, string> = {
+  "Invoice not found": INVOICE_UI_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Order not found": INVOICE_UI_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Invoice has already been paid":
+    INVOICE_UI_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "A paid payment already exists for this invoice":
+    INVOICE_UI_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "Order cannot be paid in its current status":
+    INVOICE_UI_ERROR_MESSAGES.ORDER_NOT_PAYABLE,
+  "Invoice subtotal must be greater than zero and total amount cannot be negative":
+    INVOICE_UI_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  "Validation failed": INVOICE_UI_ERROR_MESSAGES.VALIDATION_ERROR,
+  "Invalid enum value": INVOICE_UI_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body":
+    INVOICE_UI_ERROR_MESSAGES.BAD_REQUEST,
+};
+
+const INVOICE_DETAIL_LOAD_FALLBACK_ERROR =
+  "Không thể tải chi tiết hóa đơn.";
+const SEND_INVOICE_SUCCESS_MESSAGE =
+  "Đã ghi nhận gửi hóa đơn mô phỏng.";
+const SEND_INVOICE_FALLBACK_ERROR =
+  "Không thể gửi hóa đơn. Vui lòng thử lại.";
+const PAYMENT_HISTORY_FALLBACK_ERROR =
+  "Không thể tải lịch sử thanh toán.";
+
+const getInvoiceUiErrorMessage = (
+  error: unknown,
+  fallbackMessage: string,
+): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return INVOICE_UI_ERROR_MESSAGES[error.code] ?? fallbackMessage;
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  const fallback = Object.entries(INVOICE_UI_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  );
+
+  return fallback?.[1] ?? fallbackMessage;
 };
 
 const CashierOrders = () => {
@@ -527,7 +622,7 @@ const CashierOrders = () => {
     if (!normalizedOrderId) {
       setInvoiceMessage({
         type: "error",
-        text: "Vui lòng nhập backend orderId",
+        text: "Vui lòng nhập mã đơn hàng backend",
       });
       return null;
     }
@@ -551,19 +646,20 @@ const CashierOrders = () => {
         setPayments(await getPayments(foundInvoice.id));
       } catch (historyLoadError) {
         setHistoryError(
-          historyLoadError instanceof Error
-            ? historyLoadError.message
-            : "Không thể tải lịch sử thanh toán",
+          getInvoiceUiErrorMessage(
+            historyLoadError,
+            PAYMENT_HISTORY_FALLBACK_ERROR,
+          ),
         );
       }
       return foundInvoice;
     } catch (loadError) {
       setInvoiceMessage({
         type: "error",
-        text:
-          loadError instanceof Error
-            ? loadError.message
-            : "Không thể tra cứu hóa đơn",
+        text: getInvoiceUiErrorMessage(
+          loadError,
+          INVOICE_DETAIL_LOAD_FALLBACK_ERROR,
+        ),
       });
       return null;
     } finally {
@@ -633,15 +729,12 @@ const CashierOrders = () => {
     setInvoiceAction("send");
     setInvoiceMessage(null);
     try {
-      const sent = await sendInvoice(invoice.id);
-      setInvoiceMessage({ type: "success", text: sent.message });
+      await sendInvoice(invoice.id);
+      setInvoiceMessage({ type: "success", text: SEND_INVOICE_SUCCESS_MESSAGE });
     } catch (sendError) {
       setInvoiceMessage({
         type: "error",
-        text:
-          sendError instanceof Error
-            ? sendError.message
-            : "Không thể gửi hóa đơn",
+        text: getInvoiceUiErrorMessage(sendError, SEND_INVOICE_FALLBACK_ERROR),
       });
     } finally {
       setInvoiceAction(null);

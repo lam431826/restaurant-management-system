@@ -4,6 +4,7 @@ import { sendInvoice } from "../../services/invoiceApi";
 import { getPayments } from "../../services/paymentApi";
 import type { Payment, PaymentMethod } from "../../services/paymentApi";
 import { getStoredUser } from "../../services/tokenStorage";
+import { ApiClientError } from "../../services/apiClient";
 
 interface Props {
   invoice: InvoiceDetailData;
@@ -23,6 +24,58 @@ const formatDateTime = (value: string) =>
 const th =
   "bg-primary-25 text-left text-sm font-semibold text-ink-strong px-3 py-2 whitespace-nowrap";
 const td = "text-md text-ink px-3 py-2 border-b border-line align-middle";
+
+const INVOICE_ACTION_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  ORDER_ALREADY_INVOICED:
+    "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.",
+  INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
+  INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
+  VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+};
+
+const INVOICE_ACTION_MESSAGE_FALLBACKS: Record<string, string> = {
+  "Invoice not found": INVOICE_ACTION_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Order not found": INVOICE_ACTION_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Invoice has already been paid":
+    INVOICE_ACTION_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "A paid payment already exists for this invoice":
+    INVOICE_ACTION_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "Order cannot be paid in its current status":
+    INVOICE_ACTION_ERROR_MESSAGES.ORDER_NOT_PAYABLE,
+  "Invoice subtotal must be greater than zero and total amount cannot be negative":
+    INVOICE_ACTION_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  "Validation failed": INVOICE_ACTION_ERROR_MESSAGES.VALIDATION_ERROR,
+  "Invalid enum value": INVOICE_ACTION_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body":
+    INVOICE_ACTION_ERROR_MESSAGES.BAD_REQUEST,
+};
+
+const SEND_INVOICE_SUCCESS_MESSAGE =
+  "Đã ghi nhận gửi hóa đơn mô phỏng";
+const SEND_INVOICE_FALLBACK_ERROR =
+  "Không thể gửi hóa đơn. Vui lòng thử lại.";
+const PAYMENT_HISTORY_FALLBACK_ERROR =
+  "Không thể tải lịch sử thanh toán.";
+
+const getInvoiceActionErrorMessage = (
+  error: unknown,
+  fallbackMessage: string,
+): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return INVOICE_ACTION_ERROR_MESSAGES[error.code] ?? fallbackMessage;
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  const fallback = Object.entries(INVOICE_ACTION_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  );
+
+  return fallback?.[1] ?? fallbackMessage;
+};
 
 const paymentMethodLabels: Record<PaymentMethod, string> = {
   CASH: "Tiền mặt",
@@ -65,9 +118,7 @@ const InvoiceDetail = ({
       setPayments(await getPayments(invoice.id));
     } catch (loadError) {
       setPaymentsError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Không thể tải lịch sử thanh toán",
+        getInvoiceActionErrorMessage(loadError, PAYMENT_HISTORY_FALLBACK_ERROR),
       );
     } finally {
       setPaymentsLoading(false);
@@ -100,7 +151,7 @@ const InvoiceDetail = ({
       )
       .join("");
     const printedAt = formatDateTime(new Date().toISOString());
-    const cashierName = getStoredUser()?.fullName || "Cashier";
+    const cashierName = getStoredUser()?.fullName || "Thu ngân";
 
     printWindow.document.write(`
       <!doctype html>
@@ -139,26 +190,26 @@ const InvoiceDetail = ({
           <main class="receipt">
             <header class="header"><h1>Wasabi Sushi</h1><p class="printed-at">${escapeHtml(printedAt)}</p></header>
             <div class="separator"></div>
-            <section class="order-box"><span>Order Id</span><strong>${escapeHtml(invoice.orderId)}</strong></section>
+            <section class="order-box"><span>Mã đơn hàng</span><strong>${escapeHtml(invoice.orderId)}</strong></section>
             <div class="separator"></div>
             <section>
-              <div class="info-row"><span>Cashier</span><strong>${escapeHtml(cashierName)}</strong></div>
-              <div class="info-row"><span>Working Time</span><strong>08:00 - 17:00</strong></div>
-              <div class="info-row"><span>Customer Name</span><strong>Guest</strong></div>
-              <div class="info-row"><span>Member Id Card</span><strong>-</strong></div>
-              <div class="info-row"><span>Order Type</span><strong>Dine In</strong></div>
-              <div class="info-row"><span>Table Number</span><strong>-</strong></div>
+              <div class="info-row"><span>Thu ngân</span><strong>${escapeHtml(cashierName)}</strong></div>
+              <div class="info-row"><span>Ca làm</span><strong>08:00 - 17:00</strong></div>
+              <div class="info-row"><span>Khách hàng</span><strong>Khách</strong></div>
+              <div class="info-row"><span>Mã thành viên</span><strong>-</strong></div>
+              <div class="info-row"><span>Hình thức</span><strong>Tại bàn</strong></div>
+              <div class="info-row"><span>Số bàn</span><strong>-</strong></div>
             </section>
             <div class="separator"></div>
             <section>
-              <div class="items-heading"><span>Item</span><span>Qty x Price</span><span>Total</span></div>
+              <div class="items-heading"><span>Món</span><span>SL x Giá</span><span>Thành tiền</span></div>
               ${itemRows || '<div class="empty">Không có món</div>'}
             </section>
             <div class="separator"></div>
             <section>
-              <div class="total-row"><span>Subtotal</span><strong>${escapeHtml(money(invoice.subtotal))}</strong></div>
-              <div class="total-row"><span>Discount</span><strong>${escapeHtml(money(invoice.discountAmount))}</strong></div>
-              <div class="total-row grand-total"><span>Total Amount</span><strong>${escapeHtml(money(invoice.totalAmount))}</strong></div>
+              <div class="total-row"><span>Tạm tính</span><strong>${escapeHtml(money(invoice.subtotal))}</strong></div>
+              <div class="total-row"><span>Giảm giá</span><strong>${escapeHtml(money(invoice.discountAmount))}</strong></div>
+              <div class="total-row grand-total"><span>Tổng thanh toán</span><strong>${escapeHtml(money(invoice.totalAmount))}</strong></div>
             </section>
             <div class="separator"></div>
             <footer class="footer"><div>Cảm ơn quý khách. Hẹn gặp lại!</div><div class="brand">Wasabi Sushi</div></footer>
@@ -178,15 +229,17 @@ const InvoiceDetail = ({
       const response = await sendInvoice(invoice.id);
       setActionMessage({
         type: "success",
-        text: `${response.message} lúc ${formatDateTime(response.sentAt)}`,
+        text: `${SEND_INVOICE_SUCCESS_MESSAGE} lúc ${formatDateTime(
+          response.sentAt,
+        )}.`,
       });
     } catch (sendError) {
       setActionMessage({
         type: "error",
-        text:
-          sendError instanceof Error
-            ? sendError.message
-            : "Không thể gửi hóa đơn",
+        text: getInvoiceActionErrorMessage(
+          sendError,
+          SEND_INVOICE_FALLBACK_ERROR,
+        ),
       });
     } finally {
       setSending(false);

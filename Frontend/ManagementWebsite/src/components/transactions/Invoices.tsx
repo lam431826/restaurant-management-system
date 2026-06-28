@@ -14,10 +14,42 @@ import {
 import type { InvoiceSummary } from "../../services/invoiceApi";
 import { processPayment } from "../../services/paymentApi";
 import type { PaymentMethod } from "../../services/paymentApi";
+import { ApiClientError } from "../../services/apiClient";
 
 const initialFilters: FilterState = {
   orderId: "",
   paid: "all",
+};
+
+const INVOICE_LIST_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+};
+
+const INVOICE_LIST_MESSAGE_FALLBACKS: Record<string, string> = {
+  "Invoice not found": INVOICE_LIST_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Order not found": INVOICE_LIST_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Validation failed": INVOICE_LIST_ERROR_MESSAGES.VALIDATION_ERROR,
+  "Invalid enum value": INVOICE_LIST_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body":
+    INVOICE_LIST_ERROR_MESSAGES.BAD_REQUEST,
+};
+
+const INVOICE_LIST_FALLBACK_ERROR = "Không thể tải danh sách hóa đơn.";
+
+const getInvoiceListErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return INVOICE_LIST_ERROR_MESSAGES[error.code] ?? INVOICE_LIST_FALLBACK_ERROR;
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  const fallback = Object.entries(INVOICE_LIST_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  );
+
+  return fallback?.[1] ?? INVOICE_LIST_FALLBACK_ERROR;
 };
 
 const Invoices = () => {
@@ -49,11 +81,7 @@ const Invoices = () => {
         }),
       );
     } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Không thể tải danh sách hóa đơn",
-      );
+      setError(getInvoiceListErrorMessage(loadError));
     } finally {
       setLoading(false);
     }

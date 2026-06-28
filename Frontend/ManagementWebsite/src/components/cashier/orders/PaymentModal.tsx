@@ -91,7 +91,7 @@ export const PaymentModal = ({
           className="flex items-center justify-between shrink-0"
           style={{ height: 44 }}
         >
-          <p className="text-[24px] font-semibold text-[#202325]">Payment</p>
+          <p className="text-[24px] font-semibold text-[#202325]">Thanh toán</p>
           <button
             onClick={onClose}
             className="w-10 h-10 bg-[#f5f5f5] rounded-full flex items-center justify-center text-[#202325] hover:bg-[#e8e8e8] transition-colors"
@@ -115,37 +115,37 @@ export const PaymentModal = ({
               </p>
             </div>
             <div className="border border-dashed border-[#b0a080] rounded px-3 py-2 text-center">
-              <p className="text-[10px] tracking-widest text-black">Order Id</p>
+              <p className="text-[10px] tracking-widest text-black">Mã đơn hàng</p>
               <p className="text-[14px] font-bold tracking-wider text-black break-all">
                 {invoice.orderId}
               </p>
             </div>
             <div className="flex flex-col gap-3 text-[10px]">
               <div className="flex justify-between">
-                <span className="text-[#6d7278]">Cashier</span>
+                <span className="text-[#6d7278]">Thu ngân</span>
                 <span className="text-black">Duy Tan</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[#6d7278]">Working Time</span>
+                <span className="text-[#6d7278]">Ca làm</span>
                 <span className="text-black">09.00 - 12.00 AM</span>
               </div>
             </div>
             <div className="border-t border-dashed border-[#b0a080]" />
             <div className="flex flex-col gap-3 text-[10px]">
               <div className="flex justify-between gap-2">
-                <span className="text-[#6d7278] shrink-0">Customer Name</span>
+                <span className="text-[#6d7278] shrink-0">Khách hàng</span>
                 <span className="text-black">Nguyen Van A</span>
               </div>
               <div className="flex justify-between gap-2">
-                <span className="text-[#6d7278] shrink-0">Member Id Card</span>
+                <span className="text-[#6d7278] shrink-0">Mã thành viên</span>
                 <span className="text-black">-</span>
               </div>
               <div className="flex justify-between gap-2">
-                <span className="text-[#6d7278] shrink-0">Order Type</span>
-                <span className="text-black">Dine In</span>
+                <span className="text-[#6d7278] shrink-0">Hình thức</span>
+                <span className="text-black">Tại bàn</span>
               </div>
               <div className="flex justify-between gap-2">
-                <span className="text-[#6d7278] shrink-0">Table Number</span>
+                <span className="text-[#6d7278] shrink-0">Số bàn</span>
                 <span className="text-black">
                   {table?.name?.replace("Bàn ", "") ?? "9"}
                 </span>
@@ -170,13 +170,13 @@ export const PaymentModal = ({
             <div className="border-t border-dashed border-[#b0a080]" />
             <div className="flex flex-col gap-3 text-[10px]">
               <div className="flex justify-between">
-                <span className="text-[#6d7278]">Subtotal</span>
+                <span className="text-[#6d7278]">Tạm tính</span>
                 <span className="text-black">
                   {subtotal.toLocaleString("vi-VN")}đ
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[#6d7278]">Discount</span>
+                <span className="text-[#6d7278]">Giảm giá</span>
                 <span className="text-black">
                   {invoice.discountAmount.toLocaleString("vi-VN")}đ
                 </span>
@@ -184,12 +184,11 @@ export const PaymentModal = ({
             </div>
             <div className="border-t border-dashed border-[#b0a080]" />
             <div className="flex justify-between text-[14px] font-bold text-[#a27b5c]">
-              <span>Total Amount</span>
+              <span>Tổng thanh toán</span>
               <span>{total.toLocaleString("vi-VN")}đ</span>
             </div>
             <p className="text-[8px] text-black leading-relaxed">
-              Thanks for fueling our passion. Drop by again, if your wallet
-              isn't still sulking. You're always welcome here!
+              Cảm ơn quý khách. Hẹn gặp lại!
             </p>
             <p className="text-[#3f4e4f] text-[24px] font-medium text-center">
               Wasabi Sushi
@@ -200,7 +199,7 @@ export const PaymentModal = ({
           <div className="flex-1 h-full min-h-0 flex flex-col overflow-hidden">
             <div className="relative flex flex-col gap-3 shrink-0">
               <p className="text-[16px] font-semibold text-[#202325]">
-                Select a payment method
+                Chọn phương thức thanh toán
               </p>
               <button
                 onClick={() => setDropdownOpen((v) => !v)}

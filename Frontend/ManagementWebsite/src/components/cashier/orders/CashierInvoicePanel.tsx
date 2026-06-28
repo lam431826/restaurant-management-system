@@ -51,7 +51,7 @@ export const CashierInvoicePanel = ({
             Hóa đơn / Thanh toán
           </p>
           <p className="text-[11px] text-[#797b7c] mt-1">
-            Tra cứu theo backend orderId
+            Tra cứu theo mã đơn hàng backend
           </p>
         </div>
         {invoice && (
@@ -67,7 +67,7 @@ export const CashierInvoicePanel = ({
         <input
           value={orderId}
           onChange={(event) => onOrderIdChange(event.target.value)}
-          placeholder="Backend orderId"
+          placeholder="Mã đơn hàng backend"
           className="flex-1 min-w-0 h-[38px] px-3 rounded-[10px] border border-[#e8e8e8] text-[13px] text-[#202325] outline-none focus:border-[#025cca]"
         />
         <button
