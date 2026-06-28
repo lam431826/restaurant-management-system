@@ -70,7 +70,13 @@ const TABLE_FILTERS = [
   { id: "empty", label: "Còn trống" },
 ];
 
+const ORDER_ALREADY_INVOICED_MESSAGE =
+  "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.";
+const ORDER_FINAL_ITEM_LOCK_MESSAGE =
+  "Đơn hàng đã đóng hoặc đã hủy nên không thể chỉnh sửa món.";
+
 const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
+  ORDER_ALREADY_INVOICED: ORDER_ALREADY_INVOICED_MESSAGE,
   INVOICE_NOT_FOUND: "Không thể đóng đơn vì đơn chưa có hóa đơn.",
   ORDER_NOT_CLOSEABLE:
     "Không thể đóng đơn khi hóa đơn chưa được thanh toán hoặc đơn không còn hợp lệ để đóng.",
@@ -485,6 +491,23 @@ const CashierOrders = () => {
   }, [selectedTable?.id, selectedTable?.occupied, activeOrders]);
 
   const hasSelectedMenu = cart.length > 0;
+  const selectedOrderId = selectedTable?.orderId ?? "";
+  const selectedOrder = activeOrders.find((order) => order.id === selectedOrderId);
+  const orderHasInvoice =
+    !!invoice && !!selectedOrderId && invoice.orderId === selectedOrderId;
+  const orderIsFinal =
+    selectedOrder?.status === "CLOSED" || selectedOrder?.status === "CANCELLED";
+  const disableItemMutation = orderHasInvoice || orderIsFinal;
+  const itemMutationDisabledMessage = orderHasInvoice
+    ? ORDER_ALREADY_INVOICED_MESSAGE
+    : ORDER_FINAL_ITEM_LOCK_MESSAGE;
+
+  const showItemMutationBlockedMessage = () => {
+    setOrderActionMessage({
+      type: "error",
+      text: itemMutationDisabledMessage,
+    });
+  };
 
   const resetInvoiceLink = () => {
     setBackendOrderId("");
@@ -718,13 +741,22 @@ const CashierOrders = () => {
     orderItemId: string,
     statusLabel: string,
   ) => {
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
     const status = COOKING_STATUS_FROM_LABEL[statusLabel];
     if (!status) return;
+    setOrderActionMessage(null);
     try {
       await updateOrderItemStatus(orderId, orderItemId, status);
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -745,11 +777,20 @@ const CashierOrders = () => {
       }
       return;
     }
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
     try {
       await removeOrderItem(orderId, orderItemId);
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -793,20 +834,34 @@ const CashierOrders = () => {
   const handleCancelNote = () =>
     setNoteModal({ open: false, itemId: null, text: "" });
 
-  const handleOpenReject = (orderId: string, itemId: string) =>
+  const handleOpenReject = (orderId: string, itemId: string) => {
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
     setRejectModal({ open: true, orderId, itemId, text: "" });
+  };
 
   const handleConfirmReject = async (
     orderId: string,
     itemId: string,
     text: string,
   ) => {
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
     try {
       await updateOrderItemStatus(orderId, itemId, "REJECTED", text);
       setRefreshTrigger((t) => t + 1);
       setRejectModal({ open: false, orderId: null, itemId: null, text: "" });
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -855,6 +910,11 @@ const CashierOrders = () => {
 
   const handleAddItems = async () => {
     if (!selectedTable || !selectedTable.orderId) return;
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
     try {
       await addOrderItems(
         selectedTable.orderId,
@@ -870,6 +930,10 @@ const CashierOrders = () => {
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -1107,6 +1171,8 @@ const CashierOrders = () => {
           checkoutLabel={checkoutLabel}
           shiftOpen={!!shift}
           invoicePaid={invoice?.paid}
+          itemMutationDisabled={disableItemMutation}
+          itemMutationDisabledMessage={itemMutationDisabledMessage}
           orderActionMessage={orderActionMessage}
           onCloseOrder={handleCloseOrder}
           invoiceTools={

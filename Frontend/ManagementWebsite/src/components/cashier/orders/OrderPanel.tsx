@@ -22,6 +22,8 @@ export const OrderPanel = ({
   checkoutLabel,
   shiftOpen,
   invoicePaid,
+  itemMutationDisabled,
+  itemMutationDisabledMessage,
   orderActionMessage,
   onCloseOrder,
 }: {
@@ -45,6 +47,8 @@ export const OrderPanel = ({
   checkoutLabel: string;
   shiftOpen?: boolean;
   invoicePaid?: boolean;
+  itemMutationDisabled?: boolean;
+  itemMutationDisabledMessage?: string;
   orderActionMessage?: { type: "error"; text: string } | null;
   onCloseOrder?: () => void;
 }) => {
@@ -117,6 +121,8 @@ export const OrderPanel = ({
               onNote={onNote}
               onRemoveItem={onRemoveItem}
               onRejectItem={onRejectItem}
+              itemMutationDisabled={itemMutationDisabled}
+              itemMutationDisabledMessage={itemMutationDisabledMessage}
             />
           ))}
         {!isTableEmpty && invoiceTools}
@@ -156,15 +162,25 @@ export const OrderPanel = ({
             </span>
           </button>
         ) : hasSelectedMenu ? (
+          <div className="flex flex-col gap-2 mt-1">
+            {itemMutationDisabled && itemMutationDisabledMessage && (
+              <div className="px-3 py-2 rounded-[10px] bg-[#fff0f0] text-[#d92d20] text-[12px] leading-5">
+                {itemMutationDisabledMessage}
+              </div>
+            )}
           <button
             onClick={onAddItems}
-            disabled={!shiftOpen}
+            disabled={!shiftOpen || itemMutationDisabled}
+            title={
+              itemMutationDisabled ? itemMutationDisabledMessage : undefined
+            }
             className="bg-[#e85d04] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#dc2f02] transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="text-[16px] font-medium text-white">
               Thêm món vào Đơn
             </span>
           </button>
+          </div>
         ) : (
           <div className="flex flex-col gap-2 mt-1">
             {orderActionMessage && (
