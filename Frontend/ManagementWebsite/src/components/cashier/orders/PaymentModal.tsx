@@ -26,15 +26,29 @@ export const PaymentModal = ({
   table,
   processing,
   error,
+  promotionCode,
+  action,
+  invoiceMessage,
   onClose,
   onConfirm,
+  onPromotionCodeChange,
+  onApplyDiscount,
+  onPrint,
+  onSend,
 }: {
   invoice: InvoiceDetail;
   table: TableItem | null;
   processing: boolean;
   error: string;
+  promotionCode: string;
+  action: string | null;
+  invoiceMessage: { type: "success" | "error"; text: string } | null;
   onClose: () => void;
   onConfirm: (method: PaymentMethod) => void;
+  onPromotionCodeChange: (value: string) => void;
+  onApplyDiscount: () => void;
+  onPrint: () => void;
+  onSend: () => void;
 }) => {
   const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -71,13 +85,16 @@ export const PaymentModal = ({
   const displayAmount = cashInput
     ? parseInt(cashInput, 10).toLocaleString("vi-VN") + "đ"
     : "0đ";
+  const actionBusy = action !== null;
   const confirmLabel = processing
     ? method === "QR"
       ? "Đang xác nhận..."
       : "Đang thanh toán..."
-    : method === "QR"
-      ? "Xác nhận đã thanh toán"
-      : "Xác nhận thanh toán";
+    : invoice.paid
+      ? "Đã thanh toán"
+      : method === "QR"
+        ? "Xác nhận đã thanh toán"
+        : "Xác nhận thanh toán";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -198,6 +215,64 @@ export const PaymentModal = ({
           {/* Payment panel */}
           <div className="flex-1 h-full min-h-0 flex flex-col overflow-hidden">
             <div className="relative flex flex-col gap-3 shrink-0">
+              <div className="rounded-[12px] border border-[#e8e8e8] bg-[#f5f5f5] p-3 flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[15px] font-semibold text-[#202325]">
+                    Thao tác hóa đơn
+                  </p>
+                  {invoice.paid && (
+                    <span className="text-[12px] font-medium text-[#286b4a]">
+                      Đã thanh toán
+                    </span>
+                  )}
+                </div>
+                {!invoice.paid ? (
+                  <div className="flex gap-2">
+                    <input
+                      value={promotionCode}
+                      onChange={(event) =>
+                        onPromotionCodeChange(event.target.value.toUpperCase())
+                      }
+                      placeholder="Mã khuyến mãi"
+                      className="flex-1 min-w-0 h-[36px] px-3 rounded-[10px] border border-[#e8e8e8] bg-white text-[12px] uppercase outline-none focus:border-[#025cca]"
+                    />
+                    <button
+                      onClick={onApplyDiscount}
+                      disabled={actionBusy || !promotionCode.trim()}
+                      className="h-[36px] px-3 rounded-[10px] border border-[#025cca] bg-white text-[12px] font-medium text-[#025cca] disabled:opacity-50"
+                    >
+                      {action === "discount" ? "Đang áp dụng" : "Áp dụng mã"}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-[#636566]">
+                    Không thể áp dụng mã sau khi hóa đơn đã thanh toán
+                  </p>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={onPrint}
+                    className="h-[36px] rounded-[10px] bg-white text-[12px] font-medium text-[#202325] disabled:opacity-50"
+                  >
+                    In hóa đơn
+                  </button>
+                  <button
+                    onClick={onSend}
+                    disabled={actionBusy}
+                    className="h-[36px] rounded-[10px] bg-[#f0f8ff] text-[12px] font-medium text-[#025cca] disabled:opacity-50"
+                  >
+                    {action === "send" ? "Đang gửi" : "Gửi hóa đơn"}
+                  </button>
+                </div>
+                {invoiceMessage && (
+                  <p
+                    className={`text-[12px] ${invoiceMessage.type === "success" ? "text-[#286b4a]" : "text-[#d92d20]"}`}
+                  >
+                    {invoiceMessage.text}
+                  </p>
+                )}
+              </div>
+
               <p className="text-[16px] font-semibold text-[#202325]">
                 Chọn phương thức thanh toán
               </p>
@@ -338,7 +413,7 @@ export const PaymentModal = ({
               )}
               <button
                 onClick={() => onConfirm(method)}
-                disabled={processing}
+                disabled={processing || invoice.paid}
                 className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60"
               >
                 {confirmLabel}

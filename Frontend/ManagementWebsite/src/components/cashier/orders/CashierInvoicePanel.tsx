@@ -6,29 +6,19 @@ export const CashierInvoicePanel = ({
   invoiceChecked,
   invoice,
   detail,
-  promotionCode,
   loading,
   action,
   message,
   onGenerate,
-  onPromotionCodeChange,
-  onApplyDiscount,
-  onPrint,
-  onSend,
 }: {
   hasSelectedOrder: boolean;
   invoiceChecked: boolean;
   invoice: InvoiceSummary | null;
   detail: InvoiceDetail | null;
-  promotionCode: string;
   loading: boolean;
   action: string | null;
   message: { type: "success" | "error"; text: string } | null;
   onGenerate: () => void;
-  onPromotionCodeChange: (value: string) => void;
-  onApplyDiscount: () => void;
-  onPrint: () => void;
-  onSend: () => void;
 }) => {
   const busy = loading || action !== null;
 
@@ -117,43 +107,6 @@ export const CashierInvoicePanel = ({
                 </span>
               </div>
             )}
-          </div>
-
-          {!invoice.paid && (
-            <div className="flex gap-2">
-              <input
-                value={promotionCode}
-                onChange={(event) =>
-                  onPromotionCodeChange(event.target.value.toUpperCase())
-                }
-                placeholder="Mã khuyến mãi"
-                className="flex-1 min-w-0 h-[36px] px-3 rounded-[10px] border border-[#e8e8e8] text-[12px] uppercase outline-none focus:border-[#025cca]"
-              />
-              <button
-                onClick={onApplyDiscount}
-                disabled={busy || !promotionCode.trim()}
-                className="h-[36px] px-3 rounded-[10px] border border-[#025cca] text-[12px] font-medium text-[#025cca] disabled:opacity-50"
-              >
-                {action === "discount" ? "Đang áp dụng" : "Áp dụng"}
-              </button>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={onPrint}
-              disabled={!detail}
-              className="h-[36px] rounded-[10px] bg-[#f5f5f5] text-[12px] font-medium text-[#202325] disabled:opacity-50"
-            >
-              In hóa đơn
-            </button>
-            <button
-              onClick={onSend}
-              disabled={busy}
-              className="h-[36px] rounded-[10px] bg-[#f0f8ff] text-[12px] font-medium text-[#025cca] disabled:opacity-50"
-            >
-              {action === "send" ? "Đang gửi" : "Gửi hóa đơn"}
-            </button>
           </div>
 
         </>

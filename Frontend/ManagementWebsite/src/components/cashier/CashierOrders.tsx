@@ -1258,15 +1258,10 @@ const CashierOrders = () => {
               invoiceChecked={invoiceChecked}
               invoice={invoice}
               detail={invoiceDetail}
-              promotionCode={promotionCode}
               loading={invoiceLoading}
               action={invoiceAction}
               message={invoiceMessage}
               onGenerate={() => void handleGenerateInvoice()}
-              onPromotionCodeChange={setPromotionCode}
-              onApplyDiscount={() => void handleApplyDiscount()}
-              onPrint={handlePrintInvoice}
-              onSend={() => void handleSendInvoice()}
             />
           }
         />
@@ -1280,8 +1275,15 @@ const CashierOrders = () => {
           table={selectedTable}
           processing={paymentProcessing}
           error={paymentError}
+          promotionCode={promotionCode}
+          action={invoiceAction}
+          invoiceMessage={invoiceMessage}
           onClose={() => setPaymentOpen(false)}
           onConfirm={(method) => void handleProcessPayment(method)}
+          onPromotionCodeChange={setPromotionCode}
+          onApplyDiscount={() => void handleApplyDiscount()}
+          onPrint={handlePrintInvoice}
+          onSend={() => void handleSendInvoice()}
         />
       )}
       {successTotal !== null && (
