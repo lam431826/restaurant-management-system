@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import { QRCodeCanvas } from 'qrcode.react'
 import type { TableItem } from '../../services/tableService'
 
 interface Props {
@@ -12,43 +13,11 @@ const CloseIcon = () => (
   </svg>
 )
 
-/* Deterministic pseudo-QR: a 21×21 grid filled from a hash of the room name.
-   Purely decorative — stands in for a real QR in this UI rebuild. */
-const SIZE = 21
-const buildGrid = (seedStr: string): boolean[][] => {
-  let h = 2166136261
-  for (let i = 0; i < seedStr.length; i++) {
-    h ^= seedStr.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  const rand = () => {
-    h ^= h << 13; h ^= h >>> 17; h ^= h << 5
-    return ((h >>> 0) % 1000) / 1000
-  }
-  const grid = Array.from({ length: SIZE }, () => Array(SIZE).fill(false))
-  for (let r = 0; r < SIZE; r++)
-    for (let c = 0; c < SIZE; c++) grid[r][c] = rand() > 0.5
-
-  // Stamp the three finder squares (top-left, top-right, bottom-left)
-  const finder = (r0: number, c0: number) => {
-    for (let r = 0; r < 7; r++)
-      for (let c = 0; c < 7; c++) {
-        const edge = r === 0 || r === 6 || c === 0 || c === 6
-        const core = r >= 2 && r <= 4 && c >= 2 && c <= 4
-        grid[r0 + r][c0 + c] = edge || core
-      }
-    // quiet border around finder
-    for (let k = -1; k <= 7; k++) {
-      if (grid[r0 + k]) { if (grid[r0 + k][c0 - 1] !== undefined) grid[r0 + k][c0 - 1] = false; if (grid[r0 + k][c0 + 7] !== undefined) grid[r0 + k][c0 + 7] = false }
-      if (grid[r0 - 1]) grid[r0 - 1][c0 + k] = false
-      if (grid[r0 + 7]) grid[r0 + 7][c0 + k] = false
-    }
-  }
-  finder(0, 0); finder(0, SIZE - 7); finder(SIZE - 7, 0)
-  return grid
-}
+const PUBLIC_SITE_URL = import.meta.env.VITE_PUBLIC_SITE_URL ?? ''
 
 const QrModal = ({ room, onClose }: Props) => {
+  const qrWrapperRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -60,10 +29,20 @@ const QrModal = ({ room, onClose }: Props) => {
     }
   }, [onClose])
 
-  const grid = buildGrid(`${room.id}-${room.name}-${room.area}`)
-  const cell = 10
-  const pad = 10
-  const dim = SIZE * cell + pad * 2
+  const qrValue = room.qrToken
+    ? `${PUBLIC_SITE_URL}/menu?token=${room.qrToken}`
+    : null
+
+  const handleDownload = () => {
+    const canvas = qrWrapperRef.current?.querySelector('canvas') as HTMLCanvasElement | null
+    if (!canvas) return
+    const link = document.createElement('a')
+    link.href = canvas.toDataURL('image/png')
+    link.download = `QR-${room.name}.png`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
 
   return (
     <div
@@ -74,26 +53,43 @@ const QrModal = ({ room, onClose }: Props) => {
       <div className="w-full max-w-[40rem] my-6 bg-card rounded-lg shadow-lg flex flex-col">
         <div className="flex items-center justify-between px-6 h-16 border-b border-line shrink-0">
           <h2 className="text-h3 font-bold text-ink">Mã QR gọi món</h2>
-          <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">
+          <button
+            onClick={onClose}
+            className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink"
+            aria-label="Đóng"
+          >
             <CloseIcon />
           </button>
         </div>
 
         <div className="p-6 flex flex-col items-center gap-4">
           <div className="text-md text-ink-subtle">
-            <span className="font-semibold text-ink">{room.name}</span> · {room.area}
+            <span className="font-semibold text-ink">{room.name}</span>
+            {room.area && <> · {room.area}</>}
           </div>
 
-          <div className="p-3 bg-white rounded-md border border-line-default">
-            <svg width="240" height="240" viewBox={`0 0 ${dim} ${dim}`} role="img" aria-label={`Mã QR cho ${room.name}`}>
-              <rect width={dim} height={dim} fill="#fff" />
-              {grid.flatMap((rowArr, r) =>
-                rowArr.map((on, c) =>
-                  on ? <rect key={`${r}-${c}`} x={pad + c * cell} y={pad + r * cell} width={cell} height={cell} fill="#15171a" /> : null
-                )
-              )}
-            </svg>
+          <div className="p-3 bg-white rounded-md border border-line-default" ref={qrWrapperRef}>
+            {qrValue ? (
+              <QRCodeCanvas
+                value={qrValue}
+                size={240}
+                bgColor="#ffffff"
+                fgColor="#15171a"
+                level="M"
+                marginSize={2}
+              />
+            ) : (
+              <div className="w-[240px] h-[240px] flex items-center justify-center text-sm text-ink-muted">
+                Bàn chưa có mã QR
+              </div>
+            )}
           </div>
+
+          {qrValue && (
+            <p className="text-xs text-ink-muted break-all max-w-[28rem] text-center font-mono">
+              {qrValue}
+            </p>
+          )}
 
           <p className="text-sm text-ink-muted text-center max-w-[28rem]">
             Khách quét mã để xem thực đơn và gọi món trực tiếp tại {room.name}.
@@ -102,7 +98,11 @@ const QrModal = ({ room, onClose }: Props) => {
 
         <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-line shrink-0">
           <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose}>Đóng</button>
-          <button className="kv-btn kv-btn-primary h-10" onClick={() => window.alert(`Đang tải mã QR cho ${room.name}...`)}>
+          <button
+            className="kv-btn kv-btn-primary h-10"
+            onClick={handleDownload}
+            disabled={!qrValue}
+          >
             Tải mã QR
           </button>
         </div>

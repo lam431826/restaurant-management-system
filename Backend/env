@@ -31,3 +31,8 @@ TWILIO_AUTH_TOKEN=
 PAYMENT_PROVIDER=vnpay
 VNPAY_TMN_CODE=
 VNPAY_HASH_SECRET=
+
+# ============================================================
+# Menu Path
+# ============================================================
+UPLOAD_DIR=Backend/uploads
