@@ -58,7 +58,6 @@ import { MenuView } from "./orders/MenuView";
 import { TableView } from "./orders/TableView";
 import { AddNoteModal } from "./orders/AddNoteModal";
 import { PaymentModal } from "./orders/PaymentModal";
-import { CashierInvoicePanel } from "./orders/CashierInvoicePanel";
 import { OrderPanel } from "./orders/OrderPanel";
 import { SuccessToast } from "./orders/SuccessToast";
 import { SearchIcon } from "./orders/icons";
@@ -74,6 +73,8 @@ const ORDER_ALREADY_INVOICED_MESSAGE =
   "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.";
 const ORDER_FINAL_ITEM_LOCK_MESSAGE =
   "Đơn hàng đã đóng hoặc đã hủy nên không thể chỉnh sửa món.";
+const EMPTY_ORDER_MESSAGE =
+  "Đơn hàng chưa có món. Vui lòng thêm món hoặc hủy đơn.";
 
 const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
   ORDER_ALREADY_INVOICED: ORDER_ALREADY_INVOICED_MESSAGE,
@@ -584,10 +585,18 @@ const CashierOrders = () => {
   const hasSelectedMenu = cart.length > 0;
   const selectedOrderId = selectedTable?.orderId ?? "";
   const selectedOrder = activeOrders.find((order) => order.id === selectedOrderId);
+  const selectedOrderItemCount =
+    selectedOrder?.items.reduce((total, item) => total + item.quantity, 0) ?? 0;
   const orderHasInvoice =
     !!invoice && !!selectedOrderId && invoice.orderId === selectedOrderId;
   const orderIsFinal =
     selectedOrder?.status === "CLOSED" || selectedOrder?.status === "CANCELLED";
+  const emptyOrderWithoutInvoice =
+    !!selectedOrder &&
+    invoiceChecked &&
+    !invoice &&
+    !orderIsFinal &&
+    selectedOrderItemCount === 0;
   const disableItemMutation = orderHasInvoice || orderIsFinal;
   const itemMutationDisabledMessage = orderHasInvoice
     ? ORDER_ALREADY_INVOICED_MESSAGE
@@ -658,24 +667,41 @@ const CashierOrders = () => {
       });
       return;
     }
+    if (emptyOrderWithoutInvoice) {
+      setPaymentOpen(false);
+      setInvoiceMessage(null);
+      setOrderActionMessage({
+        type: "error",
+        text: EMPTY_ORDER_MESSAGE,
+      });
+      return;
+    }
     setInvoiceAction("generate");
     setInvoiceMessage(null);
+    setOrderActionMessage(null);
     try {
       setBackendOrderId(invoiceOrderId);
-      const created = await generateInvoice({
+      await generateInvoice({
         orderId: invoiceOrderId,
         promotionCode: null,
       });
-      await loadInvoiceForOrder(invoiceOrderId);
+      const createdInvoice = await loadInvoiceForOrder(invoiceOrderId);
+      if (createdInvoice) setPaymentOpen(true);
       setInvoiceMessage({
         type: "success",
-        text: `Đã tạo hóa đơn ${created.id}`,
+        text: "Hóa đơn đã được tạo và sẵn sàng thanh toán.",
       });
     } catch (generateError) {
+      const message = getInvoiceGenerationErrorMessage(generateError);
       setInvoiceMessage({
         type: "error",
-        text: getInvoiceGenerationErrorMessage(generateError),
+        text: message,
       });
+      setOrderActionMessage({
+        type: "error",
+        text: message,
+      });
+      setPaymentOpen(false);
     } finally {
       setInvoiceAction(null);
     }
@@ -1042,6 +1068,7 @@ const CashierOrders = () => {
     invoiceAction !== null ||
     invoiceLoading ||
     !selectedOrderId ||
+    emptyOrderWithoutInvoice ||
     (invoice ? !invoiceDetail || invoice.paid : !invoiceChecked);
   const checkoutLabel = invoice?.paid
     ? "Đã thanh toán"
@@ -1251,19 +1278,16 @@ const CashierOrders = () => {
           itemMutationDisabled={disableItemMutation}
           itemMutationDisabledMessage={itemMutationDisabledMessage}
           orderActionMessage={orderActionMessage}
-          onCloseOrder={handleCloseOrder}
-          invoiceTools={
-            <CashierInvoicePanel
-              hasSelectedOrder={!!selectedOrderId}
-              invoiceChecked={invoiceChecked}
-              invoice={invoice}
-              detail={invoiceDetail}
-              loading={invoiceLoading}
-              action={invoiceAction}
-              message={invoiceMessage}
-              onGenerate={() => void handleGenerateInvoice()}
-            />
+          emptyOrderMessage={
+            emptyOrderWithoutInvoice ? EMPTY_ORDER_MESSAGE : undefined
           }
+          cancelOrderIds={
+            emptyOrderWithoutInvoice && selectedOrderId
+              ? [selectedOrderId]
+              : undefined
+          }
+          onCloseOrder={handleCloseOrder}
+          invoiceTools={null}
         />
       </div>
 

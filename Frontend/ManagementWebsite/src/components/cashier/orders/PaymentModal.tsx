@@ -314,9 +314,17 @@ export const PaymentModal = ({
             <div className="flex-1 min-h-0 overflow-y-auto mt-6 pr-1">
               {method === "CASH" && (
                 <div className="flex flex-col items-center gap-5 pb-2">
-                  <p className="text-[40px] font-medium leading-none text-[#202325] text-center py-2">
-                    {displayAmount}
-                  </p>
+                  <div className="flex flex-col items-center gap-2 py-2">
+                    <p className="text-[13px] font-medium text-[#636566]">
+                      Tiền khách đưa
+                    </p>
+                    <p className="text-[40px] font-medium leading-none text-[#202325] text-center">
+                      {displayAmount}
+                    </p>
+                    <p className="text-[12px] text-[#797b7c]">
+                      Cần thanh toán: {total.toLocaleString("vi-VN")} đ
+                    </p>
+                  </div>
                   <div className="grid grid-cols-3 w-full gap-y-2">
                     {[
                       "1",
