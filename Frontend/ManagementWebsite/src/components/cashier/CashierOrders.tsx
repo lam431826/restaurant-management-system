@@ -622,7 +622,7 @@ const CashierOrders = () => {
     if (!normalizedOrderId) {
       setInvoiceMessage({
         type: "error",
-        text: "Vui lòng nhập mã đơn hàng backend",
+        text: "Vui lòng chọn đơn hàng trước khi tạo hóa đơn",
       });
       return null;
     }
@@ -667,27 +667,24 @@ const CashierOrders = () => {
     }
   };
 
-  const handleBackendOrderIdChange = (value: string) => {
-    setBackendOrderId(value);
-    setInvoiceChecked(false);
-    setInvoice(null);
-    setInvoiceDetail(null);
-    setPayments([]);
-    setPromotionCode("");
-    setInvoiceMessage(null);
-    setHistoryError("");
-  };
-
   const handleGenerateInvoice = async () => {
-    if (!backendOrderId.trim()) return;
+    const invoiceOrderId = selectedOrderId.trim();
+    if (!invoiceOrderId) {
+      setInvoiceMessage({
+        type: "error",
+        text: "Vui lòng chọn đơn hàng trước khi tạo hóa đơn",
+      });
+      return;
+    }
     setInvoiceAction("generate");
     setInvoiceMessage(null);
     try {
+      setBackendOrderId(invoiceOrderId);
       const created = await generateInvoice({
-        orderId: backendOrderId.trim(),
+        orderId: invoiceOrderId,
         promotionCode: null,
       });
-      await loadInvoiceForOrder(backendOrderId);
+      await loadInvoiceForOrder(invoiceOrderId);
       setInvoiceMessage({
         type: "success",
         text: `Đã tạo hóa đơn ${created.id}`,
@@ -708,7 +705,7 @@ const CashierOrders = () => {
     setInvoiceMessage(null);
     try {
       await applyInvoiceDiscount(invoice.id, promotionCode.trim());
-      await loadInvoiceForOrder(backendOrderId);
+      await loadInvoiceForOrder(invoice.orderId);
       setPromotionCode("");
       setInvoiceMessage({
         type: "success",
@@ -770,7 +767,7 @@ const CashierOrders = () => {
       const createdPayment = await processPayment(invoice.id, method);
       setPaymentOpen(false);
       setSuccessTotal(createdPayment.amount);
-      await loadInvoiceForOrder(backendOrderId);
+      await loadInvoiceForOrder(invoice.orderId);
       setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
     } catch (processError) {
       setPaymentError(getPaymentProcessErrorMessage(processError));
@@ -962,10 +959,10 @@ const CashierOrders = () => {
     setRejectModal({ open: false, orderId: null, itemId: null, text: "" });
 
   const handleCloseOrder = async () => {
-    if (!backendOrderId) return;
+    if (!selectedOrderId) return;
     setOrderActionMessage(null);
     try {
-      await closeOrder(backendOrderId);
+      await closeOrder(selectedOrderId);
       setRefreshTrigger((t) => t + 1);
       resetInvoiceLink();
     } catch (e) {
@@ -1060,16 +1057,17 @@ const CashierOrders = () => {
     empty: tablesInArea.filter((t) => !t.occupied).length,
   };
   const checkoutDisabled =
-    !invoice ||
-    !invoiceDetail ||
-    invoice.paid ||
     invoiceAction !== null ||
-    invoiceLoading;
+    invoiceLoading ||
+    !selectedOrderId ||
+    (invoice ? !invoiceDetail || invoice.paid : !invoiceChecked);
   const checkoutLabel = invoice?.paid
     ? "Đã thanh toán"
     : invoice
-      ? "Thanh Toán (F9)"
-      : "Liên kết hóa đơn trước";
+      ? "Mở thanh toán"
+      : invoiceChecked
+        ? "Tạo hóa đơn"
+        : "Đang kiểm tra hóa đơn";
 
   if (shiftLoading) {
     return (
@@ -1251,7 +1249,11 @@ const CashierOrders = () => {
           onCheckout={() => {
             setOrderActionMessage(null);
             setPaymentError("");
-            setPaymentOpen(true);
+            if (invoice) {
+              setPaymentOpen(true);
+            } else {
+              void handleGenerateInvoice();
+            }
           }}
           onCreateOrder={handleCreateOrder}
           onAddItems={handleAddItems}
@@ -1270,7 +1272,7 @@ const CashierOrders = () => {
           onCloseOrder={handleCloseOrder}
           invoiceTools={
             <CashierInvoicePanel
-              orderId={backendOrderId}
+              hasSelectedOrder={!!selectedOrderId}
               invoiceChecked={invoiceChecked}
               invoice={invoice}
               detail={invoiceDetail}
@@ -1280,8 +1282,6 @@ const CashierOrders = () => {
               action={invoiceAction}
               message={invoiceMessage}
               historyError={historyError}
-              onOrderIdChange={handleBackendOrderIdChange}
-              onLookup={() => void loadInvoiceForOrder(backendOrderId)}
               onGenerate={() => void handleGenerateInvoice()}
               onPromotionCodeChange={setPromotionCode}
               onApplyDiscount={() => void handleApplyDiscount()}

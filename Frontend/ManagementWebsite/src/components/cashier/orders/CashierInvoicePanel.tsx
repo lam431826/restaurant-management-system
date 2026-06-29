@@ -5,7 +5,7 @@ import { formatDateTime } from "./printInvoice";
 
 /* ─── Invoice / payment panel ────────────────────────────────────────────── */
 export const CashierInvoicePanel = ({
-  orderId,
+  hasSelectedOrder,
   invoiceChecked,
   invoice,
   detail,
@@ -15,15 +15,13 @@ export const CashierInvoicePanel = ({
   action,
   message,
   historyError,
-  onOrderIdChange,
-  onLookup,
   onGenerate,
   onPromotionCodeChange,
   onApplyDiscount,
   onPrint,
   onSend,
 }: {
-  orderId: string;
+  hasSelectedOrder: boolean;
   invoiceChecked: boolean;
   invoice: InvoiceSummary | null;
   detail: InvoiceDetail | null;
@@ -33,8 +31,6 @@ export const CashierInvoicePanel = ({
   action: string | null;
   message: { type: "success" | "error"; text: string } | null;
   historyError: string;
-  onOrderIdChange: (value: string) => void;
-  onLookup: () => void;
   onGenerate: () => void;
   onPromotionCodeChange: (value: string) => void;
   onApplyDiscount: () => void;
@@ -51,7 +47,7 @@ export const CashierInvoicePanel = ({
             Hóa đơn / Thanh toán
           </p>
           <p className="text-[11px] text-[#797b7c] mt-1">
-            Tra cứu theo mã đơn hàng backend
+            Theo đơn hàng đang chọn
           </p>
         </div>
         {invoice && (
@@ -63,21 +59,11 @@ export const CashierInvoicePanel = ({
         )}
       </div>
 
-      <div className="flex gap-2">
-        <input
-          value={orderId}
-          onChange={(event) => onOrderIdChange(event.target.value)}
-          placeholder="Mã đơn hàng backend"
-          className="flex-1 min-w-0 h-[38px] px-3 rounded-[10px] border border-[#e8e8e8] text-[13px] text-[#202325] outline-none focus:border-[#025cca]"
-        />
-        <button
-          onClick={onLookup}
-          disabled={busy || !orderId.trim()}
-          className="h-[38px] px-3 rounded-[10px] bg-[#f0f8ff] text-[13px] font-medium text-[#025cca] disabled:opacity-50"
-        >
-          {loading ? "Đang tải" : "Tra cứu"}
-        </button>
-      </div>
+      {!hasSelectedOrder && (
+        <div className="px-3 py-2 rounded-[10px] bg-[#f5f5f5] text-[12px] text-[#636566]">
+          Chọn bàn có đơn hàng để xem hóa đơn
+        </div>
+      )}
 
       {message && (
         <div
@@ -87,12 +73,12 @@ export const CashierInvoicePanel = ({
         </div>
       )}
 
-      {invoiceChecked && !invoice && !loading && (
+      {hasSelectedOrder && invoiceChecked && !invoice && !loading && (
         <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-[10px] bg-[#f5f5f5]">
           <span className="text-[12px] text-[#636566]">Chưa có hóa đơn</span>
           <button
             onClick={onGenerate}
-            disabled={busy}
+            disabled={busy || !hasSelectedOrder}
             className="text-[12px] font-semibold text-[#025cca] disabled:opacity-50"
           >
             Tạo hóa đơn
