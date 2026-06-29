@@ -1,7 +1,4 @@
 import type { InvoiceDetail, InvoiceSummary } from "../../../services/invoiceApi";
-import type { Payment } from "../../../services/paymentApi";
-import { PAYMENT_METHOD_LABELS } from "./types";
-import { formatDateTime } from "./printInvoice";
 
 /* ─── Invoice / payment panel ────────────────────────────────────────────── */
 export const CashierInvoicePanel = ({
@@ -9,12 +6,10 @@ export const CashierInvoicePanel = ({
   invoiceChecked,
   invoice,
   detail,
-  payments,
   promotionCode,
   loading,
   action,
   message,
-  historyError,
   onGenerate,
   onPromotionCodeChange,
   onApplyDiscount,
@@ -25,12 +20,10 @@ export const CashierInvoicePanel = ({
   invoiceChecked: boolean;
   invoice: InvoiceSummary | null;
   detail: InvoiceDetail | null;
-  payments: Payment[];
   promotionCode: string;
   loading: boolean;
   action: string | null;
   message: { type: "success" | "error"; text: string } | null;
-  historyError: string;
   onGenerate: () => void;
   onPromotionCodeChange: (value: string) => void;
   onApplyDiscount: () => void;
@@ -163,45 +156,6 @@ export const CashierInvoicePanel = ({
             </button>
           </div>
 
-          <div className="flex flex-col gap-2 pt-4 border-t border-dashed border-[#d9dcdf]">
-            <p className="text-[13px] font-semibold text-[#202325]">
-              Lịch sử thanh toán
-            </p>
-            {historyError && (
-              <p className="text-[12px] text-[#d92d20]">{historyError}</p>
-            )}
-            {!historyError && payments.length === 0 && (
-              <p className="text-[12px] text-[#797b7c]">
-                Chưa có lịch sử thanh toán
-              </p>
-            )}
-            {payments.map((payment) => (
-              <div
-                key={payment.id}
-                className="rounded-[10px] border border-[#e8e8e8] px-3 py-2 text-[11px] flex flex-col gap-1"
-              >
-                <div className="flex justify-between">
-                  <span className="text-[#636566]">
-                    {PAYMENT_METHOD_LABELS[payment.method]}
-                  </span>
-                  <span className="font-semibold text-[#202325]">
-                    {payment.amount.toLocaleString("vi-VN")} đ
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#797b7c]">
-                    {formatDateTime(payment.createdAt)}
-                  </span>
-                  <span className="text-[#286b4a]">{payment.status}</span>
-                </div>
-                {payment.gatewayRef && (
-                  <span className="text-[#797b7c] break-all">
-                    {payment.gatewayRef}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
         </>
       )}
     </div>

@@ -19,8 +19,8 @@ import {
   sendInvoice,
 } from "../../services/invoiceApi";
 import type { InvoiceDetail, InvoiceSummary } from "../../services/invoiceApi";
-import { getPayments, processPayment } from "../../services/paymentApi";
-import type { Payment, PaymentMethod } from "../../services/paymentApi";
+import { processPayment } from "../../services/paymentApi";
+import type { PaymentMethod } from "../../services/paymentApi";
 import { getStoredUser } from "../../services/tokenStorage";
 import { listCategories, searchItems } from "../../services/menuService";
 import type { MenuCategory } from "../../services/menuService";
@@ -338,8 +338,6 @@ const SEND_INVOICE_SUCCESS_MESSAGE =
   "Đã ghi nhận gửi hóa đơn mô phỏng.";
 const SEND_INVOICE_FALLBACK_ERROR =
   "Không thể gửi hóa đơn. Vui lòng thử lại.";
-const PAYMENT_HISTORY_FALLBACK_ERROR =
-  "Không thể tải lịch sử thanh toán.";
 
 const getInvoiceUiErrorMessage = (
   error: unknown,
@@ -396,7 +394,6 @@ const CashierOrders = () => {
   const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(
     null,
   );
-  const [payments, setPayments] = useState<Payment[]>([]);
   const [promotionCode, setPromotionCode] = useState("");
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceAction, setInvoiceAction] = useState<string | null>(null);
@@ -404,7 +401,6 @@ const CashierOrders = () => {
     type: "success" | "error";
     text: string;
   } | null>(null);
-  const [historyError, setHistoryError] = useState("");
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [orderActionMessage, setOrderActionMessage] = useState<{
@@ -609,10 +605,8 @@ const CashierOrders = () => {
     setInvoiceChecked(false);
     setInvoice(null);
     setInvoiceDetail(null);
-    setPayments([]);
     setPromotionCode("");
     setInvoiceMessage(null);
-    setHistoryError("");
     setPaymentOpen(false);
     setOrderActionMessage(null);
   };
@@ -629,29 +623,17 @@ const CashierOrders = () => {
 
     setInvoiceLoading(true);
     setInvoiceMessage(null);
-    setHistoryError("");
     try {
       const foundInvoice =
         (await getInvoices({ orderId: normalizedOrderId }))[0] ?? null;
       setInvoiceChecked(true);
       setInvoice(foundInvoice);
-      setPayments([]);
       setInvoiceDetail(null);
 
       if (!foundInvoice) return null;
 
       const detailData = await getInvoiceById(foundInvoice.id);
       setInvoiceDetail(detailData);
-      try {
-        setPayments(await getPayments(foundInvoice.id));
-      } catch (historyLoadError) {
-        setHistoryError(
-          getInvoiceUiErrorMessage(
-            historyLoadError,
-            PAYMENT_HISTORY_FALLBACK_ERROR,
-          ),
-        );
-      }
       return foundInvoice;
     } catch (loadError) {
       setInvoiceMessage({
@@ -1276,12 +1258,10 @@ const CashierOrders = () => {
               invoiceChecked={invoiceChecked}
               invoice={invoice}
               detail={invoiceDetail}
-              payments={payments}
               promotionCode={promotionCode}
               loading={invoiceLoading}
               action={invoiceAction}
               message={invoiceMessage}
-              historyError={historyError}
               onGenerate={() => void handleGenerateInvoice()}
               onPromotionCodeChange={setPromotionCode}
               onApplyDiscount={() => void handleApplyDiscount()}
