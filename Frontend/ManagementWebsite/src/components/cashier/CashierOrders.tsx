@@ -87,6 +87,10 @@ const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
     "Không thể hủy đơn vì hóa đơn đã được thanh toán.",
   CANNOT_CANCEL_ORDER_ITEMS_NOT_PENDING:
     "Không thể hủy đơn vì có món đã được bếp xử lý hoặc phục vụ.",
+  ORDER_ITEM_STATUS_TRANSITION_NOT_ALLOWED:
+    "Không thể hủy món ở trạng thái hiện tại.",
+  ORDER_ITEM_REMOVE_NOT_ALLOWED:
+    "Chỉ có thể xóa món khi món đang chờ duyệt.",
   INVALID_STATUS_TRANSITION:
     "Thao tác đổi trạng thái không hợp lệ. Vui lòng dùng đúng luồng xử lý.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
@@ -945,12 +949,22 @@ const CashierOrders = () => {
   const handleCancelNote = () =>
     setNoteModal({ open: false, itemId: null, text: "" });
 
-  const handleOpenReject = (orderId: string, itemId: string) => {
+  const handleOpenReject = async (orderId: string, itemId: string) => {
     if (disableItemMutation) {
       showItemMutationBlockedMessage();
       return;
     }
-    setRejectModal({ open: true, orderId, itemId, text: "" });
+    setOrderActionMessage(null);
+    try {
+      await updateOrderItemStatus(orderId, itemId, "REJECTED");
+      setRefreshTrigger((t) => t + 1);
+    } catch (e) {
+      console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
+    }
   };
 
   const handleConfirmReject = async (

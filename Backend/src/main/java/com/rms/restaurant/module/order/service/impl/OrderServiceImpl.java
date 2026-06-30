@@ -265,8 +265,8 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private boolean isAllowedItemStatusTransition(CookingStatus current, CookingStatus next) {
-        return (current == CookingStatus.PENDING && (next == CookingStatus.COOKING || next == CookingStatus.REJECTED))
-                || (current == CookingStatus.COOKING && next == CookingStatus.READY)
+        return (current == CookingStatus.PENDING && next == CookingStatus.COOKING)
+                || (current == CookingStatus.COOKING && (next == CookingStatus.READY || next == CookingStatus.REJECTED))
                 || (current == CookingStatus.READY && next == CookingStatus.SERVED);
     }
 

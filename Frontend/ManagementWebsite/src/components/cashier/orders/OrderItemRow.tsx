@@ -26,6 +26,7 @@ export const OrderItemRow = ({
 }) => {
   const isDraftItem = item.orderId === "cart" || item.status === DRAFT_ITEM_STATUS;
   const isPendingItem = item.status === COOKING_STATUS_LABEL.PENDING;
+  const isCookingItem = item.status === COOKING_STATUS_LABEL.COOKING;
   const isRejectedItem = item.status === COOKING_STATUS_LABEL.REJECTED;
   const mutationLocked = !!itemMutationDisabled;
   const allowedNextStatuses = !isDraftItem && !mutationLocked
@@ -33,7 +34,7 @@ export const OrderItemRow = ({
     : [];
   const canRemoveItem = isDraftItem || (!mutationLocked && isPendingItem);
   const canEditNote = isDraftItem || (!mutationLocked && isPendingItem);
-  const canCancelItem = !isDraftItem && !mutationLocked && isPendingItem && !!onRejectItem;
+  const canCancelItem = !isDraftItem && !mutationLocked && isCookingItem && !!onRejectItem;
   const canChangeStatus = allowedNextStatuses.length > 0;
 
   const statusClassName = isPendingItem
@@ -86,7 +87,15 @@ export const OrderItemRow = ({
           )}
           {canCancelItem && (
             <button
-              onClick={() => onRejectItem?.(item.orderId, item.id)}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Xác nhận hủy món đang nấu? Chỉ thực hiện khi bếp báo món không thể phục vụ.",
+                  )
+                ) {
+                  onRejectItem?.(item.orderId, item.id);
+                }
+              }}
               className="bg-[#fff0f0] flex items-center gap-1 pl-2 pr-2.5 py-1 rounded-full hover:bg-[#ffe0e0] transition-colors"
             >
               <span className="text-[12px] font-medium text-[#dc2f02]">

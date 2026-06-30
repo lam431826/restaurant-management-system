@@ -103,7 +103,7 @@ export const DRAFT_ITEM_STATUS = "MỚI";
 
 export const getAllowedNextStatusLabels = (status: string): string[] => {
   if (status === COOKING_STATUS_LABEL.PENDING) {
-    return [COOKING_STATUS_LABEL.COOKING, COOKING_STATUS_LABEL.REJECTED];
+    return [COOKING_STATUS_LABEL.COOKING];
   }
 
   if (status === COOKING_STATUS_LABEL.COOKING) {
