@@ -102,6 +102,9 @@ const TableCard = ({
   );
 };
 
+// Statuses that occupy a table slot (not available for new walk-ins)
+const BUSY_STATUSES = ["OCCUPIED", "BILLING", "RESERVED"];
+
 export const TableView = ({
   tables,
   onSelect,
@@ -113,9 +116,9 @@ export const TableView = ({
 }) => {
   const filtered =
     filter === "used"
-      ? tables.filter((t) => t.occupied)
+      ? tables.filter((t) => BUSY_STATUSES.includes(t.status))
       : filter === "empty"
-        ? tables.filter((t) => !t.occupied)
+        ? tables.filter((t) => !BUSY_STATUSES.includes(t.status))
         : tables;
   return (
     <div className="flex-1 overflow-y-auto">

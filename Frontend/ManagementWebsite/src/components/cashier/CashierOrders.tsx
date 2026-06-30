@@ -10,6 +10,11 @@ import { OpenShiftModal } from "./orders/OpenShiftModal";
 import { CloseShiftModal } from "./orders/CloseShiftModal";
 import { CashMovementModal } from "./orders/CashMovementModal";
 import { listTables } from "../../services/tableService";
+import {
+  checkInReservation,
+  markNoShowReservation,
+  cancelStaffReservation,
+} from "../../services/reservationApi";
 import ChangePasswordModal from "../auth/ChangePasswordModal";
 import {
   applyInvoiceDiscount,
@@ -56,6 +61,7 @@ import { Header } from "./orders/Header";
 import { BottomNav } from "./orders/BottomNav";
 import { MenuView } from "./orders/MenuView";
 import { TableView } from "./orders/TableView";
+import { ReservationPanel } from "./orders/ReservationPanel";
 import { AddNoteModal } from "./orders/AddNoteModal";
 import { PaymentModal } from "./orders/PaymentModal";
 import { CashierInvoicePanel } from "./orders/CashierInvoicePanel";
@@ -252,6 +258,10 @@ const CashierOrders = () => {
     text: string;
   } | null>(null);
 
+  // ── Reservation panel state ───────────────────────────────────────────────
+  const [reservationLoading, setReservationLoading] = useState(false);
+  const [reservationError, setReservationError] = useState<string | null>(null);
+
   // ── Cash shift state ──────────────────────────────────────────────────────
   const [shift, setShift] = useState<ShiftSummary | null>(null);
   const [shiftLoading, setShiftLoading] = useState(true);
@@ -301,6 +311,26 @@ const CashierOrders = () => {
       .finally(() => setTablesLoading(false));
   }, []);
 
+  // Re-fetches table list from backend and merges selection state.
+  // Called after reservation actions and order close/cancel so statuses
+  // (RESERVED→OCCUPIED, OCCUPIED→AVAILABLE, etc.) reflect backend truth.
+  const refreshTables = () => {
+    listTables()
+      .then((res) => {
+        const updated = res
+          .filter((t) => t.active)
+          .sort((a, b) => a.order - b.order)
+          .map(toTableItem);
+        setTables((prev) =>
+          updated.map((t) => ({
+            ...t,
+            selected: prev.find((p) => p.id === t.id)?.selected ?? false,
+          })),
+        );
+      })
+      .catch(() => {});
+  };
+
   const loadMenu = () => {
     Promise.all([listCategories(), searchItems({ available: true, size: 200 })])
       .then(([cats, page]) => {
@@ -346,6 +376,9 @@ const CashierOrders = () => {
   }, [refreshTrigger]);
 
   // Overlay live order totals onto the table grid (amount/guests/item count, orderId link).
+  // Status is NOT overridden here — backend-provided statuses (RESERVED, CLEANING, etc.)
+  // are preserved. Only tables with active orders are marked OCCUPIED; refreshTables()
+  // is responsible for resetting OCCUPIED→AVAILABLE after orders close.
   useEffect(() => {
     setTables((prevTables) =>
       prevTables.map((t) => {
@@ -359,7 +392,7 @@ const CashierOrders = () => {
             occupied: false,
             amount: 0,
             items: 0,
-            status: "AVAILABLE",
+            // status intentionally not touched — keeps RESERVED/CLEANING/AVAILABLE from API
           };
         }
         const itemsCount = tableOrders.reduce(
@@ -644,7 +677,80 @@ const CashierOrders = () => {
   const handleTableSelect = (id: string) => {
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
     resetInvoiceLink();
+    setReservationError(null);
   };
+
+  // ── Reservation action handlers ───────────────────────────────────────────
+
+  const handleReservationCheckIn = async () => {
+    const res = selectedTable?.upcomingReservation;
+    if (!res) return;
+    setReservationLoading(true);
+    setReservationError(null);
+    try {
+      await checkInReservation(res.id);
+      // Backend set table→OCCUPIED; refresh so the panel switches to OrderPanel
+      refreshTables();
+    } catch (e) {
+      setReservationError(
+        e instanceof Error ? e.message : "Check-in thất bại, vui lòng thử lại",
+      );
+    } finally {
+      setReservationLoading(false);
+    }
+  };
+
+  const handleReservationNoShow = async () => {
+    const res = selectedTable?.upcomingReservation;
+    if (!res) return;
+    if (
+      !window.confirm(
+        `Xác nhận khách "${res.guestName}" không đến?`,
+      )
+    )
+      return;
+    setReservationLoading(true);
+    setReservationError(null);
+    try {
+      await markNoShowReservation(res.id);
+      // Deselect table, then refresh to pick up AVAILABLE status
+      setTables((ts) => ts.map((t) => ({ ...t, selected: false })));
+      refreshTables();
+    } catch (e) {
+      setReservationError(
+        e instanceof Error ? e.message : "Thao tác thất bại, vui lòng thử lại",
+      );
+    } finally {
+      setReservationLoading(false);
+    }
+  };
+
+  const handleReservationCancel = async () => {
+    const res = selectedTable?.upcomingReservation;
+    if (!res) return;
+    if (
+      !window.confirm(
+        `Xác nhận hủy đặt bàn của khách "${res.guestName}"?`,
+      )
+    )
+      return;
+    setReservationLoading(true);
+    setReservationError(null);
+    try {
+      await cancelStaffReservation(res.id);
+      // Deselect table, then refresh to pick up AVAILABLE status
+      setTables((ts) => ts.map((t) => ({ ...t, selected: false })));
+      refreshTables();
+    } catch (e) {
+      setReservationError(
+        e instanceof Error ? e.message : "Hủy đặt bàn thất bại, vui lòng thử lại",
+      );
+    } finally {
+      setReservationLoading(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (
@@ -707,6 +813,7 @@ const CashierOrders = () => {
       );
       setOrderActionMessage(null);
       setRefreshTrigger((t) => t + 1);
+      refreshTables();
     } catch (e) {
       console.error(e);
       setOrderActionMessage({
@@ -765,6 +872,7 @@ const CashierOrders = () => {
       await closeOrder(backendOrderId);
       setRefreshTrigger((t) => t + 1);
       resetInvoiceLink();
+      refreshTables();
     } catch (e) {
       console.error(e);
       setOrderActionMessage({
@@ -842,10 +950,11 @@ const CashierOrders = () => {
       count: c.itemCount,
     })),
   ];
+  const BUSY_TABLE_STATUSES = ["OCCUPIED", "BILLING", "RESERVED"];
   const tableCounts: Record<string, number> = {
     all: tablesInArea.length,
-    used: tablesInArea.filter((t) => t.occupied).length,
-    empty: tablesInArea.filter((t) => !t.occupied).length,
+    used: tablesInArea.filter((t) => BUSY_TABLE_STATUSES.includes(t.status)).length,
+    empty: tablesInArea.filter((t) => !BUSY_TABLE_STATUSES.includes(t.status)).length,
   };
   const checkoutDisabled =
     !invoice ||
@@ -1021,61 +1130,72 @@ const CashierOrders = () => {
           </div>
         </div>
 
-        <OrderPanel
-          items={[
-            ...orderItems,
-            ...cart.map((c) => ({
-              id: c.cartItemId,
-              name: c.name,
-              qty: c.qty,
-              notes: c.note,
-              status: "MỚI",
-              price: c.price,
-              orderId: "cart",
-            })),
-          ]}
-          hasSelectedMenu={hasSelectedMenu}
-          onStatusChange={handleStatusChange}
-          onCheckout={() => {
-            setOrderActionMessage(null);
-            setPaymentError("");
-            setPaymentOpen(true);
-          }}
-          onCreateOrder={handleCreateOrder}
-          onAddItems={handleAddItems}
-          onNote={handleOpenNote}
-          onRemoveItem={handleRemoveItem}
-          onRejectItem={handleOpenReject}
-          onCancelOrder={handleCancelOrder}
-          selectedTable={selectedTable}
-          checkoutDisabled={checkoutDisabled}
-          checkoutLabel={checkoutLabel}
-          shiftOpen={!!shift}
-          invoicePaid={invoice?.paid}
-          orderActionMessage={orderActionMessage}
-          onCloseOrder={handleCloseOrder}
-          invoiceTools={
-            <CashierInvoicePanel
-              orderId={backendOrderId}
-              invoiceChecked={invoiceChecked}
-              invoice={invoice}
-              detail={invoiceDetail}
-              payments={payments}
-              promotionCode={promotionCode}
-              loading={invoiceLoading}
-              action={invoiceAction}
-              message={invoiceMessage}
-              historyError={historyError}
-              onOrderIdChange={handleBackendOrderIdChange}
-              onLookup={() => void loadInvoiceForOrder(backendOrderId)}
-              onGenerate={() => void handleGenerateInvoice()}
-              onPromotionCodeChange={setPromotionCode}
-              onApplyDiscount={() => void handleApplyDiscount()}
-              onPrint={handlePrintInvoice}
-              onSend={() => void handleSendInvoice()}
-            />
-          }
-        />
+        {selectedTable?.status === "RESERVED" ? (
+          <ReservationPanel
+            table={selectedTable}
+            onCheckIn={handleReservationCheckIn}
+            onNoShow={handleReservationNoShow}
+            onCancel={handleReservationCancel}
+            loading={reservationLoading}
+            error={reservationError}
+          />
+        ) : (
+          <OrderPanel
+            items={[
+              ...orderItems,
+              ...cart.map((c) => ({
+                id: c.cartItemId,
+                name: c.name,
+                qty: c.qty,
+                notes: c.note,
+                status: "MỚI",
+                price: c.price,
+                orderId: "cart",
+              })),
+            ]}
+            hasSelectedMenu={hasSelectedMenu}
+            onStatusChange={handleStatusChange}
+            onCheckout={() => {
+              setOrderActionMessage(null);
+              setPaymentError("");
+              setPaymentOpen(true);
+            }}
+            onCreateOrder={handleCreateOrder}
+            onAddItems={handleAddItems}
+            onNote={handleOpenNote}
+            onRemoveItem={handleRemoveItem}
+            onRejectItem={handleOpenReject}
+            onCancelOrder={handleCancelOrder}
+            selectedTable={selectedTable}
+            checkoutDisabled={checkoutDisabled}
+            checkoutLabel={checkoutLabel}
+            shiftOpen={!!shift}
+            invoicePaid={invoice?.paid}
+            orderActionMessage={orderActionMessage}
+            onCloseOrder={handleCloseOrder}
+            invoiceTools={
+              <CashierInvoicePanel
+                orderId={backendOrderId}
+                invoiceChecked={invoiceChecked}
+                invoice={invoice}
+                detail={invoiceDetail}
+                payments={payments}
+                promotionCode={promotionCode}
+                loading={invoiceLoading}
+                action={invoiceAction}
+                message={invoiceMessage}
+                historyError={historyError}
+                onOrderIdChange={handleBackendOrderIdChange}
+                onLookup={() => void loadInvoiceForOrder(backendOrderId)}
+                onGenerate={() => void handleGenerateInvoice()}
+                onPromotionCodeChange={setPromotionCode}
+                onApplyDiscount={() => void handleApplyDiscount()}
+                onPrint={handlePrintInvoice}
+                onSend={() => void handleSendInvoice()}
+              />
+            }
+          />
+        )}
       </div>
 
       <BottomNav active="orders" />
