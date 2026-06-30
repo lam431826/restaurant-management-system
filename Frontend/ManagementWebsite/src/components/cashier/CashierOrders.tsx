@@ -591,6 +591,15 @@ const CashierOrders = () => {
   const selectedOrder = activeOrders.find((order) => order.id === selectedOrderId);
   const selectedOrderItemCount =
     selectedOrder?.items.reduce((total, item) => total + item.quantity, 0) ?? 0;
+  const nonPayableRejectedItems =
+    selectedOrder?.items
+      .filter((item) => item.cookingStatus === "REJECTED")
+      .map((item) => ({
+        id: item.orderItemId,
+        name: item.menuItemName,
+        quantity: item.quantity,
+        note: item.rejectionNote,
+      })) ?? [];
   const orderHasInvoice =
     !!invoice && !!selectedOrderId && invoice.orderId === selectedOrderId;
   const currentOrderInvoice = orderHasInvoice ? invoice : null;
@@ -1353,6 +1362,7 @@ const CashierOrders = () => {
           promotionCode={promotionCode}
           action={invoiceAction}
           invoiceMessage={invoiceMessage}
+          nonPayableItems={nonPayableRejectedItems}
           onClose={() => setPaymentOpen(false)}
           onConfirm={(method) => void handleProcessPayment(method)}
           onPromotionCodeChange={setPromotionCode}

@@ -14,6 +14,13 @@ import {
 } from "./icons";
 
 /* ─── Payment modal ──────────────────────────────────────────────────────── */
+interface NonPayableReceiptItem {
+  id: string;
+  name: string;
+  quantity: number;
+  note?: string | null;
+}
+
 const PAYMENT_METHODS = [
   { id: "CASH" as const, label: "Tiền mặt" },
   { id: "CARD" as const, label: "Thẻ" },
@@ -29,6 +36,7 @@ export const PaymentModal = ({
   promotionCode,
   action,
   invoiceMessage,
+  nonPayableItems = [],
   onClose,
   onConfirm,
   onPromotionCodeChange,
@@ -43,6 +51,7 @@ export const PaymentModal = ({
   promotionCode: string;
   action: string | null;
   invoiceMessage: { type: "success" | "error"; text: string } | null;
+  nonPayableItems?: NonPayableReceiptItem[];
   onClose: () => void;
   onConfirm: (method: PaymentMethod) => void;
   onPromotionCodeChange: (value: string) => void;
@@ -86,6 +95,7 @@ export const PaymentModal = ({
     ? parseInt(cashInput, 10).toLocaleString("vi-VN") + "đ"
     : "0đ";
   const actionBusy = action !== null;
+  const nonPayableFallbackNote = "Nhà hàng không thể phục vụ món này.";
   const confirmLabel = processing
     ? method === "QR"
       ? "Đang xác nhận..."
@@ -184,6 +194,37 @@ export const PaymentModal = ({
                 </div>
               ))}
             </div>
+            {nonPayableItems.length > 0 && (
+              <>
+                <div className="border-t border-dashed border-[#b0a080]" />
+                <div className="flex flex-col gap-3 text-[10px]">
+                  <p className="text-black font-bold">
+                    Món đã hủy bởi nhà hàng
+                  </p>
+                  {nonPayableItems.map((item) => (
+                    <div key={item.id} className="flex flex-col gap-1">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-[#6d7278] flex-1 truncate">
+                          {item.name}
+                        </span>
+                        <span className="text-[#6d7278] shrink-0">
+                          x{item.quantity}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-[#6d7278]">
+                          Không tính tiền
+                        </span>
+                        <span className="text-black font-bold">0đ</span>
+                      </div>
+                      <p className="text-[#6d7278] leading-snug">
+                        Ghi chú: {item.note?.trim() || nonPayableFallbackNote}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
             <div className="border-t border-dashed border-[#b0a080]" />
             <div className="flex flex-col gap-3 text-[10px]">
               <div className="flex justify-between">
