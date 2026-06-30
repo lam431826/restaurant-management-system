@@ -19,6 +19,7 @@ import com.rms.restaurant.module.payment.model.Invoice;
 import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.payment.repository.PaymentRepository;
 import com.rms.restaurant.module.menu.model.MenuItem;
+import com.rms.restaurant.common.utils.enums.CookingStatus;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
@@ -133,7 +134,17 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         ensureOrderItemsCanBeModified(order);
         if (order.getItems() != null) {
-            order.getItems().removeIf(item -> item.getId().equals(itemId));
+            OrderItem itemToRemove = null;
+            for (OrderItem item : order.getItems()) {
+                if (item.getId().equals(itemId)) {
+                    validateItemCanBeRemoved(item);
+                    itemToRemove = item;
+                    break;
+                }
+            }
+            if (itemToRemove != null) {
+                order.getItems().remove(itemToRemove);
+            }
         }
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -205,28 +216,58 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         ensureOrderItemsCanBeModified(order);
-        
-        boolean found = false;
-        if (order.getItems() != null) {
-            for (OrderItem item : order.getItems()) {
-                if (item.getId().equals(itemId)) {
-                    item.setCookingStatus(request.status());
-                    if (request.status() == com.rms.restaurant.common.utils.enums.CookingStatus.REJECTED) {
-                        item.setRejectionNote(request.rejectionNote());
-                    }
-                    found = true;
-                    break;
-                }
-            }
-        }
-        
-        if (!found) {
-            throw new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND); // Reusing error
+
+        OrderItem item = findOrderItem(order, itemId);
+        validateItemStatusTransition(item.getCookingStatus(), request.status());
+        item.setCookingStatus(request.status());
+        if (request.status() == CookingStatus.REJECTED) {
+            item.setRejectionNote(request.rejectionNote());
         }
         
         // Optional: auto-update order status based on items? We'll keep it simple for now or implement if needed.
         Order savedOrder = orderRepository.save(order);
         return orderMapper.toResponse(savedOrder);
+    }
+
+    private OrderItem findOrderItem(Order order, String itemId) {
+        if (order.getItems() != null) {
+            for (OrderItem item : order.getItems()) {
+                if (item.getId().equals(itemId)) {
+                    return item;
+                }
+            }
+        }
+        throw new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND); // Reusing existing project error
+    }
+
+    private void validateItemCanBeRemoved(OrderItem item) {
+        if (item.getCookingStatus() != CookingStatus.PENDING) {
+            throw new ApplicationException(ApplicationError.ORDER_ITEM_REMOVE_NOT_ALLOWED);
+        }
+    }
+
+    private void validateItemStatusTransition(CookingStatus current, CookingStatus next) {
+        if (next == null || isTerminalItemStatus(current)) {
+            throw new ApplicationException(ApplicationError.ORDER_ITEM_STATUS_TRANSITION_NOT_ALLOWED);
+        }
+
+        if (current == next) {
+            return;
+        }
+
+        if (!isAllowedItemStatusTransition(current, next)) {
+            throw new ApplicationException(ApplicationError.ORDER_ITEM_STATUS_TRANSITION_NOT_ALLOWED);
+        }
+    }
+
+    private boolean isTerminalItemStatus(CookingStatus status) {
+        return status == CookingStatus.SERVED || status == CookingStatus.REJECTED;
+    }
+
+    private boolean isAllowedItemStatusTransition(CookingStatus current, CookingStatus next) {
+        return (current == CookingStatus.PENDING && (next == CookingStatus.COOKING || next == CookingStatus.REJECTED))
+                || (current == CookingStatus.COOKING && next == CookingStatus.READY)
+                || (current == CookingStatus.READY && next == CookingStatus.SERVED);
     }
 
     private void ensureOrderItemsCanBeModified(Order order) {
