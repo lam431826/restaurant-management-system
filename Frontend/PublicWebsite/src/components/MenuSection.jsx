@@ -130,7 +130,7 @@ function MenuItem({ item, index = 0, onAddToCart }) {
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <div className="w-[150px] h-[100px] bg-[#0a0b0a] overflow-hidden rounded-xl shrink-0 relative">
-        <img src={imgUrl} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
+        <img src={imgUrl} alt={item.name} className="absolute inset-0 w-full h-full object-cover" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = imgMakiSpicyTuna }} />
       </div>
       <div className="flex-1 flex flex-col gap-1 min-w-0">
         <div className="flex items-end gap-4">

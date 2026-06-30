@@ -206,7 +206,7 @@ export default function GuestOrderPage() {
                     return (
                       <div key={item.id} className="p-3 flex gap-3">
                         <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden shrink-0">
-                          <img src={imgUrl} alt={item.name} className="w-full h-full object-cover" />
+                          <img src={imgUrl} alt={item.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = imgMakiSpicyTuna }} />
                         </div>
                         <div className="flex-1 flex flex-col justify-between">
                           <div>
