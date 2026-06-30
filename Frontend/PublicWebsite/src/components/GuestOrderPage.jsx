@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import AssistanceButton from './AssistanceButton'
 import OrderStatusModal from './OrderStatusModal'
 import imgMakiSpicyTuna from '../assets/images/menu-maki-spicy-tuna.jpg'
+import { getImageUrl } from '../utils/api'
 
 export default function GuestOrderPage() {
   const [searchParams] = useSearchParams()
@@ -202,7 +203,7 @@ export default function GuestOrderPage() {
                 <div className="bg-white rounded-xl shadow-sm overflow-hidden flex flex-col divide-y">
                   {cat.items.map((item) => {
                     const q = getQuantity(item.id)
-                    const imgUrl = item.imageUrl || imgMakiSpicyTuna
+                    const imgUrl = getImageUrl(item.imageUrl) || imgMakiSpicyTuna
                     return (
                       <div key={item.id} className="p-3 flex gap-3">
                         <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden shrink-0">
