@@ -210,7 +210,7 @@ export default function GuestOrderPage() {
                         </div>
                         <div className="flex-1 flex flex-col justify-between">
                           <div>
-                            <h3 className="text-base font-medium text-gray-900 leading-tight">{item.name}</h3>
+                            <h3 className="text-base font-medium text-gray-900 leading-tight line-clamp-2">{item.name}</h3>
                             <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.description}</p>
                           </div>
                           <div className="flex justify-between items-end mt-2">
