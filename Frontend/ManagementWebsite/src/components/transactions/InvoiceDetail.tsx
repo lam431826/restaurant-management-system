@@ -9,8 +9,6 @@ import { ApiClientError } from "../../services/apiClient";
 interface Props {
   invoice: InvoiceDetailData;
   historyRefreshVersion: number;
-  onApplyDiscount: () => void;
-  onProcessPayment: () => void;
 }
 
 const money = (value: number) => `${value.toLocaleString("vi-VN")} đ`;
@@ -95,8 +93,6 @@ const escapeHtml = (value: string | number) =>
 const InvoiceDetail = ({
   invoice,
   historyRefreshVersion,
-  onApplyDiscount,
-  onProcessPayment,
 }: Props) => {
   const totalQuantity = invoice.items.reduce(
     (total, item) => total + item.quantity,
@@ -328,24 +324,6 @@ const InvoiceDetail = ({
 
       <div className="mt-4 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div className="flex flex-wrap items-center gap-2">
-          {!invoice.paid && (
-            <>
-              <button
-                type="button"
-                className="kv-btn kv-btn-outline-primary h-10"
-                onClick={onApplyDiscount}
-              >
-                Áp dụng khuyến mãi
-              </button>
-              <button
-                type="button"
-                className="kv-btn kv-btn-primary h-10"
-                onClick={onProcessPayment}
-              >
-                Thanh toán
-              </button>
-            </>
-          )}
           <button
             type="button"
             className="kv-btn kv-btn-outline-neutral h-10"

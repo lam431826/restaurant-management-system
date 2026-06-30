@@ -11,8 +11,6 @@ interface Props {
   invoices: InvoiceSummary[];
   loading: boolean;
   refreshVersion: number;
-  onApplyDiscount: (invoice: InvoiceSummary) => void;
-  onProcessPayment: (invoice: InvoiceSummary) => void;
 }
 
 const money = (value: number) => value.toLocaleString("vi-VN");
@@ -60,47 +58,10 @@ const getInvoiceDetailErrorMessage = (error: unknown): string => {
   return fallback?.[1] ?? INVOICE_DETAIL_FALLBACK_ERROR;
 };
 
-const DiscountIcon = () => (
-  <svg
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <line x1="19" y1="5" x2="5" y2="19" />
-    <circle cx="6.5" cy="6.5" r="2.5" />
-    <circle cx="17.5" cy="17.5" r="2.5" />
-  </svg>
-);
-
-const PaymentIcon = () => (
-  <svg
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <rect x="2" y="5" width="20" height="14" rx="2" />
-    <line x1="2" y1="10" x2="22" y2="10" />
-  </svg>
-);
-
 const InvoiceTable = ({
   invoices,
   loading,
   refreshVersion,
-  onApplyDiscount,
-  onProcessPayment,
 }: Props) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<InvoiceDetailData | null>(null);
@@ -180,7 +141,7 @@ const InvoiceTable = ({
       )}
 
       <div className="flex-1 min-h-0 overflow-auto">
-        <table className="w-full min-w-[126rem] border-collapse">
+        <table className="w-full min-w-[98rem] border-collapse">
           <thead>
             <tr>
               <th className={`${th} min-w-[22rem]`}>Mã hóa đơn</th>
@@ -190,7 +151,6 @@ const InvoiceTable = ({
               <th className={`${th} text-right w-[13rem]`}>Giảm giá</th>
               <th className={`${th} text-right w-[15rem]`}>Tổng thanh toán</th>
               <th className={`${th} w-[15rem]`}>Trạng thái</th>
-              <th className={`${th} text-center w-[30rem]`}>Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -228,45 +188,10 @@ const InvoiceTable = ({
                           {invoice.paid ? "Đã thanh toán" : "Chưa thanh toán"}
                         </span>
                       </td>
-                      <td
-                        className={`${td} text-center`}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <div className="inline-flex items-center justify-center gap-2">
-                          <button
-                            type="button"
-                            className="kv-btn kv-btn-outline-primary h-8 px-3"
-                            onClick={() => onApplyDiscount(invoice)}
-                            disabled={invoice.paid}
-                            title={
-                              invoice.paid
-                                ? "Hóa đơn đã thanh toán"
-                                : "Áp dụng khuyến mãi"
-                            }
-                          >
-                            <DiscountIcon />
-                            Giảm giá
-                          </button>
-                          <button
-                            type="button"
-                            className="kv-btn kv-btn-primary h-8 px-3"
-                            onClick={() => onProcessPayment(invoice)}
-                            disabled={invoice.paid}
-                            title={
-                              invoice.paid
-                                ? "Hóa đơn đã thanh toán"
-                                : "Thanh toán hóa đơn"
-                            }
-                          >
-                            <PaymentIcon />
-                            Thanh toán
-                          </button>
-                        </div>
-                      </td>
                     </tr>
                     {isOpen && (
                       <tr>
-                        <td colSpan={8} className="p-0">
+                        <td colSpan={7} className="p-0">
                           {detailLoading && (
                             <div className="px-5 py-8 text-center text-md text-ink-muted">
                               Đang tải chi tiết hóa đơn...
@@ -281,8 +206,6 @@ const InvoiceTable = ({
                             <InvoiceDetail
                               invoice={detail}
                               historyRefreshVersion={refreshVersion}
-                              onApplyDiscount={() => onApplyDiscount(invoice)}
-                              onProcessPayment={() => onProcessPayment(invoice)}
                             />
                           )}
                         </td>
@@ -296,7 +219,7 @@ const InvoiceTable = ({
               <tr>
                 <td
                   className={`${td} text-center text-ink-muted py-16`}
-                  colSpan={8}
+                  colSpan={7}
                 >
                   Đang tải danh sách hóa đơn...
                 </td>
@@ -306,7 +229,7 @@ const InvoiceTable = ({
               <tr>
                 <td
                   className={`${td} text-center text-ink-muted py-16`}
-                  colSpan={8}
+                  colSpan={7}
                 >
                   Không tìm thấy hóa đơn nào
                 </td>
