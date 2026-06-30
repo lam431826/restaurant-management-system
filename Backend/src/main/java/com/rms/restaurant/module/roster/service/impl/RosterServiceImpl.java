@@ -117,12 +117,16 @@ public class RosterServiceImpl implements RosterService {
         templateRepo.deleteById(id);
     }
 
-    // BR-WS-01: end strictly after start; break shorter than total shift length.
+    // BR-WS-01 / BR-WS-13: break shorter than total shift length. end <= start is
+    // permitted and denotes an overnight shift that ends on the next calendar day;
+    // its duration is measured across midnight. All downstream math (worked hours,
+    // overlap, no-show) already rolls the end +1 day, so overnight is fully supported.
     private void validateTemplateTimes(LocalTime start, LocalTime end, int breakMinutes) {
-        if (!end.isAfter(start)) {
+        int spanMinutes = (end.toSecondOfDay() - start.toSecondOfDay()) / 60;
+        int durationMinutes = end.isAfter(start) ? spanMinutes : spanMinutes + 24 * 60; // crosses midnight
+        if (durationMinutes <= 0) {
             throw new ApplicationException(ApplicationError.TEMPLATE_INVALID_TIME_RANGE);
         }
-        int durationMinutes = (end.toSecondOfDay() - start.toSecondOfDay()) / 60;
         if (breakMinutes >= durationMinutes) {
             throw new ApplicationException(ApplicationError.TEMPLATE_BREAK_TOO_LONG);
         }

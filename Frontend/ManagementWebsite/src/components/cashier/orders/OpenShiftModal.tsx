@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { openShift } from '../../../services/shiftService'
+import { openShift, getSuggestedOpeningFloat } from '../../../services/shiftService'
 import type { ShiftSummary } from '../../../services/shiftService'
 import { listMyAttendance } from '../../../services/rosterService'
 import { ApiError } from '../../../services/api'
@@ -29,6 +29,7 @@ export const OpenShiftModal = ({
   const [checking, setChecking]         = useState(true)   // attendance check in-flight
   const [notClockedIn, setNotClockedIn] = useState(false)
   const [openingCash, setOpeningCash]   = useState('')
+  const [suggestedFloat, setSuggestedFloat] = useState(0) // BR-CS-09/11: last handover
   const [loading, setLoading]           = useState(false)
   const [error, setError]               = useState('')
 
@@ -45,6 +46,18 @@ export const OpenShiftModal = ({
         setNotClockedIn(false)
       })
       .finally(() => setChecking(false))
+  }, [])
+
+  // BR-CS-09/11: prefill the opening float with the cashier's last handover amount.
+  useEffect(() => {
+    getSuggestedOpeningFloat()
+      .then(amount => {
+        if (amount > 0) {
+          setSuggestedFloat(amount)
+          setOpeningCash(amount.toLocaleString('vi-VN'))
+        }
+      })
+      .catch(() => { /* no prior handover — leave the field empty */ })
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -171,6 +184,11 @@ export const OpenShiftModal = ({
                 className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[15px] text-[#202325] outline-none focus:border-[#025cca] focus:ring-2 focus:ring-[#025cca]/20"
                 autoFocus
               />
+              {suggestedFloat > 0 && (
+                <p className="text-[12px] text-[#636566]">
+                  Gợi ý từ ca trước (tiền bàn giao): {suggestedFloat.toLocaleString('vi-VN')} đ — bạn có thể chỉnh lại.
+                </p>
+              )}
             </div>
 
             {error && (

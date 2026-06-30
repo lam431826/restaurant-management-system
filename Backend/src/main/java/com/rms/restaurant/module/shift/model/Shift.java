@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -17,6 +18,11 @@ public class Shift {
 
     @Column(name = "cashier_id", nullable = false)
     private String cashierId;
+
+    // BR-CS-14: business date this shift rolls up to, assigned at open via the
+    // configurable business-day cutoff (default 05:00) — not calendar midnight.
+    @Column(name = "business_date")
+    private LocalDate businessDate;
 
     @Column(name = "opened_at", nullable = false)
     private LocalDateTime openedAt;

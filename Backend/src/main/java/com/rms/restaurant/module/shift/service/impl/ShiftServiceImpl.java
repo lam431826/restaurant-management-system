@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.*;
 
 @Service
@@ -50,6 +51,17 @@ public class ShiftServiceImpl implements ShiftService {
     // shift closes straight to CLOSED.
     @Value("${rms.shift.settlement-matching-enabled:false}")
     private boolean settlementMatchingEnabled;
+
+    // BR-CS-14: business-day cutoff (default 05:00). A shift opened before the cutoff
+    // belongs to the previous business date, so an evening trading day is not split
+    // at midnight. Parsed lazily (ISO local time, e.g. "05:00").
+    @Value("${rms.shift.business-day-cutoff:05:00}")
+    private String businessDayCutoff;
+
+    // BR-CS-05: cash discrepancy tolerance. A closing note is mandatory only when the
+    // absolute cash variance exceeds this band (default 0 = any non-zero variance).
+    @Value("${rms.shift.discrepancy-tolerance:0}")
+    private BigDecimal discrepancyTolerance;
 
     private final ShiftRepository shiftRepo;
     private final ShiftCashMovementRepository cashMovRepo;
@@ -79,14 +91,29 @@ public class ShiftServiceImpl implements ShiftService {
                     "You already have an open shift (opened at " + existing.getOpenedAt() + ")");
         });
 
+        LocalDateTime openedAt = LocalDateTime.now();
         Shift shift = shiftRepo.save(Shift.builder()
                 .cashierId(cashier.getId())
-                .openedAt(LocalDateTime.now())
+                .openedAt(openedAt)
+                .businessDate(businessDate(openedAt))   // BR-CS-14
                 .openingCash(request.openingCash())
                 .status(STATUS_OPEN)
                 .build());
 
         return shiftMapper.toSummary(shift, List.of(), List.of(), BigDecimal.ZERO, BigDecimal.ZERO);
+    }
+
+    // BR-CS-09/11: when a cashier opens a new shift, the suggested opening float is
+    // the handover amount from their most recently closed shift (they may override).
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal getSuggestedOpeningFloat(String username) {
+        User user = resolveUser(username);
+        return shiftRepo.findFirstByCashierIdAndStatusInOrderByClosedAtDesc(
+                        user.getId(), List.of(STATUS_CLOSED, STATUS_PENDING_RECON))
+                .map(Shift::getHandoverAmount)
+                .filter(Objects::nonNull)
+                .orElse(BigDecimal.ZERO);
     }
 
     // ── SM-02: Record Cash In / Cash Out ──────────────────────────────────────
@@ -192,8 +219,9 @@ public class ShiftServiceImpl implements ShiftService {
                     .build());
         }
 
-        // BR-CS-05: closing note required when the cash variance is non-zero
-        if (cashVariance.compareTo(BigDecimal.ZERO) != 0
+        // BR-CS-05: closing note required only when the cash variance exceeds the
+        // configured tolerance band (default 0 → any non-zero variance requires a note).
+        if (cashVariance.abs().compareTo(nz(discrepancyTolerance)) > 0
                 && (request.closingNote() == null || request.closingNote().isBlank())) {
             throw new ApplicationException(ApplicationError.SHIFT_VARIANCE_NOTE_REQUIRED);
         }
@@ -280,8 +308,9 @@ public class ShiftServiceImpl implements ShiftService {
             throw new ApplicationException(ApplicationError.FORBIDDEN);
         }
 
-        List<Shift> shifts = shiftRepo.findByOpenedAtBetweenOrderByOpenedAtAsc(
-                date.atStartOfDay(), date.plusDays(1).atStartOfDay());
+        // BR-CS-14: aggregate by business date (cutoff-based), not a naive midnight
+        // window, so overnight shifts roll into the evening's trading day.
+        List<Shift> shifts = shiftRepo.findByBusinessDateOrderByOpenedAtAsc(date);
 
         // Resolve cashier display names in one query
         List<String> cashierIds = shifts.stream().map(Shift::getCashierId).distinct().toList();
@@ -369,6 +398,15 @@ public class ShiftServiceImpl implements ShiftService {
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    // BR-CS-14: map an instant to its business date using the configurable cutoff.
+    // An instant before the cutoff time belongs to the previous calendar day.
+    private LocalDate businessDate(LocalDateTime when) {
+        LocalTime cutoff = LocalTime.parse(businessDayCutoff.trim());
+        return when.toLocalTime().isBefore(cutoff)
+                ? when.toLocalDate().minusDays(1)
+                : when.toLocalDate();
+    }
 
     private User resolveUser(String username) {
         return userRepo.findByUsername(username)

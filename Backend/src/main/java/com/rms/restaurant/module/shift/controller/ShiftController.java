@@ -71,6 +71,14 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.getMyOpenShift(principal.getUsername()));
     }
 
+    // BR-CS-09/11: suggested opening float (last handover) – GET /api/shifts/suggested-float
+    @GetMapping("/suggested-float")
+    public ResponseEntity<java.math.BigDecimal> suggestedFloat(
+            @AuthenticationPrincipal UserDetails principal) {
+
+        return ResponseEntity.ok(shiftService.getSuggestedOpeningFloat(principal.getUsername()));
+    }
+
     // CS-05: Manager daily summary – GET /api/shifts/daily-summary?date=YYYY-MM-DD
     @GetMapping("/daily-summary")
     public ResponseEntity<DailySummaryResponse> dailySummary(

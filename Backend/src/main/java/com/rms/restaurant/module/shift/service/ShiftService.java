@@ -4,12 +4,16 @@ import com.rms.restaurant.module.shift.dto.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 public interface ShiftService {
 
     // SM-01: BR-CS-01 (per-cashier)
     ShiftSummaryResponse open(OpenShiftRequest request, String cashierUsername);
+
+    // BR-CS-09/11: suggested opening float = the cashier's last handover amount
+    BigDecimal getSuggestedOpeningFloat(String username);
 
     // SM-02: BR-CASH-01..06
     void addCashMovement(String shiftId, CashMovementRequest request, String operatorUsername);

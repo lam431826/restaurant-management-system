@@ -58,6 +58,10 @@ export const getMyShift = async (): Promise<ShiftSummary | null> => {
 export const openShift = (openingCash: number): Promise<ShiftSummary> =>
   api.post<ShiftSummary>('/api/shifts', { openingCash })
 
+// BR-CS-09/11: the suggested opening float = the cashier's last handover amount.
+export const getSuggestedOpeningFloat = (): Promise<number> =>
+  api.get<number>('/api/shifts/suggested-float')
+
 // CS-04: cashier submits only the counted physical cash. The three online
 // channels are auto-recorded server-side (actual = recorded). cardBatchTotal is
 // an optional informational cross-check (BR-CS-12).
