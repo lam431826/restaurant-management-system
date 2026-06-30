@@ -74,6 +74,7 @@ public enum ApplicationError {
     ORDER_ALREADY_INVOICED("Order already has an invoice and cannot be modified", HttpStatus.UNPROCESSABLE_ENTITY),
     CANNOT_CANCEL_ORDER_ITEMS_NOT_PENDING("Cannot cancel order because some items are already being prepared or served", HttpStatus.UNPROCESSABLE_ENTITY),
     ORDER_ITEM_REMOVE_NOT_ALLOWED("Only pending order items can be removed", HttpStatus.UNPROCESSABLE_ENTITY),
+    ORDER_ITEM_NOTE_NOT_ALLOWED("Only pending order items can have their notes updated", HttpStatus.UNPROCESSABLE_ENTITY),
     ORDER_ITEM_STATUS_TRANSITION_NOT_ALLOWED("Order item status transition is not allowed", HttpStatus.UNPROCESSABLE_ENTITY),
     INVOICE_ALREADY_EXISTS("Invoice already exists for this order", HttpStatus.CONFLICT),
     INVOICE_ALREADY_PAID("Cannot apply a promotion to a paid invoice", HttpStatus.UNPROCESSABLE_ENTITY),

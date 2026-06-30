@@ -1,4 +1,4 @@
-package com.rms.restaurant.module.order.controller;
+    package com.rms.restaurant.module.order.controller;
 
 import com.rms.restaurant.module.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
@@ -64,6 +64,11 @@ public class OrderController {
     @org.springframework.web.bind.annotation.DeleteMapping("/{id}/items/{itemId}")
     public ResponseEntity<OrderResponse> removeItem(@PathVariable String id, @PathVariable String itemId) {
         return ResponseEntity.ok(orderService.removeItem(id, itemId));
+    }
+
+    @PutMapping("/{id}/items/{itemId}/note")
+    public ResponseEntity<OrderResponse> updateItemNote(@PathVariable String id, @PathVariable String itemId, @RequestBody com.rms.restaurant.module.order.dto.UpdateOrderItemNoteRequest request) {
+        return ResponseEntity.ok(orderService.updateItemNote(id, itemId, request));
     }
 
     @PutMapping("/{id}/items/{itemId}/status")

@@ -39,13 +39,13 @@ public class OrderServiceImpl implements OrderService {
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
 
-    @Override 
-    public PageResponse<OrderResponse> list(Pageable pageable) { 
+    @Override
+    public PageResponse<OrderResponse> list(Pageable pageable) {
         Page<OrderResponse> page = orderRepository.findAll(pageable).map(orderMapper::toResponse);
         return PageResponse.of(page);
     }
-    @Override 
-    public OrderResponse getById(String id) { 
+    @Override
+    public OrderResponse getById(String id) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         return orderMapper.toResponse(order);
@@ -122,10 +122,10 @@ public class OrderServiceImpl implements OrderService {
         return orderMapper.toResponse(orderRepository.save(order));
     }
 
-    @Override public OrderResponse accept(String id) { 
+    @Override public OrderResponse accept(String id) {
         return updateStatus(id, OrderStatus.ACCEPTED);
     }
-    
+
     @Override public OrderResponse addItem(String id, com.rms.restaurant.module.order.dto.AddOrderItemRequest request) { return null; }
 
     @Override
@@ -164,7 +164,7 @@ public class OrderServiceImpl implements OrderService {
             request.items().forEach(itemRequest -> {
                 MenuItem menuItem = menuItemRepository.findById(itemRequest.menuItemId())
                         .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND));
-                
+
                 OrderItem orderItem = new OrderItem();
                 orderItem.setOrder(order);
                 orderItem.setMenuItemId(menuItem.getId());
@@ -172,7 +172,7 @@ public class OrderServiceImpl implements OrderService {
                 orderItem.setQuantity(itemRequest.quantity());
                 orderItem.setUnitPrice(menuItem.getPrice());
                 orderItem.setNote(itemRequest.note());
-                
+
                 order.getItems().add(orderItem);
             });
         }
@@ -194,7 +194,7 @@ public class OrderServiceImpl implements OrderService {
             request.items().forEach(itemRequest -> {
                 MenuItem menuItem = menuItemRepository.findById(itemRequest.menuItemId())
                         .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND));
-                
+
                 OrderItem orderItem = new OrderItem();
                 orderItem.setOrder(order);
                 orderItem.setMenuItemId(menuItem.getId());
@@ -202,10 +202,26 @@ public class OrderServiceImpl implements OrderService {
                 orderItem.setQuantity(itemRequest.quantity());
                 orderItem.setUnitPrice(menuItem.getPrice());
                 orderItem.setNote(itemRequest.note());
-                
+
                 order.getItems().add(orderItem);
             });
         }
+
+        Order savedOrder = orderRepository.save(order);
+        return orderMapper.toResponse(savedOrder);
+    }
+
+    @Override
+    public OrderResponse updateItemNote(String orderId, String itemId, com.rms.restaurant.module.order.dto.UpdateOrderItemNoteRequest request) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        ensureOrderItemsCanBeModified(order);
+
+        OrderItem item = findOrderItem(order, itemId);
+        if (item.getCookingStatus() != com.rms.restaurant.common.utils.enums.CookingStatus.PENDING) {
+            throw new com.rms.restaurant.common.utils.exception.ApplicationException(ApplicationError.ORDER_ITEM_NOTE_NOT_ALLOWED);
+        }
+        item.setNote(request.note());
 
         Order savedOrder = orderRepository.save(order);
         return orderMapper.toResponse(savedOrder);
@@ -223,7 +239,7 @@ public class OrderServiceImpl implements OrderService {
         if (request.status() == CookingStatus.REJECTED) {
             item.setRejectionNote(request.rejectionNote());
         }
-        
+
         // Optional: auto-update order status based on items? We'll keep it simple for now or implement if needed.
         Order savedOrder = orderRepository.save(order);
         return orderMapper.toResponse(savedOrder);
@@ -283,7 +299,7 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    @Override 
+    @Override
     public OrderResponse cancel(String id, CancelOrderRequest request) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
@@ -297,14 +313,14 @@ public class OrderServiceImpl implements OrderService {
             );
         }
         validateOrderHasNoInvoiceOrPayment(order);
-        
+
         boolean hasNonCancellableItem = order.getItems().stream()
                 .anyMatch(item -> item.getCookingStatus() != com.rms.restaurant.common.utils.enums.CookingStatus.PENDING
                         && item.getCookingStatus() != com.rms.restaurant.common.utils.enums.CookingStatus.REJECTED);
         if (hasNonCancellableItem) {
             throw new ApplicationException(ApplicationError.CANNOT_CANCEL_ORDER_ITEMS_NOT_PENDING);
         }
-        
+
         order.setStatus(OrderStatus.CANCELLED);
         RestaurantTable table = tableRepository.findById(order.getTableId()).orElse(null);
         if (table != null) {
@@ -356,8 +372,8 @@ public class OrderServiceImpl implements OrderService {
             assistanceRequestRepository.save(entity);
         }
     }
-    
-    @Override 
+
+    @Override
     public java.util.List<com.rms.restaurant.module.order.model.AssistanceRequest> getPendingAssistanceRequests() {
         return assistanceRequestRepository.findByResolvedFalse();
     }

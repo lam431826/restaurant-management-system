@@ -34,6 +34,7 @@ import {
   removeOrderItem,
   respondAssistance,
   updateOrderItemStatus,
+  updateOrderItemNote,
 } from "../../services/orderApi";
 import type { AssistanceRequest, Order } from "../../services/orderApi";
 
@@ -813,26 +814,40 @@ const CashierOrders = () => {
     if (delta > 0) {
       const menuItem = menuItems.find((m) => m.id === id);
       if (menuItem) {
-        setCart((prev) => [
-          ...prev,
-          {
-            cartItemId: Math.random().toString(36).substring(2, 11),
-            menuItemId: menuItem.id,
-            name: menuItem.name,
-            price: menuItem.price,
-            qty: 1,
-            note: "",
-          },
-        ]);
+        setCart((prev) => {
+          const existing = prev.find((c) => c.menuItemId === id);
+          if (existing) {
+            // Increment qty on existing entry
+            return prev.map((c) =>
+              c.menuItemId === id ? { ...c, qty: c.qty + 1 } : c,
+            );
+          }
+          // Add new grouped entry
+          return [
+            ...prev,
+            {
+              cartItemId: Math.random().toString(36).substring(2, 11),
+              menuItemId: menuItem.id,
+              name: menuItem.name,
+              price: menuItem.price,
+              qty: 1,
+              note: "",
+            },
+          ];
+        });
       }
     } else {
       setCart((prev) => {
-        const index = [...prev].reverse().findIndex((c) => c.menuItemId === id);
-        if (index !== -1) {
-          const realIndex = prev.length - 1 - index;
-          return prev.filter((_, i) => i !== realIndex);
+        const existing = prev.find((c) => c.menuItemId === id);
+        if (!existing) return prev;
+        if (existing.qty <= 1) {
+          // Remove entry entirely
+          return prev.filter((c) => c.menuItemId !== id);
         }
-        return prev;
+        // Decrement qty
+        return prev.map((c) =>
+          c.menuItemId === id ? { ...c, qty: c.qty - 1 } : c,
+        );
       });
     }
     setMenuItems((items) =>
@@ -938,20 +953,37 @@ const CashierOrders = () => {
 
   const handleOpenNote = (itemId: string, currentText: string) =>
     setNoteModal({ open: true, itemId, text: currentText });
-  const handleConfirmNote = (itemId: string, text: string) => {
-    let updatedCart = false;
-    setCart((prevCart) => {
-      const newCart = prevCart.map((i) =>
-        i.cartItemId === itemId ? { ...i, note: text } : i,
+  const handleConfirmNote = async (itemId: string, text: string) => {
+    const isDraft = cart.some((i) => i.cartItemId === itemId);
+    
+    if (isDraft) {
+      setCart((prevCart) =>
+        prevCart.map((i) =>
+          i.cartItemId === itemId ? { ...i, note: text } : i,
+        ),
       );
-      if (newCart !== prevCart) updatedCart = true;
-      return newCart;
-    });
-
-    if (!updatedCart) {
-      setOrderItems((items) =>
-        items.map((i) => (i.id === itemId ? { ...i, notes: text } : i)),
-      );
+    } else {
+      // Find the item in orderItems to get the orderId
+      const item = orderItems.find((i) => i.id === itemId);
+      if (item && item.orderId) {
+        if (disableItemMutation) {
+          showItemMutationBlockedMessage();
+          return;
+        }
+        try {
+          await updateOrderItemNote(item.orderId, itemId, text);
+          setOrderItems((items) =>
+            items.map((i) => (i.id === itemId ? { ...i, notes: text } : i)),
+          );
+          setRefreshTrigger((t) => t + 1);
+        } catch (e) {
+          console.error(e);
+          setOrderActionMessage({
+            type: "error",
+            text: getOrderActionErrorMessage(e),
+          });
+        }
+      }
     }
     setNoteModal({ open: false, itemId: null, text: "" });
   };
@@ -1051,7 +1083,7 @@ const CashierOrders = () => {
         selectedTable.id,
         cart.map((c) => ({
           menuItemId: c.menuItemId,
-          quantity: 1,
+          quantity: c.qty,
           note: c.note,
         })),
       );
@@ -1076,7 +1108,7 @@ const CashierOrders = () => {
         selectedTable.orderId,
         cart.map((c) => ({
           menuItemId: c.menuItemId,
-          quantity: 1,
+          quantity: c.qty,
           note: c.note,
         })),
       );
