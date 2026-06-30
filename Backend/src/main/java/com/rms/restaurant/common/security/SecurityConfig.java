@@ -71,10 +71,10 @@ public class SecurityConfig {
                 .requestMatchers("/api/guest/**").permitAll()
                 // Public – Payment webhook (verified via HMAC-SHA256 in controller)
                 .requestMatchers(HttpMethod.POST, "/api/webhooks/**").permitAll()
-                // Public - Orders (Temporary for testing)
-                .requestMatchers("/api/orders/**").permitAll()
-                // Public - Tables (Temporary for testing)
-                .requestMatchers("/api/tables/**").permitAll()
+                // Protected - Orders (controller-level roles apply via @PreAuthorize)
+                .requestMatchers("/api/orders/**").authenticated()
+                // Protected - Tables (controller-level roles apply via @PreAuthorize)
+                .requestMatchers("/api/tables/**").authenticated()
                 // Swagger UI
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 // Everything else requires JWT
