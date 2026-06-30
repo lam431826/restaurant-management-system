@@ -26,6 +26,8 @@ import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import org.springframework.data.domain.Page;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -65,19 +67,6 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         order.setStatus(status);
-        if (status == OrderStatus.CLOSED || status == OrderStatus.CANCELLED) {
-            RestaurantTable table = tableRepository.findById(order.getTableId()).orElse(null);
-            if (table != null) {
-                // If this is the only active order, set table to available. We can just check if findTopBy returns this one
-                Order activeOrder = orderRepository.findTopByTableIdOrderByCreatedAtDesc(table.getId())
-                        .filter(o -> o.getStatus() != OrderStatus.CLOSED && o.getStatus() != OrderStatus.CANCELLED)
-                        .orElse(null);
-                if (activeOrder == null || activeOrder.getId().equals(order.getId())) {
-                    table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.AVAILABLE);
-                    tableRepository.save(table);
-                }
-            }
-        }
         return orderMapper.toResponse(orderRepository.save(order));
     }
 
@@ -118,12 +107,39 @@ public class OrderServiceImpl implements OrderService {
                 tableRepository.save(table);
             }
         }
+        // Auto-cancel any remaining PENDING orders for this table (BR-QR-09)
+        List<Order> pendingOrdersForTable = orderRepository.findByTableIdAndStatus(order.getTableId(), OrderStatus.PENDING);
+        for (Order po : pendingOrdersForTable) {
+            po.setStatus(OrderStatus.CANCELLED);
+            if (po.getItems() != null) {
+                for (OrderItem item : po.getItems()) {
+                    if (item.getCookingStatus() == CookingStatus.PENDING) {
+                        item.setCookingStatus(CookingStatus.REJECTED);
+                        item.setRejectionNote("Hệ thống tự động hủy do bàn thanh toán");
+                    }
+                }
+            }
+            orderRepository.save(po);
+        }
 
         return orderMapper.toResponse(orderRepository.save(order));
     }
 
-    @Override public OrderResponse accept(String id) {
-        return updateStatus(id, OrderStatus.ACCEPTED);
+    @Override
+    public OrderResponse accept(String id) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        if (order.getStatus() == OrderStatus.PENDING) {
+            order.setStatus(OrderStatus.ACCEPTED);
+        }
+        if (order.getItems() != null) {
+            for (OrderItem item : order.getItems()) {
+                if (item.getCookingStatus() == CookingStatus.PENDING) {
+                    item.setCookingStatus(CookingStatus.COOKING);
+                }
+            }
+        }
+        return orderMapper.toResponse(orderRepository.save(order));
     }
 
     @Override public OrderResponse addItem(String id, com.rms.restaurant.module.order.dto.AddOrderItemRequest request) { return null; }
@@ -138,7 +154,11 @@ public class OrderServiceImpl implements OrderService {
             for (OrderItem item : order.getItems()) {
                 if (item.getId().equals(itemId)) {
                     validateItemCanBeRemoved(item);
-                    itemToRemove = item;
+                    if (item.getQuantity() > 1) {
+                        item.setQuantity(item.getQuantity() - 1);
+                    } else {
+                        itemToRemove = item;
+                    }
                     break;
                 }
             }
@@ -281,7 +301,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private boolean isAllowedItemStatusTransition(CookingStatus current, CookingStatus next) {
-        return (current == CookingStatus.PENDING && next == CookingStatus.COOKING)
+        return (current == CookingStatus.PENDING && (next == CookingStatus.COOKING || next == CookingStatus.REJECTED))
                 || (current == CookingStatus.COOKING && (next == CookingStatus.READY || next == CookingStatus.REJECTED))
                 || (current == CookingStatus.READY && next == CookingStatus.SERVED);
     }
@@ -322,6 +342,14 @@ public class OrderServiceImpl implements OrderService {
         }
 
         order.setStatus(OrderStatus.CANCELLED);
+        if (order.getItems() != null) {
+            for (OrderItem item : order.getItems()) {
+                if (item.getCookingStatus() == CookingStatus.PENDING) {
+                    item.setCookingStatus(CookingStatus.REJECTED);
+                    item.setRejectionNote("Thu ngân hủy đơn");
+                }
+            }
+        }
         RestaurantTable table = tableRepository.findById(order.getTableId()).orElse(null);
         if (table != null) {
             Order activeOrder = orderRepository.findTopByTableIdOrderByCreatedAtDesc(table.getId())
