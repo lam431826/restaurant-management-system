@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useInView } from '../hooks/useInView'
 import IMG_BG from '../assets/images/menu-bg.jpg'
 import imgMakiSpicyTuna from '../assets/images/menu-maki-spicy-tuna.jpg'
+import { getImageUrl } from '../utils/api'
 
 export default function MenuSection({ onAddToCart }) {
   const [menuData, setMenuData] = useState([])
@@ -122,7 +123,7 @@ function SectionTitle({ title }) {
 
 function MenuItem({ item, index = 0, onAddToCart }) {
   const [ref, inView] = useInView()
-  const imgUrl = item.imageUrl || imgMakiSpicyTuna; // Fallback image if null
+  const imgUrl = getImageUrl(item.imageUrl) || imgMakiSpicyTuna
   return (
     <div
       ref={ref}
