@@ -30,7 +30,7 @@ export interface ShiftSummary {
   id: string
   cashierId: string
   closedBy: string | null
-  status: 'OPEN' | 'CLOSED' | 'PENDING_RECON'
+  status: 'OPEN' | 'CLOSED' | 'PENDING_RECON' | 'STALE' | 'FORCE_CLOSED'
   openedAt: string
   closedAt: string | null
   openingCash: number
@@ -79,6 +79,14 @@ export const closeShift = (
     closingNote: closingNote ?? null,
   })
 
+// BR-CS-15: manager force-closes a stale/open shift the cashier never closed.
+export const forceCloseShift = (
+  id: string,
+  cashActual: number,
+  reason: string,
+): Promise<ShiftSummary> =>
+  api.put<ShiftSummary>(`/api/shifts/${id}/force-close`, { cashActual, reason })
+
 // ── CS-05: Manager daily summary ────────────────────────────────────────────
 export interface DailyMethodTotal {
   method: PaymentMethodKey
@@ -91,7 +99,7 @@ export interface DailyCashierShiftRow {
   shiftId: string
   cashierId: string
   cashierName: string
-  status: 'OPEN' | 'CLOSED' | 'PENDING_RECON'
+  status: 'OPEN' | 'CLOSED' | 'PENDING_RECON' | 'STALE' | 'FORCE_CLOSED'
   openedAt: string
   closedAt: string | null
   openingCash: number

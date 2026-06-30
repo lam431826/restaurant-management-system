@@ -44,4 +44,9 @@ public class RosterAttendance {
 
     @Column(nullable = false)
     private boolean late;
+
+    // BR-WS-11: reason captured on an early clock-out
+    // (LEAVE_APPROVED / LEAVE_UNAPPROVED / INCIDENT) with an optional free-text note.
+    @Column(name = "clock_out_reason", length = 500)
+    private String clockOutReason;
 }

@@ -16,6 +16,8 @@ const statusLabel: Record<string, string> = {
   CHECKED_OUT: 'Đã hoàn thành',
   NO_SHOW: 'Vắng không báo',
   LEAVE: 'Đã nghỉ',
+  EARLY_LEAVE: 'Về sớm',
+  MISSING_CLOCKOUT: 'Thiếu chấm công ra',
 }
 const statusCls: Record<string, string> = {
   SCHEDULED: 'bg-fill text-ink-subtle',
@@ -23,7 +25,16 @@ const statusCls: Record<string, string> = {
   CHECKED_OUT: 'bg-success-50 text-success-700',
   NO_SHOW: 'bg-danger-50 text-danger-700',
   LEAVE: 'bg-warning-50 text-warning-700',
+  EARLY_LEAVE: 'bg-warning-50 text-warning-700',
+  MISSING_CLOCKOUT: 'bg-danger-50 text-danger-700',
 }
+
+// BR-WS-11: reasons offered when clocking out before the scheduled shift end.
+const EARLY_LEAVE_REASONS: [string, string][] = [
+  ['LEAVE_APPROVED', 'Nghỉ có phép'],
+  ['LEAVE_UNAPPROVED', 'Nghỉ không phép'],
+  ['INCIDENT', 'Sự cố'],
+]
 
 const defaultRouteForRole = (role?: string) => {
   if (role === 'MANAGER' || role === 'ADMIN') return '/manager/dashboard'
@@ -37,6 +48,16 @@ const hoursUntilShiftStart = (shift: ShiftTemplate, date: Date) => {
   const start = new Date(date)
   start.setHours(h, m, 0, 0)
   return (start.getTime() - Date.now()) / 3_600_000
+}
+
+/** BR-WS-11: whether the current time is before the shift's scheduled end (overnight aware). */
+const isBeforeShiftEnd = (shift: ShiftTemplate, date: Date) => {
+  const [sh, sm] = shift.startTime.split(':').map(Number)
+  const [eh, em] = shift.endTime.split(':').map(Number)
+  const start = new Date(date); start.setHours(sh, sm, 0, 0)
+  const end = new Date(date); end.setHours(eh, em, 0, 0)
+  if (end.getTime() <= start.getTime()) end.setDate(end.getDate() + 1) // overnight
+  return Date.now() < end.getTime()
 }
 
 interface RequestModalState { date: Date; shiftTemplateId: string }
@@ -53,6 +74,10 @@ const MySchedule = () => {
   const [loadError, setLoadError] = useState('')
   const [actionError, setActionError] = useState('')
   const [clockOutOpenShift, setClockOutOpenShift] = useState(false)
+  // BR-WS-11: early clock-out reason modal
+  const [earlyLeave, setEarlyLeave] = useState<{ date: Date; shiftTemplateId: string } | null>(null)
+  const [earlyReason, setEarlyReason] = useState('LEAVE_APPROVED')
+  const [earlyNote, setEarlyNote] = useState('')
 
   const [reqModal, setReqModal] = useState<RequestModalState | null>(null)
   const [reqType, setReqType] = useState<ShiftRequestType>('LEAVE')
@@ -121,18 +146,40 @@ const MySchedule = () => {
     }
   }
 
-  const handleClockOut = async (date: Date, shiftTemplateId: string) => {
+  const handleClockOut = async (date: Date, shiftTemplateId: string, reason?: string) => {
     setClockOutOpenShift(false)
     try {
-      await clockOut(toYMD(date), shiftTemplateId)
+      await clockOut(toYMD(date), shiftTemplateId, reason)
+      setEarlyLeave(null)
       await loadWeek()
     } catch (err) {
       if (err instanceof ApiError && err.code === 'CLOCK_OUT_OPEN_SHIFT') {
         setClockOutOpenShift(true)
+      } else if (err instanceof ApiError && err.code === 'EARLY_LEAVE_REASON_REQUIRED') {
+        // Server says it's an early leave — collect a reason and let the user retry.
+        setEarlyLeave({ date, shiftTemplateId })
       } else {
         setActionError(err instanceof ApiError ? err.message : 'Không thể chấm công ra.')
       }
     }
+  }
+
+  // BR-WS-11: before the scheduled end → collect a reason; otherwise clock out directly.
+  const onClockOutClick = (date: Date, shift: ShiftTemplate) => {
+    if (isBeforeShiftEnd(shift, date)) {
+      setEarlyReason('LEAVE_APPROVED')
+      setEarlyNote('')
+      setEarlyLeave({ date, shiftTemplateId: shift.id })
+    } else {
+      void handleClockOut(date, shift.id)
+    }
+  }
+
+  const submitEarlyLeave = () => {
+    if (!earlyLeave) return
+    const note = earlyNote.trim()
+    const reason = note ? `${earlyReason}: ${note}` : earlyReason
+    void handleClockOut(earlyLeave.date, earlyLeave.shiftTemplateId, reason)
   }
 
   if (!user) return null
@@ -203,6 +250,7 @@ const MySchedule = () => {
                               <div className="text-md font-medium text-ink">{shift.name} <span className="text-ink-subtle">({formatTime(shift.startTime)} - {formatTime(shift.endTime)})</span></div>
                               {record.late && <div className="text-sm text-danger">Đi muộn</div>}
                               {record.workedMinutes != null && <div className="text-sm text-ink-subtle">Đã làm {Math.round(record.workedMinutes / 60 * 10) / 10} giờ</div>}
+                              {record.clockOutReason && <div className="text-sm text-warning-700">Về sớm: {record.clockOutReason}</div>}
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
                               <span className={`inline-flex items-center text-sm font-medium rounded-full px-2.5 py-1 ${statusCls[record.status]}`}>{statusLabel[record.status]}</span>
@@ -210,7 +258,7 @@ const MySchedule = () => {
                                 <button className="kv-btn kv-btn-primary h-9" onClick={() => handleClockIn(day, shift.id)}>Chấm công vào</button>
                               )}
                               {record.status === 'CHECKED_IN' && (
-                                <button className="kv-btn kv-btn-outline-primary h-9" onClick={() => handleClockOut(day, shift.id)}>Chấm công ra</button>
+                                <button className="kv-btn kv-btn-outline-primary h-9" onClick={() => onClockOutClick(day, shift)}>Chấm công ra</button>
                               )}
                               {record.status === 'SCHEDULED' && hoursUntilStart >= 12 && (
                                 <button className="kv-btn kv-btn-outline-neutral h-9" onClick={() => setReqModal({ date: day, shiftTemplateId: shift.id })}>
@@ -229,6 +277,42 @@ const MySchedule = () => {
           </div>
         )}
       </div>
+
+      {earlyLeave && (
+        <div
+          className="fixed inset-0 z-[var(--kv-z-modal)] flex items-center justify-center p-6"
+          style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }}
+          onMouseDown={e => { if (e.target === e.currentTarget) setEarlyLeave(null) }}
+        >
+          <div className="w-full max-w-[28rem] bg-card rounded-lg shadow-lg flex flex-col">
+            <div className="flex items-center justify-between px-6 h-14 border-b border-line">
+              <h2 className="text-h3 font-bold text-ink">Chấm công ra sớm</h2>
+              <button onClick={() => setEarlyLeave(null)} className="w-8 h-8 flex items-center justify-center rounded-md text-ink-subtle hover:bg-fill" aria-label="Đóng">✕</button>
+            </div>
+            <div className="p-6 flex flex-col gap-4">
+              <p className="text-md text-ink-subtle">Bạn đang chấm công ra trước giờ kết thúc ca. Vui lòng chọn lý do.</p>
+              <div className="flex flex-col gap-2">
+                {EARLY_LEAVE_REASONS.map(([id, label]) => (
+                  <label key={id} className="flex items-center gap-2 text-md text-ink cursor-pointer">
+                    <input type="radio" name="early-reason" checked={earlyReason === id} onChange={() => setEarlyReason(id)} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <textarea
+                value={earlyNote}
+                onChange={e => setEarlyNote(e.target.value)}
+                placeholder="Ghi chú (không bắt buộc)"
+                className="w-full min-h-[72px] px-3 py-2 rounded-md border border-line text-md text-ink outline-none focus:border-primary"
+              />
+            </div>
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-line">
+              <button className="kv-btn kv-btn-outline-neutral h-9" onClick={() => setEarlyLeave(null)}>Hủy</button>
+              <button className="kv-btn kv-btn-primary h-9" onClick={submitEarlyLeave}>Xác nhận chấm công ra</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {reqModal && (
         <div

@@ -96,6 +96,7 @@ public enum ApplicationError {
     MIN_REST_VIOLATION("Minimum rest period between shifts is violated", HttpStatus.CONFLICT),
     CLOCK_ACTION_OUT_OF_WINDOW("Clock-in/out is only allowed within the configured time window", HttpStatus.UNPROCESSABLE_ENTITY),
     ATTENDANCE_NOT_CHECKED_IN("Not clocked in for this shift", HttpStatus.CONFLICT),
+    EARLY_LEAVE_REASON_REQUIRED("A reason is required to clock out before the scheduled shift end", HttpStatus.UNPROCESSABLE_ENTITY),
     ROSTER_REQUEST_FREEZE_WINDOW("Cannot submit a request this close to shift start", HttpStatus.UNPROCESSABLE_ENTITY),
     ROSTER_REQUEST_DUPLICATE_PENDING("A pending request already exists for this shift", HttpStatus.CONFLICT),
     ROSTER_REQUEST_NOT_FOUND("Shift request not found", HttpStatus.NOT_FOUND),

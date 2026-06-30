@@ -42,6 +42,8 @@ public class ShiftServiceImpl implements ShiftService {
     private static final String STATUS_OPEN          = "OPEN";
     private static final String STATUS_CLOSED        = "CLOSED";
     private static final String STATUS_PENDING_RECON = "PENDING_RECON";
+    private static final String STATUS_STALE         = "STALE";          // BR-CS-15
+    private static final String STATUS_FORCE_CLOSED  = "FORCE_CLOSED";   // BR-CS-15
     private static final List<OrderStatus> ACTIVE_ORDER_STATUSES =
             List.of(OrderStatus.PENDING, OrderStatus.ACCEPTED, OrderStatus.PREPARING, OrderStatus.SERVED);
 
@@ -254,6 +256,67 @@ public class ShiftServiceImpl implements ShiftService {
         return shiftMapper.toSummary(shift, reconciliations, movements, totalCashIn, totalCashOut);
     }
 
+    // ── BR-CS-15: Manager force-close of a stale/open shift ───────────────────
+
+    @Override
+    public ShiftSummaryResponse forceClose(String shiftId, ForceCloseShiftRequest request, String managerUsername) {
+        User manager = resolveUser(managerUsername);
+        if (manager.getRole() != UserRole.MANAGER && manager.getRole() != UserRole.ADMIN) {
+            throw new ApplicationException(ApplicationError.FORBIDDEN);
+        }
+
+        Shift shift = shiftRepo.findById(shiftId)
+                .orElseThrow(() -> new ApplicationException(ApplicationError.SHIFT_NOT_FOUND));
+        // Only an unfinished shift can be force-closed (OPEN or already-flagged STALE).
+        if (!STATUS_OPEN.equals(shift.getStatus()) && !STATUS_STALE.equals(shift.getStatus())) {
+            throw new ApplicationException(ApplicationError.SHIFT_CLOSED);
+        }
+
+        LocalDateTime closedAt = LocalDateTime.now();
+        List<Payment> shiftPayments = paymentRepo.findPaidPaymentsBetween(shift.getOpenedAt(), closedAt);
+        Map<PaymentMethod, BigDecimal> salesByMethod = sumSalesByMethod(shiftPayments);
+
+        List<ShiftCashMovement> movements = cashMovRepo.findByShiftId(shiftId);
+        BigDecimal totalCashIn  = sumMovements(movements, "CASH_IN");
+        BigDecimal totalCashOut = sumMovements(movements, "CASH_OUT");
+
+        Map<PaymentMethod, BigDecimal> expectedAmounts = buildExpectedAmounts(
+                shift.getOpeningCash(), salesByMethod, totalCashIn, totalCashOut);
+
+        // Discrepancy computed exactly as a normal close: manager-counted cash vs expected;
+        // online channels actual = recorded.
+        BigDecimal actualCash   = request.cashActual();
+        BigDecimal expectedCash = expectedAmounts.getOrDefault(PaymentMethod.CASH, BigDecimal.ZERO);
+        BigDecimal cashVariance = actualCash.subtract(expectedCash);
+
+        List<ShiftPaymentReconciliation> reconciliations = new ArrayList<>();
+        BigDecimal totalRevenue = salesByMethod.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        for (PaymentMethod method : PaymentMethod.values()) {
+            BigDecimal expected = expectedAmounts.getOrDefault(method, BigDecimal.ZERO);
+            boolean isCash = method == PaymentMethod.CASH;
+            reconciliations.add(ShiftPaymentReconciliation.builder()
+                    .shiftId(shiftId)
+                    .paymentMethod(method)
+                    .expectedAmount(expected)
+                    .actualAmount(isCash ? actualCash : expected)
+                    .variance(isCash ? cashVariance : BigDecimal.ZERO)
+                    .build());
+        }
+        reconciliationRepo.saveAll(reconciliations);
+
+        // BR-CS-15: original cashier stays accountable (cashierId unchanged); record the
+        // manager as closedBy and stamp the reason for audit.
+        shift.setStatus(STATUS_FORCE_CLOSED);
+        shift.setClosedAt(closedAt);
+        shift.setClosedBy(manager.getId());
+        shift.setClosingCash(actualCash);
+        shift.setTotalRevenue(totalRevenue);
+        shift.setClosingNote("FORCE_CLOSED by manager: " + request.reason().trim());
+        shiftRepo.save(shift);
+
+        return shiftMapper.toSummary(shift, reconciliations, movements, totalCashIn, totalCashOut);
+    }
+
     // ── SM-04: View Shift Summary ─────────────────────────────────────────────
 
     @Override
@@ -267,6 +330,7 @@ public class ShiftServiceImpl implements ShiftService {
         if (!isManager && !shift.getCashierId().equals(user.getId())) {
             throw new ApplicationException(ApplicationError.FORBIDDEN);
         }
+        shift = markStaleIfElapsed(shift);   // BR-CS-15
 
         List<ShiftCashMovement> movements    = cashMovRepo.findByShiftId(shiftId);
         List<ShiftPaymentReconciliation> recs = reconciliationRepo.findByShiftId(shiftId);
@@ -287,6 +351,7 @@ public class ShiftServiceImpl implements ShiftService {
         User user = resolveUser(username);
         Shift shift = shiftRepo.findByCashierIdAndStatus(user.getId(), STATUS_OPEN)
                 .orElseThrow(() -> new ApplicationException(ApplicationError.SHIFT_NOT_OPEN));
+        shift = markStaleIfElapsed(shift);   // BR-CS-15: surface a stale OPEN shift
 
         List<ShiftCashMovement> movements = cashMovRepo.findByShiftId(shift.getId());
         BigDecimal totalCashIn  = sumMovements(movements, "CASH_IN");
@@ -333,6 +398,7 @@ public class ShiftServiceImpl implements ShiftService {
         List<DailySummaryResponse.CashierShiftRow> rows = new ArrayList<>();
 
         for (Shift shift : shifts) {
+            shift = markStaleIfElapsed(shift);   // BR-CS-15
             List<ShiftCashMovement> movements    = cashMovRepo.findByShiftId(shift.getId());
             List<ShiftPaymentReconciliation> recs = reconciliationRepo.findByShiftId(shift.getId());
             BigDecimal cashIn  = sumMovements(movements, "CASH_IN");
@@ -389,15 +455,32 @@ public class ShiftServiceImpl implements ShiftService {
         }
         return shiftRepo.findAllByOrderByOpenedAtDesc(pageable)
                 .map(shift -> {
-                    List<ShiftCashMovement> movements = cashMovRepo.findByShiftId(shift.getId());
-                    List<ShiftPaymentReconciliation> recs = reconciliationRepo.findByShiftId(shift.getId());
+                    Shift s = markStaleIfElapsed(shift);   // BR-CS-15
+                    List<ShiftCashMovement> movements = cashMovRepo.findByShiftId(s.getId());
+                    List<ShiftPaymentReconciliation> recs = reconciliationRepo.findByShiftId(s.getId());
                     BigDecimal cashIn  = sumMovements(movements, "CASH_IN");
                     BigDecimal cashOut = sumMovements(movements, "CASH_OUT");
-                    return shiftMapper.toSummary(shift, recs, movements, cashIn, cashOut);
+                    return shiftMapper.toSummary(s, recs, movements, cashIn, cashOut);
                 });
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    // BR-CS-15: an OPEN shift left past the end of its business day (cutoff of the next
+    // day) is flagged STALE and locked against new transactions. It is never auto-closed —
+    // only a manager may FORCE_CLOSE it after a physical count.
+    private Shift markStaleIfElapsed(Shift shift) {
+        if (!STATUS_OPEN.equals(shift.getStatus()) || shift.getBusinessDate() == null) {
+            return shift;
+        }
+        LocalTime cutoff = LocalTime.parse(businessDayCutoff.trim());
+        LocalDateTime staleAfter = shift.getBusinessDate().plusDays(1).atTime(cutoff);
+        if (LocalDateTime.now().isAfter(staleAfter)) {
+            shift.setStatus(STATUS_STALE);
+            return shiftRepo.save(shift);
+        }
+        return shift;
+    }
 
     // BR-CS-14: map an instant to its business date using the configurable cutoff.
     // An instant before the cutoff time belongs to the previous calendar day.
@@ -416,6 +499,8 @@ public class ShiftServiceImpl implements ShiftService {
     private Shift requireOpenShift(String shiftId) {
         Shift shift = shiftRepo.findById(shiftId)
                 .orElseThrow(() -> new ApplicationException(ApplicationError.SHIFT_NOT_FOUND));
+        // BR-CS-15: a stale shift is locked against new cash movements.
+        shift = markStaleIfElapsed(shift);
         if (!STATUS_OPEN.equals(shift.getStatus())) {
             throw new ApplicationException(ApplicationError.SHIFT_CLOSED);
         }

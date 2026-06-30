@@ -54,6 +54,16 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.close(id, request, principal.getUsername()));
     }
 
+    // BR-CS-15: Manager force-close a stale/open shift – PUT /api/shifts/{id}/force-close
+    @PutMapping("/{id}/force-close")
+    public ResponseEntity<ShiftSummaryResponse> forceClose(
+            @PathVariable String id,
+            @Valid @RequestBody ForceCloseShiftRequest request,
+            @AuthenticationPrincipal UserDetails principal) {
+
+        return ResponseEntity.ok(shiftService.forceClose(id, request, principal.getUsername()));
+    }
+
     // CS-03: Get summary of a specific shift – GET /api/shifts/{id}/summary
     @GetMapping("/{id}/summary")
     public ResponseEntity<ShiftSummaryResponse> getSummary(

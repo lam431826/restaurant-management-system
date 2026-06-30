@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getDailySummary, PAYMENT_METHOD_LABELS } from '../../services/shiftService'
+import { getDailySummary, forceCloseShift, PAYMENT_METHOD_LABELS } from '../../services/shiftService'
 import type { DailySummary as DailySummaryData, DailyCashierShiftRow } from '../../services/shiftService'
 import { ApiError } from '../../services/api'
 
@@ -15,12 +15,16 @@ const STATUS_LABEL: Record<DailyCashierShiftRow['status'], string> = {
   OPEN: 'Đang mở',
   CLOSED: 'Đã đóng',
   PENDING_RECON: 'Chờ đối soát',
+  STALE: 'Quá hạn',
+  FORCE_CLOSED: 'Đóng bắt buộc',
 }
 
 const STATUS_CLASS: Record<DailyCashierShiftRow['status'], string> = {
   OPEN: 'bg-warning-50 text-warning-700 border border-warning/30',
   CLOSED: 'bg-success-50 text-success-700 border border-success/30',
   PENDING_RECON: 'bg-primary-25 text-primary border border-primary/30',
+  STALE: 'bg-danger-50 text-danger-700 border border-danger/30',
+  FORCE_CLOSED: 'bg-fill text-ink-subtle border border-line',
 }
 
 const timeOf = (iso: string | null) =>
@@ -31,6 +35,12 @@ const DailySummary = () => {
   const [data, setData] = useState<DailySummaryData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  // BR-CS-15: manager force-close modal
+  const [forceTarget, setForceTarget] = useState<DailyCashierShiftRow | null>(null)
+  const [fcCash, setFcCash] = useState('')
+  const [fcReason, setFcReason] = useState('')
+  const [fcError, setFcError] = useState('')
+  const [fcLoading, setFcLoading] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -46,6 +56,26 @@ const DailySummary = () => {
   }, [date])
 
   useEffect(() => { void load() }, [load])
+
+  const openForceClose = (row: DailyCashierShiftRow) => {
+    setForceTarget(row); setFcCash(''); setFcReason(''); setFcError('')
+  }
+
+  const submitForceClose = async () => {
+    if (!forceTarget) return
+    if (!fcReason.trim()) { setFcError('Vui lòng nhập lý do đóng ca bắt buộc.'); return }
+    const cash = parseInt(fcCash.replace(/\D/g, '') || '0', 10)
+    setFcLoading(true); setFcError('')
+    try {
+      await forceCloseShift(forceTarget.shiftId, cash, fcReason.trim())
+      setForceTarget(null)
+      await load()
+    } catch (err) {
+      setFcError(err instanceof ApiError ? err.message : 'Không thể đóng ca bắt buộc.')
+    } finally {
+      setFcLoading(false)
+    }
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-var(--kv-header-height))] bg-surface overflow-y-auto p-5 gap-4">
@@ -152,6 +182,7 @@ const DailySummary = () => {
                   <th className="sticky top-0 bg-primary-25 text-right text-md font-semibold text-ink-strong px-4 py-3">Thu/Chi</th>
                   <th className="sticky top-0 bg-primary-25 text-right text-md font-semibold text-ink-strong px-4 py-3">Lệch quỹ</th>
                   <th className="sticky top-0 bg-primary-25 text-right text-md font-semibold text-ink-strong px-4 py-3">Bàn giao</th>
+                  <th className="sticky top-0 bg-primary-25 text-right text-md font-semibold text-ink-strong px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody>
@@ -177,12 +208,68 @@ const DailySummary = () => {
                       {fmt(s.totalVariance)}
                     </td>
                     <td className="px-4 py-3 text-right text-md text-ink">{fmt(s.handoverAmount ?? 0)}</td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {(s.status === 'STALE' || s.status === 'OPEN') && (
+                        <button
+                          className="h-8 px-3 rounded-md text-sm font-medium text-danger border border-danger/40 hover:bg-danger-50 transition-colors"
+                          onClick={() => openForceClose(s)}
+                        >
+                          Đóng ca bắt buộc
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </>
+      )}
+
+      {forceTarget && (
+        <div
+          className="fixed inset-0 z-[var(--kv-z-modal)] flex items-center justify-center p-6"
+          style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }}
+          onMouseDown={e => { if (e.target === e.currentTarget) setForceTarget(null) }}
+        >
+          <div className="w-full max-w-[28rem] bg-card rounded-lg shadow-lg flex flex-col">
+            <div className="flex items-center justify-between px-6 h-14 border-b border-line">
+              <h2 className="text-h4 font-bold text-ink">Đóng ca bắt buộc</h2>
+              <button onClick={() => setForceTarget(null)} className="w-8 h-8 flex items-center justify-center rounded-md text-ink-subtle hover:bg-fill" aria-label="Đóng">✕</button>
+            </div>
+            <div className="p-6 flex flex-col gap-4">
+              <p className="text-md text-ink-subtle">
+                Ca của <span className="font-semibold text-ink">{forceTarget.cashierName}</span> chưa được đóng.
+                Hãy đếm tiền trong két và nhập số thực tế cùng lý do. Thu ngân vẫn chịu trách nhiệm cho số liệu của ca này.
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-md font-medium text-ink">Tiền mặt thực đếm (VNĐ)</label>
+                <input
+                  type="text" inputMode="numeric" placeholder="0"
+                  value={fcCash}
+                  onChange={e => setFcCash((parseInt(e.target.value.replace(/\D/g, '') || '0', 10)).toLocaleString('vi-VN'))}
+                  className="h-10 px-3 rounded-md border border-line text-md text-ink outline-none focus:border-primary"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-md font-medium text-ink">Lý do <span className="text-danger">*</span></label>
+                <textarea
+                  value={fcReason}
+                  onChange={e => setFcReason(e.target.value)}
+                  placeholder="Ví dụ: thu ngân về mà chưa đóng ca"
+                  className="w-full min-h-[72px] px-3 py-2 rounded-md border border-line text-md text-ink outline-none focus:border-primary"
+                />
+              </div>
+              {fcError && <div className="px-3 py-2 rounded-md bg-danger-50 text-danger text-sm border border-danger/30">{fcError}</div>}
+            </div>
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-line">
+              <button className="kv-btn kv-btn-outline-neutral h-9" onClick={() => setForceTarget(null)}>Hủy</button>
+              <button className="kv-btn kv-btn-primary h-9" disabled={fcLoading} onClick={() => void submitForceClose()}>
+                {fcLoading ? 'Đang đóng...' : 'Xác nhận đóng ca'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

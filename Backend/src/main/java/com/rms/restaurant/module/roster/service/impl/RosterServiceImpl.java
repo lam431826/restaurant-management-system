@@ -54,6 +54,9 @@ public class RosterServiceImpl implements RosterService {
     private static final int CLOCK_IN_EARLY_MINUTES = 30;
     private static final int CLOCK_IN_LATE_WINDOW_MINUTES = 60;
     private static final int CLOCK_IN_GRACE_MINUTES = 15;
+    // BR-WS-14: a CHECKED_IN record with no clock-out past end + this grace is flagged
+    // MISSING_CLOCKOUT (never auto-filled; a manager resolves the actual out time).
+    private static final int AUTO_CLOCKOUT_GRACE_MINUTES = 2 * 60;
 
     private final ShiftTemplateRepository templateRepo;
     private final RosterAssignmentRepository assignmentRepo;
@@ -224,6 +227,10 @@ public class RosterServiceImpl implements RosterService {
         pub.setStatus(WeekStatus.PUBLISHED);
         pub.setVersion(pub.getVersion() + 1);
         pub.setPublishedAt(LocalDateTime.now());
+        // BR-WS-02/04: staff-facing visibility is enforced in listMyAttendance (BR-WS-03).
+        // Staff notification on publish/re-publish is intentionally deferred — the only
+        // channel available is email, and an in-app channel is preferred before blasting
+        // every assigned staff member. Re-enable here once that channel exists.
         return mapper.toWeekStatus(weekPubRepo.save(pub));
     }
 
@@ -269,9 +276,19 @@ public class RosterServiceImpl implements RosterService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<AttendanceResponse> listMyAttendance(String username, LocalDate from, LocalDate to) {
-        return listAttendanceForEmployee(requireUserByUsername(username).getId(), from, to);
+        // BR-WS-03: a staff member only sees dates whose week is PUBLISHED. Enforced on the
+        // backend (not just the frontend) so a direct API call cannot reveal a DRAFT schedule.
+        // The manager report path (listAttendanceForEmployee) stays ungated.
+        List<AttendanceResponse> all = listAttendanceForEmployee(requireUserByUsername(username).getId(), from, to);
+        Map<LocalDate, Boolean> publishedByWeek = new java.util.HashMap<>();
+        return all.stream()
+                .filter(a -> publishedByWeek.computeIfAbsent(toMonday(a.date()), monday ->
+                        weekPubRepo.findById(monday)
+                                .map(p -> p.getStatus() == WeekStatus.PUBLISHED)
+                                .orElse(false)))
+                .toList();
     }
 
     @Override
@@ -315,14 +332,22 @@ public class RosterServiceImpl implements RosterService {
         LocalDateTime shiftEnd = !shiftEndRaw.isAfter(shiftStart) ? shiftEndRaw.plusDays(1) : shiftEndRaw;
         LocalDateTime now = LocalDateTime.now();
 
+        // BR-WS-11: clocking out before the scheduled end is an EARLY_LEAVE and requires
+        // a reason (LEAVE_APPROVED / LEAVE_UNAPPROVED / INCIDENT, optional free note).
+        boolean earlyLeave = now.isBefore(shiftEnd);
+        if (earlyLeave && (request.reason() == null || request.reason().isBlank())) {
+            throw new ApplicationException(ApplicationError.EARLY_LEAVE_REASON_REQUIRED);
+        }
+
         // BR-WS-08: paid from scheduled start (not early check-in), capped at scheduled end.
         LocalDateTime effectiveStart = record.getCheckInAt().isAfter(shiftStart) ? record.getCheckInAt() : shiftStart;
         LocalDateTime effectiveEnd = now.isBefore(shiftEnd) ? now : shiftEnd;
         long workedMinutes = Math.max(0, Duration.between(effectiveStart, effectiveEnd).toMinutes());
 
-        record.setStatus(AttendanceStatus.CHECKED_OUT);
+        record.setStatus(earlyLeave ? AttendanceStatus.EARLY_LEAVE : AttendanceStatus.CHECKED_OUT);
         record.setCheckOutAt(now);
         record.setWorkedMinutes((int) workedMinutes);
+        record.setClockOutReason(earlyLeave ? request.reason().trim() : null);
         return mapper.toAttendanceResponse(attendanceRepo.save(record));
     }
 
@@ -333,13 +358,21 @@ public class RosterServiceImpl implements RosterService {
     }
 
     // BR-WS-09: a SCHEDULED shift whose window has fully elapsed is finalized as NO_SHOW.
+    // BR-WS-14: a CHECKED_IN shift still open past end + grace is flagged MISSING_CLOCKOUT
+    // (not auto-filled — worked hours stay null until a manager enters the actual out time).
     private RosterAttendance finalizeIfElapsed(RosterAttendance record, ShiftTemplate template, LocalDate date) {
-        if (record.getStatus() != AttendanceStatus.SCHEDULED) return record;
         LocalDateTime start = LocalDateTime.of(date, template.getStartTime());
         LocalDateTime endRaw = LocalDateTime.of(date, template.getEndTime());
         LocalDateTime end = !endRaw.isAfter(start) ? endRaw.plusDays(1) : endRaw;
-        if (LocalDateTime.now().isAfter(end)) {
+        LocalDateTime now = LocalDateTime.now();
+
+        if (record.getStatus() == AttendanceStatus.SCHEDULED && now.isAfter(end)) {
             record.setStatus(AttendanceStatus.NO_SHOW);
+            return attendanceRepo.save(record);
+        }
+        if (record.getStatus() == AttendanceStatus.CHECKED_IN
+                && now.isAfter(end.plusMinutes(AUTO_CLOCKOUT_GRACE_MINUTES))) {
+            record.setStatus(AttendanceStatus.MISSING_CLOCKOUT);
             return attendanceRepo.save(record);
         }
         return record;

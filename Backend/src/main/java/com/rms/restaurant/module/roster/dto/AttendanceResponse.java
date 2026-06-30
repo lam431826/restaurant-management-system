@@ -15,5 +15,6 @@ public record AttendanceResponse(
         LocalDateTime checkInAt,
         LocalDateTime checkOutAt,
         Integer workedMinutes,
-        boolean late
+        boolean late,
+        String clockOutReason
 ) {}

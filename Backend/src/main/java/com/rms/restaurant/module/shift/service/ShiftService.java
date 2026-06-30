@@ -21,6 +21,9 @@ public interface ShiftService {
     // SM-03: BR-CLOSE-01..08
     ShiftSummaryResponse close(String shiftId, CloseShiftRequest request, String closingUsername);
 
+    // BR-CS-15: manager force-closes a stale/open shift the cashier never closed
+    ShiftSummaryResponse forceClose(String shiftId, ForceCloseShiftRequest request, String managerUsername);
+
     // SM-04: get a specific shift (owner or manager)
     ShiftSummaryResponse getSummary(String shiftId, String requestingUsername);
 
