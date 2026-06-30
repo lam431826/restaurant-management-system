@@ -87,12 +87,9 @@ function CategorySection({ id, title, items, onAddToCart }) {
         <SectionTitle title={title} />
       </div>
       <div className="flex flex-col gap-8">
-        {items.filter(item => item.available).map((item, i) => (
+        {items.map((item, i) => (
           <MenuItem key={item.id} index={i} item={item} onAddToCart={onAddToCart} />
         ))}
-        {items.filter(item => item.available).length === 0 && (
-          <p className="text-[rgba(245,242,234,0.7)] text-center text-sm italic">Không có món nào đang bán trong danh mục này.</p>
-        )}
       </div>
     </div>
   )
