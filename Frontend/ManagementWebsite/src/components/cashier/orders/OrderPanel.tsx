@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { OrderItem, TableItem } from "./types";
+import { COOKING_STATUS_LABEL } from "./types";
 import { OrderItemRow } from "./OrderItemRow";
 import { CheckIcon, ReceiptIcon } from "./icons";
 
@@ -57,6 +58,9 @@ export const OrderPanel = ({
 }) => {
   const isTableEmpty = !!selectedTable && !selectedTable.occupied;
   const hasItems = items.length > 0;
+  const billableOrderItems = items.filter(
+    (item) => item.status !== COOKING_STATUS_LABEL.REJECTED,
+  );
   const visibleActionMessage = orderActionMessage?.text ?? emptyOrderMessage;
   const cancellableOrderIds = Array.from(
     new Set([
@@ -65,8 +69,8 @@ export const OrderPanel = ({
     ]),
   );
   const canCancelOrder = !invoicePaid && cancellableOrderIds.length > 0;
-  const subtotal = hasItems
-    ? items.reduce((s, i) => s + i.price * i.qty, 0)
+  const subtotal = billableOrderItems.length
+    ? billableOrderItems.reduce((s, i) => s + i.price * i.qty, 0)
     : 0;
 
   return (
@@ -144,14 +148,14 @@ export const OrderPanel = ({
             Số món
           </span>
           <span className="font-semibold text-[#202325]">
-            {hasItems ? items.length : 0} món
+            {billableOrderItems.length} món
           </span>
         </div>
         <div className="h-px bg-[#202325]" />
         <div className="flex justify-between text-[20px]">
           <span className="font-medium text-[#202325]">Tạm tính</span>
           <span className="font-semibold text-[#202325]">
-            {hasItems ? `${subtotal.toLocaleString("vi-VN")} đ` : "0 đ"}
+            {subtotal ? `${subtotal.toLocaleString("vi-VN")} đ` : "0 đ"}
           </span>
         </div>
         {isTableEmpty ? (
