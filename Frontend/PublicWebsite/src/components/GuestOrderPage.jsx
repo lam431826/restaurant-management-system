@@ -338,7 +338,7 @@ export default function GuestOrderPage() {
                     </div>
                     {item.isOriginal && item.cookingStatus !== 'PENDING' && (
                       <span className="text-xs text-blue-500 font-semibold bg-blue-50 px-2 py-0.5 rounded-full mt-1 inline-block">
-                        {item.cookingStatus === 'COOKING' ? 'Đang nấu' : item.cookingStatus === 'COMPLETED' ? 'Nấu xong' : item.cookingStatus === 'SERVED' ? 'Đã phục vụ' : 'Đã hủy'}
+                        {item.cookingStatus === 'COOKING' ? 'Đang nấu' : item.cookingStatus === 'READY' ? 'Nấu xong' : item.cookingStatus === 'SERVED' ? 'Đã phục vụ' : item.cookingStatus === 'REJECTED' ? 'Đã hủy' : ''}
                       </span>
                     )}
                     <p className="text-orange-500 font-semibold text-sm mt-1">
