@@ -2,7 +2,7 @@ import { useState } from 'react'
 import IMG_BG from '../assets/images/reservation-bg.jpg'
 import { useInView } from '../hooks/useInView'
 
-const API_BASE = 'http://localhost:8387/api'
+const API_BASE = 'http://localhost:8080/api'
 
 export default function ReservationSection() {
   const [form, setForm] = useState({

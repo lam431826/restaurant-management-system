@@ -7,11 +7,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/shifts")
@@ -20,17 +23,17 @@ public class ShiftController {
 
     private final ShiftService shiftService;
 
-    // SM-01: Open a new shift – POST /api/shifts
+    // CS-01: Open a new shift – POST /api/shifts
     @PostMapping
     public ResponseEntity<ShiftSummaryResponse> open(
             @Valid @RequestBody OpenShiftRequest request,
             @AuthenticationPrincipal UserDetails principal) {
 
-        ShiftSummaryResponse response = shiftService.open(request, principal.getUsername());
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(shiftService.open(request, principal.getUsername()));
     }
 
-    // SM-02: Record cash in/out – POST /api/shifts/{id}/cash
+    // CS-02: Record cash in/out – POST /api/shifts/{id}/cash
     @PostMapping("/{id}/cash")
     public ResponseEntity<Void> recordCashMovement(
             @PathVariable String id,
@@ -41,7 +44,7 @@ public class ShiftController {
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
-    // SM-03: Close shift – PUT /api/shifts/{id}/close
+    // CS-04: Close shift – PUT /api/shifts/{id}/close
     @PutMapping("/{id}/close")
     public ResponseEntity<ShiftSummaryResponse> close(
             @PathVariable String id,
@@ -51,7 +54,7 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.close(id, request, principal.getUsername()));
     }
 
-    // SM-04: Get summary of a specific shift – GET /api/shifts/{id}/summary
+    // CS-03: Get summary of a specific shift – GET /api/shifts/{id}/summary
     @GetMapping("/{id}/summary")
     public ResponseEntity<ShiftSummaryResponse> getSummary(
             @PathVariable String id,
@@ -60,13 +63,25 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.getSummary(id, principal.getUsername()));
     }
 
-    // SM-04: Get the current open shift summary (real-time) – GET /api/shifts/current
+    // CS-03: Get the calling cashier's own open shift – GET /api/shifts/current
     @GetMapping("/current")
-    public ResponseEntity<ShiftSummaryResponse> getCurrent() {
-        return ResponseEntity.ok(shiftService.getOpenShiftSummary());
+    public ResponseEntity<ShiftSummaryResponse> getCurrent(
+            @AuthenticationPrincipal UserDetails principal) {
+
+        return ResponseEntity.ok(shiftService.getMyOpenShift(principal.getUsername()));
     }
 
-    // SM-04: List all shifts (manager only) – GET /api/shifts
+    // CS-05: Manager daily summary – GET /api/shifts/daily-summary?date=YYYY-MM-DD
+    @GetMapping("/daily-summary")
+    public ResponseEntity<DailySummaryResponse> dailySummary(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @AuthenticationPrincipal UserDetails principal) {
+
+        LocalDate target = date != null ? date : LocalDate.now();
+        return ResponseEntity.ok(shiftService.dailySummary(target, principal.getUsername()));
+    }
+
+    // CS-06: List all shifts (manager only) – GET /api/shifts
     @GetMapping
     public ResponseEntity<Page<ShiftSummaryResponse>> listAll(
             @PageableDefault(size = 20) Pageable pageable,

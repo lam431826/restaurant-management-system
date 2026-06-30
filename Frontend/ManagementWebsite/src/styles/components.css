@@ -315,4 +315,13 @@
     transform: translate(-50%, -50%);
   }
   .kv-radio-text { @apply text-md text-ink; }
+
+  /* ── Scrollbar hide ─────────────────────────────────────────────────────── */
+  .scrollbar-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
 }

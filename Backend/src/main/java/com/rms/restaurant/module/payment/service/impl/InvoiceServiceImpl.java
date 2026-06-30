@@ -1,5 +1,7 @@
 package com.rms.restaurant.module.payment.service.impl;
 
+import com.rms.restaurant.common.utils.enums.CookingStatus;
+import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ConflictException;
@@ -76,9 +78,9 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     @Override
     public InvoiceResponse generate(GenerateInvoiceRequest request) {
-        String orderId = request.orderId();
+        String orderId = request.orderId().trim();
 
-        orderRepository.findById(orderId)
+        Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
 
         invoiceRepository.findByOrderId(orderId)
@@ -86,7 +88,11 @@ public class InvoiceServiceImpl implements InvoiceService {
                     throw new ConflictException(ApplicationError.INVOICE_ALREADY_EXISTS);
                 });
 
-        BigDecimal subtotal = calculateSubtotal(orderItemRepository.findByOrderId(orderId));
+        validateOrderCanBeInvoiced(order);
+        List<OrderItem> payableItems = validateOrderItemsForInvoice(orderItemRepository.findByOrderId(orderId));
+        BigDecimal subtotal = calculateSubtotal(payableItems);
+        validateInvoiceSubtotal(subtotal);
+
         Promotion promotion = null;
         BigDecimal discountAmount = BigDecimal.ZERO;
 
@@ -98,6 +104,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
 
         BigDecimal totalAmount = subtotal.subtract(discountAmount);
+        validateInvoiceTotal(totalAmount);
 
         Invoice invoice = Invoice.builder()
                 .orderId(orderId)
@@ -298,6 +305,69 @@ public class InvoiceServiceImpl implements InvoiceService {
         return orderItems.stream()
                 .map(item -> item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private void validateOrderCanBeInvoiced(Order order) {
+        if (order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.CLOSED) {
+            throw new ApplicationException(ApplicationError.ORDER_NOT_INVOICEABLE);
+        }
+    }
+
+    private List<OrderItem> validateOrderItemsForInvoice(List<OrderItem> orderItems) {
+        if (orderItems.isEmpty()) {
+            throw new ApplicationException(
+                    ApplicationError.INVALID_INVOICE_ITEMS,
+                    "Order must contain at least one item before invoice generation"
+            );
+        }
+
+        List<OrderItem> payableItems = new ArrayList<>();
+        for (OrderItem item : orderItems) {
+            validateInvoiceItem(item);
+
+            if (item.getCookingStatus() == CookingStatus.PENDING || item.getCookingStatus() == CookingStatus.COOKING) {
+                throw new ApplicationException(ApplicationError.ORDER_NOT_READY_FOR_INVOICE);
+            }
+
+            if (isPayableItem(item)) {
+                payableItems.add(item);
+            }
+        }
+
+        if (payableItems.isEmpty()) {
+            throw new ApplicationException(
+                    ApplicationError.INVALID_INVOICE_ITEMS,
+                    "Order does not contain any payable items"
+            );
+        }
+
+        return payableItems;
+    }
+
+    private void validateInvoiceItem(OrderItem item) {
+        if (item.getQuantity() <= 0
+                || item.getUnitPrice() == null
+                || item.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0
+                || item.getCookingStatus() == null) {
+            throw new ApplicationException(ApplicationError.INVALID_INVOICE_ITEMS);
+        }
+    }
+
+    private boolean isPayableItem(OrderItem item) {
+        return item.getCookingStatus() == CookingStatus.READY
+                || item.getCookingStatus() == CookingStatus.SERVED;
+    }
+
+    private void validateInvoiceSubtotal(BigDecimal subtotal) {
+        if (subtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApplicationException(ApplicationError.INVALID_INVOICE_TOTAL);
+        }
+    }
+
+    private void validateInvoiceTotal(BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new ApplicationException(ApplicationError.INVALID_INVOICE_TOTAL);
+        }
     }
 
     private Promotion findActivePromotionForUpdate(String promotionCode) {

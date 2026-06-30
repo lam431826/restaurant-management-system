@@ -1,6 +1,8 @@
 # ── CLAUDE.md — dùng nội bộ cho Claude Code, không push ─────────────────────
 CLAUDE.md
-
+/.claude
+/*.md
+SKILL.md
 # ── Tài liệu / file Office ở root — không push ──────────────────────────────
 /README.md
 /docs/

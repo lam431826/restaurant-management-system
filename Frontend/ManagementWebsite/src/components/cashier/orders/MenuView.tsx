@@ -77,7 +77,7 @@ export const MenuView = ({
 }) => {
   return (
     <div className="flex flex-col gap-2.5 h-full overflow-hidden">
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 shrink-0">
+      <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide shrink-0">
         {categories.map((cat) => (
           <button
             key={cat.id}

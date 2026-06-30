@@ -56,10 +56,12 @@ public class ShiftMapper {
                 shift.getOpenedAt(),
                 shift.getClosedAt(),
                 shift.getOpeningCash(),
+                shift.getHandoverAmount(),
                 totalCashIn,
                 totalCashOut,
                 totalRevenue,
                 totalVariance,
+                shift.getCardBatchTotal(),
                 breakdown,
                 cashMovements,
                 shift.getClosingNote());

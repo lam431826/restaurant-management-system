@@ -10,12 +10,15 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface ReservationRepository extends JpaRepository<Reservation, String> {
 
     List<Reservation> findByDatetimeBetweenAndStatus(LocalDateTime from, LocalDateTime to, ReservationStatus status);
 
     List<Reservation> findByTableIdAndStatus(String tableId, ReservationStatus status);
+
+    Optional<Reservation> findFirstByTableIdAndStatusOrderByDatetimeAsc(String tableId, ReservationStatus status);
 
     @Query("SELECT r FROM Reservation r WHERE r.status = com.rms.restaurant.common.utils.enums.ReservationStatus.CONFIRMED " +
            "AND r.datetime BETWEEN :from AND :to AND r.reminderSent = false")

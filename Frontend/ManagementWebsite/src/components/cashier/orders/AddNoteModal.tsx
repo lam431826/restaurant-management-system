@@ -6,11 +6,13 @@ export const AddNoteModal = ({
   initialText,
   onConfirm,
   onCancel,
+  title = "Ghi chú món",
 }: {
   itemId: string;
   initialText: string;
   onConfirm: (id: string, text: string) => void;
   onCancel: () => void;
+  title?: string;
 }) => {
   const [text, setText] = useState(initialText);
   return (
@@ -19,7 +21,7 @@ export const AddNoteModal = ({
       <div className="relative bg-white rounded-[12px] p-6 w-[431px] flex flex-col gap-5 items-center shadow-xl">
         <div className="flex items-center w-full">
           <p className="text-[24px] font-semibold text-[#202325] leading-[1.5]">
-            Thêm ghi chú
+            {title}
           </p>
         </div>
         <textarea

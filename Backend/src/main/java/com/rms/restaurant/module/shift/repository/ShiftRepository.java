@@ -5,6 +5,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface ShiftRepository extends JpaRepository<Shift, String> {
@@ -14,4 +16,7 @@ public interface ShiftRepository extends JpaRepository<Shift, String> {
     Optional<Shift> findByCashierIdAndStatus(String cashierId, String status);
 
     Page<Shift> findAllByOrderByOpenedAtDesc(Pageable pageable);
+
+    // CS-05: all shifts opened within a day window
+    List<Shift> findByOpenedAtBetweenOrderByOpenedAtAsc(LocalDateTime start, LocalDateTime end);
 }

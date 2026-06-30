@@ -39,6 +39,14 @@ public class Shift {
     @Column(name = "closed_by")
     private String closedBy;
 
+    @Column(name = "handover_amount", precision = 12, scale = 0)
+    private BigDecimal handoverAmount;
+
+    // BR-CS-12: optional card POS batch total entered at close — informational
+    // cross-check only; never produces a discrepancy and never blocks closing.
+    @Column(name = "card_batch_total", precision = 12, scale = 0)
+    private BigDecimal cardBatchTotal;
+
     @Column(name = "closing_note", length = 500)
     private String closingNote;
 }

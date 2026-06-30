@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import type { AssistanceRequest } from "../../../services/orderApi";
+import type { ShiftSummary } from "../../../services/shiftService";
 import { SearchIcon, BellIcon, ChevronDownIcon, SwitchScreenIcon, LogoutIcon } from "./icons";
 
 /* ─── Header ─────────────────────────────────────────────────────────────── */
@@ -8,18 +9,24 @@ export const Header = ({
   employeeName = "Duy Tan",
   roleLabel = "Thu ngân",
   role,
+  shift,
   assistanceRequests = [],
   onResolveRequest,
   onLogout,
   onChangePassword,
+  onCloseShift,
+  onCashMovement,
 }: {
   employeeName?: string;
   roleLabel?: string;
   role?: string;
+  shift?: ShiftSummary | null;
   assistanceRequests?: AssistanceRequest[];
   onResolveRequest?: (id: string) => void;
   onLogout?: () => void;
   onChangePassword?: () => void;
+  onCloseShift?: () => void;
+  onCashMovement?: () => void;
 }) => {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -65,6 +72,33 @@ export const Header = ({
       </div>
 
       <div className="flex items-center gap-4 shrink-0">
+        {shift && (
+          <div className="hidden md:flex items-center gap-2">
+            <div className="flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-full px-3 py-1">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-[12px] font-medium text-green-700">
+                Ca mở từ{" "}
+                {new Date(shift.openedAt).toLocaleTimeString("vi-VN", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            </div>
+            <button
+              onClick={onCashMovement}
+              className="h-8 px-3 rounded-lg bg-[#eef4ff] border border-[#cdddff] text-[#025cca] text-[13px] font-medium hover:bg-[#dceefe] transition-colors"
+            >
+              Thu / Chi quỹ
+            </button>
+            <button
+              onClick={onCloseShift}
+              className="h-8 px-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-[13px] font-medium hover:bg-red-100 transition-colors"
+            >
+              Đóng ca
+            </button>
+          </div>
+        )}
+
         <div className="relative" ref={bellRef}>
           <button
             className="text-[#202325] relative p-2"
@@ -169,6 +203,17 @@ export const Header = ({
                   <div className="h-px bg-[#e8e8e8] mx-2" />
                 </>
               )}
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  navigate("/my-schedule");
+                }}
+                className="flex items-center gap-2 w-full px-4 py-2.5 text-[14px] text-[#202325] hover:bg-[#f5f5f5] transition-colors"
+              >
+                <SwitchScreenIcon />
+                Lịch làm việc của tôi
+              </button>
+              <div className="h-px bg-[#e8e8e8] mx-2" />
               <button
                 onClick={() => {
                   setOpen(false);

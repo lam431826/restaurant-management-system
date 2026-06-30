@@ -13,10 +13,12 @@ public record ShiftSummaryResponse(
         LocalDateTime openedAt,
         LocalDateTime closedAt,
         BigDecimal openingCash,
+        BigDecimal handoverAmount,
         BigDecimal totalCashIn,
         BigDecimal totalCashOut,
         BigDecimal totalRevenue,
         BigDecimal totalVariance,
+        BigDecimal cardBatchTotal,
         List<PaymentMethodBreakdown> paymentBreakdown,
         List<CashMovementDetail> cashMovements,
         String closingNote

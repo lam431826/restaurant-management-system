@@ -37,4 +37,7 @@ public class OrderItem {
     @Enumerated(EnumType.STRING)
     @Column(name = "cooking_status", length = 20)
     private CookingStatus cookingStatus = CookingStatus.PENDING;
+
+    @Column(name = "rejection_note", length = 300)
+    private String rejectionNote;
 }

@@ -26,7 +26,8 @@ public class OrderMapper {
                         item.getQuantity(),
                         item.getUnitPrice(),
                         item.getNote(),
-                        item.getCookingStatus()
+                        item.getCookingStatus(),
+                        item.getRejectionNote()
                 ));
                 totalAmount = totalAmount.add(item.getUnitPrice().multiply(java.math.BigDecimal.valueOf(item.getQuantity())));
             }

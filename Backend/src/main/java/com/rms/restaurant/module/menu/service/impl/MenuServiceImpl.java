@@ -11,6 +11,7 @@ import com.rms.restaurant.module.menu.model.MenuItem;
 import com.rms.restaurant.module.menu.repository.MenuCategoryRepository;
 import com.rms.restaurant.module.menu.repository.MenuItemRepository;
 import com.rms.restaurant.module.menu.service.MenuService;
+import com.rms.restaurant.module.order.repository.OrderItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -51,6 +52,7 @@ public class MenuServiceImpl implements MenuService {
     private final MenuCategoryRepository categoryRepository;
     private final MenuItemRepository itemRepository;
     private final MenuMapper menuMapper;
+    private final OrderItemRepository orderItemRepository;
 
     // ── Items (MM-01 / MM-03) ────────────────────────────────────────────
 
@@ -143,6 +145,10 @@ public class MenuServiceImpl implements MenuService {
     @Override
     public void deleteItem(String id) {
         MenuItem item = findItem(id);
+        if (orderItemRepository.existsByMenuItemId(id)) {
+            throw new ConflictException(ApplicationError.MENU_ITEM_HAS_ORDERS,
+                    "Món \"" + item.getName() + "\" đã có trong đơn hàng và không thể xóa. Hãy ngừng bán thay vì xóa.");
+        }
         itemRepository.delete(item);
     }
 
@@ -155,7 +161,17 @@ public class MenuServiceImpl implements MenuService {
 
     @Override
     public void bulkDeleteItems(List<String> ids) {
-        itemRepository.deleteAllById(ids);
+        List<MenuItem> items = itemRepository.findAllById(ids);
+        List<String> blockedNames = items.stream()
+                .filter(item -> orderItemRepository.existsByMenuItemId(item.getId()))
+                .map(MenuItem::getName)
+                .collect(Collectors.toList());
+        if (!blockedNames.isEmpty()) {
+            throw new ConflictException(ApplicationError.MENU_ITEM_HAS_ORDERS,
+                    "Các món sau đã có trong đơn hàng và không thể xóa: " + String.join(", ", blockedNames)
+                            + ". Hãy ngừng bán thay vì xóa.");
+        }
+        itemRepository.deleteAll(items);
     }
 
     // ── Categories (MM-02) ───────────────────────────────────────────────
