@@ -4,7 +4,6 @@ import AuthLayout from "./AuthLayout";
 import { login, verifyInfo, verifyOtp, resendOtp } from "../../api/auth";
 import { useAuth, type UserRole } from "../../context/AuthContext";
 //import { useAuth } from '../../contexts/AuthContext'
-import { ApiError } from "../../services/api";
 
 /* ── icons ── */
 const PersonIcon = () => (
