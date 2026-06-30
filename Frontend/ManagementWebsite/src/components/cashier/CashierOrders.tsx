@@ -589,12 +589,21 @@ const CashierOrders = () => {
     selectedOrder?.items.reduce((total, item) => total + item.quantity, 0) ?? 0;
   const orderHasInvoice =
     !!invoice && !!selectedOrderId && invoice.orderId === selectedOrderId;
+  const currentOrderInvoice = orderHasInvoice ? invoice : null;
+  const currentOrderInvoiceDetail =
+    currentOrderInvoice &&
+    invoiceDetail?.id === currentOrderInvoice.id &&
+    invoiceDetail.orderId === selectedOrderId
+      ? invoiceDetail
+      : null;
   const orderIsFinal =
     selectedOrder?.status === "CLOSED" || selectedOrder?.status === "CANCELLED";
+  const canCloseSelectedOrder =
+    !!selectedOrder && !!currentOrderInvoice?.paid && !orderIsFinal;
   const emptyOrderWithoutInvoice =
     !!selectedOrder &&
     invoiceChecked &&
-    !invoice &&
+    !currentOrderInvoice &&
     !orderIsFinal &&
     selectedOrderItemCount === 0;
   const disableItemMutation = orderHasInvoice || orderIsFinal;
@@ -615,8 +624,11 @@ const CashierOrders = () => {
     setInvoice(null);
     setInvoiceDetail(null);
     setPromotionCode("");
+    setInvoiceAction(null);
     setInvoiceMessage(null);
     setPaymentOpen(false);
+    setPaymentError("");
+    setPaymentProcessing(false);
     setOrderActionMessage(null);
   };
 
@@ -827,12 +839,13 @@ const CashierOrders = () => {
       selectedTable &&
       selectedTable.occupied &&
       selectedTable.orderId &&
+      selectedOrder?.id === selectedTable.orderId &&
       !backendOrderId
     ) {
       setBackendOrderId(selectedTable.orderId);
       loadInvoiceForOrder(selectedTable.orderId);
     }
-  }, [selectedTable?.orderId, selectedTable?.occupied, backendOrderId]);
+  }, [selectedTable?.orderId, selectedTable?.occupied, selectedOrder?.id, backendOrderId]);
 
   const handleStatusChange = async (
     orderId: string,
@@ -968,11 +981,33 @@ const CashierOrders = () => {
 
   const handleCloseOrder = async () => {
     if (!selectedOrderId) return;
+    const closedOrderId = selectedOrderId;
+    const closedTableId = selectedTable?.id;
     setOrderActionMessage(null);
     try {
-      await closeOrder(selectedOrderId);
-      setRefreshTrigger((t) => t + 1);
+      await closeOrder(closedOrderId);
       resetInvoiceLink();
+      setActiveOrders((orders) =>
+        orders.filter((order) => order.id !== closedOrderId),
+      );
+      setOrderItems([]);
+      if (closedTableId) {
+        setTables((currentTables) =>
+          currentTables.map((table) =>
+            table.id === closedTableId
+              ? {
+                  ...table,
+                  orderId: null,
+                  occupied: false,
+                  amount: 0,
+                  items: 0,
+                  status: "AVAILABLE",
+                }
+              : table,
+          ),
+        );
+      }
+      setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
       setOrderActionMessage({
@@ -1069,10 +1104,12 @@ const CashierOrders = () => {
     invoiceLoading ||
     !selectedOrderId ||
     emptyOrderWithoutInvoice ||
-    (invoice ? !invoiceDetail || invoice.paid : !invoiceChecked);
-  const checkoutLabel = invoice?.paid
+    (currentOrderInvoice
+      ? !currentOrderInvoiceDetail || currentOrderInvoice.paid
+      : !invoiceChecked);
+  const checkoutLabel = currentOrderInvoice?.paid
     ? "Đã thanh toán"
-    : invoice
+    : currentOrderInvoice
       ? "Mở thanh toán"
       : invoiceChecked
         ? "Tạo hóa đơn"
@@ -1258,7 +1295,7 @@ const CashierOrders = () => {
           onCheckout={() => {
             setOrderActionMessage(null);
             setPaymentError("");
-            if (invoice) {
+            if (currentOrderInvoice) {
               setPaymentOpen(true);
             } else {
               void handleGenerateInvoice();
@@ -1274,7 +1311,7 @@ const CashierOrders = () => {
           checkoutDisabled={checkoutDisabled}
           checkoutLabel={checkoutLabel}
           shiftOpen={!!shift}
-          invoicePaid={invoice?.paid}
+          invoicePaid={canCloseSelectedOrder}
           itemMutationDisabled={disableItemMutation}
           itemMutationDisabledMessage={itemMutationDisabledMessage}
           orderActionMessage={orderActionMessage}
@@ -1293,9 +1330,9 @@ const CashierOrders = () => {
 
       <BottomNav active="orders" />
 
-      {paymentOpen && invoiceDetail && (
+      {paymentOpen && currentOrderInvoiceDetail && (
         <PaymentModal
-          invoice={invoiceDetail}
+          invoice={currentOrderInvoiceDetail}
           table={selectedTable}
           processing={paymentProcessing}
           error={paymentError}
