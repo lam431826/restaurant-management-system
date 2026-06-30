@@ -31,6 +31,7 @@ import {
   closeOrder,
   listOrders,
   listPendingAssistance,
+  acceptOrder,
   removeOrderItem,
   respondAssistance,
   updateOrderItemStatus,
@@ -361,6 +362,8 @@ const getInvoiceUiErrorMessage = (
   return fallback?.[1] ?? fallbackMessage;
 };
 
+import { QROrderConfirmationModal } from "./orders/QROrderConfirmationModal";
+
 const CashierOrders = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -420,6 +423,7 @@ const CashierOrders = () => {
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [showCashMovement, setShowCashMovement] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
 
   useEffect(() => {
     getMyShift()
@@ -601,6 +605,11 @@ const CashierOrders = () => {
         quantity: item.quantity,
         note: item.rejectionNote,
       })) ?? [];
+
+  const pendingOrders = activeOrders.filter(
+    (o) => o.status === "PENDING" || (o.status !== "CANCELLED" && o.status !== "CLOSED" && o.items.some((i) => i.cookingStatus === "PENDING"))
+  );
+  const pendingOrdersCount = pendingOrders.length;
   const orderHasInvoice =
     !!invoice && !!selectedOrderId && invoice.orderId === selectedOrderId;
   const currentOrderInvoice = orderHasInvoice ? invoice : null;
@@ -860,6 +869,10 @@ const CashierOrders = () => {
   const handleTableSelect = (id: string) => {
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
     resetInvoiceLink();
+    const selected = tables.find((t) => t.id === id);
+    if (selected) {
+      setActiveArea(selected.area);
+    }
   };
 
   useEffect(() => {
@@ -1134,6 +1147,35 @@ const CashierOrders = () => {
     }
   };
 
+  const handleAcceptPendingOrder = async (order: Order) => {
+    try {
+      await acceptOrder(order.id);
+      setRefreshTrigger(t => t + 1);
+      setShowQRModal(false);
+      handleTableSelect(order.tableId);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRejectPendingOrder = async (order: Order) => {
+    try {
+      await cancelOrder(order.id, "Thu ngân hủy (QR)");
+      setRefreshTrigger(t => t + 1);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRemoveItemFromPending = async (orderId: string, orderItemId: string) => {
+    try {
+      await removeOrderItem(orderId, orderItemId);
+      setRefreshTrigger(t => t + 1);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const filteredMenu = menuItems.filter((i) => {
     const matchesCategory =
       activeMenuCategory === "all" || i.categoryId === activeMenuCategory;
@@ -1291,14 +1333,29 @@ const CashierOrders = () => {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-3 bg-white rounded-[12px] px-4 h-[44px] w-[160px] md:w-[220px] lg:w-[340px]">
-              <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={tab === "menu" ? "Tìm món" : "Tìm bàn"}
-                className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none"
-              />
+            <div className="flex flex-col items-end shrink-0">
+              <div className="flex items-center gap-3 bg-white rounded-[12px] px-4 h-[44px] w-[160px] md:w-[220px] lg:w-[340px]">
+                <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={tab === "menu" ? "Tìm món" : "Tìm bàn"}
+                  className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none"
+                />
+              </div>
+              {tab === "table" && (
+                <div className="mt-2">
+                  <button
+                    onClick={() => setShowQRModal(true)}
+                    className="bg-white shadow-sm border border-[#e8e8e8] px-3 py-1.5 rounded-full flex items-center gap-2 text-sm font-semibold text-[#202325] hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 shrink-0 text-[#202325]" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                    </svg>
+                    <span>{pendingOrdersCount} lượt gọi món qua QR</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1382,6 +1439,17 @@ const CashierOrders = () => {
           invoiceTools={null}
         />
       </div>
+
+      {showQRModal && (
+        <QROrderConfirmationModal
+          orders={activeOrders}
+          tables={tables}
+          onClose={() => setShowQRModal(false)}
+          onAccept={handleAcceptPendingOrder}
+          onReject={handleRejectPendingOrder}
+          onRemoveItem={handleRemoveItemFromPending}
+        />
+      )}
 
       <BottomNav active="orders" />
 
