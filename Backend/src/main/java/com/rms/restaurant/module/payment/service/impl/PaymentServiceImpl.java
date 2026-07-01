@@ -3,6 +3,8 @@ package com.rms.restaurant.module.payment.service.impl;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
+import com.rms.restaurant.module.authentication.model.User;
+import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.payment.dto.PaymentResponse;
 import com.rms.restaurant.module.payment.dto.PaymentWebhookPayload;
 import com.rms.restaurant.module.payment.dto.ProcessPaymentRequest;
@@ -12,6 +14,8 @@ import com.rms.restaurant.module.payment.model.Payment;
 import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.payment.repository.PaymentRepository;
 import com.rms.restaurant.module.payment.service.PaymentService;
+import com.rms.restaurant.module.shift.model.Shift;
+import com.rms.restaurant.module.shift.repository.ShiftRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,13 +29,23 @@ import java.util.List;
 public class PaymentServiceImpl implements PaymentService {
 
     private static final String STATUS_PAID = "PAID";
+    private static final String SHIFT_OPEN  = "OPEN";
 
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
     private final PaymentMapper paymentMapper;
+    private final UserRepository userRepository;
+    private final ShiftRepository shiftRepository;
 
     @Override
-    public PaymentResponse process(ProcessPaymentRequest request) {
+    public PaymentResponse process(ProcessPaymentRequest request, String cashierUsername) {
+        // BR-CS-08: a payment must be attributed to the processing cashier's OPEN shift;
+        // if they have none, the payment action is blocked.
+        User cashier = userRepository.findByUsername(cashierUsername)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.USER_NOT_FOUND));
+        Shift shift = shiftRepository.findByCashierIdAndStatus(cashier.getId(), SHIFT_OPEN)
+                .orElseThrow(() -> new ApplicationException(ApplicationError.PAYMENT_NO_OPEN_SHIFT));
+
         Invoice invoice = invoiceRepository.findByIdForUpdate(request.invoiceId())
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
 
@@ -56,6 +70,8 @@ public class PaymentServiceImpl implements PaymentService {
                 .method(request.method())
                 .amount(invoice.getTotalAmount())
                 .status(STATUS_PAID)
+                .shiftId(shift.getId())            // BR-CS-08
+                .cashierId(cashier.getId())        // BR-CS-08
                 .build();
 
         Payment savedPayment = paymentRepository.save(payment);

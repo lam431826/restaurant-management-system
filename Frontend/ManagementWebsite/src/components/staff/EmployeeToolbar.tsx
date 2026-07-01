@@ -8,6 +8,8 @@ interface Props {
   employees: Employee[]
   onApprovalsClick: () => void
   pendingApprovals: number
+  onMissingClick: () => void
+  missingCount: number
 }
 
 const exportCsv = (employees: Employee[]) => {
@@ -25,7 +27,7 @@ const exportCsv = (employees: Employee[]) => {
   URL.revokeObjectURL(url)
 }
 
-const EmployeeToolbar = ({ search, onSearch, onAdd, employees, onApprovalsClick, pendingApprovals }: Props) => {
+const EmployeeToolbar = ({ search, onSearch, onAdd, employees, onApprovalsClick, pendingApprovals, onMissingClick, missingCount }: Props) => {
   const [menuOpen, setMenuOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
@@ -68,6 +70,18 @@ const EmployeeToolbar = ({ search, onSearch, onAdd, employees, onApprovalsClick,
           {pendingApprovals > 0 && (
             <span className="absolute -top-1.5 -right-1.5 min-w-[1.2rem] h-[1.2rem] px-1 rounded-full bg-danger text-white text-[0.65rem] font-bold flex items-center justify-center">
               {pendingApprovals}
+            </span>
+          )}
+        </button>
+
+        <button className="kv-btn kv-btn-outline-neutral h-10 bg-card relative" onClick={onMissingClick}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" />
+          </svg>
+          Thiếu chấm công
+          {missingCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 min-w-[1.2rem] h-[1.2rem] px-1 rounded-full bg-danger text-white text-[0.65rem] font-bold flex items-center justify-center">
+              {missingCount}
             </span>
           )}
         </button>

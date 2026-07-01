@@ -1,6 +1,11 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
 export type UserRole = 'WAITER' | 'CASHIER' | 'MANAGER' | 'ADMIN'
+
+// BR-AUTH-03: idle/inactivity timeout (default 30 min). Timing out is equivalent to a
+// logout — it only clears the client session; the work shift / cash shift live on the
+// server and are restored on the next login (BR-AUTH-02).
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000
 
 export interface AuthUser {
   id: string
@@ -41,6 +46,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('user')
     setUser(null)
   }
+
+  // BR-AUTH-03: auto sign-out after a period of inactivity.
+  useEffect(() => {
+    if (!user) return
+    let timer: number
+    const reset = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(signOut, IDLE_TIMEOUT_MS)
+    }
+    const events: (keyof WindowEventMap)[] = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart']
+    events.forEach(e => window.addEventListener(e, reset, { passive: true }))
+    reset()
+    return () => {
+      window.clearTimeout(timer)
+      events.forEach(e => window.removeEventListener(e, reset))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
 
   return (
     <AuthContext.Provider value={{ user, saveSession, signOut, isAuthenticated: !!user }}>

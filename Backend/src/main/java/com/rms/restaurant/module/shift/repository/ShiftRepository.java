@@ -27,4 +27,11 @@ public interface ShiftRepository extends JpaRepository<Shift, String> {
     // BR-CS-09/11: the cashier's most recently closed shift (for handover carry-over)
     Optional<Shift> findFirstByCashierIdAndStatusInOrderByClosedAtDesc(
             String cashierId, Collection<String> statuses);
+
+    // BR-X-05a: a floating shift may be opened only while another cashier has an OPEN
+    // NORMAL shift to cover for.
+    boolean existsByStatusAndShiftTypeAndCashierIdNot(String status, String shiftType, String cashierId);
+
+    // CS-07: the open NORMAL shifts a floating shift can be merged into.
+    List<Shift> findByStatusAndShiftType(String status, String shiftType);
 }

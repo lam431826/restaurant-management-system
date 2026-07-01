@@ -507,6 +507,55 @@ public class RosterServiceImpl implements RosterService {
         return rows;
     }
 
+    // BR-WS-14: all MISSING_CLOCKOUT records in range, for the manager resolve inbox.
+    // Reads through listAttendanceForEmployee so the lazy detection runs (flips stuck
+    // CHECKED_IN rows) before filtering.
+    @Override
+    @Transactional
+    public List<AttendanceResponse> listMissingClockouts(LocalDate from, LocalDate to) {
+        List<User> staff = userRepo.findAll().stream().filter(u -> u.getRole() != UserRole.ADMIN).toList();
+        List<AttendanceResponse> result = new ArrayList<>();
+        for (User user : staff) {
+            listAttendanceForEmployee(user.getId(), from, to).stream()
+                    .filter(a -> a.status() == AttendanceStatus.MISSING_CLOCKOUT)
+                    .forEach(result::add);
+        }
+        return result;
+    }
+
+    // BR-WS-14 (TS-02): manager enters the actual out time + reason; worked minutes are
+    // then computed (paid from scheduled start, capped at scheduled end) and the record
+    // becomes CHECKED_OUT.
+    @Override
+    public AttendanceResponse resolveMissingClockout(String attendanceId, ResolveClockoutRequest request) {
+        RosterAttendance record = attendanceRepo.findById(attendanceId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ATTENDANCE_NOT_FOUND));
+        if (record.getStatus() != AttendanceStatus.MISSING_CLOCKOUT) {
+            throw new ApplicationException(ApplicationError.ATTENDANCE_NOT_MISSING_CLOCKOUT);
+        }
+
+        ShiftTemplate template = loadTemplate(record.getShiftTemplateId());
+        LocalDateTime shiftStart = LocalDateTime.of(record.getWorkDate(), template.getStartTime());
+        LocalDateTime shiftEndRaw = LocalDateTime.of(record.getWorkDate(), template.getEndTime());
+        LocalDateTime shiftEnd = !shiftEndRaw.isAfter(shiftStart) ? shiftEndRaw.plusDays(1) : shiftEndRaw;
+
+        LocalDateTime out = request.checkOutAt();
+        if (record.getCheckInAt() != null && out.isBefore(record.getCheckInAt())) {
+            throw new ApplicationException(ApplicationError.RESOLVE_CLOCKOUT_TIME_INVALID);
+        }
+
+        LocalDateTime effectiveStart = (record.getCheckInAt() != null && record.getCheckInAt().isAfter(shiftStart))
+                ? record.getCheckInAt() : shiftStart;
+        LocalDateTime effectiveEnd = out.isBefore(shiftEnd) ? out : shiftEnd;
+        long workedMinutes = Math.max(0, Duration.between(effectiveStart, effectiveEnd).toMinutes());
+
+        record.setStatus(AttendanceStatus.CHECKED_OUT);
+        record.setCheckOutAt(out);
+        record.setWorkedMinutes((int) workedMinutes);
+        record.setClockOutReason(request.reason().trim());
+        return mapper.toAttendanceResponse(attendanceRepo.save(record));
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<StaffSummaryResponse> listStaff() {

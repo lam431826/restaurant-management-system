@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { openShift, getSuggestedOpeningFloat } from '../../../services/shiftService'
+import { openShift, getSuggestedOpeningFloat, openFloatingShift } from '../../../services/shiftService'
 import type { ShiftSummary } from '../../../services/shiftService'
 import { listMyAttendance } from '../../../services/rosterService'
 import { ApiError } from '../../../services/api'
@@ -27,7 +27,9 @@ export const OpenShiftModal = ({
 }) => {
   const navigate = useNavigate()
   const [checking, setChecking]         = useState(true)   // attendance check in-flight
-  const [notClockedIn, setNotClockedIn] = useState(false)
+  // BR-X-01: distinguish why the cashier can't open a shift.
+  // null = clocked in (allowed). The three blocked states are handled differently.
+  const [blockReason, setBlockReason]   = useState<'NOT_CLOCKED_IN' | 'CLOCKED_OUT' | 'NO_SHIFT' | null>(null)
   const [openingCash, setOpeningCash]   = useState('')
   const [suggestedFloat, setSuggestedFloat] = useState(0) // BR-CS-09/11: last handover
   const [loading, setLoading]           = useState(false)
@@ -38,12 +40,20 @@ export const OpenShiftModal = ({
     const t = today()
     listMyAttendance(t, t)
       .then(records => {
-        const isClockedIn = records.some(r => r.status === 'CHECKED_IN')
-        setNotClockedIn(!isClockedIn)
+        // BR-X-01: three states — scheduled-but-not-clocked-in, already-clocked-out, no-shift-today.
+        if (records.some(r => r.status === 'CHECKED_IN')) {
+          setBlockReason(null)
+        } else if (records.some(r => r.status === 'SCHEDULED')) {
+          setBlockReason('NOT_CLOCKED_IN')
+        } else if (records.some(r => r.status === 'CHECKED_OUT' || r.status === 'EARLY_LEAVE')) {
+          setBlockReason('CLOCKED_OUT')
+        } else {
+          setBlockReason('NO_SHIFT')
+        }
       })
       .catch(() => {
         // If the check fails, let them try — the server will enforce BR-X-01
-        setNotClockedIn(false)
+        setBlockReason(null)
       })
       .finally(() => setChecking(false))
   }, [])
@@ -60,6 +70,20 @@ export const OpenShiftModal = ({
       .catch(() => { /* no prior handover — leave the field empty */ })
   }, [])
 
+  // BR-CS-18: open a floating shift to cover for a main shift owner (CHECKED_IN exempt).
+  const handleOpenFloating = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const shift = await openFloatingShift()
+      onOpened(shift)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không thể mở ca tạm.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const amount = parseInt(openingCash.replace(/\D/g, '') || '0', 10)
@@ -74,7 +98,7 @@ export const OpenShiftModal = ({
       onOpened(shift)
     } catch (err) {
       if (err instanceof ApiError && err.code === 'CASHIER_NOT_CHECKED_IN') {
-        setNotClockedIn(true)
+        setBlockReason('NOT_CLOCKED_IN')
         setError('')
       } else if (err instanceof ApiError && err.code === 'SHIFT_ALREADY_OPEN') {
         setError('Bạn đang có một ca thu ngân đang mở. Vui lòng đóng ca cũ trước.')
@@ -119,8 +143,8 @@ export const OpenShiftModal = ({
           </div>
         )}
 
-        {/* ── Not clocked in ── */}
-        {!checking && notClockedIn && (
+        {/* ── Blocked: not clocked in / clocked out / no shift (BR-X-01) ── */}
+        {!checking && blockReason && (
           <div className="p-6 flex flex-col gap-4">
             <div className="flex flex-col items-center gap-3 py-4 text-center">
               <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center">
@@ -129,27 +153,47 @@ export const OpenShiftModal = ({
                 </svg>
               </div>
               <div>
-                <p className="text-[16px] font-semibold text-[#202325]">Bạn chưa chấm công hôm nay</p>
+                <p className="text-[16px] font-semibold text-[#202325]">
+                  {blockReason === 'NOT_CLOCKED_IN' && 'Bạn chưa chấm công hôm nay'}
+                  {blockReason === 'CLOCKED_OUT' && 'Bạn đã chấm công ra'}
+                  {blockReason === 'NO_SHIFT' && 'Bạn không có ca làm việc hôm nay'}
+                </p>
                 <p className="text-[13px] text-[#636566] mt-1 leading-relaxed">
-                  Bạn cần chấm công vào ca làm việc trước khi có thể mở ca thu ngân.
+                  {blockReason === 'NOT_CLOCKED_IN' && 'Bạn cần chấm công vào ca làm việc trước khi có thể mở ca thu ngân.'}
+                  {blockReason === 'CLOCKED_OUT' && 'Bạn đã kết thúc ca làm việc. Cần quản lý xác nhận (override) để mở ca thu ngân.'}
+                  {blockReason === 'NO_SHIFT' && 'Hôm nay bạn không được xếp ca. Cần quản lý xác nhận (override) để mở ca thu ngân.'}
                 </p>
               </div>
             </div>
 
+            {blockReason === 'NOT_CLOCKED_IN' && (
+              <button
+                type="button"
+                onClick={() => navigate('/my-schedule')}
+                className="h-11 rounded-lg bg-[#025cca] text-white font-semibold text-[15px] hover:bg-[#0251b3] transition-colors flex items-center justify-center gap-2"
+              >
+                Đi chấm công
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                </svg>
+              </button>
+            )}
+            {/* BR-CS-18: cover for an active cashier with a floating shift */}
             <button
               type="button"
-              onClick={() => navigate('/my-schedule')}
-              className="h-11 rounded-lg bg-[#025cca] text-white font-semibold text-[15px] hover:bg-[#0251b3] transition-colors flex items-center justify-center gap-2"
+              onClick={() => void handleOpenFloating()}
+              disabled={loading}
+              className="h-10 rounded-lg border border-[#025cca] text-[13px] text-[#025cca] font-medium hover:bg-[#025cca]/5 disabled:opacity-60 transition-colors"
             >
-              Đi chấm công
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-              </svg>
+              Mở ca tạm để hỗ trợ thu ngân khác
             </button>
+            {error && (
+              <div className="px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-600">{error}</div>
+            )}
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setNotClockedIn(false)}
+                onClick={() => setBlockReason(null)}
                 className="flex-1 h-10 rounded-lg border border-[#d1d5db] text-[13px] text-[#636566] hover:bg-[#f5f5f5] transition-colors"
               >
                 ← Thử mở ca
@@ -169,7 +213,7 @@ export const OpenShiftModal = ({
         )}
 
         {/* ── Open shift form ── */}
-        {!checking && !notClockedIn && (
+        {!checking && !blockReason && (
           <form onSubmit={(e) => void handleSubmit(e)} className="p-6 flex flex-col gap-5">
             <div className="flex flex-col gap-1.5">
               <label className="text-[14px] font-medium text-[#202325]">

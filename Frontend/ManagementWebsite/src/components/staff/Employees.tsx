@@ -5,7 +5,8 @@ import EmployeeToolbar from './EmployeeToolbar'
 import EmployeeTable from './EmployeeTable'
 import EmployeeModal from './EmployeeModal'
 import RequestsInboxModal from './schedule/RequestsInboxModal'
-import { listRequests } from '../../services/rosterService'
+import MissingClockoutModal from './schedule/MissingClockoutModal'
+import { listRequests, listMissingClockouts } from '../../services/rosterService'
 import {
   employees as initialEmployees,
   departments as initialDepartments,
@@ -27,12 +28,24 @@ const Employees = () => {
 
   const [showAdd, setShowAdd] = useState(false)
   const [showRequests, setShowRequests] = useState(false)
+  const [showMissing, setShowMissing] = useState(false)
+  const [missingCount, setMissingCount] = useState(0)
 
   useEffect(() => {
     listRequests()
       .then(reqs => setPendingApprovals(reqs.filter(r => r.status === 'PENDING').length))
       .catch(() => {})
   }, [showRequests])
+
+  // BR-WS-14: count MISSING_CLOCKOUT records (last 14 days) for the toolbar badge.
+  useEffect(() => {
+    const to = new Date()
+    const from = new Date(); from.setDate(from.getDate() - 14)
+    const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    listMissingClockouts(ymd(from), ymd(to))
+      .then(recs => setMissingCount(recs.length))
+      .catch(() => {})
+  }, [showMissing])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -111,6 +124,8 @@ const Employees = () => {
           employees={items}
           onApprovalsClick={() => setShowRequests(true)}
           pendingApprovals={pendingApprovals}
+          onMissingClick={() => setShowMissing(true)}
+          missingCount={missingCount}
         />
         <EmployeeTable
           employees={filtered}
@@ -134,6 +149,7 @@ const Employees = () => {
       )}
 
       {showRequests && <RequestsInboxModal onClose={() => setShowRequests(false)} />}
+      {showMissing && <MissingClockoutModal onClose={() => setShowMissing(false)} />}
     </div>
   )
 }

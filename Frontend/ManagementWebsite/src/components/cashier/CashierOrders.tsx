@@ -4,8 +4,8 @@ import { useAuth } from "../../context/AuthContext";
 import { logout } from "../../api/auth";
 import { ApiError } from "../../services/api";
 import { ApiClientError } from "../../services/apiClient";
-import { getMyShift } from "../../services/shiftService";
-import type { ShiftSummary } from "../../services/shiftService";
+import { getMyShift, getOpenNormalShifts, mergeFloatingShift } from "../../services/shiftService";
+import type { ShiftSummary, OpenShiftBrief } from "../../services/shiftService";
 import { OpenShiftModal } from "./orders/OpenShiftModal";
 import { CloseShiftModal } from "./orders/CloseShiftModal";
 import { CashMovementModal } from "./orders/CashMovementModal";
@@ -258,6 +258,16 @@ const CashierOrders = () => {
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [showCashMovement, setShowCashMovement] = useState(false);
+  const [logoutWarn, setLogoutWarn] = useState(false); // BR-AUTH-01/04
+  const [logoutAfterClose, setLogoutAfterClose] = useState(false);
+  // BR-CS-19: floating shift merge
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeTargets, setMergeTargets] = useState<OpenShiftBrief[]>([]);
+  const [mergeTargetId, setMergeTargetId] = useState("");
+  const [mergeCash, setMergeCash] = useState("");
+  const [mergeNote, setMergeNote] = useState("");
+  const [mergeError, setMergeError] = useState("");
+  const [mergeLoading, setMergeLoading] = useState(false);
 
   useEffect(() => {
     getMyShift()
@@ -272,7 +282,7 @@ const CashierOrders = () => {
       .finally(() => setShiftLoading(false));
   }, []);
 
-  const handleLogout = async () => {
+  const doLogout = async () => {
     try {
       await logout();
     } catch {
@@ -280,6 +290,50 @@ const CashierOrders = () => {
     }
     signOut();
     navigate("/login", { replace: true });
+  };
+
+  // BR-CS-19: open the merge dialog and load candidate main shifts.
+  const openMergeDialog = async () => {
+    setMergeError("");
+    setMergeTargetId("");
+    setMergeCash("");
+    setMergeNote("");
+    setMergeOpen(true);
+    try {
+      const targets = await getOpenNormalShifts();
+      setMergeTargets(targets);
+    } catch {
+      setMergeTargets([]);
+    }
+  };
+
+  const submitMerge = async () => {
+    if (!shift) return;
+    if (!mergeTargetId) { setMergeError("Vui lòng chọn ca chính để gộp."); return; }
+    const cash = parseInt(mergeCash.replace(/\D/g, "") || "0", 10);
+    setMergeLoading(true);
+    setMergeError("");
+    try {
+      await mergeFloatingShift(shift.id, mergeTargetId, cash, mergeNote.trim() || undefined);
+      // The floating shift is now MERGED; the helper no longer owns an open shift.
+      setMergeOpen(false);
+      setShift(null);
+      setShiftModalOpen(true);
+    } catch (err) {
+      setMergeError(err instanceof Error ? err.message : "Không thể gộp ca tạm.");
+    } finally {
+      setMergeLoading(false);
+    }
+  };
+
+  // BR-AUTH-01/04: logout is never blocked, but if the cashier still owns an OPEN cash
+  // shift we warn first and offer a "close shift, then log out" shortcut.
+  const handleLogout = () => {
+    if (shift && shift.status === "OPEN") {
+      setLogoutWarn(true);
+    } else {
+      void doLogout();
+    }
   };
 
   useEffect(() => {
@@ -895,6 +949,23 @@ const CashierOrders = () => {
         onCashMovement={() => setShowCashMovement(true)}
       />
 
+      {shift?.shiftType === "FLOATING" && shift.status === "OPEN" && (
+        <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-[#025cca] text-[14px]">
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Đây là ca tạm (hỗ trợ). Tiền thu được giữ riêng; khi xong hãy gộp vào ca chính.
+          </div>
+          <button
+            className="kv-btn kv-btn-primary h-9 shrink-0"
+            onClick={() => void openMergeDialog()}
+          >
+            Gộp vào ca chính
+          </button>
+        </div>
+      )}
+
       {!shift && !shiftModalOpen && (
         <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2 text-amber-700 text-[14px]">
@@ -1126,9 +1197,119 @@ const CashierOrders = () => {
           onClosed={() => {
             setShift(null);
             setShowCloseShift(false);
+            if (logoutAfterClose) {
+              setLogoutAfterClose(false);
+              void doLogout(); // BR-AUTH-04: "close shift, then log out" shortcut
+            }
           }}
-          onCancel={() => setShowCloseShift(false)}
+          onCancel={() => {
+            setShowCloseShift(false);
+            setLogoutAfterClose(false);
+          }}
         />
+      )}
+      {mergeOpen && shift && (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setMergeOpen(false); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[460px] mx-4 overflow-hidden">
+            <div className="px-6 py-5 border-b border-[#eceef0]">
+              <h2 className="text-[18px] font-bold text-[#202325]">Gộp ca tạm vào ca chính</h2>
+              <p className="text-[13px] text-[#636566] mt-1">
+                Đếm tiền mặt đã thu trong ca tạm và chọn ca chính để gộp. Giao dịch sẽ được chuyển vào ca chính (giữ nguyên người thu).
+              </p>
+            </div>
+            <div className="p-6 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[14px] font-medium text-[#202325]">Ca chính</label>
+                {mergeTargets.length === 0 ? (
+                  <p className="text-[13px] text-[#636566]">Không có ca chính nào đang mở để gộp.</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {mergeTargets.map((t) => (
+                      <label key={t.shiftId} className="flex items-center gap-2 text-[14px] text-[#202325] cursor-pointer">
+                        <input
+                          type="radio" name="merge-target"
+                          checked={mergeTargetId === t.shiftId}
+                          onChange={() => setMergeTargetId(t.shiftId)}
+                        />
+                        {t.cashierName}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[14px] font-medium text-[#202325]">Tiền mặt đã đếm (VNĐ)</label>
+                <input
+                  type="text" inputMode="numeric" placeholder="0"
+                  value={mergeCash}
+                  onChange={(e) => setMergeCash((parseInt(e.target.value.replace(/\D/g, "") || "0", 10)).toLocaleString("vi-VN"))}
+                  className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[15px] text-[#202325] outline-none focus:border-[#025cca]"
+                />
+              </div>
+              <input
+                type="text"
+                value={mergeNote}
+                onChange={(e) => setMergeNote(e.target.value)}
+                placeholder="Ghi chú (nếu lệch tiền)"
+                className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[14px] text-[#202325] outline-none focus:border-[#025cca]"
+              />
+              {mergeError && (
+                <div className="px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-600">{mergeError}</div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-[#eceef0] flex justify-end gap-2">
+              <button className="kv-btn kv-btn-outline-neutral h-10" onClick={() => setMergeOpen(false)}>Hủy</button>
+              <button
+                className="kv-btn kv-btn-primary h-10"
+                disabled={mergeLoading || mergeTargets.length === 0}
+                onClick={() => void submitMerge()}
+              >
+                {mergeLoading ? "Đang gộp..." : "Gộp ca"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {logoutWarn && (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setLogoutWarn(false); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[420px] mx-4 overflow-hidden">
+            <div className="px-6 py-5 border-b border-[#eceef0]">
+              <h2 className="text-[18px] font-bold text-[#202325]">Đăng xuất</h2>
+              <p className="text-[13px] text-[#636566] mt-1">
+                Đăng xuất sẽ không đóng ca thu ngân của bạn. Ca vẫn mở trên hệ thống và sẽ được khôi phục khi bạn đăng nhập lại.
+              </p>
+            </div>
+            <div className="p-6 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => { setLogoutWarn(false); setLogoutAfterClose(true); setShowCloseShift(true); }}
+                className="h-11 rounded-lg bg-[#025cca] text-white font-semibold text-[15px] hover:bg-[#0251b3] transition-colors"
+              >
+                Đóng ca rồi đăng xuất
+              </button>
+              <button
+                type="button"
+                onClick={() => { setLogoutWarn(false); void doLogout(); }}
+                className="h-11 rounded-lg border border-[#d1d5db] text-[14px] text-[#636566] hover:bg-[#f5f5f5] transition-colors"
+              >
+                Chỉ đăng xuất
+              </button>
+              <button
+                type="button"
+                onClick={() => setLogoutWarn(false)}
+                className="h-10 text-[13px] text-[#636566] hover:text-[#202325] transition-colors"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {showCashMovement && shift && (
         <CashMovementModal

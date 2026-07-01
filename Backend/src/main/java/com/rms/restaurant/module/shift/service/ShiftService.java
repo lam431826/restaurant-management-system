@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 public interface ShiftService {
 
@@ -14,6 +15,15 @@ public interface ShiftService {
 
     // BR-CS-09/11: suggested opening float = the cashier's last handover amount
     BigDecimal getSuggestedOpeningFloat(String username);
+
+    // CS-07 / BR-CS-18: open a floating shift (helper covering for a main shift owner)
+    ShiftSummaryResponse openFloating(String cashierUsername);
+
+    // CS-07 / BR-CS-19: merge a floating shift back into its main shift
+    ShiftSummaryResponse mergeFloating(String floatingId, MergeFloatingRequest request, String username);
+
+    // CS-07: list other cashiers' OPEN normal shifts (merge targets for a floating shift)
+    List<OpenShiftBriefResponse> listOpenNormalShifts(String username);
 
     // SM-02: BR-CASH-01..06
     void addCashMovement(String shiftId, CashMovementRequest request, String operatorUsername);

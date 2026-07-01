@@ -157,6 +157,14 @@ export const clockOut = (date: string, shiftTemplateId: string, reason?: string)
   api.post<ApiResponse<Attendance>>('/api/roster/attendance/clock-out',
     { date, shiftTemplateId, reason: reason ?? null }).then(r => r.data)
 
+// BR-WS-14: manager inbox of MISSING_CLOCKOUT records and the resolve action.
+export const listMissingClockouts = (from: string, to: string): Promise<Attendance[]> =>
+  api.get<ApiResponse<Attendance[]>>('/api/roster/attendance/missing-clockout', { from, to }).then(r => r.data)
+
+export const resolveMissingClockout = (id: string, checkOutAt: string, reason: string): Promise<Attendance> =>
+  api.post<ApiResponse<Attendance>>(`/api/roster/attendance/${id}/resolve-clockout`,
+    { checkOutAt, reason }).then(r => r.data)
+
 // ── Swap / Leave requests (WS-05/06, BR-WS-06 enforced server-side) ────
 
 export const createRequest = (input: RequestCreateInput): Promise<ShiftRequest> =>
