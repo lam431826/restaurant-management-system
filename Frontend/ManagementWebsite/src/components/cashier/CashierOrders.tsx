@@ -24,8 +24,8 @@ import {
   sendInvoice,
 } from "../../services/invoiceApi";
 import type { InvoiceDetail, InvoiceSummary } from "../../services/invoiceApi";
-import { getPayments, processPayment } from "../../services/paymentApi";
-import type { Payment, PaymentMethod } from "../../services/paymentApi";
+import { processPayment } from "../../services/paymentApi";
+import type { PaymentMethod } from "../../services/paymentApi";
 import { getStoredUser } from "../../services/tokenStorage";
 import { listCategories, searchItems } from "../../services/menuService";
 import type { MenuCategory } from "../../services/menuService";
@@ -64,7 +64,6 @@ import { TableView } from "./orders/TableView";
 import { ReservationPanel } from "./orders/ReservationPanel";
 import { AddNoteModal } from "./orders/AddNoteModal";
 import { PaymentModal } from "./orders/PaymentModal";
-import { CashierInvoicePanel } from "./orders/CashierInvoicePanel";
 import { OrderPanel } from "./orders/OrderPanel";
 import { SuccessToast } from "./orders/SuccessToast";
 import { SearchIcon } from "./orders/icons";
@@ -76,16 +75,25 @@ const TABLE_FILTERS = [
   { id: "empty", label: "Còn trống" },
 ];
 
+const ORDER_ALREADY_INVOICED_MESSAGE =
+  "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.";
+const ORDER_FINAL_ITEM_LOCK_MESSAGE =
+  "Đơn hàng đã đóng hoặc đã hủy nên không thể chỉnh sửa món.";
+const EMPTY_ORDER_MESSAGE =
+  "Đơn hàng chưa có món. Vui lòng thêm món hoặc hủy đơn.";
+
 const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
+  ORDER_ALREADY_INVOICED: ORDER_ALREADY_INVOICED_MESSAGE,
   INVOICE_NOT_FOUND: "Không thể đóng đơn vì đơn chưa có hóa đơn.",
   ORDER_NOT_CLOSEABLE:
     "Không thể đóng đơn khi hóa đơn chưa được thanh toán hoặc đơn không còn hợp lệ để đóng.",
-  CANNOT_CANCEL_INVOICED_ORDER:
-    "Không thể hủy đơn vì đơn đã có hóa đơn.",
-  CANNOT_CANCEL_PAID_ORDER:
-    "Không thể hủy đơn vì hóa đơn đã được thanh toán.",
+  CANNOT_CANCEL_INVOICED_ORDER: "Không thể hủy đơn vì đơn đã có hóa đơn.",
+  CANNOT_CANCEL_PAID_ORDER: "Không thể hủy đơn vì hóa đơn đã được thanh toán.",
   CANNOT_CANCEL_ORDER_ITEMS_NOT_PENDING:
     "Không thể hủy đơn vì có món đã được bếp xử lý hoặc phục vụ.",
+  ORDER_ITEM_STATUS_TRANSITION_NOT_ALLOWED:
+    "Không thể hủy món ở trạng thái hiện tại.",
+  ORDER_ITEM_REMOVE_NOT_ALLOWED: "Chỉ có thể xóa món khi món đang chờ duyệt.",
   INVALID_STATUS_TRANSITION:
     "Thao tác đổi trạng thái không hợp lệ. Vui lòng dùng đúng luồng xử lý.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
@@ -96,26 +104,30 @@ const ORDER_ACTION_FALLBACK_ERROR =
 
 const getOrderActionErrorMessage = (error: unknown): string => {
   if (error instanceof ApiError && error.code) {
-    return ORDER_ACTION_ERROR_MESSAGES[error.code] ?? ORDER_ACTION_FALLBACK_ERROR;
+    return (
+      ORDER_ACTION_ERROR_MESSAGES[error.code] ?? ORDER_ACTION_FALLBACK_ERROR
+    );
   }
 
   return ORDER_ACTION_FALLBACK_ERROR;
 };
 
 const INVOICE_GENERATION_ERROR_MESSAGES: Record<string, string> = {
-  ORDER_NOT_INVOICEABLE:
-    "Không thể tạo hóa đơn cho đơn đã hủy hoặc đã đóng.",
-  ORDER_NOT_READY_FOR_INVOICE:
-    "Không thể tạo hóa đơn vì còn món chưa được duyệt hoặc đang chế biến.",
-  INVALID_INVOICE_ITEMS:
-    "Không thể tạo hóa đơn vì dữ liệu món không hợp lệ.",
-  INVALID_INVOICE_TOTAL:
-    "Không thể tạo hóa đơn vì tổng tiền không hợp lệ.",
-  INVOICE_ALREADY_EXISTS: "Đơn này đã có hóa đơn.",
+  ORDER_NOT_INVOICEABLE: "Đơn hàng chưa đủ điều kiện tạo hóa đơn.",
+  ORDER_NOT_READY_FOR_INVOICE: "Đơn hàng chưa đủ điều kiện tạo hóa đơn.",
+  INVALID_ORDER_ITEMS: "Đơn hàng không có món hợp lệ để tạo hóa đơn.",
+  INVALID_INVOICE_ITEMS: "Đơn hàng không có món hợp lệ để tạo hóa đơn.",
+  INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
+  INVOICE_ALREADY_EXISTS: "Đơn hàng này đã có hóa đơn.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
   PROMOTION_NOT_FOUND: "Không tìm thấy mã khuyến mãi.",
-  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã hết lượt sử dụng.",
-  INVALID_STATUS_TRANSITION: "Mã khuyến mãi không hợp lệ hoặc đã hết hạn.",
+  PROMOTION_INACTIVE: "Mã khuyến mãi không còn hoạt động.",
+  PROMOTION_EXPIRED: "Mã khuyến mãi đã hết hạn.",
+  PROMOTION_NOT_STARTED: "Mã khuyến mãi chưa đến thời gian áp dụng.",
+  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã đạt giới hạn sử dụng.",
+  INVALID_STATUS_TRANSITION: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
 };
 
 const INVOICE_GENERATION_MESSAGE_FALLBACKS: Record<string, string> = {
@@ -124,25 +136,33 @@ const INVOICE_GENERATION_MESSAGE_FALLBACKS: Record<string, string> = {
   "Order is not ready for invoice because some items are still pending or cooking":
     INVOICE_GENERATION_ERROR_MESSAGES.ORDER_NOT_READY_FOR_INVOICE,
   "Order contains invalid invoice items":
-    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_ITEMS,
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_ORDER_ITEMS,
   "Order must contain at least one item before invoice generation":
-    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_ITEMS,
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_ORDER_ITEMS,
   "Order does not contain any payable items":
-    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_ITEMS,
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_ORDER_ITEMS,
   "Invoice subtotal must be greater than zero and total amount cannot be negative":
     INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
   "Invoice already exists for this order":
     INVOICE_GENERATION_ERROR_MESSAGES.INVOICE_ALREADY_EXISTS,
   "Order not found": INVOICE_GENERATION_ERROR_MESSAGES.ORDER_NOT_FOUND,
   "Promotion not found": INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_NOT_FOUND,
+  "Promotion is inactive": INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_INACTIVE,
+  "Promotion has expired": INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_EXPIRED,
+  "Promotion has not started":
+    INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_NOT_STARTED,
   "Promotion usage limit has been reached":
     INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_USAGE_LIMIT_REACHED,
   "Promotion is not valid":
     INVOICE_GENERATION_ERROR_MESSAGES.INVALID_STATUS_TRANSITION,
+  "Validation failed": INVOICE_GENERATION_ERROR_MESSAGES.VALIDATION_ERROR,
+  "Invalid enum value": INVOICE_GENERATION_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body":
+    INVOICE_GENERATION_ERROR_MESSAGES.BAD_REQUEST,
 };
 
 const INVOICE_GENERATION_FALLBACK_ERROR =
-  "Không thể tạo hóa đơn. Vui lòng kiểm tra trạng thái đơn và thử lại.";
+  "Không thể tạo hóa đơn. Vui lòng thử lại.";
 
 const getInvoiceGenerationErrorMessage = (error: unknown): string => {
   if (error instanceof ApiClientError && error.code) {
@@ -162,30 +182,62 @@ const getInvoiceGenerationErrorMessage = (error: unknown): string => {
 
 const PROMOTION_DISCOUNT_ERROR_MESSAGES: Record<string, string> = {
   PROMOTION_NOT_FOUND: "Không tìm thấy mã khuyến mãi.",
-  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã hết lượt sử dụng.",
-  INVALID_STATUS_TRANSITION: "Mã khuyến mãi không hợp lệ hoặc đã hết hạn.",
+  PROMOTION_INACTIVE: "Mã khuyến mãi không còn hoạt động.",
+  PROMOTION_EXPIRED: "Mã khuyến mãi đã hết hạn.",
+  PROMOTION_NOT_STARTED: "Mã khuyến mãi chưa đến thời gian áp dụng.",
+  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã đạt giới hạn sử dụng.",
+  INVALID_STATUS_TRANSITION: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
   INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
-  INVOICE_ALREADY_PAID:
-    "Không thể áp dụng khuyến mãi cho hóa đơn đã thanh toán.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  INVOICE_PROMOTION_ALREADY_APPLIED:
+    "Hóa đơn này đã được áp dụng mã khuyến mãi này rồi.",
   PROMOTION_CHANGE_NOT_ALLOWED:
-    "Không thể thay đổi mã khuyến mãi đã áp dụng cho hóa đơn.",
+    "Không thể thay đổi mã khuyến mãi sau khi đã áp dụng.",
+  ORDER_NOT_DISCOUNTABLE:
+    "Không thể áp dụng khuyến mãi cho đơn đã đóng hoặc đã hủy.",
+  INVOICE_ALREADY_DISCOUNTED:
+    "Hóa đơn này đã có khuyến mãi, không thể áp dụng thêm.",
 };
 
 const PROMOTION_DISCOUNT_MESSAGE_FALLBACKS: Record<string, string> = {
   "Promotion not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_NOT_FOUND,
+  "Promotion is inactive": PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_INACTIVE,
+  "Promotion has expired": PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_EXPIRED,
+  "Promotion has not started":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_NOT_STARTED,
   "Promotion usage limit has been reached":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_USAGE_LIMIT_REACHED,
   "Promotion is not valid":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.INVALID_STATUS_TRANSITION,
   "Invoice not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Order not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Invoice already paid":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "Invoice has already been paid":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
   "Cannot apply a promotion to a paid invoice":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "The same promotion has already been applied to this invoice":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_PROMOTION_ALREADY_APPLIED,
+  "This promotion has already been applied to this invoice":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_PROMOTION_ALREADY_APPLIED,
+  "Cannot change promotion after one has already been applied":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_CHANGE_NOT_ALLOWED,
   "Changing the promotion on an invoice is not allowed":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_CHANGE_NOT_ALLOWED,
+  "Order is not discountable":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.ORDER_NOT_DISCOUNTABLE,
+  "Order cannot apply discount in its current status":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.ORDER_NOT_DISCOUNTABLE,
+  "Invoice already has a discount":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_DISCOUNTED,
+  "Invoice already has a promotion discount":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_DISCOUNTED,
 };
 
 const PROMOTION_DISCOUNT_FALLBACK_ERROR =
-  "Không thể áp dụng mã khuyến mãi. Vui lòng kiểm tra lại mã và thử lại.";
+  "Không thể áp dụng khuyến mãi. Vui lòng thử lại.";
 
 const getPromotionDiscountErrorMessage = (error: unknown): string => {
   if (error instanceof ApiClientError && error.code) {
@@ -201,6 +253,99 @@ const getPromotionDiscountErrorMessage = (error: unknown): string => {
   );
 
   return fallback?.[1] ?? PROMOTION_DISCOUNT_FALLBACK_ERROR;
+};
+
+const PAYMENT_PROCESS_ERROR_MESSAGES: Record<string, string> = {
+  ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
+  INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
+  INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+};
+
+const PAYMENT_PROCESS_MESSAGE_FALLBACKS: Record<string, string> = {
+  "Order cannot be paid in its current status":
+    PAYMENT_PROCESS_ERROR_MESSAGES.ORDER_NOT_PAYABLE,
+  "Invoice subtotal must be greater than zero and total amount cannot be negative":
+    PAYMENT_PROCESS_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  "Invoice has already been paid":
+    PAYMENT_PROCESS_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "A paid payment already exists for this invoice":
+    PAYMENT_PROCESS_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "Invoice not found": PAYMENT_PROCESS_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Order not found": PAYMENT_PROCESS_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Validation failed": PAYMENT_PROCESS_ERROR_MESSAGES.VALIDATION_ERROR,
+  "Invalid enum value": PAYMENT_PROCESS_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body":
+    PAYMENT_PROCESS_ERROR_MESSAGES.BAD_REQUEST,
+};
+
+const PAYMENT_PROCESS_FALLBACK_ERROR =
+  "Không thể xử lý thanh toán. Vui lòng thử lại.";
+
+const getPaymentProcessErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return (
+      PAYMENT_PROCESS_ERROR_MESSAGES[error.code] ??
+      PAYMENT_PROCESS_FALLBACK_ERROR
+    );
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  const fallback = Object.entries(PAYMENT_PROCESS_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  );
+
+  return fallback?.[1] ?? PAYMENT_PROCESS_FALLBACK_ERROR;
+};
+
+const INVOICE_UI_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  ORDER_ALREADY_INVOICED: "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.",
+  INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
+  INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
+  VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+};
+
+const INVOICE_UI_MESSAGE_FALLBACKS: Record<string, string> = {
+  "Invoice not found": INVOICE_UI_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Order not found": INVOICE_UI_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Invoice has already been paid":
+    INVOICE_UI_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "A paid payment already exists for this invoice":
+    INVOICE_UI_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "Order cannot be paid in its current status":
+    INVOICE_UI_ERROR_MESSAGES.ORDER_NOT_PAYABLE,
+  "Invoice subtotal must be greater than zero and total amount cannot be negative":
+    INVOICE_UI_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  "Validation failed": INVOICE_UI_ERROR_MESSAGES.VALIDATION_ERROR,
+  "Invalid enum value": INVOICE_UI_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body": INVOICE_UI_ERROR_MESSAGES.BAD_REQUEST,
+};
+
+const INVOICE_DETAIL_LOAD_FALLBACK_ERROR = "Không thể tải chi tiết hóa đơn.";
+const SEND_INVOICE_SUCCESS_MESSAGE = "Đã ghi nhận gửi hóa đơn mô phỏng.";
+const SEND_INVOICE_FALLBACK_ERROR = "Không thể gửi hóa đơn. Vui lòng thử lại.";
+
+const getInvoiceUiErrorMessage = (
+  error: unknown,
+  fallbackMessage: string,
+): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return INVOICE_UI_ERROR_MESSAGES[error.code] ?? fallbackMessage;
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  const fallback = Object.entries(INVOICE_UI_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  );
+
+  return fallback?.[1] ?? fallbackMessage;
 };
 
 const CashierOrders = () => {
@@ -242,7 +387,6 @@ const CashierOrders = () => {
   const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(
     null,
   );
-  const [payments, setPayments] = useState<Payment[]>([]);
   const [promotionCode, setPromotionCode] = useState("");
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceAction, setInvoiceAction] = useState<string | null>(null);
@@ -250,7 +394,6 @@ const CashierOrders = () => {
     type: "success" | "error";
     text: string;
   } | null>(null);
-  const [historyError, setHistoryError] = useState("");
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [orderActionMessage, setOrderActionMessage] = useState<{
@@ -459,17 +602,63 @@ const CashierOrders = () => {
   }, [selectedTable?.id, selectedTable?.occupied, activeOrders]);
 
   const hasSelectedMenu = cart.length > 0;
+  const selectedOrderId = selectedTable?.orderId ?? "";
+  const selectedOrder = activeOrders.find(
+    (order) => order.id === selectedOrderId,
+  );
+  const selectedOrderItemCount =
+    selectedOrder?.items.reduce((total, item) => total + item.quantity, 0) ?? 0;
+  const nonPayableRejectedItems =
+    selectedOrder?.items
+      .filter((item) => item.cookingStatus === "REJECTED")
+      .map((item) => ({
+        id: item.orderItemId,
+        name: item.menuItemName,
+        quantity: item.quantity,
+        note: item.rejectionNote,
+      })) ?? [];
+  const orderHasInvoice =
+    !!invoice && !!selectedOrderId && invoice.orderId === selectedOrderId;
+  const currentOrderInvoice = orderHasInvoice ? invoice : null;
+  const currentOrderInvoiceDetail =
+    currentOrderInvoice &&
+    invoiceDetail?.id === currentOrderInvoice.id &&
+    invoiceDetail.orderId === selectedOrderId
+      ? invoiceDetail
+      : null;
+  const orderIsFinal =
+    selectedOrder?.status === "CLOSED" || selectedOrder?.status === "CANCELLED";
+  const canCloseSelectedOrder =
+    !!selectedOrder && !!currentOrderInvoice?.paid && !orderIsFinal;
+  const emptyOrderWithoutInvoice =
+    !!selectedOrder &&
+    invoiceChecked &&
+    !currentOrderInvoice &&
+    !orderIsFinal &&
+    selectedOrderItemCount === 0;
+  const disableItemMutation = orderHasInvoice || orderIsFinal;
+  const itemMutationDisabledMessage = orderHasInvoice
+    ? ORDER_ALREADY_INVOICED_MESSAGE
+    : ORDER_FINAL_ITEM_LOCK_MESSAGE;
+
+  const showItemMutationBlockedMessage = () => {
+    setOrderActionMessage({
+      type: "error",
+      text: itemMutationDisabledMessage,
+    });
+  };
 
   const resetInvoiceLink = () => {
     setBackendOrderId("");
     setInvoiceChecked(false);
     setInvoice(null);
     setInvoiceDetail(null);
-    setPayments([]);
     setPromotionCode("");
+    setInvoiceAction(null);
     setInvoiceMessage(null);
-    setHistoryError("");
     setPaymentOpen(false);
+    setPaymentError("");
+    setPaymentProcessing(false);
     setOrderActionMessage(null);
   };
 
@@ -478,43 +667,32 @@ const CashierOrders = () => {
     if (!normalizedOrderId) {
       setInvoiceMessage({
         type: "error",
-        text: "Vui lòng nhập backend orderId",
+        text: "Vui lòng chọn đơn hàng trước khi tạo hóa đơn",
       });
       return null;
     }
 
     setInvoiceLoading(true);
     setInvoiceMessage(null);
-    setHistoryError("");
     try {
       const foundInvoice =
         (await getInvoices({ orderId: normalizedOrderId }))[0] ?? null;
       setInvoiceChecked(true);
       setInvoice(foundInvoice);
-      setPayments([]);
       setInvoiceDetail(null);
 
       if (!foundInvoice) return null;
 
       const detailData = await getInvoiceById(foundInvoice.id);
       setInvoiceDetail(detailData);
-      try {
-        setPayments(await getPayments(foundInvoice.id));
-      } catch (historyLoadError) {
-        setHistoryError(
-          historyLoadError instanceof Error
-            ? historyLoadError.message
-            : "Không thể tải lịch sử thanh toán",
-        );
-      }
       return foundInvoice;
     } catch (loadError) {
       setInvoiceMessage({
         type: "error",
-        text:
-          loadError instanceof Error
-            ? loadError.message
-            : "Không thể tra cứu hóa đơn",
+        text: getInvoiceUiErrorMessage(
+          loadError,
+          INVOICE_DETAIL_LOAD_FALLBACK_ERROR,
+        ),
       });
       return null;
     } finally {
@@ -522,36 +700,50 @@ const CashierOrders = () => {
     }
   };
 
-  const handleBackendOrderIdChange = (value: string) => {
-    setBackendOrderId(value);
-    setInvoiceChecked(false);
-    setInvoice(null);
-    setInvoiceDetail(null);
-    setPayments([]);
-    setPromotionCode("");
-    setInvoiceMessage(null);
-    setHistoryError("");
-  };
-
   const handleGenerateInvoice = async () => {
-    if (!backendOrderId.trim()) return;
-    setInvoiceAction("generate");
-    setInvoiceMessage(null);
-    try {
-      const created = await generateInvoice({
-        orderId: backendOrderId.trim(),
-        promotionCode: null,
-      });
-      await loadInvoiceForOrder(backendOrderId);
-      setInvoiceMessage({
-        type: "success",
-        text: `Đã tạo hóa đơn ${created.id}`,
-      });
-    } catch (generateError) {
+    const invoiceOrderId = selectedOrderId.trim();
+    if (!invoiceOrderId) {
       setInvoiceMessage({
         type: "error",
-        text: getInvoiceGenerationErrorMessage(generateError),
+        text: "Vui lòng chọn đơn hàng trước khi tạo hóa đơn",
       });
+      return;
+    }
+    if (emptyOrderWithoutInvoice) {
+      setPaymentOpen(false);
+      setInvoiceMessage(null);
+      setOrderActionMessage({
+        type: "error",
+        text: EMPTY_ORDER_MESSAGE,
+      });
+      return;
+    }
+    setInvoiceAction("generate");
+    setInvoiceMessage(null);
+    setOrderActionMessage(null);
+    try {
+      setBackendOrderId(invoiceOrderId);
+      await generateInvoice({
+        orderId: invoiceOrderId,
+        promotionCode: null,
+      });
+      const createdInvoice = await loadInvoiceForOrder(invoiceOrderId);
+      if (createdInvoice) setPaymentOpen(true);
+      setInvoiceMessage({
+        type: "success",
+        text: "Hóa đơn đã được tạo và sẵn sàng thanh toán.",
+      });
+    } catch (generateError) {
+      const message = getInvoiceGenerationErrorMessage(generateError);
+      setInvoiceMessage({
+        type: "error",
+        text: message,
+      });
+      setOrderActionMessage({
+        type: "error",
+        text: message,
+      });
+      setPaymentOpen(false);
     } finally {
       setInvoiceAction(null);
     }
@@ -563,7 +755,7 @@ const CashierOrders = () => {
     setInvoiceMessage(null);
     try {
       await applyInvoiceDiscount(invoice.id, promotionCode.trim());
-      await loadInvoiceForOrder(backendOrderId);
+      await loadInvoiceForOrder(invoice.orderId);
       setPromotionCode("");
       setInvoiceMessage({
         type: "success",
@@ -584,15 +776,15 @@ const CashierOrders = () => {
     setInvoiceAction("send");
     setInvoiceMessage(null);
     try {
-      const sent = await sendInvoice(invoice.id);
-      setInvoiceMessage({ type: "success", text: sent.message });
+      await sendInvoice(invoice.id);
+      setInvoiceMessage({
+        type: "success",
+        text: SEND_INVOICE_SUCCESS_MESSAGE,
+      });
     } catch (sendError) {
       setInvoiceMessage({
         type: "error",
-        text:
-          sendError instanceof Error
-            ? sendError.message
-            : "Không thể gửi hóa đơn",
+        text: getInvoiceUiErrorMessage(sendError, SEND_INVOICE_FALLBACK_ERROR),
       });
     } finally {
       setInvoiceAction(null);
@@ -628,14 +820,10 @@ const CashierOrders = () => {
       const createdPayment = await processPayment(invoice.id, method);
       setPaymentOpen(false);
       setSuccessTotal(createdPayment.amount);
-      await loadInvoiceForOrder(backendOrderId);
+      await loadInvoiceForOrder(invoice.orderId);
       setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
     } catch (processError) {
-      setPaymentError(
-        processError instanceof Error
-          ? processError.message
-          : "Không thể xử lý thanh toán",
-      );
+      setPaymentError(getPaymentProcessErrorMessage(processError));
     } finally {
       setPaymentProcessing(false);
     }
@@ -703,12 +891,7 @@ const CashierOrders = () => {
   const handleReservationNoShow = async () => {
     const res = selectedTable?.upcomingReservation;
     if (!res) return;
-    if (
-      !window.confirm(
-        `Xác nhận khách "${res.guestName}" không đến?`,
-      )
-    )
-      return;
+    if (!window.confirm(`Xác nhận khách "${res.guestName}" không đến?`)) return;
     setReservationLoading(true);
     setReservationError(null);
     try {
@@ -728,11 +911,7 @@ const CashierOrders = () => {
   const handleReservationCancel = async () => {
     const res = selectedTable?.upcomingReservation;
     if (!res) return;
-    if (
-      !window.confirm(
-        `Xác nhận hủy đặt bàn của khách "${res.guestName}"?`,
-      )
-    )
+    if (!window.confirm(`Xác nhận hủy đặt bàn của khách "${res.guestName}"?`))
       return;
     setReservationLoading(true);
     setReservationError(null);
@@ -743,7 +922,9 @@ const CashierOrders = () => {
       refreshTables();
     } catch (e) {
       setReservationError(
-        e instanceof Error ? e.message : "Hủy đặt bàn thất bại, vui lòng thử lại",
+        e instanceof Error
+          ? e.message
+          : "Hủy đặt bàn thất bại, vui lòng thử lại",
       );
     } finally {
       setReservationLoading(false);
@@ -757,25 +938,40 @@ const CashierOrders = () => {
       selectedTable &&
       selectedTable.occupied &&
       selectedTable.orderId &&
+      selectedOrder?.id === selectedTable.orderId &&
       !backendOrderId
     ) {
       setBackendOrderId(selectedTable.orderId);
       loadInvoiceForOrder(selectedTable.orderId);
     }
-  }, [selectedTable?.orderId, selectedTable?.occupied, backendOrderId]);
+  }, [
+    selectedTable?.orderId,
+    selectedTable?.occupied,
+    selectedOrder?.id,
+    backendOrderId,
+  ]);
 
   const handleStatusChange = async (
     orderId: string,
     orderItemId: string,
     statusLabel: string,
   ) => {
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
     const status = COOKING_STATUS_FROM_LABEL[statusLabel];
     if (!status) return;
+    setOrderActionMessage(null);
     try {
       await updateOrderItemStatus(orderId, orderItemId, status);
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -796,11 +992,20 @@ const CashierOrders = () => {
       }
       return;
     }
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
     try {
       await removeOrderItem(orderId, orderItemId);
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -845,20 +1050,44 @@ const CashierOrders = () => {
   const handleCancelNote = () =>
     setNoteModal({ open: false, itemId: null, text: "" });
 
-  const handleOpenReject = (orderId: string, itemId: string) =>
-    setRejectModal({ open: true, orderId, itemId, text: "" });
+  const handleOpenReject = async (orderId: string, itemId: string) => {
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
+    try {
+      await updateOrderItemStatus(orderId, itemId, "REJECTED");
+      setRefreshTrigger((t) => t + 1);
+    } catch (e) {
+      console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
+    }
+  };
 
   const handleConfirmReject = async (
     orderId: string,
     itemId: string,
     text: string,
   ) => {
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
     try {
       await updateOrderItemStatus(orderId, itemId, "REJECTED", text);
       setRefreshTrigger((t) => t + 1);
       setRejectModal({ open: false, orderId: null, itemId: null, text: "" });
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -866,13 +1095,34 @@ const CashierOrders = () => {
     setRejectModal({ open: false, orderId: null, itemId: null, text: "" });
 
   const handleCloseOrder = async () => {
-    if (!backendOrderId) return;
+    if (!selectedOrderId) return;
+    const closedOrderId = selectedOrderId;
+    const closedTableId = selectedTable?.id;
     setOrderActionMessage(null);
     try {
-      await closeOrder(backendOrderId);
-      setRefreshTrigger((t) => t + 1);
+      await closeOrder(closedOrderId);
       resetInvoiceLink();
-      refreshTables();
+      setActiveOrders((orders) =>
+        orders.filter((order) => order.id !== closedOrderId),
+      );
+      setOrderItems([]);
+      if (closedTableId) {
+        setTables((currentTables) =>
+          currentTables.map((table) =>
+            table.id === closedTableId
+              ? {
+                  ...table,
+                  orderId: null,
+                  occupied: false,
+                  amount: 0,
+                  items: 0,
+                  status: "AVAILABLE",
+                }
+              : table,
+          ),
+        );
+      }
+      setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
       setOrderActionMessage({
@@ -908,6 +1158,11 @@ const CashierOrders = () => {
 
   const handleAddItems = async () => {
     if (!selectedTable || !selectedTable.orderId) return;
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
     try {
       await addOrderItems(
         selectedTable.orderId,
@@ -923,6 +1178,10 @@ const CashierOrders = () => {
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -953,20 +1212,26 @@ const CashierOrders = () => {
   const BUSY_TABLE_STATUSES = ["OCCUPIED", "BILLING", "RESERVED"];
   const tableCounts: Record<string, number> = {
     all: tablesInArea.length,
-    used: tablesInArea.filter((t) => BUSY_TABLE_STATUSES.includes(t.status)).length,
-    empty: tablesInArea.filter((t) => !BUSY_TABLE_STATUSES.includes(t.status)).length,
+    used: tablesInArea.filter((t) => BUSY_TABLE_STATUSES.includes(t.status))
+      .length,
+    empty: tablesInArea.filter((t) => !BUSY_TABLE_STATUSES.includes(t.status))
+      .length,
   };
   const checkoutDisabled =
-    !invoice ||
-    !invoiceDetail ||
-    invoice.paid ||
     invoiceAction !== null ||
-    invoiceLoading;
-  const checkoutLabel = invoice?.paid
+    invoiceLoading ||
+    !selectedOrderId ||
+    emptyOrderWithoutInvoice ||
+    (currentOrderInvoice
+      ? !currentOrderInvoiceDetail || currentOrderInvoice.paid
+      : !invoiceChecked);
+  const checkoutLabel = currentOrderInvoice?.paid
     ? "Đã thanh toán"
-    : invoice
-      ? "Thanh Toán (F9)"
-      : "Liên kết hóa đơn trước";
+    : currentOrderInvoice
+      ? "Mở thanh toán"
+      : invoiceChecked
+        ? "Tạo hóa đơn"
+        : "Đang kiểm tra hóa đơn";
 
   if (shiftLoading) {
     return (
@@ -1130,84 +1395,75 @@ const CashierOrders = () => {
           </div>
         </div>
 
-        {selectedTable?.status === "RESERVED" ? (
-          <ReservationPanel
-            table={selectedTable}
-            onCheckIn={handleReservationCheckIn}
-            onNoShow={handleReservationNoShow}
-            onCancel={handleReservationCancel}
-            loading={reservationLoading}
-            error={reservationError}
-          />
-        ) : (
-          <OrderPanel
-            items={[
-              ...orderItems,
-              ...cart.map((c) => ({
-                id: c.cartItemId,
-                name: c.name,
-                qty: c.qty,
-                notes: c.note,
-                status: "MỚI",
-                price: c.price,
-                orderId: "cart",
-              })),
-            ]}
-            hasSelectedMenu={hasSelectedMenu}
-            onStatusChange={handleStatusChange}
-            onCheckout={() => {
-              setOrderActionMessage(null);
-              setPaymentError("");
+        <OrderPanel
+          items={[
+            ...orderItems,
+            ...cart.map((c) => ({
+              id: c.cartItemId,
+              name: c.name,
+              qty: c.qty,
+              notes: c.note,
+              status: "MỚI",
+              price: c.price,
+              orderId: "cart",
+            })),
+          ]}
+          hasSelectedMenu={hasSelectedMenu}
+          onStatusChange={handleStatusChange}
+          onCheckout={() => {
+            setOrderActionMessage(null);
+            setPaymentError("");
+            if (currentOrderInvoice) {
               setPaymentOpen(true);
-            }}
-            onCreateOrder={handleCreateOrder}
-            onAddItems={handleAddItems}
-            onNote={handleOpenNote}
-            onRemoveItem={handleRemoveItem}
-            onRejectItem={handleOpenReject}
-            onCancelOrder={handleCancelOrder}
-            selectedTable={selectedTable}
-            checkoutDisabled={checkoutDisabled}
-            checkoutLabel={checkoutLabel}
-            shiftOpen={!!shift}
-            invoicePaid={invoice?.paid}
-            orderActionMessage={orderActionMessage}
-            onCloseOrder={handleCloseOrder}
-            invoiceTools={
-              <CashierInvoicePanel
-                orderId={backendOrderId}
-                invoiceChecked={invoiceChecked}
-                invoice={invoice}
-                detail={invoiceDetail}
-                payments={payments}
-                promotionCode={promotionCode}
-                loading={invoiceLoading}
-                action={invoiceAction}
-                message={invoiceMessage}
-                historyError={historyError}
-                onOrderIdChange={handleBackendOrderIdChange}
-                onLookup={() => void loadInvoiceForOrder(backendOrderId)}
-                onGenerate={() => void handleGenerateInvoice()}
-                onPromotionCodeChange={setPromotionCode}
-                onApplyDiscount={() => void handleApplyDiscount()}
-                onPrint={handlePrintInvoice}
-                onSend={() => void handleSendInvoice()}
-              />
+            } else {
+              void handleGenerateInvoice();
             }
-          />
-        )}
+          }}
+          onCreateOrder={handleCreateOrder}
+          onAddItems={handleAddItems}
+          onNote={handleOpenNote}
+          onRemoveItem={handleRemoveItem}
+          onRejectItem={handleOpenReject}
+          onCancelOrder={handleCancelOrder}
+          selectedTable={selectedTable}
+          checkoutDisabled={checkoutDisabled}
+          checkoutLabel={checkoutLabel}
+          shiftOpen={!!shift}
+          invoicePaid={canCloseSelectedOrder}
+          itemMutationDisabled={disableItemMutation}
+          itemMutationDisabledMessage={itemMutationDisabledMessage}
+          orderActionMessage={orderActionMessage}
+          emptyOrderMessage={
+            emptyOrderWithoutInvoice ? EMPTY_ORDER_MESSAGE : undefined
+          }
+          cancelOrderIds={
+            emptyOrderWithoutInvoice && selectedOrderId
+              ? [selectedOrderId]
+              : undefined
+          }
+          onCloseOrder={handleCloseOrder}
+          invoiceTools={null}
+        />
       </div>
 
       <BottomNav active="orders" />
 
-      {paymentOpen && invoiceDetail && (
+      {paymentOpen && currentOrderInvoiceDetail && (
         <PaymentModal
-          invoice={invoiceDetail}
+          invoice={currentOrderInvoiceDetail}
           table={selectedTable}
           processing={paymentProcessing}
           error={paymentError}
+          promotionCode={promotionCode}
+          action={invoiceAction}
+          invoiceMessage={invoiceMessage}
+          nonPayableItems={nonPayableRejectedItems}
           onClose={() => setPaymentOpen(false)}
           onConfirm={(method) => void handleProcessPayment(method)}
+          onPromotionCodeChange={setPromotionCode}
+          onApplyDiscount={() => void handleApplyDiscount()}
+          onPrint={handlePrintInvoice}
+          onSend={() => void handleSendInvoice()}
         />
       )}
       {successTotal !== null && (

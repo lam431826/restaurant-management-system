@@ -5,6 +5,9 @@ import OrderStatusModal from './OrderStatusModal'
 import imgMakiSpicyTuna from '../assets/images/menu-maki-spicy-tuna.jpg'
 import { getImageUrl } from '../utils/api'
 
+const GUEST_ORDER_ALREADY_INVOICED_MESSAGE =
+  'Đơn hàng đã được lập hóa đơn nên không thể thêm hoặc sửa món.'
+
 export default function GuestOrderPage() {
   const [searchParams] = useSearchParams()
   const tableToken = searchParams.get('token') || 'token-ban-01'
@@ -122,7 +125,21 @@ export default function GuestOrderPage() {
         setIsEditing(false)
       } else {
         const text = await res.text()
-        alert('Loi HTTP ' + res.status + ': ' + text)
+        let message = 'Loi HTTP ' + res.status + ': ' + text
+        try {
+          const body = JSON.parse(text)
+          if (
+            body.error === 'ORDER_ALREADY_INVOICED' ||
+            body.message?.includes('Order already has an invoice')
+          ) {
+            message = GUEST_ORDER_ALREADY_INVOICED_MESSAGE
+          }
+        } catch {
+          if (text.includes('ORDER_ALREADY_INVOICED')) {
+            message = GUEST_ORDER_ALREADY_INVOICED_MESSAGE
+          }
+        }
+        alert(message)
       }
     } catch (err) {
       console.error(err)

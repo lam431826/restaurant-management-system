@@ -72,21 +72,8 @@ function App() {
             </ProtectedRoute>
           }
         />
-        {/* ── Manager role (dashboard chrome) ── */}
-        <Route path="/manager" element={<Layout />}>
-          <Route index element={<Navigate to="/manager/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="products" element={<Menu />} />
-          <Route path="rooms" element={<Rooms />} />
-          <Route path="invoices" element={<Invoices />} />
-          <Route path="promotions" element={<PromotionManagement />} />
-          <Route path="employees" element={<Employees />} />
-          <Route path="schedule" element={<Schedule />} />
-          <Route path="reports/attendance" element={<AttendanceReport />} />
-          <Route path="reports/daily-summary" element={<DailySummary />} />
-        </Route>
 
-        {/* ── Manager dashboard ── */}
+        {/* ── Manager role (dashboard chrome) ── */}
         <Route
           path="/manager"
           element={
@@ -100,6 +87,7 @@ function App() {
           <Route path="products" element={<Menu />} />
           <Route path="rooms" element={<Rooms />} />
           <Route path="invoices" element={<Invoices />} />
+          <Route path="promotions" element={<PromotionManagement />} />
           <Route path="employees" element={<Employees />} />
           <Route path="schedule" element={<Schedule />} />
           <Route path="reports/attendance" element={<AttendanceReport />} />

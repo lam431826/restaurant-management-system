@@ -72,26 +72,26 @@ export const printCashierInvoice = (
         <main class="receipt">
           <header class="header"><h1>Wasabi Sushi</h1><p class="printed-at">${escapeHtml(printedAt)}</p></header>
           <div class="separator"></div>
-          <section class="order-box"><span>Order Id</span><strong>${escapeHtml(invoice.orderId)}</strong></section>
+          <section class="order-box"><span>Mã đơn hàng</span><strong>${escapeHtml(invoice.orderId)}</strong></section>
           <div class="separator"></div>
           <section>
-            <div class="info-row"><span>Cashier</span><strong>${escapeHtml(cashierName)}</strong></div>
-            <div class="info-row"><span>Working Time</span><strong>08:00 - 17:00</strong></div>
-            <div class="info-row"><span>Customer Name</span><strong>Nguyen Van A</strong></div>
-            <div class="info-row"><span>Member Id Card</span><strong>-</strong></div>
-            <div class="info-row"><span>Order Type</span><strong>Dine In</strong></div>
-            <div class="info-row"><span>Table Number</span><strong>${escapeHtml(tableName)}</strong></div>
+            <div class="info-row"><span>Thu ngân</span><strong>${escapeHtml(cashierName)}</strong></div>
+            <div class="info-row"><span>Ca làm</span><strong>08:00 - 17:00</strong></div>
+            <div class="info-row"><span>Khách hàng</span><strong>Khách</strong></div>
+            <div class="info-row"><span>Mã thành viên</span><strong>-</strong></div>
+            <div class="info-row"><span>Hình thức</span><strong>Tại bàn</strong></div>
+            <div class="info-row"><span>Số bàn</span><strong>${escapeHtml(tableName)}</strong></div>
           </section>
           <div class="separator"></div>
           <section>
-            <div class="items-heading"><span>Item</span><span>Qty x Price</span><span>Total</span></div>
+            <div class="items-heading"><span>Món</span><span>SL x Giá</span><span>Thành tiền</span></div>
             ${rows || '<div class="empty">Không có món</div>'}
           </section>
           <div class="separator"></div>
           <section>
-            <div class="total-row"><span>Subtotal</span><strong>${invoice.subtotal.toLocaleString("vi-VN")} đ</strong></div>
-            <div class="total-row"><span>Discount</span><strong>${invoice.discountAmount.toLocaleString("vi-VN")} đ</strong></div>
-            <div class="total-row grand-total"><span>Total Amount</span><strong>${invoice.totalAmount.toLocaleString("vi-VN")} đ</strong></div>
+            <div class="total-row"><span>Tạm tính</span><strong>${invoice.subtotal.toLocaleString("vi-VN")} đ</strong></div>
+            <div class="total-row"><span>Giảm giá</span><strong>${invoice.discountAmount.toLocaleString("vi-VN")} đ</strong></div>
+            <div class="total-row grand-total"><span>Tổng thanh toán</span><strong>${invoice.totalAmount.toLocaleString("vi-VN")} đ</strong></div>
           </section>
           <div class="separator"></div>
           <footer class="footer"><div>Cảm ơn quý khách. Hẹn gặp lại!</div><div class="brand">Wasabi Sushi</div></footer>

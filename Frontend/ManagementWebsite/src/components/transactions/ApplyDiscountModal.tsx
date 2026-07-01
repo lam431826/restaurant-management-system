@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { InvoiceSummary } from '../../services/invoiceApi'
+import { ApiClientError } from '../../services/apiClient'
 
 interface Props {
   invoice: InvoiceSummary
@@ -11,6 +12,73 @@ const inputCls =
   'w-full h-10 px-3 bg-field border border-line-default rounded-md text-md text-ink uppercase transition-colors ' +
   'placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary ' +
   'focus:shadow-[0_0_0_0.3rem_rgba(var(--kv-primary-rgb),0.12)]'
+
+const DISCOUNT_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_NOT_FOUND: 'Không tìm thấy hóa đơn.',
+  ORDER_NOT_FOUND: 'Không tìm thấy đơn hàng.',
+  PROMOTION_NOT_FOUND: 'Không tìm thấy mã khuyến mãi.',
+  PROMOTION_INACTIVE: 'Mã khuyến mãi không còn hoạt động.',
+  PROMOTION_EXPIRED: 'Mã khuyến mãi đã hết hạn.',
+  PROMOTION_NOT_STARTED: 'Mã khuyến mãi chưa đến thời gian áp dụng.',
+  PROMOTION_USAGE_LIMIT_REACHED:
+    'Mã khuyến mãi đã đạt giới hạn sử dụng.',
+  INVOICE_ALREADY_PAID: 'Hóa đơn này đã được thanh toán.',
+  INVOICE_PROMOTION_ALREADY_APPLIED:
+    'Hóa đơn này đã được áp dụng mã khuyến mãi này rồi.',
+  PROMOTION_CHANGE_NOT_ALLOWED:
+    'Không thể thay đổi mã khuyến mãi sau khi đã áp dụng.',
+  INVOICE_ALREADY_DISCOUNTED:
+    'Hóa đơn này đã có khuyến mãi, không thể áp dụng thêm.',
+  ORDER_NOT_DISCOUNTABLE:
+    'Không thể áp dụng khuyến mãi cho đơn đã đóng hoặc đã hủy.',
+  INVALID_INVOICE_TOTAL: 'Hóa đơn có tổng tiền không hợp lệ.',
+  VALIDATION_ERROR: 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.',
+  BAD_REQUEST: 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.',
+}
+
+const DISCOUNT_MESSAGE_FALLBACKS: Record<string, string> = {
+  'Invoice not found': DISCOUNT_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  'Order not found': DISCOUNT_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  'Promotion not found': DISCOUNT_ERROR_MESSAGES.PROMOTION_NOT_FOUND,
+  'Promotion is inactive': DISCOUNT_ERROR_MESSAGES.PROMOTION_INACTIVE,
+  'Promotion has expired': DISCOUNT_ERROR_MESSAGES.PROMOTION_EXPIRED,
+  'Promotion has not started': DISCOUNT_ERROR_MESSAGES.PROMOTION_NOT_STARTED,
+  'Promotion usage limit has been reached':
+    DISCOUNT_ERROR_MESSAGES.PROMOTION_USAGE_LIMIT_REACHED,
+  'Invoice already paid': DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  'Invoice has already been paid':
+    DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  'The same promotion has already been applied to this invoice':
+    DISCOUNT_ERROR_MESSAGES.INVOICE_PROMOTION_ALREADY_APPLIED,
+  'Cannot change promotion after one has already been applied':
+    DISCOUNT_ERROR_MESSAGES.PROMOTION_CHANGE_NOT_ALLOWED,
+  'Invoice already has a discount':
+    DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_DISCOUNTED,
+  'Order is not discountable':
+    DISCOUNT_ERROR_MESSAGES.ORDER_NOT_DISCOUNTABLE,
+  'Invalid invoice total': DISCOUNT_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  'Invoice subtotal must be greater than zero and total amount cannot be negative':
+    DISCOUNT_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  'Validation failed': DISCOUNT_ERROR_MESSAGES.VALIDATION_ERROR,
+  'Invalid enum value': DISCOUNT_ERROR_MESSAGES.BAD_REQUEST,
+  'Malformed or unreadable request body': DISCOUNT_ERROR_MESSAGES.BAD_REQUEST,
+}
+
+const DISCOUNT_FALLBACK_ERROR =
+  'Không thể áp dụng khuyến mãi. Vui lòng thử lại.'
+
+const getDiscountErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return DISCOUNT_ERROR_MESSAGES[error.code] ?? DISCOUNT_FALLBACK_ERROR
+  }
+
+  const message = error instanceof Error ? error.message : ''
+  const fallback = Object.entries(DISCOUNT_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  )
+
+  return fallback?.[1] ?? DISCOUNT_FALLBACK_ERROR
+}
 
 const ApplyDiscountModal = ({ invoice, onClose, onSubmit }: Props) => {
   const [promotionCode, setPromotionCode] = useState('')
@@ -43,7 +111,7 @@ const ApplyDiscountModal = ({ invoice, onClose, onSubmit }: Props) => {
     try {
       await onSubmit(promotionCode.trim())
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Không thể áp dụng khuyến mãi')
+      setError(getDiscountErrorMessage(submitError))
     } finally {
       setSubmitting(false)
     }

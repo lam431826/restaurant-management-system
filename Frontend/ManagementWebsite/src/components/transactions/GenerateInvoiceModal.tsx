@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ApiClientError } from '../../services/apiClient'
 
 interface Props {
   onClose: () => void
@@ -15,6 +16,86 @@ const CloseIcon = () => (
     <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
   </svg>
 )
+
+const CREATE_INVOICE_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_NOT_FOUND: 'Không tìm thấy hóa đơn.',
+  ORDER_NOT_FOUND: 'Không tìm thấy đơn hàng.',
+  ORDER_ALREADY_INVOICED:
+    'Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.',
+  INVOICE_ALREADY_EXISTS: 'Đơn hàng này đã có hóa đơn.',
+  ORDER_NOT_READY_FOR_INVOICE:
+    'Đơn hàng chưa đủ điều kiện tạo hóa đơn.',
+  ORDER_NOT_INVOICEABLE:
+    'Đơn hàng chưa đủ điều kiện tạo hóa đơn.',
+  INVALID_ORDER_ITEMS:
+    'Đơn hàng không có món hợp lệ để tạo hóa đơn.',
+  INVALID_INVOICE_ITEMS:
+    'Đơn hàng không có món hợp lệ để tạo hóa đơn.',
+  INVALID_INVOICE_TOTAL: 'Hóa đơn có tổng tiền không hợp lệ.',
+  PROMOTION_NOT_FOUND: 'Không tìm thấy mã khuyến mãi.',
+  PROMOTION_INACTIVE: 'Mã khuyến mãi không còn hoạt động.',
+  PROMOTION_EXPIRED: 'Mã khuyến mãi đã hết hạn.',
+  PROMOTION_NOT_STARTED: 'Mã khuyến mãi chưa đến thời gian áp dụng.',
+  PROMOTION_USAGE_LIMIT_REACHED:
+    'Mã khuyến mãi đã đạt giới hạn sử dụng.',
+  VALIDATION_ERROR: 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.',
+  BAD_REQUEST: 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.',
+}
+
+const CREATE_INVOICE_MESSAGE_FALLBACKS: Record<string, string> = {
+  'Order not found': CREATE_INVOICE_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  'Invoice not found': CREATE_INVOICE_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  'Invoice already exists':
+    CREATE_INVOICE_ERROR_MESSAGES.INVOICE_ALREADY_EXISTS,
+  'Invoice already exists for this order':
+    CREATE_INVOICE_ERROR_MESSAGES.INVOICE_ALREADY_EXISTS,
+  'Order cannot be invoiced in its current status':
+    CREATE_INVOICE_ERROR_MESSAGES.ORDER_NOT_INVOICEABLE,
+  'Order is not ready for invoice because some items are still pending or cooking':
+    CREATE_INVOICE_ERROR_MESSAGES.ORDER_NOT_READY_FOR_INVOICE,
+  'Order contains invalid invoice items':
+    CREATE_INVOICE_ERROR_MESSAGES.INVALID_ORDER_ITEMS,
+  'Order must contain at least one item before invoice generation':
+    CREATE_INVOICE_ERROR_MESSAGES.INVALID_ORDER_ITEMS,
+  'Order does not contain any payable items':
+    CREATE_INVOICE_ERROR_MESSAGES.INVALID_ORDER_ITEMS,
+  'Invoice subtotal must be greater than zero and total amount cannot be negative':
+    CREATE_INVOICE_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  'Invalid invoice total':
+    CREATE_INVOICE_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  'Promotion not found': CREATE_INVOICE_ERROR_MESSAGES.PROMOTION_NOT_FOUND,
+  'Promotion is inactive':
+    CREATE_INVOICE_ERROR_MESSAGES.PROMOTION_INACTIVE,
+  'Promotion has expired':
+    CREATE_INVOICE_ERROR_MESSAGES.PROMOTION_EXPIRED,
+  'Promotion has not started':
+    CREATE_INVOICE_ERROR_MESSAGES.PROMOTION_NOT_STARTED,
+  'Promotion usage limit has been reached':
+    CREATE_INVOICE_ERROR_MESSAGES.PROMOTION_USAGE_LIMIT_REACHED,
+  'Validation failed': CREATE_INVOICE_ERROR_MESSAGES.VALIDATION_ERROR,
+  'Invalid enum value': CREATE_INVOICE_ERROR_MESSAGES.BAD_REQUEST,
+  'Malformed or unreadable request body':
+    CREATE_INVOICE_ERROR_MESSAGES.BAD_REQUEST,
+}
+
+const CREATE_INVOICE_FALLBACK_ERROR =
+  'Không thể tạo hóa đơn. Vui lòng thử lại.'
+
+const getCreateInvoiceErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return (
+      CREATE_INVOICE_ERROR_MESSAGES[error.code] ??
+      CREATE_INVOICE_FALLBACK_ERROR
+    )
+  }
+
+  const message = error instanceof Error ? error.message : ''
+  const fallback = Object.entries(CREATE_INVOICE_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  )
+
+  return fallback?.[1] ?? CREATE_INVOICE_FALLBACK_ERROR
+}
 
 const GenerateInvoiceModal = ({ onClose, onSubmit }: Props) => {
   const [orderId, setOrderId] = useState('')
@@ -48,7 +129,7 @@ const GenerateInvoiceModal = ({ onClose, onSubmit }: Props) => {
     try {
       await onSubmit(orderId.trim(), promotionCode.trim() || null)
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Không thể tạo hóa đơn')
+      setError(getCreateInvoiceErrorMessage(submitError))
     } finally {
       setSubmitting(false)
     }
@@ -74,7 +155,7 @@ const GenerateInvoiceModal = ({ onClose, onSubmit }: Props) => {
             <input
               ref={orderIdRef}
               className={inputCls}
-              placeholder="Nhập orderId đã tồn tại"
+              placeholder="Nhập mã đơn hàng đã tồn tại"
               value={orderId}
               onChange={event => { setOrderId(event.target.value); setError('') }}
             />
@@ -82,7 +163,7 @@ const GenerateInvoiceModal = ({ onClose, onSubmit }: Props) => {
           <div className="flex flex-col gap-2">
             <label className="text-md text-ink-subtle">Mã khuyến mãi</label>
             <input
-              className={`${inputCls} uppercase`}
+              className={inputCls}
               maxLength={50}
               placeholder="Để trống nếu không áp dụng"
               value={promotionCode}

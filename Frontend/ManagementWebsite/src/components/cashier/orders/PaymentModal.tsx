@@ -14,6 +14,13 @@ import {
 } from "./icons";
 
 /* ─── Payment modal ──────────────────────────────────────────────────────── */
+interface NonPayableReceiptItem {
+  id: string;
+  name: string;
+  quantity: number;
+  note?: string | null;
+}
+
 const PAYMENT_METHODS = [
   { id: "CASH" as const, label: "Tiền mặt" },
   { id: "CARD" as const, label: "Thẻ" },
@@ -26,15 +33,31 @@ export const PaymentModal = ({
   table,
   processing,
   error,
+  promotionCode,
+  action,
+  invoiceMessage,
+  nonPayableItems = [],
   onClose,
   onConfirm,
+  onPromotionCodeChange,
+  onApplyDiscount,
+  onPrint,
+  onSend,
 }: {
   invoice: InvoiceDetail;
   table: TableItem | null;
   processing: boolean;
   error: string;
+  promotionCode: string;
+  action: string | null;
+  invoiceMessage: { type: "success" | "error"; text: string } | null;
+  nonPayableItems?: NonPayableReceiptItem[];
   onClose: () => void;
   onConfirm: (method: PaymentMethod) => void;
+  onPromotionCodeChange: (value: string) => void;
+  onApplyDiscount: () => void;
+  onPrint: () => void;
+  onSend: () => void;
 }) => {
   const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -71,13 +94,17 @@ export const PaymentModal = ({
   const displayAmount = cashInput
     ? parseInt(cashInput, 10).toLocaleString("vi-VN") + "đ"
     : "0đ";
+  const actionBusy = action !== null;
+  const nonPayableFallbackNote = "Nhà hàng không thể phục vụ món này.";
   const confirmLabel = processing
     ? method === "QR"
       ? "Đang xác nhận..."
       : "Đang thanh toán..."
-    : method === "QR"
-      ? "Xác nhận đã thanh toán"
-      : "Xác nhận thanh toán";
+    : invoice.paid
+      ? "Đã thanh toán"
+      : method === "QR"
+        ? "Xác nhận đã thanh toán"
+        : "Xác nhận thanh toán";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -91,7 +118,7 @@ export const PaymentModal = ({
           className="flex items-center justify-between shrink-0"
           style={{ height: 44 }}
         >
-          <p className="text-[24px] font-semibold text-[#202325]">Payment</p>
+          <p className="text-[24px] font-semibold text-[#202325]">Thanh toán</p>
           <button
             onClick={onClose}
             className="w-10 h-10 bg-[#f5f5f5] rounded-full flex items-center justify-center text-[#202325] hover:bg-[#e8e8e8] transition-colors"
@@ -115,37 +142,37 @@ export const PaymentModal = ({
               </p>
             </div>
             <div className="border border-dashed border-[#b0a080] rounded px-3 py-2 text-center">
-              <p className="text-[10px] tracking-widest text-black">Order Id</p>
+              <p className="text-[10px] tracking-widest text-black">Mã đơn hàng</p>
               <p className="text-[14px] font-bold tracking-wider text-black break-all">
                 {invoice.orderId}
               </p>
             </div>
             <div className="flex flex-col gap-3 text-[10px]">
               <div className="flex justify-between">
-                <span className="text-[#6d7278]">Cashier</span>
+                <span className="text-[#6d7278]">Thu ngân</span>
                 <span className="text-black">Duy Tan</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[#6d7278]">Working Time</span>
+                <span className="text-[#6d7278]">Ca làm</span>
                 <span className="text-black">09.00 - 12.00 AM</span>
               </div>
             </div>
             <div className="border-t border-dashed border-[#b0a080]" />
             <div className="flex flex-col gap-3 text-[10px]">
               <div className="flex justify-between gap-2">
-                <span className="text-[#6d7278] shrink-0">Customer Name</span>
+                <span className="text-[#6d7278] shrink-0">Khách hàng</span>
                 <span className="text-black">Nguyen Van A</span>
               </div>
               <div className="flex justify-between gap-2">
-                <span className="text-[#6d7278] shrink-0">Member Id Card</span>
+                <span className="text-[#6d7278] shrink-0">Mã thành viên</span>
                 <span className="text-black">-</span>
               </div>
               <div className="flex justify-between gap-2">
-                <span className="text-[#6d7278] shrink-0">Order Type</span>
-                <span className="text-black">Dine In</span>
+                <span className="text-[#6d7278] shrink-0">Hình thức</span>
+                <span className="text-black">Tại bàn</span>
               </div>
               <div className="flex justify-between gap-2">
-                <span className="text-[#6d7278] shrink-0">Table Number</span>
+                <span className="text-[#6d7278] shrink-0">Số bàn</span>
                 <span className="text-black">
                   {table?.name?.replace("Bàn ", "") ?? "9"}
                 </span>
@@ -167,16 +194,47 @@ export const PaymentModal = ({
                 </div>
               ))}
             </div>
+            {nonPayableItems.length > 0 && (
+              <>
+                <div className="border-t border-dashed border-[#b0a080]" />
+                <div className="flex flex-col gap-3 text-[10px]">
+                  <p className="text-black font-bold">
+                    Món đã hủy bởi nhà hàng
+                  </p>
+                  {nonPayableItems.map((item) => (
+                    <div key={item.id} className="flex flex-col gap-1">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-[#6d7278] flex-1 truncate">
+                          {item.name}
+                        </span>
+                        <span className="text-[#6d7278] shrink-0">
+                          x{item.quantity}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-[#6d7278]">
+                          Không tính tiền
+                        </span>
+                        <span className="text-black font-bold">0đ</span>
+                      </div>
+                      <p className="text-[#6d7278] leading-snug">
+                        Ghi chú: {item.note?.trim() || nonPayableFallbackNote}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
             <div className="border-t border-dashed border-[#b0a080]" />
             <div className="flex flex-col gap-3 text-[10px]">
               <div className="flex justify-between">
-                <span className="text-[#6d7278]">Subtotal</span>
+                <span className="text-[#6d7278]">Tạm tính</span>
                 <span className="text-black">
                   {subtotal.toLocaleString("vi-VN")}đ
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[#6d7278]">Discount</span>
+                <span className="text-[#6d7278]">Giảm giá</span>
                 <span className="text-black">
                   {invoice.discountAmount.toLocaleString("vi-VN")}đ
                 </span>
@@ -184,12 +242,11 @@ export const PaymentModal = ({
             </div>
             <div className="border-t border-dashed border-[#b0a080]" />
             <div className="flex justify-between text-[14px] font-bold text-[#a27b5c]">
-              <span>Total Amount</span>
+              <span>Tổng thanh toán</span>
               <span>{total.toLocaleString("vi-VN")}đ</span>
             </div>
             <p className="text-[8px] text-black leading-relaxed">
-              Thanks for fueling our passion. Drop by again, if your wallet
-              isn't still sulking. You're always welcome here!
+              Cảm ơn quý khách. Hẹn gặp lại!
             </p>
             <p className="text-[#3f4e4f] text-[24px] font-medium text-center">
               Wasabi Sushi
@@ -199,8 +256,66 @@ export const PaymentModal = ({
           {/* Payment panel */}
           <div className="flex-1 h-full min-h-0 flex flex-col overflow-hidden">
             <div className="relative flex flex-col gap-3 shrink-0">
+              <div className="rounded-[12px] border border-[#e8e8e8] bg-[#f5f5f5] p-3 flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[15px] font-semibold text-[#202325]">
+                    Thao tác hóa đơn
+                  </p>
+                  {invoice.paid && (
+                    <span className="text-[12px] font-medium text-[#286b4a]">
+                      Đã thanh toán
+                    </span>
+                  )}
+                </div>
+                {!invoice.paid ? (
+                  <div className="flex gap-2">
+                    <input
+                      value={promotionCode}
+                      onChange={(event) =>
+                        onPromotionCodeChange(event.target.value.toUpperCase())
+                      }
+                      placeholder="Mã khuyến mãi"
+                      className="flex-1 min-w-0 h-[36px] px-3 rounded-[10px] border border-[#e8e8e8] bg-white text-[12px] uppercase outline-none focus:border-[#025cca]"
+                    />
+                    <button
+                      onClick={onApplyDiscount}
+                      disabled={actionBusy || !promotionCode.trim()}
+                      className="h-[36px] px-3 rounded-[10px] border border-[#025cca] bg-white text-[12px] font-medium text-[#025cca] disabled:opacity-50"
+                    >
+                      {action === "discount" ? "Đang áp dụng" : "Áp dụng mã"}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-[#636566]">
+                    Không thể áp dụng mã sau khi hóa đơn đã thanh toán
+                  </p>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={onPrint}
+                    className="h-[36px] rounded-[10px] bg-white text-[12px] font-medium text-[#202325] disabled:opacity-50"
+                  >
+                    In hóa đơn
+                  </button>
+                  <button
+                    onClick={onSend}
+                    disabled={actionBusy}
+                    className="h-[36px] rounded-[10px] bg-[#f0f8ff] text-[12px] font-medium text-[#025cca] disabled:opacity-50"
+                  >
+                    {action === "send" ? "Đang gửi" : "Gửi hóa đơn"}
+                  </button>
+                </div>
+                {invoiceMessage && (
+                  <p
+                    className={`text-[12px] ${invoiceMessage.type === "success" ? "text-[#286b4a]" : "text-[#d92d20]"}`}
+                  >
+                    {invoiceMessage.text}
+                  </p>
+                )}
+              </div>
+
               <p className="text-[16px] font-semibold text-[#202325]">
-                Select a payment method
+                Chọn phương thức thanh toán
               </p>
               <button
                 onClick={() => setDropdownOpen((v) => !v)}
@@ -240,9 +355,17 @@ export const PaymentModal = ({
             <div className="flex-1 min-h-0 overflow-y-auto mt-6 pr-1">
               {method === "CASH" && (
                 <div className="flex flex-col items-center gap-5 pb-2">
-                  <p className="text-[40px] font-medium leading-none text-[#202325] text-center py-2">
-                    {displayAmount}
-                  </p>
+                  <div className="flex flex-col items-center gap-2 py-2">
+                    <p className="text-[13px] font-medium text-[#636566]">
+                      Tiền khách đưa
+                    </p>
+                    <p className="text-[40px] font-medium leading-none text-[#202325] text-center">
+                      {displayAmount}
+                    </p>
+                    <p className="text-[12px] text-[#797b7c]">
+                      Cần thanh toán: {total.toLocaleString("vi-VN")} đ
+                    </p>
+                  </div>
                   <div className="grid grid-cols-3 w-full gap-y-2">
                     {[
                       "1",
@@ -339,7 +462,7 @@ export const PaymentModal = ({
               )}
               <button
                 onClick={() => onConfirm(method)}
-                disabled={processing}
+                disabled={processing || invoice.paid}
                 className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60"
               >
                 {confirmLabel}
