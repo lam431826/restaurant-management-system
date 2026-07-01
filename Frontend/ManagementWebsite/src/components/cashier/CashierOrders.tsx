@@ -492,7 +492,7 @@ const CashierOrders = () => {
       }
     };
     void fetchAssistance();
-    const intv = setInterval(fetchAssistance, 10000);
+    const intv = setInterval(fetchAssistance, 3000);
     return () => clearInterval(intv);
   }, []);
 
@@ -507,7 +507,7 @@ const CashierOrders = () => {
       }
     };
     void fetchOrders();
-    const interval = setInterval(fetchOrders, 10000);
+    const interval = setInterval(fetchOrders, 3000);
     return () => clearInterval(interval);
   }, [refreshTrigger]);
 
