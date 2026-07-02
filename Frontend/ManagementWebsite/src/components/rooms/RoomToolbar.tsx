@@ -1,22 +1,22 @@
 import { useRef, useState } from 'react'
-import { importTablesCsv, exportTablesCsv } from '../../services/tableService'
-import type { TableItem, ImportResult } from '../../services/tableService'
+import { importTablesCsv, exportTablesCsv, downloadAllQrCodes, listTables } from '../../services/tableService'
+import type { ImportResult } from '../../services/tableService'
 import { ApiError } from '../../services/api'
 
 interface Props {
   search: string
   onSearch: (v: string) => void
   onAdd: () => void
-  rooms: TableItem[]
   onImported: () => void
   onError: (msg: string) => void
 }
 
 const iconBtn = 'w-10 h-10 flex items-center justify-center border border-line-default rounded-md bg-card text-ink-subtle cursor-pointer shrink-0 transition-colors hover:border-primary hover:text-primary'
 
-const RoomToolbar = ({ search, onSearch, onAdd, rooms, onImported, onError }: Props) => {
+const RoomToolbar = ({ search, onSearch, onAdd, onImported, onError }: Props) => {
   const importRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
+  const [qrBusy, setQrBusy] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
 
   const handleExport = async () => {
@@ -44,6 +44,22 @@ const RoomToolbar = ({ search, onSearch, onAdd, rooms, onImported, onError }: Pr
       onError(err instanceof ApiError ? err.message : 'Nhập file thất bại.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const handleDownloadAllQr = async () => {
+    setQrBusy(true)
+    try {
+      const all = await listTables()
+      if (all.every(r => !r.qrToken)) {
+        onError('Chưa có phòng/bàn nào có mã QR.')
+        return
+      }
+      await downloadAllQrCodes(all)
+    } catch {
+      onError('Tải mã QR thất bại.')
+    } finally {
+      setQrBusy(false)
     }
   }
 
@@ -87,12 +103,13 @@ const RoomToolbar = ({ search, onSearch, onAdd, rooms, onImported, onError }: Pr
 
           <button
             className="kv-btn kv-btn-outline-neutral h-10 bg-card"
-            onClick={() => window.alert(`Đang tải mã QR cho ${rooms.length} phòng/bàn...`)}
+            disabled={qrBusy}
+            onClick={() => void handleDownloadAllQr()}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-            Tải tất cả mã QR
+            {qrBusy ? 'Đang tải mã QR...' : 'Tải tất cả mã QR'}
           </button>
 
           <button className={iconBtn} aria-label="Trợ giúp" title="Định dạng CSV: name,area,capacity,note,displayOrder,active">

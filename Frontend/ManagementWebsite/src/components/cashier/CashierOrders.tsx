@@ -36,9 +36,11 @@ import {
   closeOrder,
   listOrders,
   listPendingAssistance,
+  acceptOrder,
   removeOrderItem,
   respondAssistance,
   updateOrderItemStatus,
+  updateOrderItemNote,
 } from "../../services/orderApi";
 import type { AssistanceRequest, Order } from "../../services/orderApi";
 
@@ -348,6 +350,8 @@ const getInvoiceUiErrorMessage = (
   return fallback?.[1] ?? fallbackMessage;
 };
 
+import { QROrderConfirmationModal } from "./orders/QROrderConfirmationModal";
+
 const CashierOrders = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -411,6 +415,7 @@ const CashierOrders = () => {
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [showCashMovement, setShowCashMovement] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
 
   useEffect(() => {
     getMyShift()
@@ -617,6 +622,15 @@ const CashierOrders = () => {
         quantity: item.quantity,
         note: item.rejectionNote,
       })) ?? [];
+
+  const pendingOrders = activeOrders.filter(
+    (o) =>
+      o.status === "PENDING" ||
+      (o.status !== "CANCELLED" &&
+        o.status !== "CLOSED" &&
+        o.items.some((i) => i.cookingStatus === "PENDING")),
+  );
+  const pendingOrdersCount = pendingOrders.length;
   const orderHasInvoice =
     !!invoice && !!selectedOrderId && invoice.orderId === selectedOrderId;
   const currentOrderInvoice = orderHasInvoice ? invoice : null;
@@ -833,26 +847,40 @@ const CashierOrders = () => {
     if (delta > 0) {
       const menuItem = menuItems.find((m) => m.id === id);
       if (menuItem) {
-        setCart((prev) => [
-          ...prev,
-          {
-            cartItemId: Math.random().toString(36).substring(2, 11),
-            menuItemId: menuItem.id,
-            name: menuItem.name,
-            price: menuItem.price,
-            qty: 1,
-            note: "",
-          },
-        ]);
+        setCart((prev) => {
+          const existing = prev.find((c) => c.menuItemId === id);
+          if (existing) {
+            // Increment qty on existing entry
+            return prev.map((c) =>
+              c.menuItemId === id ? { ...c, qty: c.qty + 1 } : c,
+            );
+          }
+          // Add new grouped entry
+          return [
+            ...prev,
+            {
+              cartItemId: Math.random().toString(36).substring(2, 11),
+              menuItemId: menuItem.id,
+              name: menuItem.name,
+              price: menuItem.price,
+              qty: 1,
+              note: "",
+            },
+          ];
+        });
       }
     } else {
       setCart((prev) => {
-        const index = [...prev].reverse().findIndex((c) => c.menuItemId === id);
-        if (index !== -1) {
-          const realIndex = prev.length - 1 - index;
-          return prev.filter((_, i) => i !== realIndex);
+        const existing = prev.find((c) => c.menuItemId === id);
+        if (!existing) return prev;
+        if (existing.qty <= 1) {
+          // Remove entry entirely
+          return prev.filter((c) => c.menuItemId !== id);
         }
-        return prev;
+        // Decrement qty
+        return prev.map((c) =>
+          c.menuItemId === id ? { ...c, qty: c.qty - 1 } : c,
+        );
       });
     }
     setMenuItems((items) =>
@@ -865,7 +893,10 @@ const CashierOrders = () => {
   const handleTableSelect = (id: string) => {
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
     resetInvoiceLink();
-    setReservationError(null);
+    const selected = tables.find((t) => t.id === id);
+    if (selected) {
+      setActiveArea(selected.area);
+    }
   };
 
   // ── Reservation action handlers ───────────────────────────────────────────
@@ -1030,20 +1061,37 @@ const CashierOrders = () => {
 
   const handleOpenNote = (itemId: string, currentText: string) =>
     setNoteModal({ open: true, itemId, text: currentText });
-  const handleConfirmNote = (itemId: string, text: string) => {
-    let updatedCart = false;
-    setCart((prevCart) => {
-      const newCart = prevCart.map((i) =>
-        i.cartItemId === itemId ? { ...i, note: text } : i,
-      );
-      if (newCart !== prevCart) updatedCart = true;
-      return newCart;
-    });
+  const handleConfirmNote = async (itemId: string, text: string) => {
+    const isDraft = cart.some((i) => i.cartItemId === itemId);
 
-    if (!updatedCart) {
-      setOrderItems((items) =>
-        items.map((i) => (i.id === itemId ? { ...i, notes: text } : i)),
+    if (isDraft) {
+      setCart((prevCart) =>
+        prevCart.map((i) =>
+          i.cartItemId === itemId ? { ...i, note: text } : i,
+        ),
       );
+    } else {
+      // Find the item in orderItems to get the orderId
+      const item = orderItems.find((i) => i.id === itemId);
+      if (item && item.orderId) {
+        if (disableItemMutation) {
+          showItemMutationBlockedMessage();
+          return;
+        }
+        try {
+          await updateOrderItemNote(item.orderId, itemId, text);
+          setOrderItems((items) =>
+            items.map((i) => (i.id === itemId ? { ...i, notes: text } : i)),
+          );
+          setRefreshTrigger((t) => t + 1);
+        } catch (e) {
+          console.error(e);
+          setOrderActionMessage({
+            type: "error",
+            text: getOrderActionErrorMessage(e),
+          });
+        }
+      }
     }
     setNoteModal({ open: false, itemId: null, text: "" });
   };
@@ -1143,7 +1191,7 @@ const CashierOrders = () => {
         selectedTable.id,
         cart.map((c) => ({
           menuItemId: c.menuItemId,
-          quantity: 1,
+          quantity: c.qty,
           note: c.note,
         })),
       );
@@ -1168,7 +1216,7 @@ const CashierOrders = () => {
         selectedTable.orderId,
         cart.map((c) => ({
           menuItemId: c.menuItemId,
-          quantity: 1,
+          quantity: c.qty,
           note: c.note,
         })),
       );
@@ -1189,6 +1237,38 @@ const CashierOrders = () => {
     try {
       await respondAssistance(id);
       setAssistanceRequests((reqs) => reqs.filter((r) => r.id !== id));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAcceptPendingOrder = async (order: Order) => {
+    try {
+      await acceptOrder(order.id);
+      setRefreshTrigger((t) => t + 1);
+      setShowQRModal(false);
+      handleTableSelect(order.tableId);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRejectPendingOrder = async (order: Order) => {
+    try {
+      await cancelOrder(order.id, "Thu ngân hủy (QR)");
+      setRefreshTrigger((t) => t + 1);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRemoveItemFromPending = async (
+    orderId: string,
+    orderItemId: string,
+  ) => {
+    try {
+      await removeOrderItem(orderId, orderItemId);
+      setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
     }
@@ -1354,14 +1434,34 @@ const CashierOrders = () => {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-3 bg-white rounded-[12px] px-4 h-[44px] w-[160px] md:w-[220px] lg:w-[340px]">
-              <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={tab === "menu" ? "Tìm món" : "Tìm bàn"}
-                className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none"
-              />
+            <div className="flex flex-col items-end shrink-0">
+              <div className="flex items-center gap-3 bg-white rounded-[12px] px-4 h-[44px] w-[160px] md:w-[220px] lg:w-[340px]">
+                <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={tab === "menu" ? "Tìm món" : "Tìm bàn"}
+                  className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none"
+                />
+              </div>
+              {tab === "table" && (
+                <div className="mt-2">
+                  <button
+                    onClick={() => setShowQRModal(true)}
+                    className="bg-white shadow-sm border border-[#e8e8e8] px-3 py-1.5 rounded-full flex items-center gap-2 text-sm font-semibold text-[#202325] hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="w-4 h-4 shrink-0 text-[#202325]"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
+                    </svg>
+                    <span>{pendingOrdersCount} lượt gọi món qua QR</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1445,6 +1545,17 @@ const CashierOrders = () => {
           invoiceTools={null}
         />
       </div>
+
+      {showQRModal && (
+        <QROrderConfirmationModal
+          orders={activeOrders}
+          tables={tables}
+          onClose={() => setShowQRModal(false)}
+          onAccept={handleAcceptPendingOrder}
+          onReject={handleRejectPendingOrder}
+          onRemoveItem={handleRemoveItemFromPending}
+        />
+      )}
 
       <BottomNav active="orders" />
 

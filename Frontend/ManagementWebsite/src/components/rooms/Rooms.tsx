@@ -7,17 +7,22 @@ import RoomModal from './RoomModal'
 import AreaModal from './AreaModal'
 import QrModal from './QrModal'
 import ConfirmDialog from '../menu/ConfirmDialog'
-import { listTables, listAreas, setTableActive, deleteTable } from '../../services/tableService'
+import { searchTables, listAreas, setTableActive, deleteTable } from '../../services/tableService'
 import type { TableItem, TableArea } from '../../services/tableService'
 import { ApiError } from '../../services/api'
 
+const PAGE_SIZE = 15
+
 const Rooms = () => {
   const [items, setItems] = useState<TableItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [areas, setAreas] = useState<TableArea[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [area, setArea] = useState<AreaFilter>('all')
   const [status, setStatus] = useState<StatusFilter>('all')
 
@@ -43,28 +48,36 @@ const Rooms = () => {
     setLoading(true)
     setError('')
     try {
-      setItems(await listTables())
+      const active = status === 'all' ? undefined : status === 'active'
+      const res = await searchTables({
+        q: debouncedSearch || undefined,
+        area: area === 'all' ? undefined : area,
+        active,
+        page,
+        size: PAGE_SIZE,
+      })
+      setItems(res.data)
+      setTotal(res.pagination.total)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Không tải được danh sách phòng/bàn.')
       setItems([])
+      setTotal(0)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [debouncedSearch, area, status, page])
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  useEffect(() => { setPage(1) }, [debouncedSearch, area, status])
 
   useEffect(() => { void loadAreas() }, [loadAreas])
   useEffect(() => { void loadTables() }, [loadTables])
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return items.filter(r => {
-      if (area !== 'all' && r.area !== area) return false
-      if (status === 'active' && !r.active) return false
-      if (status === 'inactive' && r.active) return false
-      if (q && !(`${r.name} ${r.seats}`.toLowerCase().includes(q))) return false
-      return true
-    })
-  }, [items, area, status, search])
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   const handleToggleActive = async (table: TableItem) => {
     try {
@@ -110,7 +123,6 @@ const Rooms = () => {
           search={search}
           onSearch={setSearch}
           onAdd={() => setShowAdd(true)}
-          rooms={items}
           onImported={() => { void loadTables(); void loadAreas() }}
           onError={setError}
         />
@@ -120,8 +132,12 @@ const Rooms = () => {
         )}
 
         <RoomTable
-          rooms={filtered}
-          total={items.length}
+          rooms={items}
+          total={total}
+          page={page}
+          pageSize={PAGE_SIZE}
+          totalPages={totalPages}
+          onPage={setPage}
           loading={loading}
           onViewQr={setQrTable}
           onEdit={setEditTable}

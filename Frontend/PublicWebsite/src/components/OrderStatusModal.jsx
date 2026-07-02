@@ -126,14 +126,14 @@ export default function OrderStatusModal({ orderId, onClose, onEditOrder, onOrde
                         <span className={`text-xs font-semibold px-2 py-1 rounded-md ${
                           item.cookingStatus === 'PENDING' ? 'bg-[#ffedd5] text-[#f97316]' :
                           item.cookingStatus === 'COOKING' ? 'bg-[#dbeafe] text-[#2563eb]' :
-                          item.cookingStatus === 'COMPLETED' ? 'bg-[#dcf7ea] text-[#286b4a]' :
+                          item.cookingStatus === 'READY' ? 'bg-[#dcf7ea] text-[#286b4a]' :
                           item.cookingStatus === 'SERVED' ? 'bg-[#e0e7ff] text-[#4f46e5]' :
                           'bg-[#fee2e2] text-[#ef4444]'
                         }`}>
                           {item.cookingStatus === 'PENDING' ? 'Chờ duyệt' :
-                           item.cookingStatus === 'COOKING' ? 'Đang nấu' :
-                           item.cookingStatus === 'COMPLETED' ? 'Nấu xong' :
-                           item.cookingStatus === 'SERVED' ? 'Đã phục vụ' : 'Đã hủy'}
+                           item.cookingStatus === 'COOKING' ? 'Đang nấu' : 
+                           item.cookingStatus === 'READY' ? 'Nấu xong' : 
+                           item.cookingStatus === 'SERVED' ? 'Đã phục vụ' : item.cookingStatus === 'REJECTED' ? 'Đã hủy' : ''}
                         </span>
                       </div>
                     </div>

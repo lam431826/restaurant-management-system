@@ -1,5 +1,8 @@
+import JSZip from 'jszip'
+import QRCode from 'qrcode'
 import { api } from './api'
-import type { ApiResponse } from './api'
+import type { ApiResponse, PageResponse } from './api'
+import { buildQrValue } from '../utils/qr'
 
 // ── Frontend-facing types (seats↔capacity, order↔displayOrder) ─────────
 
@@ -81,8 +84,27 @@ const toBody = (input: TableInput) => ({
 
 // ── Tables ─────────────────────────────────────────────────────────────
 
+export interface TableSearchParams {
+  q?: string
+  area?: string
+  active?: boolean
+  page?: number // 1-based
+  size?: number
+}
+
+export const searchTables = (params: TableSearchParams = {}): Promise<PageResponse<TableItem>> =>
+  api.get<PageResponse<TableResponse>>('/api/tables', {
+    q: params.q,
+    area: params.area,
+    active: params.active,
+    // backend Pageable is 0-based
+    page: params.page ? params.page - 1 : 0,
+    size: params.size ?? 20,
+  }).then(r => ({ ...r, data: r.data.map(toItem) }))
+
+/** Fetches every table in one page — for screens that need the full list rather than a paginated slice. */
 export const listTables = (): Promise<TableItem[]> =>
-  api.get<ApiResponse<TableResponse[]>>('/api/tables').then(r => r.data.map(toItem))
+  searchTables({ size: 1000 }).then(r => r.data)
 
 export const createTable = (input: TableInput): Promise<TableItem> =>
   api.post<ApiResponse<TableResponse>>('/api/tables', toBody(input)).then(r => toItem(r.data))
@@ -116,6 +138,27 @@ export const exportTablesCsv = async (): Promise<void> => {
   const link = document.createElement('a')
   link.href = url
   link.download = 'tables-export.csv'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+export const downloadAllQrCodes = async (rooms: TableItem[]): Promise<void> => {
+  const targets = rooms.filter((r): r is TableItem & { qrToken: string } => !!r.qrToken)
+  if (targets.length === 0) return
+
+  const zip = new JSZip()
+  for (const room of targets) {
+    const dataUrl = await QRCode.toDataURL(buildQrValue(room.qrToken), { width: 480, margin: 2 })
+    zip.file(`QR-${room.name}.png`, dataUrl.split(',')[1], { base64: true })
+  }
+
+  const blob = await zip.generateAsync({ type: 'blob' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'qr-codes.zip'
   document.body.appendChild(link)
   link.click()
   link.remove()
