@@ -171,55 +171,59 @@ const ShiftTemplateModal = ({ template, onClose, onSaved }: Props) => {
 
   return (
     <div
-      className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center p-6 overflow-y-auto"
+      className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center p-4 sm:p-6 overflow-y-auto"
       style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }}
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="w-full max-w-[46rem] my-[10vh] bg-card rounded-xl shadow-lg flex flex-col">
-        <div className="flex items-center justify-between px-7 h-16 shrink-0">
+      <div className="w-full max-w-[50rem] my-[6vh] sm:my-[10vh] bg-card rounded-xl shadow-lg flex flex-col">
+        <div className="flex items-center justify-between px-5 sm:px-7 h-16 shrink-0">
           <h2 className="text-h3 font-bold text-ink">{template ? 'Sửa ca làm việc' : 'Thêm ca làm việc'}</h2>
           <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">
             <CloseIcon />
           </button>
         </div>
 
-        <div className="px-7 py-4 flex flex-col gap-5">
+        <div className="px-5 sm:px-7 py-4 flex flex-col gap-5">
           {/* Tên */}
-          <div className="flex items-center gap-4">
-            <label className="w-[13rem] shrink-0 text-md text-ink">Tên</label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4">
+            <label className="sm:w-[13.5rem] sm:shrink-0 text-md text-ink">Tên</label>
             <input
               ref={nameRef}
-              className={inputCls}
+              className={`${inputCls} min-w-0`}
               value={name}
               onChange={e => { setName(e.target.value); if (error) setError('') }}
             />
           </div>
 
           {/* Giờ làm việc */}
-          <div className="flex items-center gap-4">
-            <label className="w-[13rem] shrink-0 text-md text-ink flex items-center gap-1.5">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4">
+            <label className="sm:w-[13.5rem] sm:shrink-0 text-md text-ink flex items-center gap-1.5">
               Giờ làm việc <InfoIcon />
             </label>
-            <TimePicker value={workStart} onChange={handleWorkStart} />
-            <span className="text-md text-ink-subtle">Đến</span>
-            <TimePicker value={workEnd} onChange={setWorkEnd} />
-            <span className="text-md text-ink-subtle ml-2 whitespace-nowrap">{durationLabel(workStart, workEnd)}</span>
+            <div className="flex items-center flex-wrap gap-x-3 gap-y-2">
+              <TimePicker value={workStart} onChange={handleWorkStart} />
+              <span className="text-md text-ink-subtle">Đến</span>
+              <TimePicker value={workEnd} onChange={setWorkEnd} />
+              <span className="text-md text-ink-subtle whitespace-nowrap">{durationLabel(workStart, workEnd)}</span>
+            </div>
           </div>
 
           {/* Giờ cho phép chấm công */}
-          <div className="flex items-center gap-4">
-            <label className="w-[13rem] shrink-0 text-md text-ink flex items-center gap-1.5">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4">
+            <label className="sm:w-[13.5rem] sm:shrink-0 text-md text-ink flex items-center gap-1.5">
               Giờ cho phép chấm công <InfoIcon />
             </label>
-            <TimePicker value={checkStart} onChange={setCheckStart} />
-            <span className="text-md text-ink-subtle">Đến</span>
-            <TimePicker value={checkEnd} onChange={setCheckEnd} />
+            <div className="flex items-center flex-wrap gap-x-3 gap-y-2">
+              <TimePicker value={checkStart} onChange={setCheckStart} />
+              <span className="text-md text-ink-subtle">Đến</span>
+              <TimePicker value={checkEnd} onChange={setCheckEnd} />
+            </div>
           </div>
 
           {error && <span className="text-md text-danger">{error}</span>}
         </div>
 
-        <div className="flex items-center justify-end gap-3 px-7 py-4 border-t border-line shrink-0">
+        <div className="flex items-center justify-end gap-3 px-5 sm:px-7 py-4 border-t border-line shrink-0">
           <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose}>Bỏ qua</button>
           <button className="kv-btn kv-btn-primary h-10" disabled={saving} onClick={() => void handleSave()}>
             {saving ? 'Đang lưu...' : 'Lưu'}

@@ -277,7 +277,7 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
             <>
               {/* Thông tin khởi tạo */}
               <SectionCard title="Thông tin khởi tạo">
-                <div className="flex gap-6 mt-4">
+                <div className="flex flex-col-reverse sm:flex-row gap-6 mt-4">
                   <div className="flex-1 flex flex-col gap-4">
                     <Field label="Tên nhân viên">
                       <input ref={nameRef} className={inputCls} placeholder="Bắt buộc" value={name}
@@ -293,7 +293,7 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
                   </div>
 
                   {/* Photo uploader */}
-                  <div className="w-[15rem] shrink-0 flex flex-col items-center justify-center">
+                  <div className="w-full sm:w-[15rem] shrink-0 flex flex-col items-center justify-center">
                     <button
                       type="button"
                       onClick={() => fileRef.current?.click()}
@@ -310,7 +310,7 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
 
               {/* Thông tin công việc */}
               <SectionCard title="Thông tin công việc" collapsible>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-4 mt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 mt-4">
                   <Field label="Phòng ban">
                     <Picker value={department} options={departments} placeholder="Chọn Phòng ban" onChange={setDepartment} />
                   </Field>
@@ -323,7 +323,7 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
                   <Field label="Tài khoản đăng nhập">
                     <Picker value={account} options={accountOptions} placeholder="Chọn Tài khoản" onChange={setAccount} />
                   </Field>
-                  <Field label="Ghi chú" className="col-span-2">
+                  <Field label="Ghi chú" className="sm:col-span-2">
                     <input className={inputCls} placeholder="Nhập ghi chú" value={note} onChange={e => setNote(e.target.value)} />
                   </Field>
                 </div>
@@ -331,7 +331,7 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
 
               {/* Thông tin cá nhân */}
               <SectionCard title="Thông tin cá nhân" collapsible>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-4 mt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 mt-4">
                   <Field label="Số CMND/CCCD">
                     <input className={inputCls} inputMode="numeric" value={idNumber} onChange={e => setIdNumber(e.target.value)} />
                   </Field>
@@ -352,7 +352,7 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
                       </div>
                     </div>
                   </div>
-                  <Field label="Địa chỉ" className="col-span-2">
+                  <Field label="Địa chỉ" className="sm:col-span-2">
                     <input className={inputCls} value={address} onChange={e => setAddress(e.target.value)} />
                   </Field>
                   <Field label="Tỉnh/Thành phố">
@@ -376,7 +376,7 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
               <SectionCard title="Lương chính">
                 <div className="flex items-center gap-4 mt-3">
                   <label className="text-md text-ink-subtle w-[8rem] shrink-0">Loại lương</label>
-                  <div className="w-[22rem]">
+                  <div className="w-full sm:w-[22rem]">
                     <Picker value={salaryType} options={salaryTypes} placeholder="Chọn Loại lương" onChange={setSalaryType} />
                   </div>
                 </div>
@@ -386,7 +386,7 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
               <SectionCard>
                 <div className="flex items-center gap-4">
                   <label className="text-md font-bold text-ink w-[8rem] shrink-0 flex items-center gap-1.5">Mẫu lương <InfoIcon /></label>
-                  <div className="w-[22rem]">
+                  <div className="w-full sm:w-[22rem]">
                     <Picker value={salaryTemplate} options={salaryTemplates} placeholder="Chọn mẫu lương có sẵn" onChange={setSalaryTemplate} />
                   </div>
                 </div>
