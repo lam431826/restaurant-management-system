@@ -1327,6 +1327,7 @@ const CashierOrders = () => {
     <div className="flex flex-col h-screen bg-[#f5f5f5] overflow-hidden font-sans">
       {!shift && shiftModalOpen && (
         <OpenShiftModal
+          employeeName={user?.fullName ?? user?.username ?? "Nhân viên"}
           onOpened={(s) => {
             setShift(s);
             setShiftModalOpen(false);
@@ -1610,6 +1611,7 @@ const CashierOrders = () => {
       {showCloseShift && shift && (
         <CloseShiftModal
           shift={shift}
+          cashierName={user?.username ?? user?.fullName ?? "—"}
           onClosed={() => {
             setShift(null);
             setShowCloseShift(false);

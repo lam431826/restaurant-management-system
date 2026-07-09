@@ -16,11 +16,25 @@ const today = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+const nowLabel = () => {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+const PencilIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-[#9499a0] shrink-0">
+    <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+  </svg>
+)
+
 export const OpenShiftModal = ({
+  employeeName,
   onOpened,
   onLogout,
   onClose,
 }: {
+  employeeName: string
   onOpened: (shift: ShiftSummary) => void
   onLogout: () => void
   onClose?: () => void
@@ -29,6 +43,8 @@ export const OpenShiftModal = ({
   const [checking, setChecking]         = useState(true)   // attendance check in-flight
   const [notClockedIn, setNotClockedIn] = useState(false)
   const [openingCash, setOpeningCash]   = useState('')
+  const [note, setNote]                 = useState('')
+  const [startTime]                     = useState(nowLabel)
   const [loading, setLoading]           = useState(false)
   const [error, setError]               = useState('')
 
@@ -75,41 +91,25 @@ export const OpenShiftModal = ({
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[420px] mx-4 overflow-hidden">
-        <div className="bg-[#025cca] px-6 py-5 flex items-start justify-between">
-          <div>
-            <h2 className="text-[20px] font-bold text-white">Mở ca thu ngân</h2>
-            <p className="text-[13px] text-blue-100 mt-1">Nhập số tiền mặt đầu ca để bắt đầu</p>
-          </div>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full text-blue-200 hover:text-white hover:bg-white/20 transition-colors shrink-0 ml-3 mt-0.5"
-              aria-label="Đóng"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
-
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[520px] mx-4 overflow-hidden">
         {/* ── Checking attendance ── */}
         {checking && (
-          <div className="p-8 flex items-center justify-center gap-3 text-[#636566] text-[14px]">
-            <svg className="w-5 h-5 animate-spin text-[#025cca]" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-            </svg>
-            Đang kiểm tra lịch làm việc...
+          <div className="p-8">
+            <h2 className="text-[24px] font-bold text-[#202325] mb-4">Mở ca làm việc</h2>
+            <div className="flex items-center justify-center gap-3 text-[#636566] text-[14px] py-4">
+              <svg className="w-5 h-5 animate-spin text-[#025cca]" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+              Đang kiểm tra lịch làm việc...
+            </div>
           </div>
         )}
 
         {/* ── Not clocked in ── */}
         {!checking && notClockedIn && (
-          <div className="p-6 flex flex-col gap-4">
-            <div className="flex flex-col items-center gap-3 py-4 text-center">
+          <div className="p-7 flex flex-col gap-4">
+            <div className="flex flex-col items-center gap-3 py-2 text-center">
               <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center">
                 <svg className="w-7 h-7 text-amber-500" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
@@ -157,35 +157,100 @@ export const OpenShiftModal = ({
 
         {/* ── Open shift form ── */}
         {!checking && !notClockedIn && (
-          <form onSubmit={(e) => void handleSubmit(e)} className="p-6 flex flex-col gap-5">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[14px] font-medium text-[#202325]">
-                Tiền mặt đầu ca (VNĐ)
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="0"
-                value={openingCash}
-                onChange={e => setOpeningCash(formatDots(e.target.value))}
-                className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[15px] text-[#202325] outline-none focus:border-[#025cca] focus:ring-2 focus:ring-[#025cca]/20"
-                autoFocus
-              />
+          <form onSubmit={(e) => void handleSubmit(e)} className="p-8 relative">
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full text-[#9499a0] hover:text-[#202325] hover:bg-[#f0f0f0] transition-colors"
+                aria-label="Đóng"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+
+            <h2 className="text-[24px] font-bold text-[#202325]">Mở ca làm việc</h2>
+            <p className="text-[15px] text-[#3a3f45] mt-3 leading-relaxed">
+              Vui lòng mở ca làm việc mới để có thể thực hiện được các chức năng dành cho nhân viên thu ngân
+            </p>
+
+            <div className="flex flex-col gap-5 mt-7">
+              {/* Nhân viên ca */}
+              <div className="flex items-center gap-4">
+                <label className="w-[9.5rem] shrink-0 text-[15px] font-medium text-[#202325]">
+                  Nhân viên ca <span className="text-red-500">*</span>
+                </label>
+                <div className="flex-1 border-b border-[#d1d5db] pb-1.5 text-[15px] text-[#9499a0]">
+                  {employeeName}
+                </div>
+              </div>
+
+              {/* Giờ bắt đầu */}
+              <div className="flex items-center gap-4">
+                <label className="w-[9.5rem] shrink-0 text-[15px] font-medium text-[#202325]">
+                  Giờ bắt đầu
+                </label>
+                <div className="flex-1 border-b border-[#d1d5db] pb-1.5 text-[15px] text-[#202325]">
+                  {startTime}
+                </div>
+              </div>
+
+              {/* Tiền mặt đầu ca */}
+              <div className="flex items-center gap-4">
+                <label className="w-[9.5rem] shrink-0 text-[15px] font-medium text-[#202325]">
+                  Tiền mặt đầu ca <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={openingCash}
+                  onChange={e => { setOpeningCash(formatDots(e.target.value)); if (error) setError('') }}
+                  className="flex-1 border-b border-[#d1d5db] pb-1.5 text-[15px] text-[#202325] outline-none focus:border-[#025cca] bg-transparent"
+                  autoFocus
+                />
+              </div>
+
+              {/* Ghi chú */}
+              <div className="flex items-center gap-4">
+                <label className="w-[9.5rem] shrink-0 text-[15px] font-medium text-[#202325]">
+                  Ghi chú
+                </label>
+                <div className="flex-1 flex items-center gap-2 border-b border-[#d1d5db] pb-1.5">
+                  <PencilIcon />
+                  <input
+                    type="text"
+                    value={note}
+                    onChange={e => setNote(e.target.value)}
+                    className="flex-1 text-[15px] text-[#202325] outline-none bg-transparent"
+                  />
+                </div>
+              </div>
             </div>
 
             {error && (
-              <div className="px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-600">
+              <div className="mt-5 px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-600">
                 {error}
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="h-11 rounded-lg bg-[#025cca] text-white font-semibold text-[15px] disabled:opacity-60 hover:bg-[#0251b3] transition-colors"
-            >
-              {loading ? 'Đang mở ca...' : 'Mở ca'}
-            </button>
+            <div className="flex items-center justify-end gap-3 mt-8">
+              <button
+                type="button"
+                onClick={onLogout}
+                className="px-7 h-11 rounded-xl bg-[#e8f1fc] text-[#025cca] font-semibold text-[15px] hover:bg-[#d7e7fa] transition-colors"
+              >
+                Đăng xuất
+              </button>
+              <button
+                type="submit"
+                disabled={loading || !openingCash}
+                className="px-9 h-11 rounded-xl bg-[#025cca] text-white font-semibold text-[15px] hover:bg-[#0251b3] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Đang mở ca...' : 'Mở ca'}
+              </button>
+            </div>
           </form>
         )}
       </div>

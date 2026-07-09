@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { ShiftTemplate } from '../../../services/rosterService'
-import { createTemplate, updateTemplate, deleteTemplate } from '../../../services/rosterService'
+import { deleteTemplate } from '../../../services/rosterService'
 import { ApiError } from '../../../services/api'
 import { formatTime } from './scheduleUtils'
 import ConfirmDialog from '../../menu/ConfirmDialog'
+import ShiftTemplateModal from './ShiftTemplateModal'
 
 interface Props {
   templates: ShiftTemplate[]
@@ -17,22 +18,11 @@ const CloseIcon = () => (
   </svg>
 )
 
-const inputCls =
-  'h-9 px-3 bg-field border border-line-default rounded-md text-md text-ink transition-colors ' +
-  'placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary'
-
-type Draft = { name: string; start: string; end: string; breakMinutes: string; headcountTarget: string; wage: string }
-const emptyDraft: Draft = { name: '', start: '07:00', end: '11:00', breakMinutes: '0', headcountTarget: '1', wage: '0' }
-
-const toDraft = (s: ShiftTemplate): Draft => ({
-  name: s.name, start: formatTime(s.startTime), end: formatTime(s.endTime),
-  breakMinutes: String(s.breakMinutes), headcountTarget: String(s.headcountTarget), wage: String(s.wage),
-})
+// 'new' opens the add form; a template opens the edit form; null keeps it closed.
+type FormState = 'new' | ShiftTemplate | null
 
 const TemplateManagerModal = ({ templates, onClose, onChanged }: Props) => {
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [adding, setAdding] = useState(false)
-  const [draft, setDraft] = useState<Draft>(emptyDraft)
+  const [form, setForm] = useState<FormState>(null)
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<ShiftTemplate | null>(null)
 
@@ -47,31 +37,6 @@ const TemplateManagerModal = ({ templates, onClose, onChanged }: Props) => {
     }
   }, [onClose])
 
-  const startAdd = () => { setAdding(true); setEditingId(null); setDraft(emptyDraft); setError('') }
-  const startEdit = (s: ShiftTemplate) => { setEditingId(s.id); setAdding(false); setDraft(toDraft(s)); setError('') }
-  const cancelForm = () => { setAdding(false); setEditingId(null); setError('') }
-
-  const submit = async () => {
-    const name = draft.name.trim()
-    if (!name) { setError('Vui lòng nhập tên ca làm việc'); return }
-    const payload = {
-      name,
-      startTime: `${draft.start}:00`,
-      endTime: `${draft.end}:00`,
-      breakMinutes: Number(draft.breakMinutes) || 0,
-      headcountTarget: Number(draft.headcountTarget) || 0,
-      wage: Number(draft.wage) || 0,
-    }
-    try {
-      if (editingId) await updateTemplate(editingId, payload)
-      else await createTemplate(payload)
-      onChanged()
-      cancelForm()
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Không thể lưu ca làm việc.')
-    }
-  }
-
   const doDelete = async () => {
     if (!confirmDelete) return
     try {
@@ -83,40 +48,6 @@ const TemplateManagerModal = ({ templates, onClose, onChanged }: Props) => {
       setConfirmDelete(null)
     }
   }
-
-  const formFields = (
-    <div className="grid grid-cols-2 gap-3 p-3 bg-fill rounded-md">
-      <div className="col-span-2 flex flex-col gap-1">
-        <label className="text-sm text-ink-subtle">Tên ca làm việc</label>
-        <input className={inputCls} value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} autoFocus />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-sm text-ink-subtle">Giờ bắt đầu</label>
-        <input type="time" className={inputCls} value={draft.start} onChange={e => setDraft(d => ({ ...d, start: e.target.value }))} />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-sm text-ink-subtle">Giờ kết thúc</label>
-        <input type="time" className={inputCls} value={draft.end} onChange={e => setDraft(d => ({ ...d, end: e.target.value }))} />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-sm text-ink-subtle">Nghỉ giữa ca (phút)</label>
-        <input type="number" min="0" className={inputCls} value={draft.breakMinutes} onChange={e => setDraft(d => ({ ...d, breakMinutes: e.target.value }))} />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-sm text-ink-subtle">Số nhân viên cần</label>
-        <input type="number" min="0" className={inputCls} value={draft.headcountTarget} onChange={e => setDraft(d => ({ ...d, headcountTarget: e.target.value }))} />
-      </div>
-      <div className="flex flex-col gap-1 col-span-2">
-        <label className="text-sm text-ink-subtle">Tiền công mỗi ca (đ)</label>
-        <input type="number" min="0" className={inputCls} value={draft.wage} onChange={e => setDraft(d => ({ ...d, wage: e.target.value }))} />
-      </div>
-      {error && <span className="col-span-2 text-md text-danger">{error}</span>}
-      <div className="col-span-2 flex items-center gap-2 justify-end">
-        <button className="kv-btn kv-btn-outline-neutral h-9" onClick={cancelForm}>Hủy</button>
-        <button className="kv-btn kv-btn-primary h-9" onClick={submit}>Lưu</button>
-      </div>
-    </div>
-  )
 
   return (
     <div
@@ -133,28 +64,23 @@ const TemplateManagerModal = ({ templates, onClose, onChanged }: Props) => {
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-2">
-          {!adding && (
-            <button className="text-md font-medium text-primary text-left px-2 py-1 hover:underline" onClick={startAdd}>
-              + Thêm ca làm việc
-            </button>
-          )}
-          {adding && formFields}
+          <button className="text-md font-medium text-primary text-left px-2 py-1 hover:underline" onClick={() => { setError(''); setForm('new') }}>
+            + Thêm ca làm việc
+          </button>
+
+          {error && <span className="px-2 text-md text-danger">{error}</span>}
 
           {templates.map(s => (
-            editingId === s.id ? (
-              <div key={s.id}>{formFields}</div>
-            ) : (
-              <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-fill">
-                <div className="flex-1 min-w-0">
-                  <div className="text-md font-semibold text-ink">{s.name}</div>
-                  <div className="text-sm text-ink-subtle">
-                    {formatTime(s.startTime)} - {formatTime(s.endTime)} · Nghỉ {s.breakMinutes}p · {s.headcountTarget} người · {s.wage.toLocaleString('vi-VN')}đ
-                  </div>
+            <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-fill">
+              <div className="flex-1 min-w-0">
+                <div className="text-md font-semibold text-ink">{s.name}</div>
+                <div className="text-sm text-ink-subtle">
+                  {formatTime(s.startTime)} - {formatTime(s.endTime)} · Nghỉ {s.breakMinutes}p · {s.headcountTarget} người · {s.wage.toLocaleString('vi-VN')}đ
                 </div>
-                <button className="text-sm text-primary hover:underline shrink-0" onClick={() => startEdit(s)}>Sửa</button>
-                <button className="text-sm text-danger hover:underline shrink-0" onClick={() => setConfirmDelete(s)}>Xóa</button>
               </div>
-            )
+              <button className="text-sm text-primary hover:underline shrink-0" onClick={() => { setError(''); setForm(s) }}>Sửa</button>
+              <button className="text-sm text-danger hover:underline shrink-0" onClick={() => setConfirmDelete(s)}>Xóa</button>
+            </div>
           ))}
         </div>
 
@@ -162,6 +88,14 @@ const TemplateManagerModal = ({ templates, onClose, onChanged }: Props) => {
           <button className="kv-btn kv-btn-primary h-10" onClick={onClose}>Xong</button>
         </div>
       </div>
+
+      {form && (
+        <ShiftTemplateModal
+          template={form === 'new' ? null : form}
+          onClose={() => setForm(null)}
+          onSaved={() => { setForm(null); onChanged() }}
+        />
+      )}
 
       {confirmDelete && (
         <ConfirmDialog
