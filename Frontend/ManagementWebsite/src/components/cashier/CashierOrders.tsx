@@ -4,12 +4,21 @@ import { useAuth } from "../../context/AuthContext";
 import { logout } from "../../api/auth";
 import { ApiError } from "../../services/api";
 import { ApiClientError } from "../../services/apiClient";
-import { getMyShift, getOpenNormalShifts, mergeFloatingShift } from "../../services/shiftService";
+import {
+  getMyShift,
+  getOpenNormalShifts,
+  mergeFloatingShift,
+} from "../../services/shiftService";
 import type { ShiftSummary, OpenShiftBrief } from "../../services/shiftService";
 import { OpenShiftModal } from "./orders/OpenShiftModal";
 import { CloseShiftModal } from "./orders/CloseShiftModal";
 import { CashMovementModal } from "./orders/CashMovementModal";
 import { listTables } from "../../services/tableService";
+import {
+  checkInReservation,
+  markNoShowReservation,
+  cancelStaffReservation,
+} from "../../services/reservationApi";
 import ChangePasswordModal from "../auth/ChangePasswordModal";
 import {
   applyInvoiceDiscount,
@@ -19,8 +28,8 @@ import {
   sendInvoice,
 } from "../../services/invoiceApi";
 import type { InvoiceDetail, InvoiceSummary } from "../../services/invoiceApi";
-import { getPayments, processPayment } from "../../services/paymentApi";
-import type { Payment, PaymentMethod } from "../../services/paymentApi";
+import { processPayment } from "../../services/paymentApi";
+import type { PaymentMethod } from "../../services/paymentApi";
 import { getStoredUser } from "../../services/tokenStorage";
 import { listCategories, searchItems } from "../../services/menuService";
 import type { MenuCategory } from "../../services/menuService";
@@ -31,9 +40,11 @@ import {
   closeOrder,
   listOrders,
   listPendingAssistance,
+  acceptOrder,
   removeOrderItem,
   respondAssistance,
   updateOrderItemStatus,
+  updateOrderItemNote,
 } from "../../services/orderApi";
 import type { AssistanceRequest, Order } from "../../services/orderApi";
 
@@ -56,9 +67,9 @@ import { Header } from "./orders/Header";
 import { BottomNav } from "./orders/BottomNav";
 import { MenuView } from "./orders/MenuView";
 import { TableView } from "./orders/TableView";
+import { ReservationPanel } from "./orders/ReservationPanel";
 import { AddNoteModal } from "./orders/AddNoteModal";
 import { PaymentModal } from "./orders/PaymentModal";
-import { CashierInvoicePanel } from "./orders/CashierInvoicePanel";
 import { OrderPanel } from "./orders/OrderPanel";
 import { SuccessToast } from "./orders/SuccessToast";
 import { SearchIcon } from "./orders/icons";
@@ -70,16 +81,25 @@ const TABLE_FILTERS = [
   { id: "empty", label: "Còn trống" },
 ];
 
+const ORDER_ALREADY_INVOICED_MESSAGE =
+  "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.";
+const ORDER_FINAL_ITEM_LOCK_MESSAGE =
+  "Đơn hàng đã đóng hoặc đã hủy nên không thể chỉnh sửa món.";
+const EMPTY_ORDER_MESSAGE =
+  "Đơn hàng chưa có món. Vui lòng thêm món hoặc hủy đơn.";
+
 const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
+  ORDER_ALREADY_INVOICED: ORDER_ALREADY_INVOICED_MESSAGE,
   INVOICE_NOT_FOUND: "Không thể đóng đơn vì đơn chưa có hóa đơn.",
   ORDER_NOT_CLOSEABLE:
     "Không thể đóng đơn khi hóa đơn chưa được thanh toán hoặc đơn không còn hợp lệ để đóng.",
-  CANNOT_CANCEL_INVOICED_ORDER:
-    "Không thể hủy đơn vì đơn đã có hóa đơn.",
-  CANNOT_CANCEL_PAID_ORDER:
-    "Không thể hủy đơn vì hóa đơn đã được thanh toán.",
+  CANNOT_CANCEL_INVOICED_ORDER: "Không thể hủy đơn vì đơn đã có hóa đơn.",
+  CANNOT_CANCEL_PAID_ORDER: "Không thể hủy đơn vì hóa đơn đã được thanh toán.",
   CANNOT_CANCEL_ORDER_ITEMS_NOT_PENDING:
     "Không thể hủy đơn vì có món đã được bếp xử lý hoặc phục vụ.",
+  ORDER_ITEM_STATUS_TRANSITION_NOT_ALLOWED:
+    "Không thể hủy món ở trạng thái hiện tại.",
+  ORDER_ITEM_REMOVE_NOT_ALLOWED: "Chỉ có thể xóa món khi món đang chờ duyệt.",
   INVALID_STATUS_TRANSITION:
     "Thao tác đổi trạng thái không hợp lệ. Vui lòng dùng đúng luồng xử lý.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
@@ -90,26 +110,30 @@ const ORDER_ACTION_FALLBACK_ERROR =
 
 const getOrderActionErrorMessage = (error: unknown): string => {
   if (error instanceof ApiError && error.code) {
-    return ORDER_ACTION_ERROR_MESSAGES[error.code] ?? ORDER_ACTION_FALLBACK_ERROR;
+    return (
+      ORDER_ACTION_ERROR_MESSAGES[error.code] ?? ORDER_ACTION_FALLBACK_ERROR
+    );
   }
 
   return ORDER_ACTION_FALLBACK_ERROR;
 };
 
 const INVOICE_GENERATION_ERROR_MESSAGES: Record<string, string> = {
-  ORDER_NOT_INVOICEABLE:
-    "Không thể tạo hóa đơn cho đơn đã hủy hoặc đã đóng.",
-  ORDER_NOT_READY_FOR_INVOICE:
-    "Không thể tạo hóa đơn vì còn món chưa được duyệt hoặc đang chế biến.",
-  INVALID_INVOICE_ITEMS:
-    "Không thể tạo hóa đơn vì dữ liệu món không hợp lệ.",
-  INVALID_INVOICE_TOTAL:
-    "Không thể tạo hóa đơn vì tổng tiền không hợp lệ.",
-  INVOICE_ALREADY_EXISTS: "Đơn này đã có hóa đơn.",
+  ORDER_NOT_INVOICEABLE: "Đơn hàng chưa đủ điều kiện tạo hóa đơn.",
+  ORDER_NOT_READY_FOR_INVOICE: "Đơn hàng chưa đủ điều kiện tạo hóa đơn.",
+  INVALID_ORDER_ITEMS: "Đơn hàng không có món hợp lệ để tạo hóa đơn.",
+  INVALID_INVOICE_ITEMS: "Đơn hàng không có món hợp lệ để tạo hóa đơn.",
+  INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
+  INVOICE_ALREADY_EXISTS: "Đơn hàng này đã có hóa đơn.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
   PROMOTION_NOT_FOUND: "Không tìm thấy mã khuyến mãi.",
-  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã hết lượt sử dụng.",
-  INVALID_STATUS_TRANSITION: "Mã khuyến mãi không hợp lệ hoặc đã hết hạn.",
+  PROMOTION_INACTIVE: "Mã khuyến mãi không còn hoạt động.",
+  PROMOTION_EXPIRED: "Mã khuyến mãi đã hết hạn.",
+  PROMOTION_NOT_STARTED: "Mã khuyến mãi chưa đến thời gian áp dụng.",
+  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã đạt giới hạn sử dụng.",
+  INVALID_STATUS_TRANSITION: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
 };
 
 const INVOICE_GENERATION_MESSAGE_FALLBACKS: Record<string, string> = {
@@ -118,25 +142,33 @@ const INVOICE_GENERATION_MESSAGE_FALLBACKS: Record<string, string> = {
   "Order is not ready for invoice because some items are still pending or cooking":
     INVOICE_GENERATION_ERROR_MESSAGES.ORDER_NOT_READY_FOR_INVOICE,
   "Order contains invalid invoice items":
-    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_ITEMS,
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_ORDER_ITEMS,
   "Order must contain at least one item before invoice generation":
-    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_ITEMS,
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_ORDER_ITEMS,
   "Order does not contain any payable items":
-    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_ITEMS,
+    INVOICE_GENERATION_ERROR_MESSAGES.INVALID_ORDER_ITEMS,
   "Invoice subtotal must be greater than zero and total amount cannot be negative":
     INVOICE_GENERATION_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
   "Invoice already exists for this order":
     INVOICE_GENERATION_ERROR_MESSAGES.INVOICE_ALREADY_EXISTS,
   "Order not found": INVOICE_GENERATION_ERROR_MESSAGES.ORDER_NOT_FOUND,
   "Promotion not found": INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_NOT_FOUND,
+  "Promotion is inactive": INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_INACTIVE,
+  "Promotion has expired": INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_EXPIRED,
+  "Promotion has not started":
+    INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_NOT_STARTED,
   "Promotion usage limit has been reached":
     INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_USAGE_LIMIT_REACHED,
   "Promotion is not valid":
     INVOICE_GENERATION_ERROR_MESSAGES.INVALID_STATUS_TRANSITION,
+  "Validation failed": INVOICE_GENERATION_ERROR_MESSAGES.VALIDATION_ERROR,
+  "Invalid enum value": INVOICE_GENERATION_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body":
+    INVOICE_GENERATION_ERROR_MESSAGES.BAD_REQUEST,
 };
 
 const INVOICE_GENERATION_FALLBACK_ERROR =
-  "Không thể tạo hóa đơn. Vui lòng kiểm tra trạng thái đơn và thử lại.";
+  "Không thể tạo hóa đơn. Vui lòng thử lại.";
 
 const getInvoiceGenerationErrorMessage = (error: unknown): string => {
   if (error instanceof ApiClientError && error.code) {
@@ -156,30 +188,62 @@ const getInvoiceGenerationErrorMessage = (error: unknown): string => {
 
 const PROMOTION_DISCOUNT_ERROR_MESSAGES: Record<string, string> = {
   PROMOTION_NOT_FOUND: "Không tìm thấy mã khuyến mãi.",
-  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã hết lượt sử dụng.",
-  INVALID_STATUS_TRANSITION: "Mã khuyến mãi không hợp lệ hoặc đã hết hạn.",
+  PROMOTION_INACTIVE: "Mã khuyến mãi không còn hoạt động.",
+  PROMOTION_EXPIRED: "Mã khuyến mãi đã hết hạn.",
+  PROMOTION_NOT_STARTED: "Mã khuyến mãi chưa đến thời gian áp dụng.",
+  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã đạt giới hạn sử dụng.",
+  INVALID_STATUS_TRANSITION: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
   INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
-  INVOICE_ALREADY_PAID:
-    "Không thể áp dụng khuyến mãi cho hóa đơn đã thanh toán.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  INVOICE_PROMOTION_ALREADY_APPLIED:
+    "Hóa đơn này đã được áp dụng mã khuyến mãi này rồi.",
   PROMOTION_CHANGE_NOT_ALLOWED:
-    "Không thể thay đổi mã khuyến mãi đã áp dụng cho hóa đơn.",
+    "Không thể thay đổi mã khuyến mãi sau khi đã áp dụng.",
+  ORDER_NOT_DISCOUNTABLE:
+    "Không thể áp dụng khuyến mãi cho đơn đã đóng hoặc đã hủy.",
+  INVOICE_ALREADY_DISCOUNTED:
+    "Hóa đơn này đã có khuyến mãi, không thể áp dụng thêm.",
 };
 
 const PROMOTION_DISCOUNT_MESSAGE_FALLBACKS: Record<string, string> = {
   "Promotion not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_NOT_FOUND,
+  "Promotion is inactive": PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_INACTIVE,
+  "Promotion has expired": PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_EXPIRED,
+  "Promotion has not started":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_NOT_STARTED,
   "Promotion usage limit has been reached":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_USAGE_LIMIT_REACHED,
   "Promotion is not valid":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.INVALID_STATUS_TRANSITION,
   "Invoice not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Order not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Invoice already paid":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "Invoice has already been paid":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
   "Cannot apply a promotion to a paid invoice":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "The same promotion has already been applied to this invoice":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_PROMOTION_ALREADY_APPLIED,
+  "This promotion has already been applied to this invoice":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_PROMOTION_ALREADY_APPLIED,
+  "Cannot change promotion after one has already been applied":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_CHANGE_NOT_ALLOWED,
   "Changing the promotion on an invoice is not allowed":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_CHANGE_NOT_ALLOWED,
+  "Order is not discountable":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.ORDER_NOT_DISCOUNTABLE,
+  "Order cannot apply discount in its current status":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.ORDER_NOT_DISCOUNTABLE,
+  "Invoice already has a discount":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_DISCOUNTED,
+  "Invoice already has a promotion discount":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_DISCOUNTED,
 };
 
 const PROMOTION_DISCOUNT_FALLBACK_ERROR =
-  "Không thể áp dụng mã khuyến mãi. Vui lòng kiểm tra lại mã và thử lại.";
+  "Không thể áp dụng khuyến mãi. Vui lòng thử lại.";
 
 const getPromotionDiscountErrorMessage = (error: unknown): string => {
   if (error instanceof ApiClientError && error.code) {
@@ -196,6 +260,101 @@ const getPromotionDiscountErrorMessage = (error: unknown): string => {
 
   return fallback?.[1] ?? PROMOTION_DISCOUNT_FALLBACK_ERROR;
 };
+
+const PAYMENT_PROCESS_ERROR_MESSAGES: Record<string, string> = {
+  ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
+  INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
+  INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+};
+
+const PAYMENT_PROCESS_MESSAGE_FALLBACKS: Record<string, string> = {
+  "Order cannot be paid in its current status":
+    PAYMENT_PROCESS_ERROR_MESSAGES.ORDER_NOT_PAYABLE,
+  "Invoice subtotal must be greater than zero and total amount cannot be negative":
+    PAYMENT_PROCESS_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  "Invoice has already been paid":
+    PAYMENT_PROCESS_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "A paid payment already exists for this invoice":
+    PAYMENT_PROCESS_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "Invoice not found": PAYMENT_PROCESS_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Order not found": PAYMENT_PROCESS_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Validation failed": PAYMENT_PROCESS_ERROR_MESSAGES.VALIDATION_ERROR,
+  "Invalid enum value": PAYMENT_PROCESS_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body":
+    PAYMENT_PROCESS_ERROR_MESSAGES.BAD_REQUEST,
+};
+
+const PAYMENT_PROCESS_FALLBACK_ERROR =
+  "Không thể xử lý thanh toán. Vui lòng thử lại.";
+
+const getPaymentProcessErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return (
+      PAYMENT_PROCESS_ERROR_MESSAGES[error.code] ??
+      PAYMENT_PROCESS_FALLBACK_ERROR
+    );
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  const fallback = Object.entries(PAYMENT_PROCESS_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  );
+
+  return fallback?.[1] ?? PAYMENT_PROCESS_FALLBACK_ERROR;
+};
+
+const INVOICE_UI_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
+  ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  ORDER_ALREADY_INVOICED: "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.",
+  INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
+  INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
+  VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+};
+
+const INVOICE_UI_MESSAGE_FALLBACKS: Record<string, string> = {
+  "Invoice not found": INVOICE_UI_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  "Order not found": INVOICE_UI_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  "Invoice has already been paid":
+    INVOICE_UI_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "A paid payment already exists for this invoice":
+    INVOICE_UI_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "Order cannot be paid in its current status":
+    INVOICE_UI_ERROR_MESSAGES.ORDER_NOT_PAYABLE,
+  "Invoice subtotal must be greater than zero and total amount cannot be negative":
+    INVOICE_UI_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  "Validation failed": INVOICE_UI_ERROR_MESSAGES.VALIDATION_ERROR,
+  "Invalid enum value": INVOICE_UI_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body": INVOICE_UI_ERROR_MESSAGES.BAD_REQUEST,
+};
+
+const INVOICE_DETAIL_LOAD_FALLBACK_ERROR = "Không thể tải chi tiết hóa đơn.";
+const SEND_INVOICE_SUCCESS_MESSAGE = "Đã ghi nhận gửi hóa đơn mô phỏng.";
+const SEND_INVOICE_FALLBACK_ERROR = "Không thể gửi hóa đơn. Vui lòng thử lại.";
+
+const getInvoiceUiErrorMessage = (
+  error: unknown,
+  fallbackMessage: string,
+): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return INVOICE_UI_ERROR_MESSAGES[error.code] ?? fallbackMessage;
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  const fallback = Object.entries(INVOICE_UI_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  );
+
+  return fallback?.[1] ?? fallbackMessage;
+};
+
+import { QROrderConfirmationModal } from "./orders/QROrderConfirmationModal";
 
 const CashierOrders = () => {
   const navigate = useNavigate();
@@ -236,7 +395,6 @@ const CashierOrders = () => {
   const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(
     null,
   );
-  const [payments, setPayments] = useState<Payment[]>([]);
   const [promotionCode, setPromotionCode] = useState("");
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceAction, setInvoiceAction] = useState<string | null>(null);
@@ -244,7 +402,6 @@ const CashierOrders = () => {
     type: "success" | "error";
     text: string;
   } | null>(null);
-  const [historyError, setHistoryError] = useState("");
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [orderActionMessage, setOrderActionMessage] = useState<{
@@ -252,22 +409,17 @@ const CashierOrders = () => {
     text: string;
   } | null>(null);
 
+  // ── Reservation panel state ───────────────────────────────────────────────
+  const [reservationLoading, setReservationLoading] = useState(false);
+  const [reservationError, setReservationError] = useState<string | null>(null);
+
   // ── Cash shift state ──────────────────────────────────────────────────────
   const [shift, setShift] = useState<ShiftSummary | null>(null);
   const [shiftLoading, setShiftLoading] = useState(true);
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [showCashMovement, setShowCashMovement] = useState(false);
-  const [logoutWarn, setLogoutWarn] = useState(false); // BR-AUTH-01/04
-  const [logoutAfterClose, setLogoutAfterClose] = useState(false);
-  // BR-CS-19: floating shift merge
-  const [mergeOpen, setMergeOpen] = useState(false);
-  const [mergeTargets, setMergeTargets] = useState<OpenShiftBrief[]>([]);
-  const [mergeTargetId, setMergeTargetId] = useState("");
-  const [mergeCash, setMergeCash] = useState("");
-  const [mergeNote, setMergeNote] = useState("");
-  const [mergeError, setMergeError] = useState("");
-  const [mergeLoading, setMergeLoading] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
 
   useEffect(() => {
     getMyShift()
@@ -309,18 +461,28 @@ const CashierOrders = () => {
 
   const submitMerge = async () => {
     if (!shift) return;
-    if (!mergeTargetId) { setMergeError("Vui lòng chọn ca chính để gộp."); return; }
+    if (!mergeTargetId) {
+      setMergeError("Vui lòng chọn ca chính để gộp.");
+      return;
+    }
     const cash = parseInt(mergeCash.replace(/\D/g, "") || "0", 10);
     setMergeLoading(true);
     setMergeError("");
     try {
-      await mergeFloatingShift(shift.id, mergeTargetId, cash, mergeNote.trim() || undefined);
+      await mergeFloatingShift(
+        shift.id,
+        mergeTargetId,
+        cash,
+        mergeNote.trim() || undefined,
+      );
       // The floating shift is now MERGED; the helper no longer owns an open shift.
       setMergeOpen(false);
       setShift(null);
       setShiftModalOpen(true);
     } catch (err) {
-      setMergeError(err instanceof Error ? err.message : "Không thể gộp ca tạm.");
+      setMergeError(
+        err instanceof Error ? err.message : "Không thể gộp ca tạm.",
+      );
     } finally {
       setMergeLoading(false);
     }
@@ -354,6 +516,26 @@ const CashierOrders = () => {
       })
       .finally(() => setTablesLoading(false));
   }, []);
+
+  // Re-fetches table list from backend and merges selection state.
+  // Called after reservation actions and order close/cancel so statuses
+  // (RESERVED→OCCUPIED, OCCUPIED→AVAILABLE, etc.) reflect backend truth.
+  const refreshTables = () => {
+    listTables()
+      .then((res) => {
+        const updated = res
+          .filter((t) => t.active)
+          .sort((a, b) => a.order - b.order)
+          .map(toTableItem);
+        setTables((prev) =>
+          updated.map((t) => ({
+            ...t,
+            selected: prev.find((p) => p.id === t.id)?.selected ?? false,
+          })),
+        );
+      })
+      .catch(() => {});
+  };
 
   const loadMenu = () => {
     Promise.all([listCategories(), searchItems({ available: true, size: 200 })])
@@ -400,6 +582,9 @@ const CashierOrders = () => {
   }, [refreshTrigger]);
 
   // Overlay live order totals onto the table grid (amount/guests/item count, orderId link).
+  // Status is NOT overridden here — backend-provided statuses (RESERVED, CLEANING, etc.)
+  // are preserved. Only tables with active orders are marked OCCUPIED; refreshTables()
+  // is responsible for resetting OCCUPIED→AVAILABLE after orders close.
   useEffect(() => {
     setTables((prevTables) =>
       prevTables.map((t) => {
@@ -413,7 +598,7 @@ const CashierOrders = () => {
             occupied: false,
             amount: 0,
             items: 0,
-            status: "AVAILABLE",
+            // status intentionally not touched — keeps RESERVED/CLEANING/AVAILABLE from API
           };
         }
         const itemsCount = tableOrders.reduce(
@@ -480,17 +665,72 @@ const CashierOrders = () => {
   }, [selectedTable?.id, selectedTable?.occupied, activeOrders]);
 
   const hasSelectedMenu = cart.length > 0;
+  const selectedOrderId = selectedTable?.orderId ?? "";
+  const selectedOrder = activeOrders.find(
+    (order) => order.id === selectedOrderId,
+  );
+  const selectedOrderItemCount =
+    selectedOrder?.items.reduce((total, item) => total + item.quantity, 0) ?? 0;
+  const nonPayableRejectedItems =
+    selectedOrder?.items
+      .filter((item) => item.cookingStatus === "REJECTED")
+      .map((item) => ({
+        id: item.orderItemId,
+        name: item.menuItemName,
+        quantity: item.quantity,
+        note: item.rejectionNote,
+      })) ?? [];
+
+  const pendingOrders = activeOrders.filter(
+    (o) =>
+      o.status === "PENDING" ||
+      (o.status !== "CANCELLED" &&
+        o.status !== "CLOSED" &&
+        o.items.some((i) => i.cookingStatus === "PENDING")),
+  );
+  const pendingOrdersCount = pendingOrders.length;
+  const orderHasInvoice =
+    !!invoice && !!selectedOrderId && invoice.orderId === selectedOrderId;
+  const currentOrderInvoice = orderHasInvoice ? invoice : null;
+  const currentOrderInvoiceDetail =
+    currentOrderInvoice &&
+    invoiceDetail?.id === currentOrderInvoice.id &&
+    invoiceDetail.orderId === selectedOrderId
+      ? invoiceDetail
+      : null;
+  const orderIsFinal =
+    selectedOrder?.status === "CLOSED" || selectedOrder?.status === "CANCELLED";
+  const canCloseSelectedOrder =
+    !!selectedOrder && !!currentOrderInvoice?.paid && !orderIsFinal;
+  const emptyOrderWithoutInvoice =
+    !!selectedOrder &&
+    invoiceChecked &&
+    !currentOrderInvoice &&
+    !orderIsFinal &&
+    selectedOrderItemCount === 0;
+  const disableItemMutation = orderHasInvoice || orderIsFinal;
+  const itemMutationDisabledMessage = orderHasInvoice
+    ? ORDER_ALREADY_INVOICED_MESSAGE
+    : ORDER_FINAL_ITEM_LOCK_MESSAGE;
+
+  const showItemMutationBlockedMessage = () => {
+    setOrderActionMessage({
+      type: "error",
+      text: itemMutationDisabledMessage,
+    });
+  };
 
   const resetInvoiceLink = () => {
     setBackendOrderId("");
     setInvoiceChecked(false);
     setInvoice(null);
     setInvoiceDetail(null);
-    setPayments([]);
     setPromotionCode("");
+    setInvoiceAction(null);
     setInvoiceMessage(null);
-    setHistoryError("");
     setPaymentOpen(false);
+    setPaymentError("");
+    setPaymentProcessing(false);
     setOrderActionMessage(null);
   };
 
@@ -499,43 +739,32 @@ const CashierOrders = () => {
     if (!normalizedOrderId) {
       setInvoiceMessage({
         type: "error",
-        text: "Vui lòng nhập backend orderId",
+        text: "Vui lòng chọn đơn hàng trước khi tạo hóa đơn",
       });
       return null;
     }
 
     setInvoiceLoading(true);
     setInvoiceMessage(null);
-    setHistoryError("");
     try {
       const foundInvoice =
         (await getInvoices({ orderId: normalizedOrderId }))[0] ?? null;
       setInvoiceChecked(true);
       setInvoice(foundInvoice);
-      setPayments([]);
       setInvoiceDetail(null);
 
       if (!foundInvoice) return null;
 
       const detailData = await getInvoiceById(foundInvoice.id);
       setInvoiceDetail(detailData);
-      try {
-        setPayments(await getPayments(foundInvoice.id));
-      } catch (historyLoadError) {
-        setHistoryError(
-          historyLoadError instanceof Error
-            ? historyLoadError.message
-            : "Không thể tải lịch sử thanh toán",
-        );
-      }
       return foundInvoice;
     } catch (loadError) {
       setInvoiceMessage({
         type: "error",
-        text:
-          loadError instanceof Error
-            ? loadError.message
-            : "Không thể tra cứu hóa đơn",
+        text: getInvoiceUiErrorMessage(
+          loadError,
+          INVOICE_DETAIL_LOAD_FALLBACK_ERROR,
+        ),
       });
       return null;
     } finally {
@@ -543,36 +772,50 @@ const CashierOrders = () => {
     }
   };
 
-  const handleBackendOrderIdChange = (value: string) => {
-    setBackendOrderId(value);
-    setInvoiceChecked(false);
-    setInvoice(null);
-    setInvoiceDetail(null);
-    setPayments([]);
-    setPromotionCode("");
-    setInvoiceMessage(null);
-    setHistoryError("");
-  };
-
   const handleGenerateInvoice = async () => {
-    if (!backendOrderId.trim()) return;
-    setInvoiceAction("generate");
-    setInvoiceMessage(null);
-    try {
-      const created = await generateInvoice({
-        orderId: backendOrderId.trim(),
-        promotionCode: null,
-      });
-      await loadInvoiceForOrder(backendOrderId);
-      setInvoiceMessage({
-        type: "success",
-        text: `Đã tạo hóa đơn ${created.id}`,
-      });
-    } catch (generateError) {
+    const invoiceOrderId = selectedOrderId.trim();
+    if (!invoiceOrderId) {
       setInvoiceMessage({
         type: "error",
-        text: getInvoiceGenerationErrorMessage(generateError),
+        text: "Vui lòng chọn đơn hàng trước khi tạo hóa đơn",
       });
+      return;
+    }
+    if (emptyOrderWithoutInvoice) {
+      setPaymentOpen(false);
+      setInvoiceMessage(null);
+      setOrderActionMessage({
+        type: "error",
+        text: EMPTY_ORDER_MESSAGE,
+      });
+      return;
+    }
+    setInvoiceAction("generate");
+    setInvoiceMessage(null);
+    setOrderActionMessage(null);
+    try {
+      setBackendOrderId(invoiceOrderId);
+      await generateInvoice({
+        orderId: invoiceOrderId,
+        promotionCode: null,
+      });
+      const createdInvoice = await loadInvoiceForOrder(invoiceOrderId);
+      if (createdInvoice) setPaymentOpen(true);
+      setInvoiceMessage({
+        type: "success",
+        text: "Hóa đơn đã được tạo và sẵn sàng thanh toán.",
+      });
+    } catch (generateError) {
+      const message = getInvoiceGenerationErrorMessage(generateError);
+      setInvoiceMessage({
+        type: "error",
+        text: message,
+      });
+      setOrderActionMessage({
+        type: "error",
+        text: message,
+      });
+      setPaymentOpen(false);
     } finally {
       setInvoiceAction(null);
     }
@@ -584,7 +827,7 @@ const CashierOrders = () => {
     setInvoiceMessage(null);
     try {
       await applyInvoiceDiscount(invoice.id, promotionCode.trim());
-      await loadInvoiceForOrder(backendOrderId);
+      await loadInvoiceForOrder(invoice.orderId);
       setPromotionCode("");
       setInvoiceMessage({
         type: "success",
@@ -605,15 +848,15 @@ const CashierOrders = () => {
     setInvoiceAction("send");
     setInvoiceMessage(null);
     try {
-      const sent = await sendInvoice(invoice.id);
-      setInvoiceMessage({ type: "success", text: sent.message });
+      await sendInvoice(invoice.id);
+      setInvoiceMessage({
+        type: "success",
+        text: SEND_INVOICE_SUCCESS_MESSAGE,
+      });
     } catch (sendError) {
       setInvoiceMessage({
         type: "error",
-        text:
-          sendError instanceof Error
-            ? sendError.message
-            : "Không thể gửi hóa đơn",
+        text: getInvoiceUiErrorMessage(sendError, SEND_INVOICE_FALLBACK_ERROR),
       });
     } finally {
       setInvoiceAction(null);
@@ -649,14 +892,10 @@ const CashierOrders = () => {
       const createdPayment = await processPayment(invoice.id, method);
       setPaymentOpen(false);
       setSuccessTotal(createdPayment.amount);
-      await loadInvoiceForOrder(backendOrderId);
+      await loadInvoiceForOrder(invoice.orderId);
       setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
     } catch (processError) {
-      setPaymentError(
-        processError instanceof Error
-          ? processError.message
-          : "Không thể xử lý thanh toán",
-      );
+      setPaymentError(getPaymentProcessErrorMessage(processError));
     } finally {
       setPaymentProcessing(false);
     }
@@ -666,26 +905,40 @@ const CashierOrders = () => {
     if (delta > 0) {
       const menuItem = menuItems.find((m) => m.id === id);
       if (menuItem) {
-        setCart((prev) => [
-          ...prev,
-          {
-            cartItemId: Math.random().toString(36).substring(2, 11),
-            menuItemId: menuItem.id,
-            name: menuItem.name,
-            price: menuItem.price,
-            qty: 1,
-            note: "",
-          },
-        ]);
+        setCart((prev) => {
+          const existing = prev.find((c) => c.menuItemId === id);
+          if (existing) {
+            // Increment qty on existing entry
+            return prev.map((c) =>
+              c.menuItemId === id ? { ...c, qty: c.qty + 1 } : c,
+            );
+          }
+          // Add new grouped entry
+          return [
+            ...prev,
+            {
+              cartItemId: Math.random().toString(36).substring(2, 11),
+              menuItemId: menuItem.id,
+              name: menuItem.name,
+              price: menuItem.price,
+              qty: 1,
+              note: "",
+            },
+          ];
+        });
       }
     } else {
       setCart((prev) => {
-        const index = [...prev].reverse().findIndex((c) => c.menuItemId === id);
-        if (index !== -1) {
-          const realIndex = prev.length - 1 - index;
-          return prev.filter((_, i) => i !== realIndex);
+        const existing = prev.find((c) => c.menuItemId === id);
+        if (!existing) return prev;
+        if (existing.qty <= 1) {
+          // Remove entry entirely
+          return prev.filter((c) => c.menuItemId !== id);
         }
-        return prev;
+        // Decrement qty
+        return prev.map((c) =>
+          c.menuItemId === id ? { ...c, qty: c.qty - 1 } : c,
+        );
       });
     }
     setMenuItems((items) =>
@@ -698,32 +951,116 @@ const CashierOrders = () => {
   const handleTableSelect = (id: string) => {
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
     resetInvoiceLink();
+    const selected = tables.find((t) => t.id === id);
+    if (selected) {
+      setActiveArea(selected.area);
+    }
   };
+
+  // ── Reservation action handlers ───────────────────────────────────────────
+
+  const handleReservationCheckIn = async () => {
+    const res = selectedTable?.upcomingReservation;
+    if (!res) return;
+    setReservationLoading(true);
+    setReservationError(null);
+    try {
+      await checkInReservation(res.id);
+      // Backend set table→OCCUPIED; refresh so the panel switches to OrderPanel
+      refreshTables();
+    } catch (e) {
+      setReservationError(
+        e instanceof Error ? e.message : "Check-in thất bại, vui lòng thử lại",
+      );
+    } finally {
+      setReservationLoading(false);
+    }
+  };
+
+  const handleReservationNoShow = async () => {
+    const res = selectedTable?.upcomingReservation;
+    if (!res) return;
+    if (!window.confirm(`Xác nhận khách "${res.guestName}" không đến?`)) return;
+    setReservationLoading(true);
+    setReservationError(null);
+    try {
+      await markNoShowReservation(res.id);
+      // Deselect table, then refresh to pick up AVAILABLE status
+      setTables((ts) => ts.map((t) => ({ ...t, selected: false })));
+      refreshTables();
+    } catch (e) {
+      setReservationError(
+        e instanceof Error ? e.message : "Thao tác thất bại, vui lòng thử lại",
+      );
+    } finally {
+      setReservationLoading(false);
+    }
+  };
+
+  const handleReservationCancel = async () => {
+    const res = selectedTable?.upcomingReservation;
+    if (!res) return;
+    if (!window.confirm(`Xác nhận hủy đặt bàn của khách "${res.guestName}"?`))
+      return;
+    setReservationLoading(true);
+    setReservationError(null);
+    try {
+      await cancelStaffReservation(res.id);
+      // Deselect table, then refresh to pick up AVAILABLE status
+      setTables((ts) => ts.map((t) => ({ ...t, selected: false })));
+      refreshTables();
+    } catch (e) {
+      setReservationError(
+        e instanceof Error
+          ? e.message
+          : "Hủy đặt bàn thất bại, vui lòng thử lại",
+      );
+    } finally {
+      setReservationLoading(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (
       selectedTable &&
       selectedTable.occupied &&
       selectedTable.orderId &&
+      selectedOrder?.id === selectedTable.orderId &&
       !backendOrderId
     ) {
       setBackendOrderId(selectedTable.orderId);
       loadInvoiceForOrder(selectedTable.orderId);
     }
-  }, [selectedTable?.orderId, selectedTable?.occupied, backendOrderId]);
+  }, [
+    selectedTable?.orderId,
+    selectedTable?.occupied,
+    selectedOrder?.id,
+    backendOrderId,
+  ]);
 
   const handleStatusChange = async (
     orderId: string,
     orderItemId: string,
     statusLabel: string,
   ) => {
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
     const status = COOKING_STATUS_FROM_LABEL[statusLabel];
     if (!status) return;
+    setOrderActionMessage(null);
     try {
       await updateOrderItemStatus(orderId, orderItemId, status);
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -744,11 +1081,20 @@ const CashierOrders = () => {
       }
       return;
     }
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
     try {
       await removeOrderItem(orderId, orderItemId);
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -761,6 +1107,7 @@ const CashierOrders = () => {
       );
       setOrderActionMessage(null);
       setRefreshTrigger((t) => t + 1);
+      refreshTables();
     } catch (e) {
       console.error(e);
       setOrderActionMessage({
@@ -772,40 +1119,81 @@ const CashierOrders = () => {
 
   const handleOpenNote = (itemId: string, currentText: string) =>
     setNoteModal({ open: true, itemId, text: currentText });
-  const handleConfirmNote = (itemId: string, text: string) => {
-    let updatedCart = false;
-    setCart((prevCart) => {
-      const newCart = prevCart.map((i) =>
-        i.cartItemId === itemId ? { ...i, note: text } : i,
-      );
-      if (newCart !== prevCart) updatedCart = true;
-      return newCart;
-    });
+  const handleConfirmNote = async (itemId: string, text: string) => {
+    const isDraft = cart.some((i) => i.cartItemId === itemId);
 
-    if (!updatedCart) {
-      setOrderItems((items) =>
-        items.map((i) => (i.id === itemId ? { ...i, notes: text } : i)),
+    if (isDraft) {
+      setCart((prevCart) =>
+        prevCart.map((i) =>
+          i.cartItemId === itemId ? { ...i, note: text } : i,
+        ),
       );
+    } else {
+      // Find the item in orderItems to get the orderId
+      const item = orderItems.find((i) => i.id === itemId);
+      if (item && item.orderId) {
+        if (disableItemMutation) {
+          showItemMutationBlockedMessage();
+          return;
+        }
+        try {
+          await updateOrderItemNote(item.orderId, itemId, text);
+          setOrderItems((items) =>
+            items.map((i) => (i.id === itemId ? { ...i, notes: text } : i)),
+          );
+          setRefreshTrigger((t) => t + 1);
+        } catch (e) {
+          console.error(e);
+          setOrderActionMessage({
+            type: "error",
+            text: getOrderActionErrorMessage(e),
+          });
+        }
+      }
     }
     setNoteModal({ open: false, itemId: null, text: "" });
   };
   const handleCancelNote = () =>
     setNoteModal({ open: false, itemId: null, text: "" });
 
-  const handleOpenReject = (orderId: string, itemId: string) =>
-    setRejectModal({ open: true, orderId, itemId, text: "" });
+  const handleOpenReject = async (orderId: string, itemId: string) => {
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
+    try {
+      await updateOrderItemStatus(orderId, itemId, "REJECTED");
+      setRefreshTrigger((t) => t + 1);
+    } catch (e) {
+      console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
+    }
+  };
 
   const handleConfirmReject = async (
     orderId: string,
     itemId: string,
     text: string,
   ) => {
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
     try {
       await updateOrderItemStatus(orderId, itemId, "REJECTED", text);
       setRefreshTrigger((t) => t + 1);
       setRejectModal({ open: false, orderId: null, itemId: null, text: "" });
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -813,12 +1201,34 @@ const CashierOrders = () => {
     setRejectModal({ open: false, orderId: null, itemId: null, text: "" });
 
   const handleCloseOrder = async () => {
-    if (!backendOrderId) return;
+    if (!selectedOrderId) return;
+    const closedOrderId = selectedOrderId;
+    const closedTableId = selectedTable?.id;
     setOrderActionMessage(null);
     try {
-      await closeOrder(backendOrderId);
-      setRefreshTrigger((t) => t + 1);
+      await closeOrder(closedOrderId);
       resetInvoiceLink();
+      setActiveOrders((orders) =>
+        orders.filter((order) => order.id !== closedOrderId),
+      );
+      setOrderItems([]);
+      if (closedTableId) {
+        setTables((currentTables) =>
+          currentTables.map((table) =>
+            table.id === closedTableId
+              ? {
+                  ...table,
+                  orderId: null,
+                  occupied: false,
+                  amount: 0,
+                  items: 0,
+                  status: "AVAILABLE",
+                }
+              : table,
+          ),
+        );
+      }
+      setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
       setOrderActionMessage({
@@ -839,7 +1249,7 @@ const CashierOrders = () => {
         selectedTable.id,
         cart.map((c) => ({
           menuItemId: c.menuItemId,
-          quantity: 1,
+          quantity: c.qty,
           note: c.note,
         })),
       );
@@ -854,12 +1264,17 @@ const CashierOrders = () => {
 
   const handleAddItems = async () => {
     if (!selectedTable || !selectedTable.orderId) return;
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
     try {
       await addOrderItems(
         selectedTable.orderId,
         cart.map((c) => ({
           menuItemId: c.menuItemId,
-          quantity: 1,
+          quantity: c.qty,
           note: c.note,
         })),
       );
@@ -869,6 +1284,10 @@ const CashierOrders = () => {
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -876,6 +1295,38 @@ const CashierOrders = () => {
     try {
       await respondAssistance(id);
       setAssistanceRequests((reqs) => reqs.filter((r) => r.id !== id));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAcceptPendingOrder = async (order: Order) => {
+    try {
+      await acceptOrder(order.id);
+      setRefreshTrigger((t) => t + 1);
+      setShowQRModal(false);
+      handleTableSelect(order.tableId);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRejectPendingOrder = async (order: Order) => {
+    try {
+      await cancelOrder(order.id, "Thu ngân hủy (QR)");
+      setRefreshTrigger((t) => t + 1);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRemoveItemFromPending = async (
+    orderId: string,
+    orderItemId: string,
+  ) => {
+    try {
+      await removeOrderItem(orderId, orderItemId);
+      setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
     }
@@ -896,22 +1347,29 @@ const CashierOrders = () => {
       count: c.itemCount,
     })),
   ];
+  const BUSY_TABLE_STATUSES = ["OCCUPIED", "BILLING", "RESERVED"];
   const tableCounts: Record<string, number> = {
     all: tablesInArea.length,
-    used: tablesInArea.filter((t) => t.occupied).length,
-    empty: tablesInArea.filter((t) => !t.occupied).length,
+    used: tablesInArea.filter((t) => BUSY_TABLE_STATUSES.includes(t.status))
+      .length,
+    empty: tablesInArea.filter((t) => !BUSY_TABLE_STATUSES.includes(t.status))
+      .length,
   };
   const checkoutDisabled =
-    !invoice ||
-    !invoiceDetail ||
-    invoice.paid ||
     invoiceAction !== null ||
-    invoiceLoading;
-  const checkoutLabel = invoice?.paid
+    invoiceLoading ||
+    !selectedOrderId ||
+    emptyOrderWithoutInvoice ||
+    (currentOrderInvoice
+      ? !currentOrderInvoiceDetail || currentOrderInvoice.paid
+      : !invoiceChecked);
+  const checkoutLabel = currentOrderInvoice?.paid
     ? "Đã thanh toán"
-    : invoice
-      ? "Thanh Toán (F9)"
-      : "Liên kết hóa đơn trước";
+    : currentOrderInvoice
+      ? "Mở thanh toán"
+      : invoiceChecked
+        ? "Tạo hóa đơn"
+        : "Đang kiểm tra hóa đơn";
 
   if (shiftLoading) {
     return (
@@ -927,6 +1385,7 @@ const CashierOrders = () => {
     <div className="flex flex-col h-screen bg-[#f5f5f5] overflow-hidden font-sans">
       {!shift && shiftModalOpen && (
         <OpenShiftModal
+          employeeName={user?.fullName ?? user?.username ?? "Nhân viên"}
           onOpened={(s) => {
             setShift(s);
             setShiftModalOpen(false);
@@ -952,10 +1411,21 @@ const CashierOrders = () => {
       {shift?.shiftType === "FLOATING" && shift.status === "OPEN" && (
         <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2 text-[#025cca] text-[14px]">
-            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            <svg
+              className="w-4 h-4 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M13 10V3L4 14h7v7l9-11h-7z"
+              />
             </svg>
-            Đây là ca tạm (hỗ trợ). Tiền thu được giữ riêng; khi xong hãy gộp vào ca chính.
+            Đây là ca tạm (hỗ trợ). Tiền thu được giữ riêng; khi xong hãy gộp
+            vào ca chính.
           </div>
           <button
             className="kv-btn kv-btn-primary h-9 shrink-0"
@@ -1051,14 +1521,34 @@ const CashierOrders = () => {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-3 bg-white rounded-[12px] px-4 h-[44px] w-[160px] md:w-[220px] lg:w-[340px]">
-              <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={tab === "menu" ? "Tìm món" : "Tìm bàn"}
-                className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none"
-              />
+            <div className="flex flex-col items-end shrink-0">
+              <div className="flex items-center gap-3 bg-white rounded-[12px] px-4 h-[44px] w-[160px] md:w-[220px] lg:w-[340px]">
+                <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={tab === "menu" ? "Tìm món" : "Tìm bàn"}
+                  className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none"
+                />
+              </div>
+              {tab === "table" && (
+                <div className="mt-2">
+                  <button
+                    onClick={() => setShowQRModal(true)}
+                    className="bg-white shadow-sm border border-[#e8e8e8] px-3 py-1.5 rounded-full flex items-center gap-2 text-sm font-semibold text-[#202325] hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="w-4 h-4 shrink-0 text-[#202325]"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
+                    </svg>
+                    <span>{pendingOrdersCount} lượt gọi món qua QR</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1110,7 +1600,11 @@ const CashierOrders = () => {
           onCheckout={() => {
             setOrderActionMessage(null);
             setPaymentError("");
-            setPaymentOpen(true);
+            if (currentOrderInvoice) {
+              setPaymentOpen(true);
+            } else {
+              void handleGenerateInvoice();
+            }
           }}
           onCreateOrder={handleCreateOrder}
           onAddItems={handleAddItems}
@@ -1122,43 +1616,52 @@ const CashierOrders = () => {
           checkoutDisabled={checkoutDisabled}
           checkoutLabel={checkoutLabel}
           shiftOpen={!!shift}
-          invoicePaid={invoice?.paid}
+          invoicePaid={canCloseSelectedOrder}
+          itemMutationDisabled={disableItemMutation}
+          itemMutationDisabledMessage={itemMutationDisabledMessage}
           orderActionMessage={orderActionMessage}
-          onCloseOrder={handleCloseOrder}
-          invoiceTools={
-            <CashierInvoicePanel
-              orderId={backendOrderId}
-              invoiceChecked={invoiceChecked}
-              invoice={invoice}
-              detail={invoiceDetail}
-              payments={payments}
-              promotionCode={promotionCode}
-              loading={invoiceLoading}
-              action={invoiceAction}
-              message={invoiceMessage}
-              historyError={historyError}
-              onOrderIdChange={handleBackendOrderIdChange}
-              onLookup={() => void loadInvoiceForOrder(backendOrderId)}
-              onGenerate={() => void handleGenerateInvoice()}
-              onPromotionCodeChange={setPromotionCode}
-              onApplyDiscount={() => void handleApplyDiscount()}
-              onPrint={handlePrintInvoice}
-              onSend={() => void handleSendInvoice()}
-            />
+          emptyOrderMessage={
+            emptyOrderWithoutInvoice ? EMPTY_ORDER_MESSAGE : undefined
           }
+          cancelOrderIds={
+            emptyOrderWithoutInvoice && selectedOrderId
+              ? [selectedOrderId]
+              : undefined
+          }
+          onCloseOrder={handleCloseOrder}
+          invoiceTools={null}
         />
       </div>
 
+      {showQRModal && (
+        <QROrderConfirmationModal
+          orders={activeOrders}
+          tables={tables}
+          onClose={() => setShowQRModal(false)}
+          onAccept={handleAcceptPendingOrder}
+          onReject={handleRejectPendingOrder}
+          onRemoveItem={handleRemoveItemFromPending}
+        />
+      )}
+
       <BottomNav active="orders" />
 
-      {paymentOpen && invoiceDetail && (
+      {paymentOpen && currentOrderInvoiceDetail && (
         <PaymentModal
-          invoice={invoiceDetail}
+          invoice={currentOrderInvoiceDetail}
           table={selectedTable}
           processing={paymentProcessing}
           error={paymentError}
+          promotionCode={promotionCode}
+          action={invoiceAction}
+          invoiceMessage={invoiceMessage}
+          nonPayableItems={nonPayableRejectedItems}
           onClose={() => setPaymentOpen(false)}
           onConfirm={(method) => void handleProcessPayment(method)}
+          onPromotionCodeChange={setPromotionCode}
+          onApplyDiscount={() => void handleApplyDiscount()}
+          onPrint={handlePrintInvoice}
+          onSend={() => void handleSendInvoice()}
         />
       )}
       {successTotal !== null && (
@@ -1194,6 +1697,7 @@ const CashierOrders = () => {
       {showCloseShift && shift && (
         <CloseShiftModal
           shift={shift}
+          cashierName={user?.username ?? user?.fullName ?? "—"}
           onClosed={() => {
             setShift(null);
             setShowCloseShift(false);
@@ -1211,26 +1715,39 @@ const CashierOrders = () => {
       {mergeOpen && shift && (
         <div
           className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onMouseDown={(e) => { if (e.target === e.currentTarget) setMergeOpen(false); }}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setMergeOpen(false);
+          }}
         >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[460px] mx-4 overflow-hidden">
             <div className="px-6 py-5 border-b border-[#eceef0]">
-              <h2 className="text-[18px] font-bold text-[#202325]">Gộp ca tạm vào ca chính</h2>
+              <h2 className="text-[18px] font-bold text-[#202325]">
+                Gộp ca tạm vào ca chính
+              </h2>
               <p className="text-[13px] text-[#636566] mt-1">
-                Đếm tiền mặt đã thu trong ca tạm và chọn ca chính để gộp. Giao dịch sẽ được chuyển vào ca chính (giữ nguyên người thu).
+                Đếm tiền mặt đã thu trong ca tạm và chọn ca chính để gộp. Giao
+                dịch sẽ được chuyển vào ca chính (giữ nguyên người thu).
               </p>
             </div>
             <div className="p-6 flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-[14px] font-medium text-[#202325]">Ca chính</label>
+                <label className="text-[14px] font-medium text-[#202325]">
+                  Ca chính
+                </label>
                 {mergeTargets.length === 0 ? (
-                  <p className="text-[13px] text-[#636566]">Không có ca chính nào đang mở để gộp.</p>
+                  <p className="text-[13px] text-[#636566]">
+                    Không có ca chính nào đang mở để gộp.
+                  </p>
                 ) : (
                   <div className="flex flex-col gap-1.5">
                     {mergeTargets.map((t) => (
-                      <label key={t.shiftId} className="flex items-center gap-2 text-[14px] text-[#202325] cursor-pointer">
+                      <label
+                        key={t.shiftId}
+                        className="flex items-center gap-2 text-[14px] text-[#202325] cursor-pointer"
+                      >
                         <input
-                          type="radio" name="merge-target"
+                          type="radio"
+                          name="merge-target"
                           checked={mergeTargetId === t.shiftId}
                           onChange={() => setMergeTargetId(t.shiftId)}
                         />
@@ -1241,11 +1758,22 @@ const CashierOrders = () => {
                 )}
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-[14px] font-medium text-[#202325]">Tiền mặt đã đếm (VNĐ)</label>
+                <label className="text-[14px] font-medium text-[#202325]">
+                  Tiền mặt đã đếm (VNĐ)
+                </label>
                 <input
-                  type="text" inputMode="numeric" placeholder="0"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="0"
                   value={mergeCash}
-                  onChange={(e) => setMergeCash((parseInt(e.target.value.replace(/\D/g, "") || "0", 10)).toLocaleString("vi-VN"))}
+                  onChange={(e) =>
+                    setMergeCash(
+                      parseInt(
+                        e.target.value.replace(/\D/g, "") || "0",
+                        10,
+                      ).toLocaleString("vi-VN"),
+                    )
+                  }
                   className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[15px] text-[#202325] outline-none focus:border-[#025cca]"
                 />
               </div>
@@ -1257,11 +1785,18 @@ const CashierOrders = () => {
                 className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[14px] text-[#202325] outline-none focus:border-[#025cca]"
               />
               {mergeError && (
-                <div className="px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-600">{mergeError}</div>
+                <div className="px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-600">
+                  {mergeError}
+                </div>
               )}
             </div>
             <div className="px-6 py-4 border-t border-[#eceef0] flex justify-end gap-2">
-              <button className="kv-btn kv-btn-outline-neutral h-10" onClick={() => setMergeOpen(false)}>Hủy</button>
+              <button
+                className="kv-btn kv-btn-outline-neutral h-10"
+                onClick={() => setMergeOpen(false)}
+              >
+                Hủy
+              </button>
               <button
                 className="kv-btn kv-btn-primary h-10"
                 disabled={mergeLoading || mergeTargets.length === 0}
@@ -1276,26 +1811,38 @@ const CashierOrders = () => {
       {logoutWarn && (
         <div
           className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onMouseDown={(e) => { if (e.target === e.currentTarget) setLogoutWarn(false); }}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setLogoutWarn(false);
+          }}
         >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[420px] mx-4 overflow-hidden">
             <div className="px-6 py-5 border-b border-[#eceef0]">
-              <h2 className="text-[18px] font-bold text-[#202325]">Đăng xuất</h2>
+              <h2 className="text-[18px] font-bold text-[#202325]">
+                Đăng xuất
+              </h2>
               <p className="text-[13px] text-[#636566] mt-1">
-                Đăng xuất sẽ không đóng ca thu ngân của bạn. Ca vẫn mở trên hệ thống và sẽ được khôi phục khi bạn đăng nhập lại.
+                Đăng xuất sẽ không đóng ca thu ngân của bạn. Ca vẫn mở trên hệ
+                thống và sẽ được khôi phục khi bạn đăng nhập lại.
               </p>
             </div>
             <div className="p-6 flex flex-col gap-2.5">
               <button
                 type="button"
-                onClick={() => { setLogoutWarn(false); setLogoutAfterClose(true); setShowCloseShift(true); }}
+                onClick={() => {
+                  setLogoutWarn(false);
+                  setLogoutAfterClose(true);
+                  setShowCloseShift(true);
+                }}
                 className="h-11 rounded-lg bg-[#025cca] text-white font-semibold text-[15px] hover:bg-[#0251b3] transition-colors"
               >
                 Đóng ca rồi đăng xuất
               </button>
               <button
                 type="button"
-                onClick={() => { setLogoutWarn(false); void doLogout(); }}
+                onClick={() => {
+                  setLogoutWarn(false);
+                  void doLogout();
+                }}
                 className="h-11 rounded-lg border border-[#d1d5db] text-[14px] text-[#636566] hover:bg-[#f5f5f5] transition-colors"
               >
                 Chỉ đăng xuất

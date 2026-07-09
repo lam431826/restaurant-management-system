@@ -5,6 +5,7 @@ import type { ReservationTab } from './ReservationHeader'
 import CalendarView from './CalendarView'
 import ListView from './ListView'
 import ReservationModal from './ReservationModal'
+import EditReservationModal from './EditReservationModal'
 import type { Reservation as Res } from '../../data/mockData'
 import { useAuth } from '../../context/AuthContext'
 import { logout } from '../../api/auth'
@@ -63,6 +64,8 @@ const Reservation = () => {
   const [showChangePw, setShowChangePw] = useState(false)
   const [tab, setTab] = useState<ReservationTab>('calendar')
   const [items, setItems] = useState<Res[]>([])
+  const [dtos, setDtos] = useState<ReservationDto[]>([])
+  const [editingDto, setEditingDto] = useState<ReservationDto | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [showModal, setShowModal] = useState(false)
@@ -121,11 +124,18 @@ const Reservation = () => {
     setLoading(true)
     try {
       const res = await listReservations(0, 200)
-      setItems(res.data.data.data.map(toDisplay))
+      const rawDtos = res.data.data.data
+      setDtos(rawDtos)
+      setItems(rawDtos.map(toDisplay))
     } catch { /* ignore */ } finally {
       setLoading(false)
     }
   }, [])
+
+  const handleEdit = (id: string) => {
+    const dto = dtos.find(d => d.id === id)
+    if (dto) setEditingDto(dto)
+  }
 
   useEffect(() => { load() }, [load])
 
@@ -247,6 +257,7 @@ const Reservation = () => {
             onCheckIn={handleCheckIn}
             onCancel={handleCancel}
             onNoShow={handleNoShow}
+            onEdit={handleEdit}
           />
         ) : (
           <ListView
@@ -257,6 +268,7 @@ const Reservation = () => {
             onNoShow={handleNoShow}
             onCancel={handleCancel}
             onAssignTable={handleAssignTable}
+            onEdit={handleEdit}
           />
         )}
       </div>
@@ -271,6 +283,13 @@ const Reservation = () => {
       )}
 
       {showModal && <ReservationModal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load() }} />}
+      {editingDto && (
+        <EditReservationModal
+          dto={editingDto}
+          onClose={() => setEditingDto(null)}
+          onSaved={() => { setEditingDto(null); void load() }}
+        />
+      )}
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
     </div>
   )

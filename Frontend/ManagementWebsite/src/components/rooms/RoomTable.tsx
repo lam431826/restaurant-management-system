@@ -5,6 +5,10 @@ import RoomDetail from './RoomDetail'
 interface Props {
   rooms: TableItem[]
   total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  onPage: (page: number) => void
   loading: boolean
   onViewQr: (room: TableItem) => void
   onEdit: (room: TableItem) => void
@@ -12,22 +16,14 @@ interface Props {
   onDelete: (room: TableItem) => void
 }
 
-const PAGE_SIZE = 15
-
 const th = 'sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-4 py-3 whitespace-nowrap'
 const td = 'text-md text-ink px-4 py-3 border-b border-line align-middle'
 
-const RoomTable = ({ rooms, total, loading, onViewQr, onEdit, onToggleActive, onDelete }: Props) => {
-  const [page, setPage] = useState(1)
+const RoomTable = ({ rooms, total, page, pageSize, totalPages, onPage, loading, onViewQr, onEdit, onToggleActive, onDelete }: Props) => {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  const pageCount = Math.max(1, Math.ceil(rooms.length / PAGE_SIZE))
-  // Clamp during render so the page stays valid when the filtered set shrinks
-  const safePage = Math.min(page, pageCount)
-  const start = (safePage - 1) * PAGE_SIZE
-  const visible = rooms.slice(start, start + PAGE_SIZE)
-  const from = rooms.length === 0 ? 0 : start + 1
-  const to = Math.min(start + PAGE_SIZE, rooms.length)
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const to = from === 0 ? 0 : from + rooms.length - 1
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-card border border-line rounded-t-lg overflow-hidden">
@@ -45,14 +41,14 @@ const RoomTable = ({ rooms, total, loading, onViewQr, onEdit, onToggleActive, on
             </tr>
           </thead>
           <tbody>
-            {visible.length === 0 ? (
+            {rooms.length === 0 ? (
               <tr>
                 <td className={`${td} text-center text-ink-muted`} colSpan={7}>
                   {loading ? 'Đang tải…' : 'Không tìm thấy phòng/bàn nào'}
                 </td>
               </tr>
             ) : (
-              visible.map(r => (
+              rooms.map(r => (
                 <Fragment key={r.id}>
                   <tr
                     className={`cursor-pointer ${expandedId === r.id ? 'bg-primary-50' : 'hover:bg-primary-25'}`}
@@ -105,16 +101,16 @@ const RoomTable = ({ rooms, total, loading, onViewQr, onEdit, onToggleActive, on
         <div className="flex gap-1">
           <button
             className="w-[2.8rem] h-[2.8rem] flex items-center justify-center border border-line-default rounded-xxs bg-card text-ink-subtle cursor-pointer transition-colors hover:border-primary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-line-default disabled:hover:text-ink-subtle"
-            disabled={safePage <= 1}
-            onClick={() => setPage(Math.max(1, safePage - 1))}
+            disabled={page <= 1}
+            onClick={() => onPage(page - 1)}
             aria-label="Trang trước"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 4l-4 4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
           <button
             className="w-[2.8rem] h-[2.8rem] flex items-center justify-center border border-line-default rounded-xxs bg-card text-ink-subtle cursor-pointer transition-colors hover:border-primary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-line-default disabled:hover:text-ink-subtle"
-            disabled={safePage >= pageCount}
-            onClick={() => setPage(Math.min(pageCount, safePage + 1))}
+            disabled={page >= totalPages}
+            onClick={() => onPage(page + 1)}
             aria-label="Trang sau"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>

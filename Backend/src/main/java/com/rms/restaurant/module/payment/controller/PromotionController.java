@@ -8,6 +8,7 @@ import com.rms.restaurant.module.payment.service.PromotionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
@@ -20,16 +21,19 @@ public class PromotionController {
     private final PromotionService promotionService;
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<PromotionResponse>>> getAll() {
         return ResponseEntity.ok(ApiResponse.success(promotionService.getAll()));
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PromotionResponse>> getById(@PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success(promotionService.getById(id)));
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PromotionResponse>> create(@Valid @RequestBody CreatePromotionRequest request) {
         PromotionResponse created = promotionService.create(request);
         return ResponseEntity
@@ -38,12 +42,14 @@ public class PromotionController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PromotionResponse>> update(@PathVariable String id,
                                                                  @Valid @RequestBody UpdatePromotionRequest request) {
         return ResponseEntity.ok(ApiResponse.success(promotionService.update(id, request)));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable String id) {
         promotionService.delete(id);
         return ResponseEntity.ok(ApiResponse.ok("Promotion deleted"));

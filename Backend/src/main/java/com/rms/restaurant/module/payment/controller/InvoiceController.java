@@ -11,6 +11,7 @@ import com.rms.restaurant.module.payment.service.InvoiceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,6 +31,7 @@ public class InvoiceController {
     private final InvoiceService invoiceService;
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<InvoiceSummaryResponse>>> getAll(
             @RequestParam(required = false) Boolean paid,
             @RequestParam(required = false) String orderId) {
@@ -37,11 +39,13 @@ public class InvoiceController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<InvoiceDetailResponse>> getById(@PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success(invoiceService.getById(id)));
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
     public ResponseEntity<ApiResponse<InvoiceResponse>> generate(@Valid @RequestBody GenerateInvoiceRequest request) {
         InvoiceResponse created = invoiceService.generate(request);
         return ResponseEntity
@@ -50,6 +54,7 @@ public class InvoiceController {
     }
 
     @PostMapping("/{id}/send")
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<SendInvoiceResponse>> send(@PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success(
                 invoiceService.sendInvoice(id),
@@ -58,6 +63,7 @@ public class InvoiceController {
     }
 
     @PutMapping("/{id}/discount")
+    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
     public ResponseEntity<ApiResponse<InvoiceResponse>> applyDiscount(@PathVariable String id,
                                                                       @Valid @RequestBody ApplyDiscountRequest request) {
         return ResponseEntity.ok(ApiResponse.success(invoiceService.applyDiscount(id, request)));

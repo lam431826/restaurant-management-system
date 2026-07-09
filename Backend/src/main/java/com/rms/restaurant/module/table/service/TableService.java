@@ -1,14 +1,16 @@
 package com.rms.restaurant.module.table.service;
 
 import com.rms.restaurant.common.utils.enums.TableStatus;
+import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.table.dto.*;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 
 public interface TableService {
 
     // Tables
-    List<TableResponse> listAll();
+    PageResponse<TableResponse> search(String q, String area, Boolean active, Pageable pageable);
     TableResponse getById(String id);
     TableResponse createTable(CreateTableRequest request);
     TableResponse updateTable(String id, UpdateTableRequest request);

@@ -4,6 +4,7 @@ import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
+import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.table.dto.*;
 import com.rms.restaurant.module.table.mapper.TableMapper;
 import com.rms.restaurant.module.table.model.RestaurantTable;
@@ -22,6 +23,8 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -38,7 +41,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -59,15 +61,18 @@ public class TableServiceImpl implements TableService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<TableResponse> listAll() {
-        return tableRepository.findAllByOrderByDisplayOrderAscNameAsc().stream()
+    public PageResponse<TableResponse> search(String q, String area, Boolean active, Pageable pageable) {
+        String term = StringUtils.hasText(q) ? q.trim() : null;
+        Integer termAsCapacity = term != null && term.matches("\\d+") ? Integer.valueOf(term) : null;
+        String areaFilter = StringUtils.hasText(area) ? area : null;
+        Page<TableResponse> page = tableRepository.search(term, termAsCapacity, areaFilter, active, pageable)
                 .map(table -> {
                     String orderId = findActiveOrderId(table.getId());
                     TableResponse.ReservationSummary res = table.getStatus() == TableStatus.RESERVED
                             ? findUpcomingReservation(table.getId()) : null;
                     return tableMapper.toResponse(table, orderId, res);
-                })
-                .collect(Collectors.toList());
+                });
+        return PageResponse.of(page);
     }
 
     @Override
@@ -93,7 +98,7 @@ public class TableServiceImpl implements TableService {
                 .displayOrder(request.displayOrder() == null ? 0 : request.displayOrder())
                 .active(request.active() == null || request.active())
                 .status(TableStatus.AVAILABLE)
-                .qrToken(UUID.randomUUID().toString())
+                .qrToken("QR-" + name)
                 .build();
         return tableMapper.toResponse(tableRepository.save(table));
     }
@@ -107,6 +112,7 @@ public class TableServiceImpl implements TableService {
                 throw new ConflictException(ApplicationError.DUPLICATE_TABLE_NAME);
             }
             table.setName(newName);
+            table.setQrToken("QR-" + newName);
         }
         if (request.note() != null) table.setNote(trimToNull(request.note()));
         if (request.area() != null) table.setArea(trimToNull(request.area()));
@@ -227,7 +233,7 @@ public class TableServiceImpl implements TableService {
                         table = RestaurantTable.builder()
                                 .name(name)
                                 .status(TableStatus.AVAILABLE)
-                                .qrToken(UUID.randomUUID().toString())
+                                .qrToken("QR-" + name)
                                 .build();
                     }
                     table.setArea(area);

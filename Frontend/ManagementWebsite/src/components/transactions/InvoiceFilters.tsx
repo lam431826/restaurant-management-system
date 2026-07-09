@@ -44,7 +44,7 @@ const InvoiceFilters = ({ initialState, onApply }: Props) => {
         <label className="text-md font-semibold text-ink">Mã đơn hàng</label>
         <input
           className={fieldCls}
-          placeholder="Nhập orderId"
+          placeholder="Nhập mã đơn hàng"
           value={orderId}
           onChange={(event) => setOrderId(event.target.value)}
         />

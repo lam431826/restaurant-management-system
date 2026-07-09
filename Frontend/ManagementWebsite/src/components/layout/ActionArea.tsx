@@ -61,7 +61,7 @@ const ActionArea = () => {
   const [notifTab, setNotifTab] = useState<"all" | "failed">("all");
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
 
   const failedCount = notifLogs.filter((n) => n.status === "FAILED").length;
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useInView } from '../hooks/useInView'
 import IMG_BG from '../assets/images/menu-bg.jpg'
 import imgMakiSpicyTuna from '../assets/images/menu-maki-spicy-tuna.jpg'
+import { getImageUrl } from '../utils/api'
 
 export default function MenuSection({ onAddToCart }) {
   const [menuData, setMenuData] = useState([])
@@ -87,12 +88,9 @@ function CategorySection({ id, title, items, onAddToCart }) {
         <SectionTitle title={title} />
       </div>
       <div className="flex flex-col gap-8">
-        {items.filter(item => item.available).map((item, i) => (
+        {items.map((item, i) => (
           <MenuItem key={item.id} index={i} item={item} onAddToCart={onAddToCart} />
         ))}
-        {items.filter(item => item.available).length === 0 && (
-          <p className="text-[rgba(245,242,234,0.7)] text-center text-sm italic">Không có món nào đang bán trong danh mục này.</p>
-        )}
       </div>
     </div>
   )
@@ -125,7 +123,7 @@ function SectionTitle({ title }) {
 
 function MenuItem({ item, index = 0, onAddToCart }) {
   const [ref, inView] = useInView()
-  const imgUrl = item.imageUrl || imgMakiSpicyTuna; // Fallback image if null
+  const imgUrl = getImageUrl(item.imageUrl) || imgMakiSpicyTuna
   return (
     <div
       ref={ref}
@@ -133,21 +131,21 @@ function MenuItem({ item, index = 0, onAddToCart }) {
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <div className="w-[150px] h-[100px] bg-[#0a0b0a] overflow-hidden rounded-xl shrink-0 relative">
-        <img src={imgUrl} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
+        <img src={imgUrl} alt={item.name} className="absolute inset-0 w-full h-full object-cover" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = imgMakiSpicyTuna }} />
       </div>
       <div className="flex-1 flex flex-col gap-1 min-w-0">
-        <div className="flex items-end gap-4">
-          <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-start gap-4">
+          <div className="flex items-center gap-3 min-w-0">
             <p
-              className="text-[#efe7d2] text-[22px] tracking-[1px] uppercase whitespace-nowrap"
+              className="text-[#efe7d2] text-[22px] tracking-[1px] uppercase break-words"
               style={{ fontFamily: 'Forum, serif', lineHeight: 1.2 }}
             >
               {item.name}
             </p>
           </div>
-          <div className="flex-1 border-b border-dashed border-[rgba(239,231,210,0.15)] mb-1" />
+          <div className="flex-1 border-b border-dashed border-[rgba(239,231,210,0.15)] self-end mb-1 min-w-[20px]" />
           <p
-            className="text-[#efe7d2] text-[22px] tracking-[1px] uppercase whitespace-nowrap shrink-0"
+            className="text-[#efe7d2] text-[22px] tracking-[1px] uppercase whitespace-nowrap shrink-0 self-end"
             style={{ fontFamily: 'Forum, serif', lineHeight: 1.2 }}
           >
             {item.price.toLocaleString('vi-VN')} Đ

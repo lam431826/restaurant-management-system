@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { InvoiceSummary } from '../../services/invoiceApi'
 import type { PaymentMethod } from '../../services/paymentApi'
+import { ApiClientError } from '../../services/apiClient'
 
 interface Props {
   invoice: InvoiceSummary
@@ -14,6 +15,47 @@ const methods: { value: PaymentMethod; label: string; description: string }[] = 
   { value: 'QR', label: 'Mã QR', description: 'Quét mã QR để thanh toán' },
   { value: 'E_WALLET', label: 'Ví điện tử', description: 'Thanh toán qua ví điện tử' },
 ]
+
+const PAYMENT_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_ALREADY_PAID: 'Hóa đơn này đã được thanh toán.',
+  ORDER_NOT_PAYABLE: 'Không thể thanh toán đơn đã đóng hoặc đã hủy.',
+  INVALID_INVOICE_TOTAL: 'Hóa đơn có tổng tiền không hợp lệ.',
+  INVOICE_NOT_FOUND: 'Không tìm thấy hóa đơn.',
+  ORDER_NOT_FOUND: 'Không tìm thấy đơn hàng.',
+  VALIDATION_ERROR: 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.',
+  BAD_REQUEST: 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.',
+}
+
+const PAYMENT_MESSAGE_FALLBACKS: Record<string, string> = {
+  'Invoice has already been paid': PAYMENT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  'A paid payment already exists for this invoice':
+    PAYMENT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  'Order cannot be paid in its current status':
+    PAYMENT_ERROR_MESSAGES.ORDER_NOT_PAYABLE,
+  'Invoice subtotal must be greater than zero and total amount cannot be negative':
+    PAYMENT_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
+  'Invoice not found': PAYMENT_ERROR_MESSAGES.INVOICE_NOT_FOUND,
+  'Order not found': PAYMENT_ERROR_MESSAGES.ORDER_NOT_FOUND,
+  'Validation failed': PAYMENT_ERROR_MESSAGES.VALIDATION_ERROR,
+  'Invalid enum value': PAYMENT_ERROR_MESSAGES.BAD_REQUEST,
+  'Malformed or unreadable request body': PAYMENT_ERROR_MESSAGES.BAD_REQUEST,
+}
+
+const PAYMENT_FALLBACK_ERROR =
+  'Không thể xử lý thanh toán. Vui lòng thử lại.'
+
+const getPaymentErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return PAYMENT_ERROR_MESSAGES[error.code] ?? PAYMENT_FALLBACK_ERROR
+  }
+
+  const message = error instanceof Error ? error.message : ''
+  const fallback = Object.entries(PAYMENT_MESSAGE_FALLBACKS).find(
+    ([backendMessage]) => message.includes(backendMessage),
+  )
+
+  return fallback?.[1] ?? PAYMENT_FALLBACK_ERROR
+}
 
 const ProcessPaymentModal = ({ invoice, onClose, onSubmit }: Props) => {
   const [method, setMethod] = useState<PaymentMethod | ''>('')
@@ -47,7 +89,7 @@ const ProcessPaymentModal = ({ invoice, onClose, onSubmit }: Props) => {
     try {
       await onSubmit(method)
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Không thể xử lý thanh toán')
+      setError(getPaymentErrorMessage(submitError))
     } finally {
       setSubmitting(false)
     }

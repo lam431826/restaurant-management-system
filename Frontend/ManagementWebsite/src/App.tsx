@@ -8,6 +8,7 @@ import Rooms from "./components/rooms/Rooms";
 import Invoices from "./components/transactions/Invoices";
 import Employees from "./components/staff/Employees";
 import Schedule from "./components/staff/schedule/Schedule";
+import Timesheet from "./components/staff/schedule/Timesheet";
 import MySchedule from "./components/staff/schedule/MySchedule";
 import AttendanceReport from "./components/staff/schedule/AttendanceReport";
 import DailySummary from "./components/reports/DailySummary";
@@ -72,21 +73,8 @@ function App() {
             </ProtectedRoute>
           }
         />
-        {/* ── Manager role (dashboard chrome) ── */}
-        <Route path="/manager" element={<Layout />}>
-          <Route index element={<Navigate to="/manager/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="products" element={<Menu />} />
-          <Route path="rooms" element={<Rooms />} />
-          <Route path="invoices" element={<Invoices />} />
-          <Route path="promotions" element={<PromotionManagement />} />
-          <Route path="employees" element={<Employees />} />
-          <Route path="schedule" element={<Schedule />} />
-          <Route path="reports/attendance" element={<AttendanceReport />} />
-          <Route path="reports/daily-summary" element={<DailySummary />} />
-        </Route>
 
-        {/* ── Manager dashboard ── */}
+        {/* ── Manager role (dashboard chrome) ── */}
         <Route
           path="/manager"
           element={
@@ -100,8 +88,10 @@ function App() {
           <Route path="products" element={<Menu />} />
           <Route path="rooms" element={<Rooms />} />
           <Route path="invoices" element={<Invoices />} />
+          <Route path="promotions" element={<PromotionManagement />} />
           <Route path="employees" element={<Employees />} />
           <Route path="schedule" element={<Schedule />} />
+          <Route path="timesheet" element={<Timesheet />} />
           <Route path="reports/attendance" element={<AttendanceReport />} />
           <Route path="reports/daily-summary" element={<DailySummary />} />
           <Route path="audit-logs" element={<AuditLogPage />} />

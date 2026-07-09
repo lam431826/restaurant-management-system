@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { OrderItem, TableItem } from "./types";
-import { VAT_RATE } from "./types";
+import { COOKING_STATUS_LABEL } from "./types";
 import { OrderItemRow } from "./OrderItemRow";
 import { CheckIcon, ReceiptIcon } from "./icons";
 
@@ -22,7 +22,11 @@ export const OrderPanel = ({
   checkoutLabel,
   shiftOpen,
   invoicePaid,
+  itemMutationDisabled,
+  itemMutationDisabledMessage,
   orderActionMessage,
+  emptyOrderMessage,
+  cancelOrderIds,
   onCloseOrder,
 }: {
   items: OrderItem[];
@@ -45,16 +49,29 @@ export const OrderPanel = ({
   checkoutLabel: string;
   shiftOpen?: boolean;
   invoicePaid?: boolean;
+  itemMutationDisabled?: boolean;
+  itemMutationDisabledMessage?: string;
   orderActionMessage?: { type: "error"; text: string } | null;
+  emptyOrderMessage?: string;
+  cancelOrderIds?: string[];
   onCloseOrder?: () => void;
 }) => {
   const isTableEmpty = !!selectedTable && !selectedTable.occupied;
   const hasItems = items.length > 0;
-  const subtotal = hasItems
-    ? items.reduce((s, i) => s + i.price * i.qty, 0)
+  const billableOrderItems = items.filter(
+    (item) => item.status !== COOKING_STATUS_LABEL.REJECTED,
+  );
+  const visibleActionMessage = orderActionMessage?.text ?? emptyOrderMessage;
+  const cancellableOrderIds = Array.from(
+    new Set([
+      ...(cancelOrderIds ?? []),
+      ...items.map((i) => i.orderId).filter((id) => id && id !== "cart"),
+    ]),
+  );
+  const canCancelOrder = !invoicePaid && cancellableOrderIds.length > 0;
+  const subtotal = billableOrderItems.length
+    ? billableOrderItems.reduce((s, i) => s + i.price * i.qty, 0)
     : 0;
-  const vat = Math.round(subtotal * VAT_RATE);
-  const total = subtotal + vat;
 
   return (
     <div className="bg-white rounded-[12px] flex flex-col p-4 lg:p-6 w-[260px] md:w-[300px] lg:w-[360px] xl:w-[400px] shrink-0 h-full overflow-hidden">
@@ -117,6 +134,8 @@ export const OrderPanel = ({
               onNote={onNote}
               onRemoveItem={onRemoveItem}
               onRejectItem={onRejectItem}
+              itemMutationDisabled={itemMutationDisabled}
+              itemMutationDisabledMessage={itemMutationDisabledMessage}
             />
           ))}
         {!isTableEmpty && invoiceTools}
@@ -126,23 +145,17 @@ export const OrderPanel = ({
         <div className="h-px bg-[#e8e8e8]" />
         <div className="flex justify-between text-[14px]">
           <span className="font-medium text-[#636566]">
-            Tổng ({hasItems ? items.length : 0} món)
+            Số món
           </span>
           <span className="font-semibold text-[#202325]">
-            {hasItems ? `${subtotal.toLocaleString("vi-VN")} đ` : "0 đ"}
-          </span>
-        </div>
-        <div className="flex justify-between text-[14px]">
-          <span className="font-medium text-[#636566]">Vat (8%)</span>
-          <span className="font-semibold text-[#202325]">
-            {hasItems ? `${vat.toLocaleString("vi-VN")} đ` : "0 đ"}
+            {billableOrderItems.length} món
           </span>
         </div>
         <div className="h-px bg-[#202325]" />
         <div className="flex justify-between text-[20px]">
-          <span className="font-medium text-[#202325]">Tổng tiền</span>
+          <span className="font-medium text-[#202325]">Tạm tính</span>
           <span className="font-semibold text-[#202325]">
-            {hasItems ? `${total.toLocaleString("vi-VN")} đ` : "0 đ"}
+            {subtotal ? `${subtotal.toLocaleString("vi-VN")} đ` : "0 đ"}
           </span>
         </div>
         {isTableEmpty ? (
@@ -156,20 +169,43 @@ export const OrderPanel = ({
             </span>
           </button>
         ) : hasSelectedMenu ? (
+          <div className="flex flex-col gap-2 mt-1">
+            {visibleActionMessage && (
+              <div className="px-3 py-2 rounded-[10px] bg-[#fff0f0] text-[#d92d20] text-[12px] leading-5">
+                {visibleActionMessage}
+              </div>
+            )}
+            {itemMutationDisabled && itemMutationDisabledMessage && (
+              <div className="px-3 py-2 rounded-[10px] bg-[#fff0f0] text-[#d92d20] text-[12px] leading-5">
+                {itemMutationDisabledMessage}
+              </div>
+            )}
           <button
             onClick={onAddItems}
-            disabled={!shiftOpen}
+            disabled={!shiftOpen || itemMutationDisabled}
+            title={
+              itemMutationDisabled ? itemMutationDisabledMessage : undefined
+            }
             className="bg-[#e85d04] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#dc2f02] transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="text-[16px] font-medium text-white">
               Thêm món vào Đơn
             </span>
           </button>
+          {canCancelOrder && (
+            <button
+              onClick={() => onCancelOrder(cancellableOrderIds)}
+              className="bg-transparent border border-[#dc2f02] flex items-center justify-center h-[40px] rounded-[12px] w-full hover:bg-[#dc2f02] hover:text-white text-[#dc2f02] transition-colors"
+            >
+              <span className="text-[14px] font-medium">Hủy đơn hàng</span>
+            </button>
+          )}
+          </div>
         ) : (
           <div className="flex flex-col gap-2 mt-1">
-            {orderActionMessage && (
+            {visibleActionMessage && (
               <div className="px-3 py-2 rounded-[10px] bg-[#fff0f0] text-[#d92d20] text-[12px] leading-5">
-                {orderActionMessage.text}
+                {visibleActionMessage}
               </div>
             )}
             {invoicePaid ? (
@@ -192,14 +228,9 @@ export const OrderPanel = ({
                 </span>
               </button>
             )}
-            {items.length > 0 && !invoicePaid && (
+            {canCancelOrder && (
               <button
-                onClick={() => {
-                  const uniqueOrderIds = Array.from(
-                    new Set(items.map((i) => i.orderId).filter(Boolean)),
-                  );
-                  onCancelOrder(uniqueOrderIds);
-                }}
+                onClick={() => onCancelOrder(cancellableOrderIds)}
                 className="bg-transparent border border-[#dc2f02] flex items-center justify-center h-[40px] rounded-[12px] w-full hover:bg-[#dc2f02] hover:text-white text-[#dc2f02] transition-colors"
               >
                 <span className="text-[14px] font-medium">Hủy đơn hàng</span>

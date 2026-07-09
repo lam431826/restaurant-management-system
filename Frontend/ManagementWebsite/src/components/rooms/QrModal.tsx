@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 import type { TableItem } from '../../services/tableService'
+import { buildQrValue } from '../../utils/qr'
 
 interface Props {
   room: TableItem
@@ -12,8 +13,6 @@ const CloseIcon = () => (
     <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
   </svg>
 )
-
-const PUBLIC_SITE_URL = import.meta.env.VITE_PUBLIC_SITE_URL ?? ''
 
 const QrModal = ({ room, onClose }: Props) => {
   const qrWrapperRef = useRef<HTMLDivElement>(null)
@@ -29,9 +28,7 @@ const QrModal = ({ room, onClose }: Props) => {
     }
   }, [onClose])
 
-  const qrValue = room.qrToken
-    ? `${PUBLIC_SITE_URL}/menu?token=${room.qrToken}`
-    : null
+  const qrValue = room.qrToken ? buildQrValue(room.qrToken) : null
 
   const handleDownload = () => {
     const canvas = qrWrapperRef.current?.querySelector('canvas') as HTMLCanvasElement | null

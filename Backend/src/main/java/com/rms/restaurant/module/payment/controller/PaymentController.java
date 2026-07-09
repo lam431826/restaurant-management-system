@@ -7,8 +7,7 @@ import com.rms.restaurant.module.payment.service.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -26,12 +25,14 @@ public class PaymentController {
     private final PaymentService paymentService;
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<PaymentResponse>>> getHistory(
             @RequestParam(required = false) String invoiceId) {
         return ResponseEntity.ok(ApiResponse.success(paymentService.getHistory(invoiceId)));
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PaymentResponse>> process(
             @Valid @RequestBody ProcessPaymentRequest request,
             @AuthenticationPrincipal UserDetails principal) {

@@ -75,8 +75,6 @@ export const toTableItem = (dto: TableServiceItem): TableItem => ({
   upcomingReservation: dto.upcomingReservation ?? null,
 });
 
-export const VAT_RATE = 0.08;
-
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   CASH: "Tiền mặt",
   CARD: "Thẻ",
@@ -108,6 +106,24 @@ export const COOKING_STATUS_FROM_LABEL: Record<string, CookingStatus> = {
 };
 
 export const STATUS_OPTIONS = ["Đang nấu", "Đã nấu xong", "Đã phục vụ"];
+
+export const DRAFT_ITEM_STATUS = "MỚI";
+
+export const getAllowedNextStatusLabels = (status: string): string[] => {
+  if (status === COOKING_STATUS_LABEL.PENDING) {
+    return [COOKING_STATUS_LABEL.COOKING];
+  }
+
+  if (status === COOKING_STATUS_LABEL.COOKING) {
+    return [COOKING_STATUS_LABEL.READY];
+  }
+
+  if (status === COOKING_STATUS_LABEL.READY) {
+    return [COOKING_STATUS_LABEL.SERVED];
+  }
+
+  return [];
+};
 
 export const ROLE_LABEL: Record<string, string> = {
   ADMIN: "Quản trị viên",

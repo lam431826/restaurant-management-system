@@ -58,6 +58,12 @@ export const addOrderItems = (orderId: string, items: OrderItemInput[]): Promise
 export const removeOrderItem = (orderId: string, orderItemId: string): Promise<Order> =>
   api.del<Order>(`/api/orders/${orderId}/items/${orderItemId}`)
 
+export const updateOrderItemNote = (
+  orderId: string,
+  orderItemId: string,
+  note: string
+): Promise<Order> => api.put<Order>(`/api/orders/${orderId}/items/${orderItemId}/note`, { note })
+
 export const updateOrderItemStatus = (
   orderId: string,
   orderItemId: string,
