@@ -522,6 +522,63 @@ const SwapModal = ({ ctx, shifts, employees, onClose }: { ctx: AttnCtx; shifts: 
   )
 }
 
+/* ── "Đặt lịch" cell popup ─────────────────────────────────────────────────── */
+const ScheduleCellModal = ({ shift, date, employees, onClose }: { shift: ShiftDef; date: Date; employees: Employee[]; onClose: () => void }) => {
+  const [q, setQ] = useState('')
+  const [selected, setSelected] = useState('')
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', h); document.removeEventListener('keydown', onKey) }
+  }, [onClose])
+  const filtered = employees.filter(e => { const s = q.trim().toLowerCase(); return !s || e.name.toLowerCase().includes(s) || e.code.toLowerCase().includes(s) })
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="w-full max-w-[54rem] bg-card rounded-xl shadow-2xl flex flex-col" onMouseDown={e => e.stopPropagation()}>
+        <div className="px-6 pt-5 pb-2">
+          <div className="flex items-start justify-between">
+            <h2 className="text-xl font-bold text-ink">{shift.name}</h2>
+            <button onClick={onClose} aria-label="Đóng" className="w-8 h-8 flex items-center justify-center rounded-full text-ink-muted hover:bg-fill hover:text-ink cursor-pointer"><CloseIcon /></button>
+          </div>
+          <div className="text-sm text-ink-subtle mt-1">{fullDateLabel(date)}</div>
+        </div>
+
+        <div className="px-6 py-4">
+          <p className="text-md text-ink mb-4">Chọn nhân viên bạn muốn đặt lịch ở ca này?</p>
+          <div className="flex items-center gap-4">
+            <label className="text-md font-bold text-ink w-[7rem] shrink-0">Tên nhân viên</label>
+            <div ref={ref} className="relative flex-1">
+              <input value={selected || q} onChange={e => { setQ(e.target.value); setSelected(''); setOpen(true) }} onFocus={() => setOpen(true)}
+                placeholder="Tìm kiếm nhân viên" className="w-full h-10 px-3 bg-card border border-line-default rounded-md text-md text-ink placeholder:text-ink-muted focus:border-primary outline-none" />
+              {open && (
+                <div className="absolute left-0 right-0 top-[calc(100%+0.3rem)] bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] max-h-[14rem] overflow-y-auto py-1">
+                  {filtered.length === 0
+                    ? <div className="px-3 py-2 text-md text-ink-muted">Không có nhân viên</div>
+                    : filtered.map(e => (
+                      <button key={e.code} type="button" onClick={() => { setSelected(e.name); setQ(''); setOpen(false) }} className="block w-full text-left px-3 py-2 hover:bg-[var(--kv-state-hover-bg)] cursor-pointer">
+                        <div className="text-md text-ink">{e.name}</div>
+                        <div className="text-sm text-ink-subtle">{e.code}</div>
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4">
+          <button onClick={onClose} className="kv-btn kv-btn-outline-neutral h-10 bg-card">Bỏ qua</button>
+          <button onClick={onClose} className="kv-btn kv-btn-primary h-10">Đồng ý</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const Timesheet = () => {
   const today = useMemo(() => stripTime(new Date()), [])
   const [assignments] = useState<Assignment[]>(() => buildMockData(today))
@@ -547,6 +604,9 @@ const Timesheet = () => {
   // attendance ("Chấm công") + "Đổi ca" modals
   const [attn, setAttn] = useState<AttnCtx | null>(null)
   const [swapOpen, setSwapOpen] = useState(false)
+  // "Đặt lịch" cell popup — pick an employee to schedule into a shift on a day
+  const [scheduleCell, setScheduleCell] = useState<{ shift: ShiftDef; date: Date } | null>(null)
+  const openSchedule = (shift: ShiftDef, date: Date) => setScheduleCell({ shift, date })
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -651,7 +711,7 @@ const Timesheet = () => {
 
   /* ── employee card (week / month cell) ──────────────────────────────────── */
   const WeekCard = ({ a }: { a: Assignment }) => (
-    <button type="button" onClick={() => openAttn(a)}
+    <button type="button" onClick={e => { e.stopPropagation(); openAttn(a) }}
       className={`block w-full rounded-md px-3 py-2 text-left cursor-pointer transition-shadow hover:ring-1 hover:ring-primary/50 ${cardStyle(a.status)}`}>
       <div className="text-md font-medium leading-tight">{a.employee}</div>
       {a.status === 'unmarked' && (
@@ -665,7 +725,7 @@ const Timesheet = () => {
 
   /* ── employee card (day view — richer) ──────────────────────────────────── */
   const DayCard = ({ a }: { a: Assignment }) => (
-    <button type="button" onClick={() => openAttn(a)}
+    <button type="button" onClick={e => { e.stopPropagation(); openAttn(a) }}
       className={`block rounded-md px-4 py-3 w-[22rem] max-w-full text-left cursor-pointer transition-shadow hover:ring-1 hover:ring-primary/50 ${cardStyle(a.status)}`}>
       <div className="text-md font-semibold text-ink mb-2">{a.employee}</div>
       <div className="flex items-center gap-2 text-sm mb-1"><CalIcon /> {a.checkIn ?? '--'} {a.checkOut ?? '--'}</div>
@@ -679,7 +739,7 @@ const Timesheet = () => {
   )
 
   return (
-    <div className="flex flex-col h-full min-h-0 gap-4">
+    <div className="flex flex-col h-full min-h-0 gap-4 pt-4">
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-h3 font-extrabold text-ink mr-2">Bảng chấm công</h1>
@@ -829,16 +889,17 @@ const Timesheet = () => {
                 return (
                   <tr key={s.id} className="border-b border-line align-top">
                     <td className="px-4 py-4 border-r border-line align-top"><ShiftLabel s={s} /></td>
-                    {hasAny ? weekDays.map(d => {
+                    {weekDays.map((d, i) => {
                       const cell = cellFor(s.id, d)
                       return (
-                        <td key={toYMD(d)} className="px-2 py-2 border-l border-line align-top hover:bg-success-50/40 transition-colors">
-                          <div className="flex flex-col gap-1.5">{cell.map((a, i) => <WeekCard key={i} a={a} />)}</div>
+                        <td key={toYMD(d)} onClick={() => openSchedule(s, d)} className={`relative px-2 py-2 align-top hover:bg-success-50/40 transition-colors cursor-pointer ${hasAny ? 'border-l border-line' : ''}`}>
+                          <div className="flex flex-col gap-1.5">{cell.map((a, j) => <WeekCard key={j} a={a} />)}</div>
+                          {!hasAny && i === 3 && (
+                            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-md text-ink-subtle pointer-events-none">Chọn để xếp nhân viên làm việc cho ca.</span>
+                          )}
                         </td>
                       )
-                    }) : (
-                      <td colSpan={7} className="px-4 py-6 text-center border-l border-line">{emptyShiftHint}</td>
-                    )}
+                    })}
                   </tr>
                 )
               })}
@@ -868,7 +929,7 @@ const Timesheet = () => {
                 return (
                   <tr key={s.id} className="border-b border-line align-top">
                     <td className="px-4 py-4 border-r border-line align-top"><ShiftLabel s={s} /></td>
-                    <td className="px-4 py-3 align-top">
+                    <td onClick={() => openSchedule(s, cursor)} className="px-4 py-3 align-top cursor-pointer hover:bg-success-50/40 transition-colors">
                       {cell.length > 0
                         ? <div className="flex flex-col gap-2">{cell.map((a, i) => <DayCard key={i} a={a} />)}</div>
                         : <div className="py-3 text-center">{emptyShiftHint}</div>}
@@ -964,6 +1025,10 @@ const Timesheet = () => {
       {/* ── Đổi ca làm việc modal ───────────────────────────────────────────── */}
       {attn && swapOpen && (
         <SwapModal ctx={attn} shifts={SHIFTS} employees={EMPLOYEES} onClose={() => setSwapOpen(false)} />
+      )}
+      {/* ── Đặt lịch cell popup ─────────────────────────────────────────────── */}
+      {scheduleCell && (
+        <ScheduleCellModal shift={scheduleCell.shift} date={scheduleCell.date} employees={EMPLOYEES} onClose={() => setScheduleCell(null)} />
       )}
     </div>
   )
