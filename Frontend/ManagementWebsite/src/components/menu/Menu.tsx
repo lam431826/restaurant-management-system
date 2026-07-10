@@ -20,7 +20,8 @@ const Menu = () => {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
-  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  // Default ordering: by product code ascending.
+  const [sortKey, setSortKey] = useState<SortKey | null>('code')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   const [search, setSearch] = useState('')
@@ -83,11 +84,11 @@ const Menu = () => {
 
   useEffect(() => { setPage(1) }, [debouncedSearch, categoryId, status, pageSize, sortKey, sortDir])
 
-  // Click a sortable header: asc → desc → clear.
+  // Click a sortable header: asc → desc → back to the default (code asc).
   const handleSort = (key: SortKey) => {
     if (sortKey !== key) { setSortKey(key); setSortDir('asc') }
     else if (sortDir === 'asc') setSortDir('desc')
-    else setSortKey(null)
+    else { setSortKey('code'); setSortDir('asc') }
   }
 
   useEffect(() => { void loadCategories() }, [loadCategories])
