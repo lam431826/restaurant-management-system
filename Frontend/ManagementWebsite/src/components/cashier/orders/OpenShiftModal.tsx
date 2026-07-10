@@ -99,7 +99,6 @@ export const OpenShiftModal = ({
     getSuggestedOpeningFloat()
       .then((amount) => {
         if (amount > 0) {
-          setSuggestedFloat(amount);
           setOpeningCash(amount.toLocaleString("vi-VN"));
         }
       })
@@ -189,7 +188,7 @@ export const OpenShiftModal = ({
         )}
 
         {/* ── Not clocked in ── */}
-        {!checking && notClockedIn && (
+        {!checking && blockReason !== null && (
           <div className="p-7 flex flex-col gap-4">
             <div className="flex flex-col items-center gap-3 py-2 text-center">
               <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center">
@@ -295,7 +294,7 @@ export const OpenShiftModal = ({
         )}
 
         {/* ── Open shift form ── */}
-        {!checking && !notClockedIn && (
+        {!checking && blockReason === null && (
           <form onSubmit={(e) => void handleSubmit(e)} className="p-8 relative">
             {onClose && (
               <button

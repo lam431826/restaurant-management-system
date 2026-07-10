@@ -421,6 +421,19 @@ const CashierOrders = () => {
   const [showCashMovement, setShowCashMovement] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
 
+  // BR-CS-19: merge a floating shift into a main shift.
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeTargets, setMergeTargets] = useState<OpenShiftBrief[]>([]);
+  const [mergeTargetId, setMergeTargetId] = useState<string>("");
+  const [mergeCash, setMergeCash] = useState<string>("");
+  const [mergeNote, setMergeNote] = useState<string>("");
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [mergeError, setMergeError] = useState<string>("");
+
+  // BR-AUTH-01/04: warn before logout while an OPEN shift is still owned.
+  const [logoutWarn, setLogoutWarn] = useState(false);
+  const [logoutAfterClose, setLogoutAfterClose] = useState(false);
+
   useEffect(() => {
     getMyShift()
       .then((s) => {
