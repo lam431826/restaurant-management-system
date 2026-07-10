@@ -15,7 +15,7 @@ export const ChartTabs = ({
   active: string
   onChange: (id: string) => void
 }) => (
-  <div className="flex items-center gap-5 border-b border-line mb-2">
+  <div className="flex flex-wrap items-center gap-x-5 border-b border-line mb-2">
     {tabs.map(t => (
       <button
         key={t.id}
