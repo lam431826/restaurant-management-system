@@ -10,6 +10,8 @@ import Employees from "./components/staff/Employees";
 import Schedule from "./components/staff/schedule/Schedule";
 import Timesheet from "./components/staff/schedule/Timesheet";
 import EmployeeSettings from "./components/staff/settings/EmployeeSettings";
+import Payroll from "./components/staff/payroll/Payroll";
+import PayrollUpdate from "./components/staff/payroll/PayrollUpdate";
 import MySchedule from "./components/staff/schedule/MySchedule";
 import AttendanceReport from "./components/staff/schedule/AttendanceReport";
 import DailySummary from "./components/reports/DailySummary";
@@ -94,6 +96,8 @@ function App() {
           <Route path="schedule" element={<Schedule />} />
           <Route path="timesheet" element={<Timesheet />} />
           <Route path="employee-settings" element={<EmployeeSettings />} />
+          <Route path="payroll" element={<Payroll />} />
+          <Route path="payroll/update" element={<PayrollUpdate />} />
           <Route path="reports/attendance" element={<AttendanceReport />} />
           <Route path="reports/daily-summary" element={<DailySummary />} />
           <Route path="audit-logs" element={<AuditLogPage />} />
