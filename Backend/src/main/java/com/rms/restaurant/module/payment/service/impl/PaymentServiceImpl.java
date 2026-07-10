@@ -4,6 +4,8 @@ import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
+import com.rms.restaurant.module.authentication.model.User;
+import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.payment.dto.PaymentResponse;
