@@ -14,7 +14,7 @@ const EmployeeTracking = () => (
       actions={<PeriodSelect value="today" />}
     />
     <CardBody>
-      <div className="grid grid-cols-3 gap-1 border border-line rounded-lg overflow-hidden bg-line mb-5">
+      <div className="grid grid-cols-3 max-[480px]:grid-cols-1 gap-1 border border-line rounded-lg overflow-hidden bg-line mb-5">
         {employeeData.stats.map(s => (
           <div key={s.label} className="flex flex-col items-center gap-1 px-2 py-4 bg-card text-center">
             <span className="order-1 text-sm text-ink-subtle">{s.label}</span>
