@@ -597,7 +597,7 @@ export const navItems = [
       { label: 'Bảng chấm công', href: '#/manager/timesheet' },
       { label: 'Bảng lương', href: '#' },
       { label: 'Bảng hoa hồng', href: '#' },
-      { label: 'Thiết lập nhân viên', href: '#' },
+      { label: 'Thiết lập nhân viên', href: '#/manager/employee-settings' },
     ],
   },
   {

@@ -82,7 +82,7 @@ const MissingClockoutModal = ({ onClose, onResolved }: Props) => {
       style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }}
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="w-full max-w-[48rem] my-[6vh] bg-card rounded-lg shadow-lg flex flex-col max-h-[calc(100vh-12vh)]">
+      <div className="w-full max-w-[76rem] my-[6vh] bg-card rounded-lg shadow-lg flex flex-col max-h-[calc(100vh-12vh)]">
         <div className="flex items-center justify-between px-6 h-16 border-b border-line shrink-0">
           <h2 className="text-h3 font-bold text-ink">Thiếu chấm công ra</h2>
           <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">
