@@ -2,6 +2,9 @@ import { Fragment, useState } from 'react'
 import type { MenuItem } from '../../services/menuService'
 import { assetUrl } from '../../services/api'
 import MenuItemDetail from './MenuItemDetail'
+import type { SortKey, SortDir } from './Menu'
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 const Star = ({ filled }: { filled: boolean }) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill={filled ? 'var(--kv-warning)' : 'none'} stroke={filled ? 'var(--kv-warning)' : 'currentColor'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -19,7 +22,12 @@ interface Props {
   total: number
   page: number
   totalPages: number
+  pageSize: number
   onPage: (p: number) => void
+  onPageSize: (size: number) => void
+  sortKey: SortKey | null
+  sortDir: SortDir
+  onSort: (key: SortKey) => void
   onEdit: (item: MenuItem) => void
   onToggleAvailability: (item: MenuItem) => void
   onDelete: (item: MenuItem) => void
@@ -28,9 +36,16 @@ interface Props {
   onToggleAll: () => void
 }
 
+const SortArrow = ({ active, dir }: { active: boolean; dir: SortDir }) => (
+  <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+    className={`inline shrink-0 transition-transform ${active ? 'text-primary' : 'opacity-35'} ${active && dir === 'desc' ? 'rotate-180' : ''}`}>
+    <path d="M8 3v10M4.5 6.5L8 3l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
+
 const MenuTable = ({
-  items, loading, categoryNames, total, page, totalPages, onPage, onEdit, onToggleAvailability, onDelete,
-  selected, onToggleSelect, onToggleAll,
+  items, loading, categoryNames, total, page, totalPages, pageSize, onPage, onPageSize, onEdit, onToggleAvailability, onDelete,
+  selected, onToggleSelect, onToggleAll, sortKey, sortDir, onSort,
 }: Props) => {
   const [starred, setStarred] = useState<Set<string>>(new Set())
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -62,11 +77,23 @@ const MenuTable = ({
                 </svg>
               </th>
               <th className={`${th} w-[5.5rem]`} />
-              <th className={`${th} w-[10rem]`}>Mã món</th>
-              <th className={th}>Tên món</th>
+              <th className={`${th} w-[10rem]`}>
+                <button className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-primary" onClick={() => onSort('code')}>
+                  Mã món <SortArrow active={sortKey === 'code'} dir={sortDir} />
+                </button>
+              </th>
+              <th className={th}>
+                <button className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-primary" onClick={() => onSort('name')}>
+                  Tên món <SortArrow active={sortKey === 'name'} dir={sortDir} />
+                </button>
+              </th>
               <th className={`${th} w-[15rem]`}>Nhóm món</th>
               <th className={`${th} w-[12rem]`}>Loại món</th>
-              <th className={`${th} w-[10rem] text-right`}>Giá bán</th>
+              <th className={`${th} w-[10rem] text-right`}>
+                <button className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-primary" onClick={() => onSort('price')}>
+                  Giá bán <SortArrow active={sortKey === 'price'} dir={sortDir} />
+                </button>
+              </th>
               <th className={`${th} w-[10rem] text-center`}>Trạng thái</th>
               <th className={`${th} w-[10rem] text-center`}>Thao tác</th>
             </tr>
@@ -155,6 +182,14 @@ const MenuTable = ({
       <div className="flex items-center justify-between gap-4 px-4 py-3 border-t border-line shrink-0">
         <span className="text-md text-ink-subtle">Tổng số {total} món</span>
         <div className="flex items-center gap-2">
+          <select
+            className="h-[2.8rem] px-2 border border-line-default rounded-xxs bg-card text-md text-ink-subtle cursor-pointer focus:outline-none focus:border-primary"
+            value={pageSize}
+            onChange={e => onPageSize(Number(e.target.value))}
+            aria-label="Số món mỗi trang"
+          >
+            {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n} / trang</option>)}
+          </select>
           <button
             className="w-[2.8rem] h-[2.8rem] flex items-center justify-center border border-line-default rounded-xxs bg-card text-ink-subtle cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={page <= 1}

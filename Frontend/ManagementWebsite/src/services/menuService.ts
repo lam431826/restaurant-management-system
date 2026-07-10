@@ -40,6 +40,7 @@ export interface ItemSearchParams {
   available?: boolean
   page?: number // 1-based
   size?: number
+  sort?: string // Spring format: "field,asc" | "field,desc"
 }
 
 export interface CreateItemInput {
@@ -75,6 +76,7 @@ export const searchItems = (params: ItemSearchParams = {}): Promise<PageResponse
     // backend Pageable is 0-based
     page: params.page ? params.page - 1 : 0,
     size: params.size ?? 20,
+    sort: params.sort,
   })
 
 export const createItem = (input: CreateItemInput): Promise<MenuItem> =>

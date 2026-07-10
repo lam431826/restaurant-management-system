@@ -95,6 +95,7 @@ public enum ApplicationError {
     INVALID_INVOICE_ITEMS("Order contains invalid invoice items", HttpStatus.UNPROCESSABLE_ENTITY),
     INVALID_INVOICE_TOTAL("Invoice subtotal must be greater than zero and total amount cannot be negative", HttpStatus.UNPROCESSABLE_ENTITY),
     FORBIDDEN("You do not have permission to perform this action", HttpStatus.FORBIDDEN),
+    PAYMENT_NO_OPEN_SHIFT("Shift is not opening", HttpStatus.FORBIDDEN),
 
     // Roster (Work Shift) — WS-01..09, BR-WS-*
     TEMPLATE_NOT_FOUND("Shift template not found", HttpStatus.NOT_FOUND),

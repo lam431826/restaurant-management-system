@@ -277,6 +277,14 @@ public class MenuServiceImpl implements MenuService {
         Map<String, MenuCategory> categoriesByName = categoryRepository.findAll().stream()
                 .collect(Collectors.toMap(c -> c.getName().toLowerCase(), Function.identity(), (a, b) -> a));
 
+        // Auto product code (SP000026, …): continue from the highest existing numeric code
+        // so rows imported without a code still get one.
+        long maxCodeNumber = itemRepository.findAll().stream()
+                .map(MenuItem::getCode)
+                .filter(StringUtils::hasText)
+                .mapToLong(MenuServiceImpl::numericCode)
+                .max().orElse(0);
+
         int created = 0;
         int updated = 0;
         List<ImportResultResponse.RowError> errors = new ArrayList<>();
@@ -344,7 +352,15 @@ public class MenuServiceImpl implements MenuService {
                     if (isNew) {
                         item = MenuItem.builder().categoryId(category.getId()).name(name).build();
                     }
-                    item.setCode(trimToNull(column(record, "code")));
+                    String code = trimToNull(column(record, "code"));
+                    if (code != null) {
+                        item.setCode(code);
+                    } else if (!StringUtils.hasText(item.getCode())) {
+                        // File has no code and the item doesn't have one yet → assign the next auto code.
+                        maxCodeNumber++;
+                        item.setCode(String.format("SP%06d", maxCodeNumber));
+                    }
+                    // Existing items keep their current code when the file omits it.
                     item.setPrice(price);
                     item.setCostPrice(costPrice);
                     item.setDescription(trimToNull(column(record, "description")));
@@ -409,6 +425,17 @@ public class MenuServiceImpl implements MenuService {
 
     private String trimToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    /** Numeric part of a product code ("SP000026" → 26); 0 when absent or too large. */
+    private static long numericCode(String code) {
+        String digits = code.replaceAll("\\D", "");
+        if (digits.isEmpty()) return 0;
+        try {
+            return Long.parseLong(digits);
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
     }
 
     private String nullSafe(String value) {

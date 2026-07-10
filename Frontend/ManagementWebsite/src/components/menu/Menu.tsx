@@ -11,13 +11,17 @@ import { searchItems, listCategories, setAvailability, deleteItem, bulkSetAvaila
 import type { MenuItem, MenuCategory } from '../../services/menuService'
 import { ApiError } from '../../services/api'
 
-const PAGE_SIZE = 20
+export type SortKey = 'code' | 'name' | 'price'
+export type SortDir = 'asc' | 'desc'
 
 const Menu = () => {
   const [categories, setCategories] = useState<MenuCategory[]>([])
   const [items, setItems] = useState<MenuItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -58,7 +62,8 @@ const Menu = () => {
         categoryId: categoryId || undefined,
         available,
         page,
-        size: PAGE_SIZE,
+        size: pageSize,
+        sort: sortKey ? `${sortKey},${sortDir}` : undefined,
       })
       setItems(res.data)
       setTotal(res.pagination.total)
@@ -69,14 +74,21 @@ const Menu = () => {
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, categoryId, status, page])
+  }, [debouncedSearch, categoryId, status, page, pageSize, sortKey, sortDir])
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
     return () => clearTimeout(t)
   }, [search])
 
-  useEffect(() => { setPage(1) }, [debouncedSearch, categoryId, status])
+  useEffect(() => { setPage(1) }, [debouncedSearch, categoryId, status, pageSize, sortKey, sortDir])
+
+  // Click a sortable header: asc → desc → clear.
+  const handleSort = (key: SortKey) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir('asc') }
+    else if (sortDir === 'asc') setSortDir('desc')
+    else setSortKey(null)
+  }
 
   useEffect(() => { void loadCategories() }, [loadCategories])
   useEffect(() => { void loadItems() }, [loadItems])
@@ -110,6 +122,26 @@ const Menu = () => {
 
   const toggleSelectAll = () =>
     setSelected(prev => (items.length > 0 && items.every(i => prev.has(i.id)) ? new Set() : new Set(items.map(i => i.id))))
+
+  // Select every item matching the current filters, across all pages.
+  const selectAllMatching = async () => {
+    setBulkBusy(true)
+    try {
+      const available = status === 'all' ? undefined : status === 'active'
+      const res = await searchItems({
+        q: debouncedSearch || undefined,
+        categoryId: categoryId || undefined,
+        available,
+        page: 1,
+        size: Math.max(total, 1),
+      })
+      setSelected(new Set(res.data.map(i => i.id)))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không chọn được tất cả món.')
+    } finally {
+      setBulkBusy(false)
+    }
+  }
 
   const handleBulkAvailability = async (available: boolean) => {
     const ids = Array.from(selected)
@@ -162,7 +194,7 @@ const Menu = () => {
 
   const closeModal = () => { setModalKind(null); setEditItem(null) }
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   return (
     <div className="flex h-[calc(100vh-var(--kv-header-height))] bg-surface overflow-hidden">
@@ -194,6 +226,11 @@ const Menu = () => {
         {selected.size > 0 && (
           <div className="flex items-center gap-3 px-4 py-2 rounded-md bg-primary-25 border border-primary-150">
             <span className="text-md font-medium text-ink">Đã chọn {selected.size} món</span>
+            {selected.size < total && (
+              <button className="kv-btn kv-btn-text-primary h-9" disabled={bulkBusy} onClick={() => void selectAllMatching()}>
+                Chọn tất cả {total} món
+              </button>
+            )}
             <div className="flex-1" />
             <button className="kv-btn kv-btn-outline-neutral h-9" disabled={bulkBusy} onClick={() => handleBulkAvailability(false)}>
               Ngừng bán
@@ -221,7 +258,12 @@ const Menu = () => {
           total={total}
           page={page}
           totalPages={totalPages}
+          pageSize={pageSize}
           onPage={setPage}
+          onPageSize={setPageSize}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={handleSort}
           onEdit={setEditItem}
           onToggleAvailability={handleToggleAvailability}
           onDelete={setDeleteTarget}
