@@ -1,6 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
 import Frontpage from './components/Frontpage'
-import GuestOrderPage from './components/GuestOrderPage'
+import GuestOrderPage from './components/GuestOrderPage/GuestOrderPage'
 
 export default function App() {
   return (
