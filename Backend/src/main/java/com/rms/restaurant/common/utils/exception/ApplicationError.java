@@ -55,6 +55,7 @@ public enum ApplicationError {
     TABLE_FULLY_BOOKED("No available tables for the requested time slot", HttpStatus.CONFLICT),
     TABLE_CAPACITY_EXCEEDED("Party size exceeds table capacity", HttpStatus.UNPROCESSABLE_ENTITY),
     TABLE_IN_USE("Table is currently occupied and cannot be deleted", HttpStatus.CONFLICT),
+    TABLE_TRANSFER_NOT_ALLOWED("Table transfer cannot be completed in the current state", HttpStatus.UNPROCESSABLE_ENTITY),
     INVALID_TABLE_TOKEN("Table token is invalid or expired", HttpStatus.UNAUTHORIZED),
     SHIFT_ALREADY_OPEN("A shift is already open", HttpStatus.CONFLICT),
     SHIFT_NOT_OPEN("No open shift found", HttpStatus.NOT_FOUND),

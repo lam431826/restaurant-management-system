@@ -44,6 +44,22 @@ public interface ReservationRepository extends JpaRepository<Reservation, String
             @Param("excludeId")   String excludeId
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM Reservation r " +
+           "WHERE r.tableId IN :tableIds " +
+           "AND (r.status = :checkedInStatus " +
+           "OR (r.status IN :scheduledStatuses " +
+           "AND r.datetime > :windowStart " +
+           "AND r.datetime < :windowEnd)) " +
+           "ORDER BY r.tableId ASC, r.datetime ASC, r.id ASC")
+    List<Reservation> findBlockingForTablesForUpdate(
+            @Param("tableIds")          List<String> tableIds,
+            @Param("checkedInStatus")   ReservationStatus checkedInStatus,
+            @Param("scheduledStatuses") List<ReservationStatus> scheduledStatuses,
+            @Param("windowStart")       LocalDateTime windowStart,
+            @Param("windowEnd")         LocalDateTime windowEnd
+    );
+
     /**
      * Count active reservations whose 3-hour window overlaps with a given datetime.
      * Used for public-booking overbooking prevention.

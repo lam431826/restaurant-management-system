@@ -111,7 +111,7 @@ public class TableController {
 
     // ── TM-03: Chuyển bàn ────────────────────────────────────────────────────
     @PostMapping("/transfer")
-    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER', 'MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<Void> transfer(@Valid @RequestBody TransferTableRequest request) {
         tableService.transfer(request);
         return ResponseEntity.noContent().build();

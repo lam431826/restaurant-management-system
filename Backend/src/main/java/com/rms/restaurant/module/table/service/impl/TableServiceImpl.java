@@ -1,9 +1,13 @@
 package com.rms.restaurant.module.table.service.impl;
 
 import com.rms.restaurant.common.utils.enums.TableStatus;
+import com.rms.restaurant.common.utils.enums.ReservationStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
+import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
+import com.rms.restaurant.module.payment.repository.InvoiceRepository;
+import com.rms.restaurant.module.reservation.repository.ReservationRepository;
 import com.rms.restaurant.module.table.dto.*;
 import com.rms.restaurant.module.table.mapper.TableMapper;
 import com.rms.restaurant.module.table.model.RestaurantTable;
@@ -21,6 +25,7 @@ import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -32,6 +37,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -46,11 +52,19 @@ import java.util.stream.Collectors;
 public class TableServiceImpl implements TableService {
 
     private static final String[] CSV_HEADERS = {"name", "area", "capacity", "note", "displayOrder", "active"};
+    private static final List<OrderStatus> TERMINAL_ORDER_STATUSES =
+            List.of(OrderStatus.CLOSED, OrderStatus.CANCELLED);
+    private static final List<ReservationStatus> SCHEDULED_BLOCKING_RESERVATION_STATUSES =
+            List.of(ReservationStatus.PENDING, ReservationStatus.CONFIRMED);
+    private static final int RESERVATION_WINDOW_BEFORE_MINUTES = 60;
+    private static final int RESERVATION_WINDOW_AFTER_MINUTES = 120;
 
     private final TableRepository tableRepository;
     private final TableAreaRepository areaRepository;
     private final TableMapper tableMapper;
     private final OrderRepository orderRepository;
+    private final InvoiceRepository invoiceRepository;
+    private final ReservationRepository reservationRepository;
 
     // ── Tables ───────────────────────────────────────────────────────────
 
@@ -282,12 +296,119 @@ public class TableServiceImpl implements TableService {
     // ── TM-04 (not yet implemented) ──────────────────────────────────────
 
     @Override
-    public void transfer(TransferTableRequest request) { /* TODO TM-04 */ }
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public void transfer(TransferTableRequest request) {
+        String sourceTableId = request.fromTableId();
+        String targetTableId = request.toTableId();
+        if (sourceTableId.equals(targetTableId)) {
+            throw new ApplicationException(
+                    ApplicationError.TABLE_TRANSFER_NOT_ALLOWED,
+                    "Source and target tables must be different"
+            );
+        }
+
+        List<String> tableIds = new ArrayList<>(List.of(sourceTableId, targetTableId));
+        tableIds.sort(String::compareTo);
+
+        List<RestaurantTable> lockedTables = tableRepository.findAllByIdInForUpdate(tableIds);
+        RestaurantTable sourceTable = findLockedTable(lockedTables, sourceTableId, "Source table not found");
+        RestaurantTable targetTable = findLockedTable(lockedTables, targetTableId, "Target table not found");
+
+        List<Order> lockedActiveOrders = orderRepository.findActiveByTableIdsForUpdate(
+                tableIds,
+                TERMINAL_ORDER_STATUSES
+        );
+
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime reservationWindowStart = now.minusMinutes(RESERVATION_WINDOW_BEFORE_MINUTES);
+        LocalDateTime reservationWindowEnd = now.plusMinutes(RESERVATION_WINDOW_AFTER_MINUTES);
+        boolean hasBlockingReservation = !reservationRepository.findBlockingForTablesForUpdate(
+                tableIds,
+                ReservationStatus.CHECKED_IN,
+                SCHEDULED_BLOCKING_RESERVATION_STATUSES,
+                reservationWindowStart,
+                reservationWindowEnd
+        ).isEmpty();
+
+        validateTransferTableStates(sourceTable, targetTable);
+        Order sourceOrder = validateTransferOrders(lockedActiveOrders, sourceTableId, targetTableId);
+        if (invoiceRepository.findByOrderId(sourceOrder.getId()).isPresent()) {
+            throw new ApplicationException(
+                    ApplicationError.ORDER_ALREADY_INVOICED,
+                    "An invoiced order cannot be transferred to another table"
+            );
+        }
+        if (hasBlockingReservation) {
+            throw new ConflictException(
+                    ApplicationError.TABLE_NOT_AVAILABLE,
+                    "Source or target table has a blocking reservation for the current service time"
+            );
+        }
+
+        sourceOrder.setTableId(targetTableId);
+        sourceTable.setStatus(TableStatus.AVAILABLE);
+        targetTable.setStatus(TableStatus.OCCUPIED);
+
+        orderRepository.save(sourceOrder);
+        tableRepository.saveAll(lockedTables);
+    }
 
     @Override
     public void merge(MergeTableRequest request) { /* TODO TM-04 */ }
 
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    private RestaurantTable findLockedTable(List<RestaurantTable> lockedTables, String tableId, String message) {
+        return lockedTables.stream()
+                .filter(table -> table.getId().equals(tableId))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.TABLE_NOT_FOUND, message));
+    }
+
+    private void validateTransferTableStates(RestaurantTable sourceTable, RestaurantTable targetTable) {
+        if (!sourceTable.isActive() || !targetTable.isActive()) {
+            throw new ApplicationException(
+                    ApplicationError.TABLE_TRANSFER_NOT_ALLOWED,
+                    "Both source and target tables must be active"
+            );
+        }
+        if (sourceTable.getStatus() != TableStatus.OCCUPIED) {
+            throw new ApplicationException(
+                    ApplicationError.TABLE_TRANSFER_NOT_ALLOWED,
+                    "Source table must be occupied"
+            );
+        }
+        if (targetTable.getStatus() != TableStatus.AVAILABLE) {
+            throw new ConflictException(
+                    ApplicationError.TABLE_NOT_AVAILABLE,
+                    "Target table must be available"
+            );
+        }
+    }
+
+    private Order validateTransferOrders(List<Order> activeOrders, String sourceTableId, String targetTableId) {
+        List<Order> sourceOrders = activeOrders.stream()
+                .filter(order -> sourceTableId.equals(order.getTableId()))
+                .toList();
+        if (sourceOrders.size() != 1) {
+            throw new ApplicationException(
+                    ApplicationError.TABLE_TRANSFER_NOT_ALLOWED,
+                    sourceOrders.isEmpty()
+                            ? "Source table must have exactly one active order"
+                            : "Source table has multiple active orders"
+            );
+        }
+
+        boolean targetHasActiveOrder = activeOrders.stream()
+                .anyMatch(order -> targetTableId.equals(order.getTableId()));
+        if (targetHasActiveOrder) {
+            throw new ConflictException(
+                    ApplicationError.TABLE_IN_USE,
+                    "Target table already has an active order"
+            );
+        }
+        return sourceOrders.get(0);
+    }
 
     private RestaurantTable findTable(String id) {
         return tableRepository.findById(id)
