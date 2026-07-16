@@ -52,33 +52,54 @@ public class OrderServiceImpl implements OrderService {
     }
     @Override
     public OrderResponse updateStatus(String id, OrderStatus status) {
-        if (status == OrderStatus.CLOSED) {
-            return closeOrder(id);
+        Order order = orderRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+
+        if (status == null) {
+            throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
         }
+
+        OrderStatus currentStatus = order.getStatus();
+        if (currentStatus == status) {
+            return orderMapper.toResponse(order);
+        }
+
         if (status == OrderStatus.CANCELLED) {
             throw new ApplicationException(
                     ApplicationError.INVALID_STATUS_TRANSITION,
                     "Use /api/orders/{id}/cancel to cancel an order"
             );
         }
-
-        Order order = orderRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
-        order.setStatus(status);
-        if (status == OrderStatus.CLOSED || status == OrderStatus.CANCELLED) {
-            RestaurantTable table = tableRepository.findById(order.getTableId()).orElse(null);
-            if (table != null) {
-                // If this is the only active order, set table to available. We can just check if findTopBy returns this one
-                Order activeOrder = orderRepository.findTopByTableIdOrderByCreatedAtDesc(table.getId())
-                        .filter(o -> o.getStatus() != OrderStatus.CLOSED && o.getStatus() != OrderStatus.CANCELLED)
-                        .orElse(null);
-                if (activeOrder == null || activeOrder.getId().equals(order.getId())) {
-                    table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.AVAILABLE);
-                    tableRepository.save(table);
-                }
-            }
+        if (status == OrderStatus.CLOSED) {
+            throw new ApplicationException(
+                    ApplicationError.INVALID_STATUS_TRANSITION,
+                    "Use /api/orders/{id}/close to close an order"
+            );
         }
+
+        validateGenericStatusTransition(currentStatus, status);
+        order.setStatus(status);
         return orderMapper.toResponse(orderRepository.save(order));
+    }
+
+    private void validateGenericStatusTransition(OrderStatus currentStatus, OrderStatus requestedStatus) {
+        if (currentStatus == OrderStatus.CLOSED || currentStatus == OrderStatus.CANCELLED) {
+            throw new ApplicationException(
+                    ApplicationError.INVALID_STATUS_TRANSITION,
+                    "Closed and cancelled orders are terminal"
+            );
+        }
+
+        boolean allowed = (currentStatus == OrderStatus.PENDING && requestedStatus == OrderStatus.ACCEPTED)
+                || (currentStatus == OrderStatus.ACCEPTED && requestedStatus == OrderStatus.PREPARING)
+                || (currentStatus == OrderStatus.PREPARING && requestedStatus == OrderStatus.SERVED);
+
+        if (!allowed) {
+            throw new ApplicationException(
+                    ApplicationError.INVALID_STATUS_TRANSITION,
+                    "Order status transition from " + currentStatus + " to " + requestedStatus + " is not allowed"
+            );
+        }
     }
 
     @Override
