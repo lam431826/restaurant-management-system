@@ -87,15 +87,7 @@ export const OrderItemRow = ({
           )}
           {canCancelItem && (
             <button
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Xác nhận hủy món đang nấu? Chỉ thực hiện khi bếp báo món không thể phục vụ.",
-                  )
-                ) {
-                  onRejectItem?.(item.orderId, item.id);
-                }
-              }}
+              onClick={() => onRejectItem?.(item.orderId, item.id)}
               className="bg-[#fff0f0] flex items-center gap-1 pl-2 pr-2.5 py-1 rounded-full hover:bg-[#ffe0e0] transition-colors"
             >
               <span className="text-[12px] font-medium text-[#dc2f02]">
