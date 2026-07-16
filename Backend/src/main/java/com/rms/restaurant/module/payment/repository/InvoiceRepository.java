@@ -16,6 +16,10 @@ public interface InvoiceRepository extends JpaRepository<Invoice, String> {
     List<Invoice> findByPaidOrderByCreatedAtDesc(boolean paid);
     List<Invoice> findByOrderIdOrderByCreatedAtDesc(String orderId);
     List<Invoice> findByOrderIdAndPaidOrderByCreatedAtDesc(String orderId, boolean paid);
+    List<Invoice> findAllByOrderByCreatedAtDescIdDesc();
+    List<Invoice> findByPaidOrderByCreatedAtDescIdDesc(boolean paid);
+    List<Invoice> findByOrderIdOrderByCreatedAtDescIdDesc(String orderId);
+    List<Invoice> findByOrderIdAndPaidOrderByCreatedAtDescIdDesc(String orderId, boolean paid);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT i FROM Invoice i WHERE i.id = :id")

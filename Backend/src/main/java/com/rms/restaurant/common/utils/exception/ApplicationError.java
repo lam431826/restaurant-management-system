@@ -91,6 +91,7 @@ public enum ApplicationError {
     ORDER_NOT_READY_FOR_INVOICE("Order is not ready for invoice because some items are still pending or cooking", HttpStatus.UNPROCESSABLE_ENTITY),
     INVALID_INVOICE_ITEMS("Order contains invalid invoice items", HttpStatus.UNPROCESSABLE_ENTITY),
     INVALID_INVOICE_TOTAL("Invoice subtotal must be greater than zero and total amount cannot be negative", HttpStatus.UNPROCESSABLE_ENTITY),
+    INVOICE_ALLOCATION_DATA_INVALID("Invoice allocation data is inconsistent", HttpStatus.INTERNAL_SERVER_ERROR),
     FORBIDDEN("You do not have permission to perform this action", HttpStatus.FORBIDDEN),
 
     // Roster (Work Shift) — WS-01..09, BR-WS-*

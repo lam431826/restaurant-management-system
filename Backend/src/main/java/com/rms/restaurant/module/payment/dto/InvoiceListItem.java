@@ -1,5 +1,7 @@
 package com.rms.restaurant.module.payment.dto;
 
+import com.rms.restaurant.common.utils.enums.InvoiceStatus;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -15,5 +17,7 @@ public record InvoiceListItem(
         String paymentStatus,
         String note,
         String cashierName,
-        String itemsText
+        String itemsText,
+        InvoiceStatus status,
+        String mergedIntoInvoiceId
 ) {}

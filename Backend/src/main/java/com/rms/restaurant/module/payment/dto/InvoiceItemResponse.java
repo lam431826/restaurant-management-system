@@ -8,5 +8,6 @@ public record InvoiceItemResponse(
         int quantity,
         BigDecimal unitPrice,
         BigDecimal lineTotal,
-        String note
+        String note,
+        String orderItemId
 ) {}
