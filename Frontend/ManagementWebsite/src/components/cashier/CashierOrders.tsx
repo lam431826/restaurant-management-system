@@ -63,6 +63,7 @@ import { PaymentModal } from "./orders/PaymentModal";
 import { OrderPanel } from "./orders/OrderPanel";
 import { SuccessToast } from "./orders/SuccessToast";
 import { SearchIcon } from "./orders/icons";
+import { QROrderConfirmationModal } from "./orders/QROrderConfirmationModal";
 
 /* ─── Main page ──────────────────────────────────────────────────────────── */
 const TABLE_FILTERS = [
@@ -362,8 +363,6 @@ const getInvoiceUiErrorMessage = (
   return fallback?.[1] ?? fallbackMessage;
 };
 
-import { QROrderConfirmationModal } from "./orders/QROrderConfirmationModal";
-
 const CashierOrders = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -394,6 +393,11 @@ const CashierOrders = () => {
     itemId: string | null;
     text: string;
   }>({ open: false, orderId: null, itemId: null, text: "" });
+  const [removeConfirmModal, setRemoveConfirmModal] = useState<{
+    open: boolean;
+    orderId: string | null;
+    orderItemId: string | null;
+  }>({ open: false, orderId: null, orderItemId: null });
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [successTotal, setSuccessTotal] = useState<number | null>(null);
   const [showChangePw, setShowChangePw] = useState(false);
@@ -866,12 +870,14 @@ const CashierOrders = () => {
     );
   };
 
-  const handleTableSelect = (id: string) => {
+  const handleTableSelect = (id: string | null) => {
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
     resetInvoiceLink();
-    const selected = tables.find((t) => t.id === id);
-    if (selected) {
-      setActiveArea(selected.area);
+    if (id) {
+      const selected = tables.find((t) => t.id === id);
+      if (selected) {
+        setActiveArea(selected.area);
+      }
     }
   };
 
@@ -899,6 +905,12 @@ const CashierOrders = () => {
     }
     const status = COOKING_STATUS_FROM_LABEL[statusLabel];
     if (!status) return;
+
+    if (status === "REJECTED") {
+      setRejectModal({ open: true, orderId, itemId: orderItemId, text: "" });
+      return;
+    }
+
     setOrderActionMessage(null);
     try {
       await updateOrderItemStatus(orderId, orderItemId, status);
@@ -911,10 +923,14 @@ const CashierOrders = () => {
       });
     }
   };
+  const handleRemoveItem = (orderId: string, orderItemId: string) => {
+    setRemoveConfirmModal({ open: true, orderId, orderItemId });
+  };
 
-  const handleRemoveItem = async (orderId: string, orderItemId: string) => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa món này khỏi đơn hàng?"))
-      return;
+  const executeRemoveItem = async () => {
+    const { orderId, orderItemId } = removeConfirmModal;
+    setRemoveConfirmModal({ open: false, orderId: null, orderItemId: null });
+    if (!orderId || !orderItemId) return;
     if (orderId === "cart") {
       const itemToRemove = cart.find((c) => c.cartItemId === orderItemId);
       if (itemToRemove) {
@@ -947,6 +963,7 @@ const CashierOrders = () => {
   };
 
   const handleCancelOrder = async (orderIds: string[]) => {
+    if (orderIds.length === 0) return;
     if (!window.confirm("Bạn có chắc chắn muốn hủy đơn hàng này?")) return;
     setOrderActionMessage(null);
     try {
@@ -955,6 +972,8 @@ const CashierOrders = () => {
       );
       setOrderActionMessage(null);
       setRefreshTrigger((t) => t + 1);
+      setCart([]);
+      handleTableSelect(null);
     } catch (e) {
       console.error(e);
       setOrderActionMessage({
@@ -1003,22 +1022,13 @@ const CashierOrders = () => {
   const handleCancelNote = () =>
     setNoteModal({ open: false, itemId: null, text: "" });
 
-  const handleOpenReject = async (orderId: string, itemId: string) => {
+  const handleOpenReject = (orderId: string, itemId: string) => {
     if (disableItemMutation) {
       showItemMutationBlockedMessage();
       return;
     }
     setOrderActionMessage(null);
-    try {
-      await updateOrderItemStatus(orderId, itemId, "REJECTED");
-      setRefreshTrigger((t) => t + 1);
-    } catch (e) {
-      console.error(e);
-      setOrderActionMessage({
-        type: "error",
-        text: getOrderActionErrorMessage(e),
-      });
-    }
+    setRejectModal({ open: true, orderId, itemId, text: "" });
   };
 
   const handleConfirmReject = async (
@@ -1167,13 +1177,8 @@ const CashierOrders = () => {
     }
   };
 
-  const handleRemoveItemFromPending = async (orderId: string, orderItemId: string) => {
-    try {
-      await removeOrderItem(orderId, orderItemId);
-      setRefreshTrigger(t => t + 1);
-    } catch (e) {
-      console.error(e);
-    }
+  const handleRemoveItemFromPending = (orderId: string, orderItemId: string) => {
+    setRejectModal({ open: true, orderId, itemId: orderItemId, text: "" });
   };
 
   const filteredMenu = menuItems.filter((i) => {
@@ -1426,7 +1431,7 @@ const CashierOrders = () => {
           invoicePaid={canCloseSelectedOrder}
           itemMutationDisabled={disableItemMutation}
           itemMutationDisabledMessage={itemMutationDisabledMessage}
-          orderActionMessage={orderActionMessage}
+          actionMessage={null}
           emptyOrderMessage={
             emptyOrderWithoutInvoice ? EMPTY_ORDER_MESSAGE : undefined
           }
@@ -1449,6 +1454,50 @@ const CashierOrders = () => {
           onReject={handleRejectPendingOrder}
           onRemoveItem={handleRemoveItemFromPending}
         />
+      )}
+
+      {removeConfirmModal.open && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center mb-4">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Xác nhận xóa</h3>
+            <p className="text-sm text-gray-600 mb-6">Bạn có chắc chắn muốn xóa món này khỏi đơn hàng?</p>
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setRemoveConfirmModal({ open: false, orderId: null, orderItemId: null })}
+                className="flex-1 border border-gray-300 text-gray-700 font-bold py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => void executeRemoveItem()}
+                className="flex-1 bg-[#dc2f02] text-white font-bold py-2.5 rounded-xl hover:bg-[#9d0208] transition-colors"
+              >
+                Xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {orderActionMessage && orderActionMessage.type === "error" && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-500 flex items-center justify-center mb-4">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Thông báo</h3>
+            <p className="text-sm text-gray-600 mb-6">{orderActionMessage.text}</p>
+            <button 
+              onClick={() => setOrderActionMessage(null)} 
+              className="w-full bg-gray-900 text-white font-bold py-2.5 rounded-xl hover:bg-gray-800 transition-colors"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
       )}
 
       <BottomNav active="orders" />
