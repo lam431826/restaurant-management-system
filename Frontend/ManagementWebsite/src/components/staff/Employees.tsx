@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import EmployeeFilters from './EmployeeFilters'
 import type { EmpStatus } from './EmployeeFilters'
 import EmployeeToolbar from './EmployeeToolbar'
 import EmployeeTable from './EmployeeTable'
 import EmployeeModal from './EmployeeModal'
-import RequestsInboxModal from './schedule/RequestsInboxModal'
-import MissingClockoutModal from './schedule/MissingClockoutModal'
-import { listRequests, listMissingClockouts } from '../../services/rosterService'
 import {
   employees as initialEmployees,
   departments as initialDepartments,
@@ -15,7 +12,6 @@ import {
 import type { Employee } from '../../data/mockData'
 
 const Employees = () => {
-  const [pendingApprovals, setPendingApprovals] = useState(0)
   const [items, setItems] = useState<Employee[]>(initialEmployees)
   const [departments, setDepartments] = useState<string[]>(initialDepartments)
   const [positions, setPositions] = useState<string[]>(initialPositions)
@@ -26,25 +22,6 @@ const Employees = () => {
   const [position, setPosition] = useState('')
 
   const [showAdd, setShowAdd] = useState(false)
-  const [showRequests, setShowRequests] = useState(false)
-  const [showMissing, setShowMissing] = useState(false)
-  const [missingCount, setMissingCount] = useState(0)
-
-  useEffect(() => {
-    listRequests()
-      .then(reqs => setPendingApprovals(reqs.filter(r => r.status === 'PENDING').length))
-      .catch(() => {})
-  }, [showRequests])
-
-  // BR-WS-14: count MISSING_CLOCKOUT records (last 14 days) for the toolbar badge.
-  useEffect(() => {
-    const to = new Date()
-    const from = new Date(); from.setDate(from.getDate() - 14)
-    const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    listMissingClockouts(ymd(from), ymd(to))
-      .then(recs => setMissingCount(recs.length))
-      .catch(() => {})
-  }, [showMissing])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -121,10 +98,6 @@ const Employees = () => {
           onSearch={setSearch}
           onAdd={() => setShowAdd(true)}
           employees={items}
-          onApprovalsClick={() => setShowRequests(true)}
-          pendingApprovals={pendingApprovals}
-          onMissingClick={() => setShowMissing(true)}
-          missingCount={missingCount}
         />
         <EmployeeTable
           employees={filtered}
@@ -142,9 +115,6 @@ const Employees = () => {
           onSave={handleCreate}
         />
       )}
-
-      {showRequests && <RequestsInboxModal onClose={() => setShowRequests(false)} />}
-      {showMissing && <MissingClockoutModal onClose={() => setShowMissing(false)} />}
     </div>
   )
 }

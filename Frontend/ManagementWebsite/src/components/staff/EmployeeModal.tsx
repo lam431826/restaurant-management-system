@@ -216,19 +216,6 @@ const SectionCard = ({
   )
 }
 
-// ── Salary feature row (title + subtitle + toggle) ──────────────────────
-const SalaryToggleCard = ({
-  title, subtitle, checked, onChange,
-}: { title: string; subtitle: string; checked: boolean; onChange: (v: boolean) => void }) => (
-  <div className="bg-card rounded-lg px-5 py-4 flex items-center justify-between gap-4">
-    <div>
-      <p className="text-md font-semibold text-ink">{title}</p>
-      <p className="text-sm text-ink-subtle mt-0.5">{subtitle}</p>
-    </div>
-    <Toggle checked={checked} onChange={onChange} />
-  </div>
-)
-
 // ── Shift-based salary (Theo ca làm việc) ───────────────────────────────
 const SHIFT_OPTIONS = [
   { name: 'Sáng', branch: 'Chi nhánh trung tâm' },
@@ -582,7 +569,6 @@ const EmployeeModal = ({ nextCode, onClose, onSave }: Props) => {
   // ── Thiết lập lương (UI-only)
   const [salaryType, setSalaryType] = useState('')
   const [salaryTemplate, setSalaryTemplate] = useState('')
-  const [deduction, setDeduction] = useState(false)
 
   const [error, setError] = useState('')
 
@@ -795,8 +781,6 @@ const EmployeeModal = ({ nextCode, onClose, onSave }: Props) => {
                   </div>
                 </div>
               </SectionCard>
-
-              <SalaryToggleCard title="Giảm trừ" subtitle="Thiết lập khoản giảm trừ như đi muộn, về sớm, vi phạm nội quy, ..." checked={deduction} onChange={setDeduction} />
             </>
           )}
         </div>

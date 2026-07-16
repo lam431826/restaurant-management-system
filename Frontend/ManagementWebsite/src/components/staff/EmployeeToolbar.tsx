@@ -6,10 +6,6 @@ interface Props {
   onSearch: (v: string) => void
   onAdd: () => void
   employees: Employee[]
-  onApprovalsClick: () => void
-  pendingApprovals: number
-  onMissingClick: () => void
-  missingCount: number
 }
 
 const exportCsv = (employees: Employee[]) => {
@@ -27,7 +23,7 @@ const exportCsv = (employees: Employee[]) => {
   URL.revokeObjectURL(url)
 }
 
-const EmployeeToolbar = ({ search, onSearch, onAdd, employees, onApprovalsClick, pendingApprovals, onMissingClick, missingCount }: Props) => {
+const EmployeeToolbar = ({ search, onSearch, onAdd, employees }: Props) => {
   const [menuOpen, setMenuOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
@@ -60,30 +56,6 @@ const EmployeeToolbar = ({ search, onSearch, onAdd, employees, onApprovalsClick,
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           Nhân viên
-        </button>
-
-        <button className="kv-btn kv-btn-outline-neutral h-10 bg-card relative" onClick={onApprovalsClick}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="9" y="2" width="6" height="4" rx="1" /><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3" /><path d="M9 14l2 2 4-4" />
-          </svg>
-          Duyệt yêu cầu
-          {pendingApprovals > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 min-w-[1.2rem] h-[1.2rem] px-1 rounded-full bg-danger text-white text-[0.65rem] font-bold flex items-center justify-center">
-              {pendingApprovals}
-            </span>
-          )}
-        </button>
-
-        <button className="kv-btn kv-btn-outline-neutral h-10 bg-card relative" onClick={onMissingClick}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" />
-          </svg>
-          Thiếu chấm công
-          {missingCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 min-w-[1.2rem] h-[1.2rem] px-1 rounded-full bg-danger text-white text-[0.65rem] font-bold flex items-center justify-center">
-              {missingCount}
-            </span>
-          )}
         </button>
 
         <input
