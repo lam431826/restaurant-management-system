@@ -18,7 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/tables")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER')")
+@PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
 public class TableController {
 
     private final TableService tableService;
@@ -26,13 +26,13 @@ public class TableController {
     // ── Tables ───────────────────────────────────────────────────────────
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','WAITER','CASHIER')")
+    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<TableResponse>>> list() {
         return ResponseEntity.ok(ApiResponse.success(tableService.listAll()));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','WAITER','CASHIER')")
+    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<TableResponse>> get(@PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success(tableService.getById(id)));
     }
@@ -58,7 +58,7 @@ public class TableController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','WAITER','CASHIER')")
+    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<TableResponse>> updateStatus(@PathVariable String id,
                                                                    @Valid @RequestBody TableStatusUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(tableService.updateStatus(id, request)));
@@ -89,7 +89,7 @@ public class TableController {
     // ── Areas ────────────────────────────────────────────────────────────
 
     @GetMapping("/areas")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','WAITER','CASHIER')")
+    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<AreaResponse>>> listAreas() {
         return ResponseEntity.ok(ApiResponse.success(tableService.listAreas()));
     }
@@ -111,6 +111,7 @@ public class TableController {
 
     // ── TM-03: Chuyển bàn ────────────────────────────────────────────────────
     @PostMapping("/transfer")
+    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<Void> transfer(@Valid @RequestBody TransferTableRequest request) {
         tableService.transfer(request);
         return ResponseEntity.noContent().build();
@@ -118,6 +119,7 @@ public class TableController {
 
     // ── TM-05: Ghép bàn ──────────────────────────────────────────────────────
     @PostMapping("/merge")
+    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<Void> merge(@Valid @RequestBody MergeTableRequest request) {
         tableService.merge(request);
         return ResponseEntity.noContent().build();
