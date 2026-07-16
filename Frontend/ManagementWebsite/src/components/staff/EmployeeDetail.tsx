@@ -5,8 +5,6 @@ import Avatar from '../common/Avatar'
 interface Props {
   employee: Employee
   departments: string[]
-  positions: string[]
-  branches: string[]
   onSave: (updated: Employee) => void
   onToggleActive: (employee: Employee) => void
 }
@@ -311,7 +309,7 @@ const Field = ({
   </div>
 )
 
-const EmployeeDetail = ({ employee, departments, positions, branches, onSave, onToggleActive }: Props) => {
+const EmployeeDetail = ({ employee, departments, onSave, onToggleActive }: Props) => {
   const [tab, setTab] = useState<Tab>('Thông tin')
   const [draft, setDraft] = useState(employee)
 
@@ -350,25 +348,9 @@ const EmployeeDetail = ({ employee, departments, positions, branches, onSave, on
               <Field label="Số điện thoại" warning={!draft.phoneVerified}>
                 <input className={fieldCls} value={draft.phone} onChange={e => set('phone', e.target.value)} placeholder="Nhập số điện thoại" />
               </Field>
-              <Field label="Chi nhánh trả lương">
-                <select className={fieldCls} value={draft.branchPay} onChange={e => set('branchPay', e.target.value)}>
-                  {branches.map(b => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </Field>
-              <Field label="Chi nhánh làm việc">
-                <select className={fieldCls} value={draft.branchWork} onChange={e => set('branchWork', e.target.value)}>
-                  {branches.map(b => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </Field>
-
               <Field label="Phòng ban">
                 <select className={fieldCls} value={draft.department} onChange={e => set('department', e.target.value)}>
                   {departments.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </Field>
-              <Field label="Chức danh">
-                <select className={fieldCls} value={draft.position} onChange={e => set('position', e.target.value)}>
-                  {positions.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </Field>
               <Field label="Tài khoản">
@@ -396,18 +378,12 @@ const EmployeeDetail = ({ employee, departments, positions, branches, onSave, on
               <Field label="Email">
                 <input type="email" className={fieldCls} value={draft.email} onChange={e => set('email', e.target.value)} placeholder="Nhập email" />
               </Field>
-              <Field label="Facebook">
-                <input className={fieldCls} value={draft.facebook} onChange={e => set('facebook', e.target.value)} placeholder="Nhập Facebook" />
-              </Field>
 
               <Field label="Ngày bắt đầu làm việc">
                 <input type="date" className={fieldCls} value={draft.startDate} onChange={e => set('startDate', e.target.value)} />
               </Field>
               <Field label="Mã chấm công">
                 <input className={fieldCls} value={draft.timekeepCode} onChange={e => set('timekeepCode', e.target.value)} placeholder="Nhập mã chấm công" />
-              </Field>
-              <Field label="Thiết bị di động">
-                <input className={fieldCls} value={draft.mobileDevice} onChange={e => set('mobileDevice', e.target.value)} placeholder="Chưa đăng ký" />
               </Field>
             </div>
 

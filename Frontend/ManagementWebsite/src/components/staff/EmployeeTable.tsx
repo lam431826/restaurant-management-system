@@ -5,8 +5,6 @@ import EmployeeDetail from './EmployeeDetail'
 interface Props {
   employees: Employee[]
   departments: string[]
-  positions: string[]
-  branches: string[]
   onAdd: () => void
   onSave: (emp: Employee) => void
   onToggleActive: (emp: Employee) => void
@@ -29,7 +27,7 @@ const EmptyState = ({ onAdd }: { onAdd: () => void }) => (
   </div>
 )
 
-const EmployeeTable = ({ employees, departments, positions, branches, onAdd, onSave, onToggleActive }: Props) => {
+const EmployeeTable = ({ employees, departments, onAdd, onSave, onToggleActive }: Props) => {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [expandedCode, setExpandedCode] = useState<string | null>(null)
 
@@ -101,8 +99,6 @@ const EmployeeTable = ({ employees, departments, positions, branches, onAdd, onS
                         <EmployeeDetail
                           employee={e}
                           departments={departments}
-                          positions={positions}
-                          branches={branches}
                           onSave={onSave}
                           onToggleActive={onToggleActive}
                         />

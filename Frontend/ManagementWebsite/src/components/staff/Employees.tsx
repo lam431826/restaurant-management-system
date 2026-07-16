@@ -11,7 +11,6 @@ import {
   employees as initialEmployees,
   departments as initialDepartments,
   positions as initialPositions,
-  employeeBranches,
 } from '../../data/mockData'
 import type { Employee } from '../../data/mockData'
 
@@ -130,8 +129,6 @@ const Employees = () => {
         <EmployeeTable
           employees={filtered}
           departments={departments}
-          positions={positions}
-          branches={employeeBranches}
           onAdd={() => setShowAdd(true)}
           onSave={handleUpdate}
           onToggleActive={handleToggleActive}
@@ -141,8 +138,6 @@ const Employees = () => {
       {showAdd && (
         <EmployeeModal
           nextCode={nextCode}
-          departments={departments}
-          positions={positions}
           onClose={() => setShowAdd(false)}
           onSave={handleCreate}
         />

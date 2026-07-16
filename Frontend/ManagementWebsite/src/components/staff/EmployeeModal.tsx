@@ -4,8 +4,6 @@ import { employeeBranches } from '../../data/mockData'
 
 interface Props {
   nextCode: string
-  departments: string[]
-  positions: string[]
   onClose: () => void
   onSave: (emp: Employee, addAnother: boolean) => void
 }
@@ -32,6 +30,22 @@ const InfoIcon = () => (
     <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
   </svg>
 )
+const SearchIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-ink-muted">
+    <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+)
+const EyeOffIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.3 20.3 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+    <line x1="1" y1="1" x2="23" y2="23" />
+  </svg>
+)
+const EyeIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+  </svg>
+)
 
 const inputCls =
   'w-full h-11 px-3 bg-field border border-line-default rounded-md text-md text-ink transition-colors ' +
@@ -48,8 +62,8 @@ const Field = ({ label, children, className = '' }: { label: string; children: R
 
 // ── Dropdown picker ─────────────────────────────────────────────────────
 const Picker = ({
-  value, options, placeholder, onChange,
-}: { value: string; options: string[]; placeholder: string; onChange: (v: string) => void }) => {
+  value, options, placeholder, onChange, openUp,
+}: { value: string; options: string[]; placeholder: string; onChange: (v: string) => void; openUp?: boolean }) => {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -68,7 +82,7 @@ const Picker = ({
         <ChevronDown className={`text-ink-muted transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute top-[calc(100%+0.4rem)] left-0 right-0 bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] max-h-[22rem] overflow-y-auto py-1">
+        <div className={`absolute ${openUp ? 'bottom-[calc(100%+0.4rem)]' : 'top-[calc(100%+0.4rem)]'} left-0 right-0 bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] max-h-[22rem] overflow-y-auto py-1`}>
           {options.length === 0 ? (
             <div className="px-3 py-2 text-md text-ink-muted">Không có dữ liệu</div>
           ) : options.map(opt => (
@@ -80,6 +94,82 @@ const Picker = ({
               {opt}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Account picker: search box + list + "Thêm tài khoản" ────────────────
+interface Account { username: string; name: string }
+
+const AccountPicker = ({
+  value, accounts, onChange, onAddAccount,
+}: { value: string; accounts: Account[]; onChange: (v: string) => void; onAddAccount: () => void }) => {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+  const filtered = accounts.filter(a =>
+    !query.trim() || `${a.username} ${a.name}`.toLowerCase().includes(query.trim().toLowerCase())
+  )
+  const selected = accounts.find(a => a.username === value)
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`flex items-center justify-between w-full h-11 px-3 bg-field border rounded-md cursor-pointer transition-colors ${open ? 'border-primary' : 'border-line-default hover:border-line-strong'}`}
+      >
+        <span className={`text-md truncate ${value ? 'text-ink' : 'text-ink-muted'}`}>{selected?.username || 'Chọn Tài khoản'}</span>
+        <ChevronDown className={`text-ink-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute top-[calc(100%+0.4rem)] left-0 right-0 bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] flex flex-col max-h-[26rem]">
+          <div className="p-2 shrink-0">
+            <div className="flex items-center gap-2 h-10 px-3 bg-field border border-line-default rounded-md">
+              <SearchIcon />
+              <input
+                autoFocus
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                className="flex-1 min-w-0 bg-transparent text-md text-ink placeholder:text-ink-muted focus:outline-none"
+              />
+            </div>
+          </div>
+          <div className="overflow-y-auto py-1">
+            <div
+              className="px-3 py-2.5 text-md cursor-pointer transition-colors text-primary font-medium bg-[var(--kv-action-primary-faded-bg)]"
+              onClick={() => { onChange(''); setOpen(false); setQuery('') }}
+            >
+              Chọn Tài khoản
+            </div>
+            {filtered.length === 0 ? (
+              <div className="px-3 py-2 text-md text-ink-muted">Không có dữ liệu</div>
+            ) : filtered.map(a => (
+              <div
+                key={a.username}
+                className={`px-3 py-2.5 cursor-pointer transition-colors hover:bg-[var(--kv-state-hover-bg)] ${a.username === value ? 'bg-[var(--kv-action-primary-faded-bg)]' : ''}`}
+                onClick={() => { onChange(a.username); setOpen(false); setQuery('') }}
+              >
+                <div className="text-md font-bold text-ink">{a.username}</div>
+                <div className="text-sm text-ink-subtle">{a.name}</div>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-line shrink-0">
+            <button
+              type="button"
+              onClick={() => { setOpen(false); setQuery(''); onAddAccount() }}
+              className="flex items-center gap-1.5 w-full px-3 py-2.5 text-primary text-md font-medium hover:bg-[var(--kv-action-primary-faded-bg)] cursor-pointer"
+            >
+              <span className="text-lg leading-none">+</span> Thêm tài khoản
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -356,10 +446,119 @@ const ShiftSalaryBody = ({ suffix = '/ ca', firstCol = 'Ca', wageCol = 'Lương/
 // Local option sets for UI-only pickers.
 const salaryTypes = ['Theo ca làm việc', 'Theo giờ làm việc', 'Cố định']
 const salaryTemplates: string[] = []
-const provinces = ['Hà Nội', 'TP. Hồ Chí Minh', 'Đà Nẵng', 'Hải Phòng', 'Cần Thơ']
-const accountOptions: string[] = []
+const roleOptions = ['Phục vụ', 'Thu ngân', 'Quản lý', 'Quản trị viên']
+const mockAccounts: Account[] = [
+  { username: '0975919814', name: 'Nguyen Van A' },
+  { username: 'cashier01', name: 'Nguyen Van B' },
+  { username: 'cashier02', name: 'Nguyen Van A' },
+  { username: 'nhanvien01', name: 'Nguyen Van C' },
+]
 
-const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Props) => {
+// ── Popup: Tạo tài khoản người dùng ──────────────────────────────────────
+const PasswordField = ({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) => {
+  const [visible, setVisible] = useState(false)
+  return (
+    <Field label={label}>
+      <div className="relative">
+        <input
+          type={visible ? 'text' : 'password'}
+          className={`${inputCls} pr-10`}
+          placeholder="Bắt buộc"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          onClick={() => setVisible(v => !v)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink cursor-pointer"
+          aria-label={visible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+        >
+          {visible ? <EyeIcon /> : <EyeOffIcon />}
+        </button>
+      </div>
+    </Field>
+  )
+}
+
+const CreateAccountModal = ({ onClose, onCreate }: { onClose: () => void; onCreate: (acc: Account) => void }) => {
+  const [displayName, setDisplayName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [role, setRole] = useState('')
+  const [error, setError] = useState('')
+
+  const handleSave = () => {
+    if (!displayName.trim() || !username.trim() || !password || !confirmPassword) {
+      setError('Vui lòng nhập đầy đủ các trường bắt buộc')
+      return
+    }
+    if (password !== confirmPassword) {
+      setError('Mật khẩu nhập lại không khớp')
+      return
+    }
+    onCreate({ username: username.trim(), name: displayName.trim() })
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center p-6 overflow-y-auto"
+      style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }}
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="w-full max-w-[70rem] my-6 bg-surface rounded-lg shadow-lg flex flex-col max-h-[calc(100vh-6rem)]">
+        <div className="flex items-center justify-between px-6 h-16 bg-card rounded-t-lg border-b border-line shrink-0">
+          <h2 className="text-h3 font-bold text-ink">Tạo tài khoản người dùng</h2>
+          <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">
+            <CloseIcon />
+          </button>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
+            <Field label="Tên hiển thị">
+              <input className={inputCls} placeholder="Bắt buộc" value={displayName}
+                onChange={e => { setDisplayName(e.target.value); if (error) setError('') }} />
+            </Field>
+            <Field label="Số điện thoại">
+              <input className={inputCls} inputMode="tel" placeholder="0912 345 678" value={phone} onChange={e => setPhone(e.target.value)} />
+            </Field>
+            <Field label="Email">
+              <input className={inputCls} inputMode="email" placeholder="email@gmail.com" value={email} onChange={e => setEmail(e.target.value)} />
+            </Field>
+            <Field label="Tên đăng nhập">
+              <input className={inputCls} placeholder="Bắt buộc" value={username}
+                onChange={e => { setUsername(e.target.value); if (error) setError('') }} />
+            </Field>
+            <PasswordField label="Mật khẩu" value={password} onChange={v => { setPassword(v); if (error) setError('') }} />
+            <PasswordField label="Nhập lại mật khẩu" value={confirmPassword} onChange={v => { setConfirmPassword(v); if (error) setError('') }} />
+          </div>
+
+          <SectionCard title="Phân quyền">
+            <p className="text-md text-ink-subtle mt-1">Chọn chi nhánh và phân quyền cho người dùng này</p>
+            <div className="mt-4 w-full sm:w-[24rem]">
+              <Field label="Vai trò">
+                <Picker value={role} options={roleOptions} placeholder="Chọn vai trò" onChange={setRole} openUp />
+              </Field>
+            </div>
+          </SectionCard>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 px-6 py-3 bg-card rounded-b-lg border-t border-line shrink-0">
+          <span className="text-md text-danger">{error}</span>
+          <div className="flex items-center gap-2">
+            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose}>Bỏ qua</button>
+            <button className="kv-btn kv-btn-primary h-10" onClick={handleSave}>Lưu</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const EmployeeModal = ({ nextCode, onClose, onSave }: Props) => {
   const [tab, setTab] = useState<TabKey>('info')
 
   // ── Thông tin khởi tạo
@@ -368,10 +567,10 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
   const [photo, setPhoto] = useState<string>('')
 
   // ── Thông tin công việc
-  const [department, setDepartment] = useState('')
-  const [position, setPosition] = useState('')
   const [startDate, setStartDate] = useState('')
   const [account, setAccount] = useState('')
+  const [accounts, setAccounts] = useState<Account[]>(mockAccounts)
+  const [showCreateAccount, setShowCreateAccount] = useState(false)
   const [note, setNote] = useState('')
 
   // ── Thông tin cá nhân
@@ -379,10 +578,6 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
   const [birthday, setBirthday] = useState('')
   const [gender, setGender] = useState('')
   const [address, setAddress] = useState('')
-  const [province, setProvince] = useState('')
-  const [ward, setWard] = useState('')
-  const [email, setEmail] = useState('')
-  const [facebook, setFacebook] = useState('')
 
   // ── Thiết lập lương (UI-only)
   const [salaryType, setSalaryType] = useState('')
@@ -435,16 +630,16 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
       idNumber: idNumber.trim(),
       debt: 0,
       note: note.trim(),
-      department: department || 'Chưa phân phòng',
-      position: position || 'Nhân viên',
+      department: 'Chưa phân phòng',
+      position: 'Nhân viên',
       active: true,
       branchPay: employeeBranches[0],
       branchWork: employeeBranches[0],
       birthday,
       gender,
-      address: [address.trim(), ward, province].filter(Boolean).join(', '),
-      email: email.trim(),
-      facebook: facebook.trim(),
+      address: address.trim(),
+      email: '',
+      facebook: '',
       startDate,
       account,
       mobileDevice: '',
@@ -452,7 +647,14 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
     onSave(result, false)
   }
 
+  const handleCreateAccount = (acc: Account) => {
+    setAccounts(prev => [...prev, acc])
+    setAccount(acc.username)
+    setShowCreateAccount(false)
+  }
+
   return (
+    <>
     <div
       className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center p-6 overflow-y-auto"
       style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }}
@@ -522,17 +724,16 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
               {/* Thông tin công việc */}
               <SectionCard title="Thông tin công việc" collapsible>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 mt-4">
-                  <Field label="Phòng ban">
-                    <Picker value={department} options={departments} placeholder="Chọn Phòng ban" onChange={setDepartment} />
-                  </Field>
-                  <Field label="Chức danh">
-                    <Picker value={position} options={positions} placeholder="Chọn Chức danh" onChange={setPosition} />
-                  </Field>
                   <Field label="Ngày bắt đầu làm việc">
                     <input type="date" className={inputCls} value={startDate} onChange={e => setStartDate(e.target.value)} />
                   </Field>
                   <Field label="Tài khoản đăng nhập">
-                    <Picker value={account} options={accountOptions} placeholder="Chọn Tài khoản" onChange={setAccount} />
+                    <AccountPicker
+                      value={account}
+                      accounts={accounts}
+                      onChange={setAccount}
+                      onAddAccount={() => setShowCreateAccount(true)}
+                    />
                   </Field>
                   <Field label="Ghi chú" className="sm:col-span-2">
                     <input className={inputCls} placeholder="Nhập ghi chú" value={note} onChange={e => setNote(e.target.value)} />
@@ -565,18 +766,6 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
                   </div>
                   <Field label="Địa chỉ" className="sm:col-span-2">
                     <input className={inputCls} value={address} onChange={e => setAddress(e.target.value)} />
-                  </Field>
-                  <Field label="Tỉnh/Thành phố">
-                    <Picker value={province} options={provinces} placeholder="Chọn Tỉnh/Thành phố" onChange={setProvince} />
-                  </Field>
-                  <Field label="Xã/Phường/Đặc khu">
-                    <Picker value={ward} options={[]} placeholder="Chọn Xã/Phường/Đặc khu" onChange={setWard} />
-                  </Field>
-                  <Field label="Email">
-                    <input className={inputCls} inputMode="email" value={email} onChange={e => setEmail(e.target.value)} />
-                  </Field>
-                  <Field label="Facebook">
-                    <input className={inputCls} value={facebook} onChange={e => setFacebook(e.target.value)} />
                   </Field>
                 </div>
               </SectionCard>
@@ -625,6 +814,10 @@ const EmployeeModal = ({ nextCode, departments, positions, onClose, onSave }: Pr
         </div>
       </div>
     </div>
+    {showCreateAccount && (
+      <CreateAccountModal onClose={() => setShowCreateAccount(false)} onCreate={handleCreateAccount} />
+    )}
+    </>
   )
 }
 
