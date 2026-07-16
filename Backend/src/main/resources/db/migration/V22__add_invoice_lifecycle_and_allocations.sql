@@ -111,24 +111,36 @@ ALTER TABLE invoices ADD
     status NVARCHAR(20) NULL,
     merged_into_invoice_id NVARCHAR(36) NULL;
 
-UPDATE invoices
-SET status = 'ACTIVE';
+EXEC sys.sp_executesql N'
+    UPDATE invoices
+    SET status = N''ACTIVE'';
+';
 
-ALTER TABLE invoices ALTER COLUMN status NVARCHAR(20) NOT NULL;
+EXEC sys.sp_executesql N'
+    ALTER TABLE invoices
+    ALTER COLUMN status NVARCHAR(20) NOT NULL;
+';
 
-ALTER TABLE invoices ADD
-    CONSTRAINT ck_invoices_status
-        CHECK (status IN ('ACTIVE', 'MERGED')),
-    CONSTRAINT ck_invoices_merge_lineage
-        CHECK (
-            (status = 'ACTIVE' AND merged_into_invoice_id IS NULL)
-            OR (status = 'MERGED' AND merged_into_invoice_id IS NOT NULL)
-        ),
-    CONSTRAINT ck_invoices_no_self_merge
-        CHECK (merged_into_invoice_id IS NULL OR merged_into_invoice_id <> id),
-    CONSTRAINT fk_invoices_merged_into
-        FOREIGN KEY (merged_into_invoice_id) REFERENCES invoices(id)
-        ON DELETE NO ACTION ON UPDATE NO ACTION;
+EXEC sys.sp_executesql N'
+    ALTER TABLE invoices ADD
+        CONSTRAINT ck_invoices_status
+            CHECK (status IN (N''ACTIVE'', N''MERGED'')),
+        CONSTRAINT ck_invoices_merge_lineage
+            CHECK (
+                (status = N''ACTIVE'' AND merged_into_invoice_id IS NULL)
+                OR (status = N''MERGED'' AND merged_into_invoice_id IS NOT NULL)
+            ),
+        CONSTRAINT ck_invoices_no_self_merge
+            CHECK (
+                merged_into_invoice_id IS NULL
+                OR merged_into_invoice_id <> id
+            ),
+        CONSTRAINT fk_invoices_merged_into
+            FOREIGN KEY (merged_into_invoice_id)
+            REFERENCES invoices(id)
+            ON DELETE NO ACTION
+            ON UPDATE NO ACTION;
+';
 
 CREATE TABLE invoice_item_allocations (
     id                  NVARCHAR(36)   NOT NULL PRIMARY KEY,
