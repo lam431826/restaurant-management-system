@@ -12,6 +12,7 @@ import java.util.Optional;
 
 public interface InvoiceRepository extends JpaRepository<Invoice, String> {
     Optional<Invoice> findByOrderId(String orderId);
+    boolean existsByOrderId(String orderId);
     List<Invoice> findAllByOrderByCreatedAtDesc();
     List<Invoice> findByPaidOrderByCreatedAtDesc(boolean paid);
     List<Invoice> findByOrderIdOrderByCreatedAtDesc(String orderId);

@@ -1,10 +1,10 @@
 package com.rms.restaurant.module.payment.service.impl;
 
 import com.rms.restaurant.common.utils.enums.CookingStatus;
+import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
-import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
@@ -91,16 +91,17 @@ public class InvoiceServiceImpl implements InvoiceService {
     public InvoiceResponse generate(GenerateInvoiceRequest request) {
         String orderId = request.orderId().trim();
 
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
 
-        invoiceRepository.findByOrderId(orderId)
-                .ifPresent(existing -> {
-                    throw new ConflictException(ApplicationError.INVOICE_ALREADY_EXISTS);
-                });
-
         validateOrderCanBeInvoiced(order);
-        List<OrderItem> payableItems = validateOrderItemsForInvoice(orderItemRepository.findByOrderId(orderId));
+        if (invoiceRepository.existsByOrderId(orderId)) {
+            throw new ApplicationException(ApplicationError.ORDER_ALREADY_INVOICED);
+        }
+
+        List<OrderItem> lockedOrderItems = orderItemRepository.findAllByOrderIdForUpdate(orderId);
+        List<OrderItem> payableItems = validateOrderItemsForInvoice(order, lockedOrderItems);
+        validateNoActiveAllocationConflict(order, payableItems);
         BigDecimal subtotal = calculateSubtotal(payableItems);
         validateInvoiceSubtotal(subtotal);
 
@@ -124,9 +125,22 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .totalAmount(totalAmount)
                 .promotionId(promotion == null ? null : promotion.getId())
                 .paid(false)
+                .status(InvoiceStatus.ACTIVE)
+                .mergedIntoInvoiceId(null)
                 .build();
 
         Invoice savedInvoice = invoiceRepository.save(invoice);
+        List<InvoiceItemAllocation> allocations = payableItems.stream()
+                .map(item -> InvoiceItemAllocation.builder()
+                        .invoiceId(savedInvoice.getId())
+                        .orderItemId(item.getId())
+                        .allocatedQuantity(item.getQuantity())
+                        .unitPriceSnapshot(item.getUnitPrice())
+                        .active(true)
+                        .build())
+                .collect(Collectors.toList());
+        invoiceItemAllocationRepository.saveAll(allocations);
+
         if (promotion != null) {
             incrementUsedCount(promotion);
         }
@@ -467,7 +481,23 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
     }
 
-    private List<OrderItem> validateOrderItemsForInvoice(List<OrderItem> orderItems) {
+    private void validateNoActiveAllocationConflict(Order order, List<OrderItem> payableItems) {
+        if (payableItems.isEmpty()) {
+            return;
+        }
+
+        List<String> orderItemIds = new ArrayList<>();
+        for (OrderItem item : payableItems) {
+            validateOrderItemIdentity(order, item);
+            orderItemIds.add(item.getId());
+        }
+
+        if (!invoiceItemAllocationRepository.findActiveByOrderItemIdsForUpdate(orderItemIds).isEmpty()) {
+            throw invalidAllocationData();
+        }
+    }
+
+    private List<OrderItem> validateOrderItemsForInvoice(Order order, List<OrderItem> orderItems) {
         if (orderItems.isEmpty()) {
             throw new ApplicationException(
                     ApplicationError.INVALID_INVOICE_ITEMS,
@@ -475,10 +505,16 @@ public class InvoiceServiceImpl implements InvoiceService {
             );
         }
 
+        for (OrderItem item : orderItems) {
+            validateOrderItemIdentity(order, item);
+
+            if (item.getCookingStatus() == null) {
+                throw new ApplicationException(ApplicationError.INVALID_INVOICE_ITEMS);
+            }
+        }
+
         List<OrderItem> payableItems = new ArrayList<>();
         for (OrderItem item : orderItems) {
-            validateInvoiceItem(item);
-
             if (item.getCookingStatus() == CookingStatus.PENDING || item.getCookingStatus() == CookingStatus.COOKING) {
                 throw new ApplicationException(ApplicationError.ORDER_NOT_READY_FOR_INVOICE);
             }
@@ -495,14 +531,26 @@ public class InvoiceServiceImpl implements InvoiceService {
             );
         }
 
+        payableItems.forEach(this::validateInvoiceItem);
+
         return payableItems;
+    }
+
+    private void validateOrderItemIdentity(Order order, OrderItem item) {
+        if (item == null
+                || item.getId() == null
+                || item.getId().isBlank()
+                || item.getOrder() == null
+                || !order.getId().equals(item.getOrder().getId())) {
+            throw invalidAllocationData();
+        }
     }
 
     private void validateInvoiceItem(OrderItem item) {
         if (item.getQuantity() <= 0
                 || item.getUnitPrice() == null
                 || item.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0
-                || item.getCookingStatus() == null) {
+                || !isPayableItem(item)) {
             throw new ApplicationException(ApplicationError.INVALID_INVOICE_ITEMS);
         }
     }
