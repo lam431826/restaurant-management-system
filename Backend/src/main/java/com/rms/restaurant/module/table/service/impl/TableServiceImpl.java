@@ -312,14 +312,11 @@ public class TableServiceImpl implements TableService {
                 .sorted()
                 .toList();
 
-        List<String> discoveredOrderIds = sortedDistinctIds(orderRepository.findActiveIdsByTableIds(
+        List<Order> lockedOrders = orderRepository.findActiveByTableIdsForUpdate(
                 tableIds,
                 TERMINAL_ORDER_STATUSES
-        ));
-        List<Order> lockedOrders = discoveredOrderIds.isEmpty()
-                ? List.of()
-                : orderRepository.findAllByIdInForUpdate(discoveredOrderIds);
-        validateLockedOrders(discoveredOrderIds, lockedOrders);
+        );
+        List<String> lockedOrderIds = sortedOrderIds(lockedOrders);
 
         List<RestaurantTable> lockedTables = tableRepository.findAllByIdInForUpdate(tableIds);
         RestaurantTable sourceTable = findLockedTable(lockedTables, sourceTableId, "Source table not found");
@@ -329,7 +326,7 @@ public class TableServiceImpl implements TableService {
                 tableIds,
                 TERMINAL_ORDER_STATUSES
         ));
-        validateDiscoveredOrderIds(discoveredOrderIds, revalidatedOrderIds);
+        validateDiscoveredOrderIds(lockedOrderIds, revalidatedOrderIds);
 
         validateTransferTableStates(sourceTable, targetTable);
         Order sourceOrder = validateTransferOrders(lockedOrders, sourceTableId, targetTableId);
@@ -390,10 +387,6 @@ public class TableServiceImpl implements TableService {
                 .distinct()
                 .sorted()
                 .toList();
-    }
-
-    private void validateLockedOrders(List<String> expectedOrderIds, List<Order> lockedOrders) {
-        validateDiscoveredOrderIds(expectedOrderIds, sortedOrderIds(lockedOrders));
     }
 
     private void validateDiscoveredOrderIds(List<String> expectedOrderIds, List<String> currentOrderIds) {
