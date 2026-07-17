@@ -17,6 +17,7 @@ import com.rms.restaurant.module.order.mapper.OrderMapper;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
 import com.rms.restaurant.module.order.repository.AssistanceRequestRepository;
+import com.rms.restaurant.module.order.repository.OrderItemRepository;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.table.model.RestaurantTable;
@@ -27,6 +28,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -35,6 +39,7 @@ import java.util.ArrayList;
 public class GuestOrderingServiceImpl implements GuestOrderingService {
 
     private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
     private final MenuItemRepository menuItemRepository;
     private final TableRepository tableRepository;
     private final AssistanceRequestRepository assistanceRequestRepository;
@@ -81,7 +86,8 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
 
     @Override
     public OrderStatusResponse updateOrderItems(String orderId, UpdateOrderItemsRequest request) {
-        Order order = orderRepository.findById(orderId)
+        String normalizedOrderId = normalizeOrderId(orderId);
+        Order order = orderRepository.findByIdForUpdate(normalizedOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         ensureOrderItemsCanBeModified(order);
 
@@ -90,7 +96,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
                     "Chỉ có thể cập nhật món khi đơn chưa được xác nhận.");
         }
 
-        order.getItems().removeIf(item -> item.getCookingStatus() == com.rms.restaurant.common.utils.enums.CookingStatus.PENDING);
+        removePendingItemsFromLockedOrder(order);
         appendItems(order, request);
 
         Order savedOrder = orderRepository.save(order);
@@ -101,7 +107,8 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
 
     @Override
     public OrderStatusResponse addOrderItems(String orderId, UpdateOrderItemsRequest request) {
-        Order order = orderRepository.findById(orderId)
+        String normalizedOrderId = normalizeOrderId(orderId);
+        Order order = orderRepository.findByIdForUpdate(normalizedOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         ensureOrderItemsCanBeModified(order);
 
@@ -173,6 +180,17 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
         });
     }
 
+    private void removePendingItemsFromLockedOrder(Order order) {
+        List<OrderItem> lockedItems = orderItemRepository.findAllByOrderIdForUpdate(order.getId());
+        Set<String> pendingItemIds = new HashSet<>();
+        for (OrderItem item : lockedItems) {
+            if (item.getCookingStatus() == com.rms.restaurant.common.utils.enums.CookingStatus.PENDING) {
+                pendingItemIds.add(item.getId());
+            }
+        }
+        order.getItems().removeIf(item -> pendingItemIds.contains(item.getId()));
+    }
+
     private void ensureOrderItemsCanBeModified(Order order) {
         if (order.getStatus() == OrderStatus.CLOSED || order.getStatus() == OrderStatus.CANCELLED) {
             throw new ApplicationException(
@@ -181,9 +199,16 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
             );
         }
 
-        if (invoiceRepository.findByOrderId(order.getId()).isPresent()) {
+        if (invoiceRepository.existsByOrderId(order.getId())) {
             throw new ApplicationException(ApplicationError.ORDER_ALREADY_INVOICED);
         }
+    }
+
+    private String normalizeOrderId(String orderId) {
+        if (orderId == null || orderId.isBlank()) {
+            throw new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND);
+        }
+        return orderId.trim();
     }
 
     private OrderStatusResponse toStatusResponse(Order order, String estimatedTime) {

@@ -179,21 +179,15 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse removeItem(String orderId, String itemId) {
-        Order order = orderRepository.findById(orderId)
+        String normalizedOrderId = normalizeOrderId(orderId);
+        Order order = orderRepository.findByIdForUpdate(normalizedOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         ensureOrderItemsCanBeModified(order);
-        if (order.getItems() != null) {
-            OrderItem itemToRemove = null;
-            for (OrderItem item : order.getItems()) {
-                if (item.getId().equals(itemId)) {
-                    validateItemCanBeRemoved(item);
-                    itemToRemove = item;
-                    break;
-                }
-            }
-            if (itemToRemove != null) {
-                order.getItems().remove(itemToRemove);
-            }
+
+        OrderItem itemToRemove = findOwnedOrderItemForUpdate(order, itemId);
+        if (itemToRemove != null) {
+            validateItemCanBeRemoved(itemToRemove);
+            order.getItems().remove(itemToRemove);
         }
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -235,7 +229,8 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse addItems(String id, AddOrderItemsRequest request) {
-        Order order = orderRepository.findById(id)
+        String orderId = normalizeOrderId(id);
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         ensureOrderItemsCanBeModified(order);
 
@@ -262,11 +257,15 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse updateItemStatus(String orderId, String itemId, com.rms.restaurant.module.order.dto.UpdateOrderItemStatusRequest request) {
-        Order order = orderRepository.findById(orderId)
+        String normalizedOrderId = normalizeOrderId(orderId);
+        Order order = orderRepository.findByIdForUpdate(normalizedOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         ensureOrderItemsCanBeModified(order);
 
-        OrderItem item = findOrderItem(order, itemId);
+        OrderItem item = findOwnedOrderItemForUpdate(order, itemId);
+        if (item == null) {
+            throw new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND);
+        }
         validateItemStatusTransition(item.getCookingStatus(), request.status());
         item.setCookingStatus(request.status());
         if (request.status() == CookingStatus.REJECTED) {
@@ -278,15 +277,14 @@ public class OrderServiceImpl implements OrderService {
         return orderMapper.toResponse(savedOrder);
     }
 
-    private OrderItem findOrderItem(Order order, String itemId) {
-        if (order.getItems() != null) {
-            for (OrderItem item : order.getItems()) {
-                if (item.getId().equals(itemId)) {
-                    return item;
-                }
-            }
+    private OrderItem findOwnedOrderItemForUpdate(Order order, String itemId) {
+        OrderItem item = orderItemRepository.findByIdForUpdate(itemId).orElse(null);
+        if (item == null
+                || item.getOrder() == null
+                || !order.getId().equals(item.getOrder().getId())) {
+            return null;
         }
-        throw new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND); // Reusing existing project error
+        return item;
     }
 
     private void validateItemCanBeRemoved(OrderItem item) {
@@ -327,7 +325,7 @@ public class OrderServiceImpl implements OrderService {
             );
         }
 
-        if (invoiceRepository.findByOrderId(order.getId()).isPresent()) {
+        if (invoiceRepository.existsByOrderId(order.getId())) {
             throw new ApplicationException(ApplicationError.ORDER_ALREADY_INVOICED);
         }
     }

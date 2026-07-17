@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface OrderItemRepository extends JpaRepository<OrderItem, String> {
     List<OrderItem> findByOrderId(String orderId);
@@ -15,6 +16,10 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, String> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT oi FROM OrderItem oi WHERE oi.order.id = :orderId ORDER BY oi.id ASC")
     List<OrderItem> findAllByOrderIdForUpdate(@Param("orderId") String orderId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT oi FROM OrderItem oi WHERE oi.id = :id")
+    Optional<OrderItem> findByIdForUpdate(@Param("id") String id);
 
     boolean existsByMenuItemId(String menuItemId);
 }
