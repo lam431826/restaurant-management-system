@@ -573,6 +573,10 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     private void validateInvoiceCanApplyDiscount(Invoice invoice) {
+        if (invoice.getStatus() != InvoiceStatus.ACTIVE) {
+            throw new ApplicationException(ApplicationError.INVOICE_NOT_PAYABLE);
+        }
+
         if (invoice.isPaid() || hasPaidPayment(invoice.getId())) {
             throw new ApplicationException(ApplicationError.INVOICE_ALREADY_PAID);
         }

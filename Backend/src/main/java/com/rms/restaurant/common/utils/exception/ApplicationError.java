@@ -78,6 +78,7 @@ public enum ApplicationError {
     ORDER_ITEM_STATUS_TRANSITION_NOT_ALLOWED("Order item status transition is not allowed", HttpStatus.UNPROCESSABLE_ENTITY),
     INVOICE_ALREADY_EXISTS("Invoice already exists for this order", HttpStatus.CONFLICT),
     INVOICE_ALREADY_PAID("Cannot apply a promotion to a paid invoice", HttpStatus.UNPROCESSABLE_ENTITY),
+    INVOICE_NOT_PAYABLE("Invoice is not active and cannot accept payment or discount changes", HttpStatus.UNPROCESSABLE_ENTITY),
     INVOICE_ALREADY_DISCOUNTED("Invoice already has a promotion discount", HttpStatus.UNPROCESSABLE_ENTITY),
     INVOICE_PROMOTION_ALREADY_APPLIED("This promotion has already been applied to this invoice", HttpStatus.UNPROCESSABLE_ENTITY),
     PROMOTION_USAGE_LIMIT_REACHED("Promotion usage limit has been reached", HttpStatus.CONFLICT),

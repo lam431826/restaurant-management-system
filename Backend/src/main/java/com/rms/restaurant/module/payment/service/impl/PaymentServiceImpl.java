@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.payment.service.impl;
 
+import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
@@ -39,6 +40,10 @@ public class PaymentServiceImpl implements PaymentService {
     public PaymentResponse process(ProcessPaymentRequest request) {
         Invoice invoice = invoiceRepository.findByIdForUpdate(request.invoiceId())
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
+
+        if (invoice.getStatus() != InvoiceStatus.ACTIVE) {
+            throw new ApplicationException(ApplicationError.INVOICE_NOT_PAYABLE);
+        }
 
         if (invoice.isPaid()) {
             throw new ApplicationException(
