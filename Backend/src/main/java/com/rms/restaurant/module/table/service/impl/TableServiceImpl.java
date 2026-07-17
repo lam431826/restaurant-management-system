@@ -298,8 +298,8 @@ public class TableServiceImpl implements TableService {
     @Override
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public void transfer(TransferTableRequest request) {
-        String sourceTableId = request.fromTableId();
-        String targetTableId = request.toTableId();
+        String sourceTableId = request.fromTableId().trim();
+        String targetTableId = request.toTableId().trim();
         if (sourceTableId.equals(targetTableId)) {
             throw new ApplicationException(
                     ApplicationError.TABLE_TRANSFER_NOT_ALLOWED,
@@ -307,17 +307,38 @@ public class TableServiceImpl implements TableService {
             );
         }
 
-        List<String> tableIds = new ArrayList<>(List.of(sourceTableId, targetTableId));
-        tableIds.sort(String::compareTo);
+        List<String> tableIds = List.of(sourceTableId, targetTableId).stream()
+                .distinct()
+                .sorted()
+                .toList();
+
+        List<String> discoveredOrderIds = sortedDistinctIds(orderRepository.findActiveIdsByTableIds(
+                tableIds,
+                TERMINAL_ORDER_STATUSES
+        ));
+        List<Order> lockedOrders = discoveredOrderIds.isEmpty()
+                ? List.of()
+                : orderRepository.findAllByIdInForUpdate(discoveredOrderIds);
+        validateLockedOrders(discoveredOrderIds, lockedOrders);
 
         List<RestaurantTable> lockedTables = tableRepository.findAllByIdInForUpdate(tableIds);
         RestaurantTable sourceTable = findLockedTable(lockedTables, sourceTableId, "Source table not found");
         RestaurantTable targetTable = findLockedTable(lockedTables, targetTableId, "Target table not found");
 
-        List<Order> lockedActiveOrders = orderRepository.findActiveByTableIdsForUpdate(
+        List<String> revalidatedOrderIds = sortedDistinctIds(orderRepository.findActiveIdsByTableIds(
                 tableIds,
                 TERMINAL_ORDER_STATUSES
-        );
+        ));
+        validateDiscoveredOrderIds(discoveredOrderIds, revalidatedOrderIds);
+
+        validateTransferTableStates(sourceTable, targetTable);
+        Order sourceOrder = validateTransferOrders(lockedOrders, sourceTableId, targetTableId);
+        if (invoiceRepository.existsByOrderId(sourceOrder.getId())) {
+            throw new ApplicationException(
+                    ApplicationError.ORDER_ALREADY_INVOICED,
+                    "An invoiced order cannot be transferred to another table"
+            );
+        }
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime reservationWindowStart = now.minusMinutes(RESERVATION_WINDOW_BEFORE_MINUTES);
@@ -329,15 +350,6 @@ public class TableServiceImpl implements TableService {
                 reservationWindowStart,
                 reservationWindowEnd
         ).isEmpty();
-
-        validateTransferTableStates(sourceTable, targetTable);
-        Order sourceOrder = validateTransferOrders(lockedActiveOrders, sourceTableId, targetTableId);
-        if (invoiceRepository.findByOrderId(sourceOrder.getId()).isPresent()) {
-            throw new ApplicationException(
-                    ApplicationError.ORDER_ALREADY_INVOICED,
-                    "An invoiced order cannot be transferred to another table"
-            );
-        }
         if (hasBlockingReservation) {
             throw new ConflictException(
                     ApplicationError.TABLE_NOT_AVAILABLE,
@@ -363,6 +375,34 @@ public class TableServiceImpl implements TableService {
                 .filter(table -> table.getId().equals(tableId))
                 .findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.TABLE_NOT_FOUND, message));
+    }
+
+    private List<String> sortedOrderIds(List<Order> orders) {
+        return orders.stream()
+                .map(Order::getId)
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
+    private List<String> sortedDistinctIds(List<String> ids) {
+        return ids.stream()
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
+    private void validateLockedOrders(List<String> expectedOrderIds, List<Order> lockedOrders) {
+        validateDiscoveredOrderIds(expectedOrderIds, sortedOrderIds(lockedOrders));
+    }
+
+    private void validateDiscoveredOrderIds(List<String> expectedOrderIds, List<String> currentOrderIds) {
+        if (!expectedOrderIds.equals(currentOrderIds)) {
+            throw new ApplicationException(
+                    ApplicationError.TABLE_TRANSFER_NOT_ALLOWED,
+                    "Active order state changed during table transfer"
+            );
+        }
     }
 
     private void validateTransferTableStates(RestaurantTable sourceTable, RestaurantTable targetTable) {

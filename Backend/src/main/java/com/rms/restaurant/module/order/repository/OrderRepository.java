@@ -19,14 +19,17 @@ public interface OrderRepository extends JpaRepository<Order, String> {
     @Query("SELECT o FROM Order o WHERE o.id = :id")
     Optional<Order> findByIdForUpdate(@Param("id") String id);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT o FROM Order o " +
+    @Query("SELECT o.id FROM Order o " +
            "WHERE o.tableId IN :tableIds AND o.status NOT IN :terminalStatuses " +
-           "ORDER BY o.tableId ASC, o.id ASC")
-    List<Order> findActiveByTableIdsForUpdate(
+           "ORDER BY o.id ASC")
+    List<String> findActiveIdsByTableIds(
             @Param("tableIds") List<String> tableIds,
             @Param("terminalStatuses") Collection<OrderStatus> terminalStatuses
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM Order o WHERE o.id IN :ids ORDER BY o.id ASC")
+    List<Order> findAllByIdInForUpdate(@Param("ids") List<String> ids);
 
     List<Order> findByTableIdAndStatus(String tableId, OrderStatus status);
     Optional<Order> findTopByTableIdOrderByCreatedAtDesc(String tableId);
