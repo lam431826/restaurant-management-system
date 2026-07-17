@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.payment.repository;
 
+import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.module.payment.model.Invoice;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -21,6 +22,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, String> {
     List<Invoice> findByPaidOrderByCreatedAtDescIdDesc(boolean paid);
     List<Invoice> findByOrderIdOrderByCreatedAtDescIdDesc(String orderId);
     List<Invoice> findByOrderIdAndPaidOrderByCreatedAtDescIdDesc(String orderId, boolean paid);
+    List<Invoice> findByOrderIdAndStatusOrderByCreatedAtAscIdAsc(String orderId, InvoiceStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT i FROM Invoice i WHERE i.id = :id")
