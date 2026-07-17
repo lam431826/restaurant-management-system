@@ -36,12 +36,21 @@ public enum ApplicationError {
     DUPLICATE_EMAIL("Email already in use", HttpStatus.CONFLICT),
     DUPLICATE_PHONE("Phone number already in use", HttpStatus.CONFLICT),
     USER_NOT_UNLOCKABLE("Only locked accounts can be unlocked", HttpStatus.UNPROCESSABLE_ENTITY),
+    MANAGER_CANNOT_ASSIGN_ADMIN_ROLE("Only an administrator can create an ADMIN account", HttpStatus.FORBIDDEN),
 
     // Menu Management
     DUPLICATE_CATEGORY_NAME("A category with this name already exists", HttpStatus.CONFLICT),
     CATEGORY_HAS_ITEMS("Category still has items; reassign or remove them first", HttpStatus.CONFLICT),
     MENU_ITEM_HAS_ORDERS("Item has existing orders and cannot be deleted; deactivate it instead", HttpStatus.CONFLICT),
     MENU_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
+
+    // Employee Management
+    EMPLOYEE_NOT_FOUND("Employee not found", HttpStatus.NOT_FOUND),
+    DUPLICATE_EMPLOYEE_CODE("Employee code already in use", HttpStatus.CONFLICT),
+    DUPLICATE_EMPLOYEE_PHONE("Phone number already in use", HttpStatus.CONFLICT),
+    EMPLOYEE_USER_ALREADY_LINKED("This user account is already linked to another employee", HttpStatus.CONFLICT),
+    EMPLOYEE_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
+    EMPLOYEE_IMPORT_TOO_MANY_ROWS("Import file exceeds the 500-row limit", HttpStatus.BAD_REQUEST),
 
     // Table Management
     DUPLICATE_TABLE_NAME("A table with this name already exists", HttpStatus.CONFLICT),

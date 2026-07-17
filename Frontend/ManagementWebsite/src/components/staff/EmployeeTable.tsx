@@ -4,7 +4,11 @@ import EmployeeDetail from './EmployeeDetail'
 
 interface Props {
   employees: Employee[]
-  departments: string[]
+  loading?: boolean
+  page: number
+  totalPages: number
+  total: number
+  onPageChange: (page: number) => void
   onAdd: () => void
   onSave: (emp: Employee) => void
   onToggleActive: (emp: Employee) => void
@@ -27,7 +31,9 @@ const EmptyState = ({ onAdd }: { onAdd: () => void }) => (
   </div>
 )
 
-const EmployeeTable = ({ employees, departments, onAdd, onSave, onToggleActive }: Props) => {
+const pageBtnCls = 'h-9 min-w-[2.25rem] px-2 flex items-center justify-center border border-line-default rounded-md text-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:border-primary hover:text-primary cursor-pointer'
+
+const EmployeeTable = ({ employees, loading, page, totalPages, total, onPageChange, onAdd, onSave, onToggleActive }: Props) => {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [expandedCode, setExpandedCode] = useState<string | null>(null)
 
@@ -57,11 +63,20 @@ const EmployeeTable = ({ employees, departments, onAdd, onSave, onToggleActive }
               <th className={th}>Tên nhân viên</th>
               <th className={`${th} w-[14rem]`}>Số điện thoại</th>
               <th className={`${th} w-[15rem]`}>Số CMND/CCCD</th>
-              <th className={`${th} text-right w-[14rem]`}>Nợ và tạm ứng</th>
               <th className={`${th} w-[16rem]`}>Ghi chú</th>
             </tr>
           </thead>
-          {employees.length > 0 && (
+          {loading && (
+            <tbody>
+              <tr>
+                <td colSpan={7} className="py-16 text-center text-md text-ink-subtle">
+                  <div className="inline-block w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2 align-[-0.35em]" />
+                  Đang tải...
+                </td>
+              </tr>
+            </tbody>
+          )}
+          {!loading && employees.length > 0 && (
             <tbody>
               {employees.map(e => (
                 <Fragment key={e.code}>
@@ -78,27 +93,15 @@ const EmployeeTable = ({ employees, departments, onAdd, onSave, onToggleActive }
                     <td className={`${td} text-primary font-medium`}>{e.code}</td>
                     <td className={td}>{e.timekeepCode}</td>
                     <td className={td}>{e.name}</td>
-                    <td className={td}>
-                      <span className="flex items-center gap-1.5">
-                        {e.phone}
-                        {!e.phoneVerified && (
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-warning shrink-0">
-                            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                          </svg>
-                        )}
-                      </span>
-                    </td>
+                    <td className={td}>{e.phone}</td>
                     <td className={td}>{e.idNumber}</td>
-                    <td className={`${td} text-right ${e.debt > 0 ? 'text-danger font-medium' : ''}`}>{e.debt.toLocaleString('vi-VN')}</td>
                     <td className={`${td} text-ink-muted`}>{e.note}</td>
                   </tr>
                   {expandedCode === e.code && (
                     <tr>
-                      <td colSpan={8} className="p-0 border-b border-line" onClick={ev => ev.stopPropagation()}>
+                      <td colSpan={7} className="p-0 border-b border-line" onClick={ev => ev.stopPropagation()}>
                         <EmployeeDetail
                           employee={e}
-                          departments={departments}
                           onSave={onSave}
                           onToggleActive={onToggleActive}
                         />
@@ -111,12 +114,41 @@ const EmployeeTable = ({ employees, departments, onAdd, onSave, onToggleActive }
           )}
         </table>
 
-        {employees.length === 0 && <EmptyState onAdd={onAdd} />}
+        {!loading && employees.length === 0 && <EmptyState onAdd={onAdd} />}
       </div>
 
-      {employees.length > 0 && (
-        <div className="flex items-center gap-4 px-4 py-3 border-t border-line shrink-0">
-          <span className="text-md text-ink-subtle">1 - {employees.length} trên tổng số {employees.length}</span>
+      {!loading && employees.length > 0 && (
+        <div className="flex items-center justify-between gap-4 px-4 py-3 border-t border-line shrink-0">
+          <span className="text-md text-ink-subtle">Trang {page + 1} / {totalPages || 1} · {total} nhân viên</span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                disabled={page === 0}
+                onClick={() => onPageChange(page - 1)}
+                className={pageBtnCls}
+                aria-label="Trang trước"
+              >
+                ← Trước
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => (
+                <button
+                  key={i}
+                  onClick={() => onPageChange(i)}
+                  className={`${pageBtnCls} ${i === page ? 'bg-primary border-primary text-white hover:text-white' : ''}`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button
+                disabled={page >= totalPages - 1}
+                onClick={() => onPageChange(page + 1)}
+                className={pageBtnCls}
+                aria-label="Trang sau"
+              >
+                Sau →
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

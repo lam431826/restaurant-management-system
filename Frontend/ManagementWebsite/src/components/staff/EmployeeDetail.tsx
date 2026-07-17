@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Employee } from '../../data/mockData'
 import Avatar from '../common/Avatar'
+import EmployeeModal from './EmployeeModal'
+import { updateEmployee, toEmployee } from '../../api/employees'
+import { getUser } from '../../api/users'
 
 interface Props {
   employee: Employee
-  departments: string[]
   onSave: (updated: Employee) => void
   onToggleActive: (employee: Employee) => void
 }
@@ -12,12 +14,6 @@ interface Props {
 const TABS = ['Thông tin', 'Lịch làm việc', 'Thiết lập lương', 'Phiếu lương'] as const
 type Tab = (typeof TABS)[number]
 
-const WarningIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-warning shrink-0">
-    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-    <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-  </svg>
-)
 const PauseIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="10" /><line x1="9" y1="9" x2="9" y2="15" /><line x1="15" y1="9" x2="15" y2="15" />
@@ -293,30 +289,28 @@ const PayslipTab = ({ employee }: { employee: Employee }) => {
   )
 }
 
-const fieldCls =
-  'w-full bg-transparent border-0 border-b border-line text-md text-ink py-1 transition-colors ' +
-  'placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary'
-
-const Field = ({
-  label, warning, children,
-}: { label: string; warning?: boolean; children: React.ReactNode }) => (
+const InfoField = ({
+  label, value, placeholder,
+}: { label: string; value: string; placeholder?: string }) => (
   <div className="flex flex-col gap-1">
-    <span className="flex items-center gap-1.5 text-sm text-ink-subtle">
-      {label}
-      {warning && <WarningIcon />}
-    </span>
-    {children}
+    <span className="text-sm text-ink-subtle">{label}</span>
+    <span className={`text-md py-1 ${value ? 'text-ink' : 'text-ink-muted'}`}>{value || placeholder || '—'}</span>
   </div>
 )
 
-const EmployeeDetail = ({ employee, departments, onSave, onToggleActive }: Props) => {
+const EmployeeDetail = ({ employee, onSave, onToggleActive }: Props) => {
   const [tab, setTab] = useState<Tab>('Thông tin')
-  const [draft, setDraft] = useState(employee)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [linkedUsername, setLinkedUsername] = useState('')
 
-  useEffect(() => setDraft(employee), [employee])
-
-  const set = <K extends keyof Employee>(key: K, value: Employee[K]) =>
-    setDraft(d => ({ ...d, [key]: value }))
+  useEffect(() => {
+    if (!employee.userId) { setLinkedUsername(''); return }
+    let cancelled = false
+    getUser(employee.userId)
+      .then(res => { if (!cancelled) setLinkedUsername(res.data.data.username) })
+      .catch(() => { if (!cancelled) setLinkedUsername('') })
+    return () => { cancelled = true }
+  }, [employee.userId])
 
   return (
     <div className="bg-card border-t border-line">
@@ -339,76 +333,52 @@ const EmployeeDetail = ({ employee, departments, onSave, onToggleActive }: Props
             <div className="flex items-center gap-4">
               <Avatar size="lg" className="w-20 h-20" />
               <div>
-                <h3 className="text-h3 font-bold text-ink">{draft.name}</h3>
-                <p className="text-md text-ink-subtle">Mã nhân viên: {draft.code}</p>
+                <h3 className="text-h3 font-bold text-ink">{employee.name}</h3>
+                <p className="text-md text-ink-subtle">Mã nhân viên: {employee.code}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-x-10 gap-y-5">
-              <Field label="Số điện thoại" warning={!draft.phoneVerified}>
-                <input className={fieldCls} value={draft.phone} onChange={e => set('phone', e.target.value)} placeholder="Nhập số điện thoại" />
-              </Field>
-              <Field label="Phòng ban">
-                <select className={fieldCls} value={draft.department} onChange={e => set('department', e.target.value)}>
-                  {departments.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </Field>
-              <Field label="Tài khoản">
-                <input className={fieldCls} value={draft.account} onChange={e => set('account', e.target.value)} placeholder="Chưa liên kết" />
-              </Field>
+              <InfoField label="Số điện thoại" value={employee.phone} />
+              <InfoField label="Tài khoản" value={linkedUsername} placeholder="Chưa liên kết" />
 
-              <Field label="Số CMND/CCCD">
-                <input className={fieldCls} value={draft.idNumber} onChange={e => set('idNumber', e.target.value)} placeholder="Nhập số CMND/CCCD" />
-              </Field>
-              <Field label="Ngày sinh">
-                <input type="date" className={fieldCls} value={draft.birthday} onChange={e => set('birthday', e.target.value)} />
-              </Field>
-              <Field label="Giới tính">
-                <select className={fieldCls} value={draft.gender} onChange={e => set('gender', e.target.value)}>
-                  <option value="">Chọn giới tính</option>
-                  <option value="Nam">Nam</option>
-                  <option value="Nữ">Nữ</option>
-                  <option value="Khác">Khác</option>
-                </select>
-              </Field>
+              <InfoField label="Số CMND/CCCD" value={employee.idNumber} placeholder="Chưa cập nhật" />
+              <InfoField label="Ngày sinh" value={employee.birthday} placeholder="Chưa cập nhật" />
+              <InfoField label="Giới tính" value={employee.gender} placeholder="Chưa cập nhật" />
 
-              <Field label="Địa chỉ">
-                <input className={fieldCls} value={draft.address} onChange={e => set('address', e.target.value)} placeholder="Nhập địa chỉ" />
-              </Field>
-              <Field label="Email">
-                <input type="email" className={fieldCls} value={draft.email} onChange={e => set('email', e.target.value)} placeholder="Nhập email" />
-              </Field>
-
-              <Field label="Ngày bắt đầu làm việc">
-                <input type="date" className={fieldCls} value={draft.startDate} onChange={e => set('startDate', e.target.value)} />
-              </Field>
-              <Field label="Mã chấm công">
-                <input className={fieldCls} value={draft.timekeepCode} onChange={e => set('timekeepCode', e.target.value)} placeholder="Nhập mã chấm công" />
-              </Field>
+              <InfoField label="Địa chỉ" value={employee.address} placeholder="Chưa cập nhật" />
+              <InfoField label="Ngày bắt đầu làm việc" value={employee.startDate} placeholder="Chưa cập nhật" />
+              <InfoField label="Mã chấm công" value={employee.timekeepCode} placeholder="Chưa cập nhật" />
             </div>
 
             <div className="flex flex-col gap-1">
               <span className="flex items-center gap-1.5 text-sm text-ink-subtle"><PencilIcon /> Ghi chú:</span>
-              <textarea
-                className={`${fieldCls} h-[5rem] resize-none`}
-                value={draft.note}
-                onChange={e => set('note', e.target.value)}
-                placeholder="Nhập ghi chú"
-              />
+              <p className={`text-md py-1 ${employee.note ? 'text-ink' : 'text-ink-muted'}`}>{employee.note || 'Chưa có ghi chú'}</p>
             </div>
           </div>
 
           <div className="flex items-center justify-between gap-3 px-6 py-3 border-t border-line">
-            <button className="kv-btn kv-btn-outline-neutral h-10 text-danger" onClick={() => onToggleActive(draft)}>
-              {draft.active ? <PauseIcon /> : <PlayIcon />} {draft.active ? 'Ngừng làm việc' : 'Cho phép làm việc'}
+            <button className="kv-btn kv-btn-outline-neutral h-10 text-danger" onClick={() => onToggleActive(employee)}>
+              {employee.status === 'ACTIVE' ? <PauseIcon /> : <PlayIcon />} {employee.status === 'ACTIVE' ? 'Ngừng làm việc' : 'Cho phép làm việc'}
             </button>
             <div className="flex items-center gap-2">
-              <button className="kv-btn kv-btn-outline-neutral h-10" onClick={() => window.alert(`Đã gửi mã xác nhận cho ${draft.name}.`)}>
+              <button className="kv-btn kv-btn-outline-neutral h-10" onClick={() => window.alert(`Đã gửi mã xác nhận cho ${employee.name}.`)}>
                 <KeyIcon /> Lấy mã xác nhận
               </button>
-              <button className="kv-btn kv-btn-primary h-10" onClick={() => onSave(draft)}>Cập nhật</button>
+              <button className="kv-btn kv-btn-primary h-10" onClick={() => setShowEditModal(true)}>Cập nhật</button>
             </div>
           </div>
+
+          {showEditModal && (
+            <EmployeeModal
+              employee={employee}
+              onClose={() => setShowEditModal(false)}
+              onSave={async payload => {
+                const res = await updateEmployee(employee.id, payload)
+                onSave(toEmployee(res.data.data))
+              }}
+            />
+          )}
         </>
       ) : tab === 'Lịch làm việc' ? (
         <ScheduleTab />

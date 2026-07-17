@@ -9,8 +9,8 @@ interface Props {
 }
 
 const exportCsv = (employees: Employee[]) => {
-  const header = ['Mã nhân viên', 'Mã chấm công', 'Tên nhân viên', 'Số điện thoại', 'Số CMND/CCCD', 'Nợ và tạm ứng', 'Phòng ban', 'Chức danh']
-  const rows = employees.map(e => [e.code, e.timekeepCode, e.name, e.phone, e.idNumber, e.debt, e.department, e.position])
+  const header = ['Mã nhân viên', 'Mã chấm công', 'Tên nhân viên', 'Số điện thoại', 'Số CMND/CCCD']
+  const rows = employees.map(e => [e.code, e.timekeepCode, e.name, e.phone, e.idNumber])
   const csv = [header, ...rows]
     .map(line => line.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\n')

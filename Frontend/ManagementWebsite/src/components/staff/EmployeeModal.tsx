@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Employee } from '../../data/mockData'
-import { employeeBranches } from '../../data/mockData'
+import type { EmployeeFormPayload } from '../../api/employees'
+import { listUsers, createUser } from '../../api/users'
+import type { UserDto } from '../../api/users'
 
 interface Props {
-  nextCode: string
+  employee?: Employee
   onClose: () => void
-  onSave: (emp: Employee, addAnother: boolean) => void
+  onSave: (payload: EmployeeFormPayload) => Promise<void>
 }
 
 type TabKey = 'info' | 'salary'
@@ -35,18 +37,6 @@ const SearchIcon = () => (
     <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
   </svg>
 )
-const EyeOffIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.3 20.3 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-    <line x1="1" y1="1" x2="23" y2="23" />
-  </svg>
-)
-const EyeIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-  </svg>
-)
-
 const inputCls =
   'w-full h-11 px-3 bg-field border border-line-default rounded-md text-md text-ink transition-colors ' +
   'placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary ' +
@@ -101,11 +91,10 @@ const Picker = ({
 }
 
 // ── Account picker: search box + list + "Thêm tài khoản" ────────────────
-interface Account { username: string; name: string }
-
+// `value`/onChange operate on the account's real id (Employee.userId), not the username.
 const AccountPicker = ({
   value, accounts, onChange, onAddAccount,
-}: { value: string; accounts: Account[]; onChange: (v: string) => void; onAddAccount: () => void }) => {
+}: { value: string; accounts: UserDto[]; onChange: (v: string) => void; onAddAccount: () => void }) => {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -115,9 +104,9 @@ const AccountPicker = ({
     return () => document.removeEventListener('mousedown', h)
   }, [])
   const filtered = accounts.filter(a =>
-    !query.trim() || `${a.username} ${a.name}`.toLowerCase().includes(query.trim().toLowerCase())
+    !query.trim() || `${a.username} ${a.fullName}`.toLowerCase().includes(query.trim().toLowerCase())
   )
-  const selected = accounts.find(a => a.username === value)
+  const selected = accounts.find(a => a.id === value)
   return (
     <div ref={ref} className="relative">
       <button
@@ -152,12 +141,12 @@ const AccountPicker = ({
               <div className="px-3 py-2 text-md text-ink-muted">Không có dữ liệu</div>
             ) : filtered.map(a => (
               <div
-                key={a.username}
-                className={`px-3 py-2.5 cursor-pointer transition-colors hover:bg-[var(--kv-state-hover-bg)] ${a.username === value ? 'bg-[var(--kv-action-primary-faded-bg)]' : ''}`}
-                onClick={() => { onChange(a.username); setOpen(false); setQuery('') }}
+                key={a.id}
+                className={`px-3 py-2.5 cursor-pointer transition-colors hover:bg-[var(--kv-state-hover-bg)] ${a.id === value ? 'bg-[var(--kv-action-primary-faded-bg)]' : ''}`}
+                onClick={() => { onChange(a.id); setOpen(false); setQuery('') }}
               >
                 <div className="text-md font-bold text-ink">{a.username}</div>
-                <div className="text-sm text-ink-subtle">{a.name}</div>
+                <div className="text-sm text-ink-subtle">{a.fullName}</div>
               </div>
             ))}
           </div>
@@ -433,60 +422,43 @@ const ShiftSalaryBody = ({ suffix = '/ ca', firstCol = 'Ca', wageCol = 'Lương/
 // Local option sets for UI-only pickers.
 const salaryTypes = ['Theo ca làm việc', 'Theo giờ làm việc', 'Cố định']
 const salaryTemplates: string[] = []
-const roleOptions = ['Phục vụ', 'Thu ngân', 'Quản lý', 'Quản trị viên']
-const mockAccounts: Account[] = [
-  { username: '0975919814', name: 'Nguyen Van A' },
-  { username: 'cashier01', name: 'Nguyen Van B' },
-  { username: 'cashier02', name: 'Nguyen Van A' },
-  { username: 'nhanvien01', name: 'Nguyen Van C' },
-]
+// Manager may create accounts, but never with role ADMIN (enforced server-side too) — so
+// "Quản trị viên" is intentionally not offered here at all.
+const ROLE_LABELS: Record<string, string> = { 'Phục vụ': 'WAITER', 'Thu ngân': 'CASHIER', 'Quản lý': 'MANAGER' }
+const roleOptions = Object.keys(ROLE_LABELS)
 
 // ── Popup: Tạo tài khoản người dùng ──────────────────────────────────────
-const PasswordField = ({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) => {
-  const [visible, setVisible] = useState(false)
-  return (
-    <Field label={label}>
-      <div className="relative">
-        <input
-          type={visible ? 'text' : 'password'}
-          className={`${inputCls} pr-10`}
-          placeholder="Bắt buộc"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-        />
-        <button
-          type="button"
-          onClick={() => setVisible(v => !v)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink cursor-pointer"
-          aria-label={visible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-        >
-          {visible ? <EyeIcon /> : <EyeOffIcon />}
-        </button>
-      </div>
-    </Field>
-  )
-}
-
-const CreateAccountModal = ({ onClose, onCreate }: { onClose: () => void; onCreate: (acc: Account) => void }) => {
+const CreateAccountModal = ({ onClose, onCreate }: { onClose: () => void; onCreate: (user: UserDto, tempPassword: string) => void }) => {
   const [displayName, setDisplayName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
   const [role, setRole] = useState('')
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  const handleSave = () => {
-    if (!displayName.trim() || !username.trim() || !password || !confirmPassword) {
+  const handleSave = async () => {
+    if (!displayName.trim() || !username.trim() || !role) {
       setError('Vui lòng nhập đầy đủ các trường bắt buộc')
       return
     }
-    if (password !== confirmPassword) {
-      setError('Mật khẩu nhập lại không khớp')
-      return
+    setSaving(true)
+    try {
+      const res = await createUser({
+        username: username.trim(),
+        fullName: displayName.trim(),
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
+        role: ROLE_LABELS[role],
+      })
+      onCreate(res.data.data.user, res.data.data.tempPassword)
+    } catch (err) {
+      const anyErr = err as { response?: { status?: number; data?: { message?: string } } }
+      if (anyErr.response?.status === 409) setError('Tên đăng nhập hoặc email đã tồn tại')
+      else setError(anyErr.response?.data?.message || 'Có lỗi xảy ra, vui lòng thử lại')
+    } finally {
+      setSaving(false)
     }
-    onCreate({ username: username.trim(), name: displayName.trim() })
   }
 
   return (
@@ -519,25 +491,27 @@ const CreateAccountModal = ({ onClose, onCreate }: { onClose: () => void; onCrea
               <input className={inputCls} placeholder="Bắt buộc" value={username}
                 onChange={e => { setUsername(e.target.value); if (error) setError('') }} />
             </Field>
-            <PasswordField label="Mật khẩu" value={password} onChange={v => { setPassword(v); if (error) setError('') }} />
-            <PasswordField label="Nhập lại mật khẩu" value={confirmPassword} onChange={v => { setConfirmPassword(v); if (error) setError('') }} />
           </div>
 
           <SectionCard title="Phân quyền">
-            <p className="text-md text-ink-subtle mt-1">Chọn chi nhánh và phân quyền cho người dùng này</p>
+            <p className="text-md text-ink-subtle mt-1">Chọn vai trò cho người dùng này</p>
             <div className="mt-4 w-full sm:w-[24rem]">
               <Field label="Vai trò">
                 <Picker value={role} options={roleOptions} placeholder="Chọn vai trò" onChange={setRole} openUp />
               </Field>
             </div>
           </SectionCard>
+
+          <p className="text-sm text-ink-subtle">
+            Hệ thống sẽ tự sinh mật khẩu tạm thời cho tài khoản này sau khi tạo.
+          </p>
         </div>
 
         <div className="flex items-center justify-between gap-4 px-6 py-3 bg-card rounded-b-lg border-t border-line shrink-0">
           <span className="text-md text-danger">{error}</span>
           <div className="flex items-center gap-2">
-            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose}>Bỏ qua</button>
-            <button className="kv-btn kv-btn-primary h-10" onClick={handleSave}>Lưu</button>
+            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose} disabled={saving}>Bỏ qua</button>
+            <button className="kv-btn kv-btn-primary h-10" onClick={handleSave} disabled={saving}>{saving ? 'Đang tạo...' : 'Lưu'}</button>
           </div>
         </div>
       </div>
@@ -545,32 +519,61 @@ const CreateAccountModal = ({ onClose, onCreate }: { onClose: () => void; onCrea
   )
 }
 
-const EmployeeModal = ({ nextCode, onClose, onSave }: Props) => {
+// ── Popup: hiển thị mật khẩu tạm thời (chỉ hiển thị 1 lần) ───────────────
+const TempPasswordModal = ({ username, tempPassword, onClose }: { username: string; tempPassword: string; onClose: () => void }) => {
+  const [copied, setCopied] = useState(false)
+  const copy = () => {
+    navigator.clipboard.writeText(tempPassword)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <div className="fixed inset-0 z-[var(--kv-z-modal)] flex items-center justify-center p-6" style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }}>
+      <div className="w-full max-w-[36rem] bg-surface rounded-lg shadow-lg p-6 flex flex-col gap-4">
+        <h2 className="text-h3 font-bold text-ink">Đã tạo tài khoản "{username}"</h2>
+        <div className="bg-fill rounded-lg p-4">
+          <p className="text-sm text-ink-subtle mb-2">Mật khẩu tạm thời (chỉ hiển thị 1 lần)</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-lg font-bold text-ink font-mono tracking-wider">{tempPassword}</code>
+            <button onClick={copy} className="kv-btn kv-btn-outline-neutral h-9">{copied ? 'Đã chép' : 'Chép'}</button>
+          </div>
+        </div>
+        <p className="text-sm text-ink-subtle">Vui lòng gửi mật khẩu này cho nhân viên. Họ sẽ cần đổi mật khẩu khi đăng nhập lần đầu.</p>
+        <button className="kv-btn kv-btn-primary h-10" onClick={onClose}>Đã hiểu</button>
+      </div>
+    </div>
+  )
+}
+
+const EmployeeModal = ({ employee, onClose, onSave }: Props) => {
+  const isEdit = !!employee
   const [tab, setTab] = useState<TabKey>('info')
 
   // ── Thông tin khởi tạo
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
+  const [name, setName] = useState(employee?.name ?? '')
+  const [phone, setPhone] = useState(employee?.phone ?? '')
   const [photo, setPhoto] = useState<string>('')
 
   // ── Thông tin công việc
-  const [startDate, setStartDate] = useState('')
-  const [account, setAccount] = useState('')
-  const [accounts, setAccounts] = useState<Account[]>(mockAccounts)
+  const [startDate, setStartDate] = useState(employee?.startDate ?? '')
+  const [userId, setUserId] = useState(employee?.userId ?? '')
+  const [accounts, setAccounts] = useState<UserDto[]>([])
   const [showCreateAccount, setShowCreateAccount] = useState(false)
-  const [note, setNote] = useState('')
+  const [tempPasswordInfo, setTempPasswordInfo] = useState<{ username: string; password: string } | null>(null)
+  const [note, setNote] = useState(employee?.note ?? '')
 
   // ── Thông tin cá nhân
-  const [idNumber, setIdNumber] = useState('')
-  const [birthday, setBirthday] = useState('')
-  const [gender, setGender] = useState('')
-  const [address, setAddress] = useState('')
+  const [idNumber, setIdNumber] = useState(employee?.idNumber ?? '')
+  const [birthday, setBirthday] = useState(employee?.birthday ?? '')
+  const [gender, setGender] = useState(employee?.gender ?? '')
+  const [address, setAddress] = useState(employee?.address ?? '')
 
   // ── Thiết lập lương (UI-only)
   const [salaryType, setSalaryType] = useState('')
   const [salaryTemplate, setSalaryTemplate] = useState('')
 
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const nameRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -587,6 +590,10 @@ const EmployeeModal = ({ nextCode, onClose, onSave }: Props) => {
     }
   }, [onClose])
 
+  useEffect(() => {
+    listUsers(0, 100).then(res => setAccounts(res.data.data)).catch(() => {})
+  }, [])
+
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -594,7 +601,12 @@ const EmployeeModal = ({ nextCode, onClose, onSave }: Props) => {
     setPhoto(URL.createObjectURL(file))
   }
 
-  const handleSave = () => {
+  const extractMessage = (err: unknown): string => {
+    const anyErr = err as { response?: { data?: { message?: string } } }
+    return anyErr.response?.data?.message || 'Có lỗi xảy ra, vui lòng thử lại'
+  }
+
+  const handleSave = async () => {
     if (!name.trim()) {
       setError('Vui lòng nhập tên nhân viên')
       setTab('info')
@@ -606,37 +618,38 @@ const EmployeeModal = ({ nextCode, onClose, onSave }: Props) => {
       setTab('info')
       return
     }
-    const result: Employee = {
-      id: Date.now(),
-      code: nextCode,
-      timekeepCode: '',
+    if (!/^0\d{9,10}$/.test(phone.trim())) {
+      setError('Số điện thoại không hợp lệ (bắt đầu bằng 0, 10-11 chữ số)')
+      setTab('info')
+      return
+    }
+    const payload: EmployeeFormPayload = {
       name: name.trim(),
       phone: phone.trim(),
-      phoneVerified: false,
       idNumber: idNumber.trim(),
-      debt: 0,
       note: note.trim(),
-      department: 'Chưa phân phòng',
-      position: 'Nhân viên',
-      active: true,
-      branchPay: employeeBranches[0],
-      branchWork: employeeBranches[0],
       birthday,
       gender,
       address: address.trim(),
-      email: '',
-      facebook: '',
       startDate,
-      account,
-      mobileDevice: '',
+      userId: userId || undefined,
     }
-    onSave(result, false)
+    setSaving(true)
+    try {
+      await onSave(payload)
+      onClose()
+    } catch (err) {
+      setError(extractMessage(err))
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const handleCreateAccount = (acc: Account) => {
-    setAccounts(prev => [...prev, acc])
-    setAccount(acc.username)
+  const handleCreateAccount = (user: UserDto, tempPassword: string) => {
+    setAccounts(prev => [...prev, user])
+    setUserId(user.id)
     setShowCreateAccount(false)
+    setTempPasswordInfo({ username: user.username, password: tempPassword })
   }
 
   return (
@@ -649,7 +662,7 @@ const EmployeeModal = ({ nextCode, onClose, onSave }: Props) => {
       <div className="w-full max-w-[112rem] my-6 bg-surface rounded-lg shadow-lg flex flex-col max-h-[calc(100vh-6rem)]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 h-16 bg-card rounded-t-lg border-b border-line shrink-0">
-          <h2 className="text-h3 font-bold text-ink">Thêm mới nhân viên</h2>
+          <h2 className="text-h3 font-bold text-ink">{isEdit ? 'Cập nhật nhân viên' : 'Thêm mới nhân viên'}</h2>
           <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">
             <CloseIcon />
           </button>
@@ -683,7 +696,7 @@ const EmployeeModal = ({ nextCode, onClose, onSave }: Props) => {
                         onChange={e => { setName(e.target.value); if (error) setError('') }} />
                     </Field>
                     <Field label="Mã nhân viên">
-                      <input className={`${inputCls} bg-fill text-ink-muted`} placeholder="Tự động" value="" readOnly disabled />
+                      <input className={`${inputCls} bg-fill text-ink-muted`} placeholder="Tự động" value={employee?.code ?? ''} readOnly disabled />
                     </Field>
                     <Field label="Số điện thoại">
                       <input className={inputCls} inputMode="tel" placeholder="Bắt buộc" value={phone}
@@ -715,9 +728,9 @@ const EmployeeModal = ({ nextCode, onClose, onSave }: Props) => {
                   </Field>
                   <Field label="Tài khoản đăng nhập">
                     <AccountPicker
-                      value={account}
+                      value={userId}
                       accounts={accounts}
-                      onChange={setAccount}
+                      onChange={setUserId}
                       onAddAccount={() => setShowCreateAccount(true)}
                     />
                   </Field>
@@ -789,17 +802,24 @@ const EmployeeModal = ({ nextCode, onClose, onSave }: Props) => {
         <div className="flex items-center justify-between gap-4 px-6 py-3 bg-card rounded-b-lg border-t border-line shrink-0">
           <span className="text-md text-danger">{error}</span>
           <div className="flex items-center gap-2">
-            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose}>Bỏ qua</button>
+            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose} disabled={saving}>Bỏ qua</button>
             {tab === 'salary' && (
-              <button className="kv-btn kv-btn-outline-neutral h-10" onClick={handleSave}>Lưu và tạo mẫu lương mới</button>
+              <button className="kv-btn kv-btn-outline-neutral h-10" onClick={handleSave} disabled={saving}>Lưu và tạo mẫu lương mới</button>
             )}
-            <button className="kv-btn kv-btn-primary h-10" onClick={handleSave}>Lưu</button>
+            <button className="kv-btn kv-btn-primary h-10" onClick={handleSave} disabled={saving}>{saving ? 'Đang lưu...' : 'Lưu'}</button>
           </div>
         </div>
       </div>
     </div>
     {showCreateAccount && (
       <CreateAccountModal onClose={() => setShowCreateAccount(false)} onCreate={handleCreateAccount} />
+    )}
+    {tempPasswordInfo && (
+      <TempPasswordModal
+        username={tempPasswordInfo.username}
+        tempPassword={tempPasswordInfo.password}
+        onClose={() => setTempPasswordInfo(null)}
+      />
     )}
     </>
   )

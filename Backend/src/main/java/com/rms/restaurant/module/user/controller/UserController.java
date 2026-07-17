@@ -19,22 +19,28 @@ import java.net.URI;
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')")
 public class UserController {
 
     private final UserService userService;
 
+    // Read access: MANAGER also needs this to pick/search accounts when linking an Employee profile.
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<PageResponse<UserResponse>> list(Pageable pageable) {
         return ResponseEntity.ok(userService.listUsers(pageable));
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<UserResponse>> get(@PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success(userService.getUser(id)));
     }
 
+    // MANAGER may create accounts (e.g. to link to an Employee profile) but never with role ADMIN —
+    // enforced in UserServiceImpl.createUser(), not just here, since @PreAuthorize can't safely
+    // depend on request-body field discovery across all compiler configurations.
     @PostMapping
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<ApiResponse<CreateUserResponse>> create(@Valid @RequestBody CreateUserRequest request) {
         CreateUserResponse created = userService.createUser(request);
         return ResponseEntity
@@ -43,18 +49,21 @@ public class UserController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<UserResponse>> update(@PathVariable String id,
                                                              @Valid @RequestBody UpdateUserRequest request) {
         return ResponseEntity.ok(ApiResponse.success(userService.updateUser(id, request)));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable String id) {
         userService.deleteUser(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/unlock")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> unlock(@PathVariable String id) {
         userService.unlockUser(id);
         return ResponseEntity.noContent().build();
