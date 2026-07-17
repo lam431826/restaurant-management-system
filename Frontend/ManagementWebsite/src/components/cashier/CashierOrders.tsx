@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useRealtime } from "../../hooks/useRealtime";
 import { useAuth } from "../../context/AuthContext";
 import { logout } from "../../api/auth";
 import { ApiError } from "../../services/api";
@@ -508,6 +509,12 @@ const CashierOrders = () => {
     return () => clearInterval(intv);
   }, []);
 
+  // Real-time push races the 10s poll above — an assistance request created/resolved
+  // anywhere shows up near-instantly; the poll stays as a backstop if the WS drops.
+  useRealtime("/topic/assistance", () => {
+    listPendingAssistance().then(setAssistanceRequests).catch(() => {});
+  });
+
   // Live orders, polled to keep table occupancy and the order panel in sync with the kitchen.
   useEffect(() => {
     const fetchOrders = async () => {
@@ -522,6 +529,18 @@ const CashierOrders = () => {
     const interval = setInterval(fetchOrders, 10000);
     return () => clearInterval(interval);
   }, [refreshTrigger]);
+
+  // Order/item status changes pushed over WS bump refreshTrigger, reusing the same
+  // refetch path the mutation handlers below already use — one source of truth.
+  useRealtime("/topic/orders", () => {
+    setRefreshTrigger((t) => t + 1);
+  });
+
+  // Table status changes (from any terminal, including the BR-04 no-show cron) — refetch
+  // the floor view immediately instead of waiting on refreshTables() to be called manually.
+  useRealtime("/topic/tables", () => {
+    refreshTables();
+  });
 
   // Overlay live order totals onto the table grid (amount/guests/item count, orderId link).
   // Status is NOT overridden here — backend-provided statuses (RESERVED, CLEANING, etc.)

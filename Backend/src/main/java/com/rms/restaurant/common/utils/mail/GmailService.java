@@ -101,6 +101,23 @@ public class GmailService {
         mailSender.send(msg);
     }
 
+    // ── RM-08 / BR-04: No-show ────────────────────────────────────────────────
+
+    public void sendNoShowEmail(String toEmail, String guestName, LocalDateTime datetime) {
+        SimpleMailMessage msg = new SimpleMailMessage();
+        msg.setFrom(fromAddress);
+        msg.setTo(toEmail);
+        msg.setSubject("[Wasabi Restaurant] Đặt bàn đã bị hủy do không đến đúng giờ");
+        msg.setText(
+            "Xin chào " + guestName + ",\n\n" +
+            "Đặt bàn của bạn vào lúc " + datetime.format(DATETIME_FORMATTER) +
+            " đã bị hủy do quá 15 phút mà chúng tôi chưa thấy bạn đến nhận bàn.\n\n" +
+            "Nếu đây là sự nhầm lẫn hoặc bạn vẫn muốn dùng bữa, vui lòng liên hệ nhà hàng hoặc đặt bàn lại.\n\n" +
+            "Trân trọng,\nWasabi Restaurant"
+        );
+        mailSender.send(msg);
+    }
+
     // ── NM-01: Table assignment/transfer notification ─────────────────────────
 
     public void sendTableUpdateEmail(String toEmail, String guestName, String tableName,

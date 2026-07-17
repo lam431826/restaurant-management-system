@@ -81,6 +81,11 @@ public class NotificationDispatcher {
                     (String) vars.get("guestName"),
                     (LocalDateTime) vars.get("datetime")
             );
+            case "RESERVATION_NO_SHOW" -> gmailService.sendNoShowEmail(
+                    recipient,
+                    (String) vars.get("guestName"),
+                    (LocalDateTime) vars.get("datetime")
+            );
             case "RESERVATION_TABLE_UPDATE" -> gmailService.sendTableUpdateEmail(
                     recipient,
                     (String) vars.get("guestName"),

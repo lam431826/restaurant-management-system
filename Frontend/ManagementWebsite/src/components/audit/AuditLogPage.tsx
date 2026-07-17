@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { listAuditLogs, type AuditLogDto } from '../../api/auditLogs'
+import { useRealtime } from '../../hooks/useRealtime'
 
 // ── Action metadata ──────────────────────────────────────────────────────────
 
@@ -120,6 +121,10 @@ const AuditLogPage = () => {
   }, [actorUsername, action, targetEntity, from, to])
 
   useEffect(() => { load(0) }, [load])
+
+  // New audit entries pushed over WS re-run the current query — this page has no
+  // polling of its own today, so this is the only thing that keeps it live.
+  useRealtime('/topic/audit', () => { load(pagination.page) })
 
   const inputCls = 'h-9 px-3 bg-field border border-line-default rounded-md text-md text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary'
   const selectCls = inputCls + ' cursor-pointer'

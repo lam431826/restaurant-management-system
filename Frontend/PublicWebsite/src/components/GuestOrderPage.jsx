@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import AssistanceButton from './AssistanceButton'
 import OrderStatusModal from './OrderStatusModal'
 import imgMakiSpicyTuna from '../assets/images/menu-maki-spicy-tuna.jpg'
 import { getImageUrl } from '../utils/api'
+import { createGuestClient } from '../services/realtimeClient'
 
 const GUEST_ORDER_ALREADY_INVOICED_MESSAGE =
   'Đơn hàng đã được lập hóa đơn nên không thể thêm hoặc sửa món.'
@@ -22,6 +23,15 @@ export default function GuestOrderPage() {
   const [isStatusOpen, setIsStatusOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+
+  // Guest STOMP connection, scoped to this table session (table-token auth, no login).
+  // Kept in a ref so OrderStatusModal can subscribe without triggering re-renders here.
+  const realtimeRef = useRef(null)
+  useEffect(() => {
+    const rt = createGuestClient(tableToken)
+    realtimeRef.current = rt
+    return () => rt.disconnect()
+  }, [tableToken])
 
   useEffect(() => {
     // Fetch Table Info
@@ -381,11 +391,12 @@ export default function GuestOrderPage() {
       )}
 
       {isStatusOpen && (
-        <OrderStatusModal 
-          orderId={currentOrderId} 
-          onClose={() => setIsStatusOpen(false)} 
+        <OrderStatusModal
+          orderId={currentOrderId}
+          onClose={() => setIsStatusOpen(false)}
           onEditOrder={handleEditOrder}
           onOrderFinished={() => setCurrentOrderId(null)}
+          subscribeRealtime={(destination, onMessage) => realtimeRef.current?.subscribe(destination, onMessage)}
         />
       )}
 

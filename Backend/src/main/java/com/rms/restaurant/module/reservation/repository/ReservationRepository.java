@@ -28,6 +28,15 @@ public interface ReservationRepository extends JpaRepository<Reservation, String
     );
 
     /**
+     * BR-04: CONFIRMED reservations whose grace period (reserved time + 15 min) has elapsed
+     * and the guest hasn't checked in. Self-guarding — markNoShow() flips status away from
+     * CONFIRMED, which removes the row from the next cron tick without needing a flag column.
+     */
+    @Query("SELECT r FROM Reservation r WHERE r.status = com.rms.restaurant.common.utils.enums.ReservationStatus.CONFIRMED " +
+           "AND r.datetime <= :cutoff")
+    List<Reservation> findConfirmedPastCutoff(@Param("cutoff") LocalDateTime cutoff);
+
+    /**
      * Pessimistic write lock to serialize concurrent table-assignment requests.
      * Returns active reservations on the same table whose 3-hour window overlaps.
      * Pass excludeId="" for new reservations (nothing to exclude).

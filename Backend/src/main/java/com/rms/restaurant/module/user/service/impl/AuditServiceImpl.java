@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.user.service.impl;
 
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.user.dto.AuditLogResponse;
@@ -29,6 +30,7 @@ public class AuditServiceImpl implements AuditService {
 
     private final AuditLogRepository auditLogRepository;
     private final UserRepository userRepository;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -80,7 +82,8 @@ public class AuditServiceImpl implements AuditService {
                 .targetId(targetId)
                 .detail(detail)
                 .build();
-        auditLogRepository.save(entry);
+        AuditLog saved = auditLogRepository.save(entry);
+        realtimeEventPublisher.publishAuditEvent(toResponse(saved));
     }
 
     private AuditLogResponse toResponse(AuditLog a) {

@@ -69,6 +69,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
                 // Public – Guest ordering (table token validated in service)
                 .requestMatchers("/api/guest/**").permitAll()
+                // Public – WebSocket handshake (auth validated in StompAuthChannelInterceptor per CONNECT frame)
+                .requestMatchers("/ws/**", "/ws-guest/**").permitAll()
                 // Public – Payment webhook (verified via HMAC-SHA256 in controller)
                 .requestMatchers(HttpMethod.POST, "/api/webhooks/**").permitAll()
                 // Protected - Orders (controller-level roles apply via @PreAuthorize)
@@ -100,6 +102,10 @@ public class SecurityConfig {
         config.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/**", config);
+        // SockJS HTTP fallback transports (xhr-streaming/xhr-polling) are real XHR calls and need CORS too;
+        // native WebSocket upgrades are checked separately via StompEndpointRegistry.setAllowedOriginPatterns.
+        source.registerCorsConfiguration("/ws/**", config);
+        source.registerCorsConfiguration("/ws-guest/**", config);
         return source;
     }
 

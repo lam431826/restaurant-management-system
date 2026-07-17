@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.table.service.impl;
 
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ConflictException;
@@ -56,6 +57,7 @@ public class TableServiceImpl implements TableService {
     private final TableMapper tableMapper;
     private final OrderRepository orderRepository;
     private final ReservationRepository reservationRepository;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     // ── Tables ───────────────────────────────────────────────────────────
 
@@ -138,7 +140,9 @@ public class TableServiceImpl implements TableService {
     public TableResponse updateStatus(String id, TableStatusUpdateRequest request) {
         RestaurantTable table = findTable(id);
         table.setStatus(request.status());
-        return tableMapper.toResponse(tableRepository.save(table));
+        RestaurantTable saved = tableRepository.save(table);
+        realtimeEventPublisher.publishTableStatus(saved);
+        return tableMapper.toResponse(saved);
     }
 
     // ── Import / Export ──────────────────────────────────────────────────

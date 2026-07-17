@@ -18,7 +18,7 @@ const ClockIcon = () => (
   </svg>
 )
 
-export default function OrderStatusModal({ orderId, onClose, onEditOrder, onOrderFinished }) {
+export default function OrderStatusModal({ orderId, onClose, onEditOrder, onOrderFinished, subscribeRealtime }) {
   const [statusData, setStatusData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -40,10 +40,18 @@ export default function OrderStatusModal({ orderId, onClose, onEditOrder, onOrde
     }
 
     fetchStatus()
-    // Poll every 15 seconds
+    // Poll every 15 seconds — kept as a backstop; the WS subscription below races it.
     const interval = setInterval(fetchStatus, 15000)
-    return () => clearInterval(interval)
-  }, [orderId])
+
+    // Cooking/order status pushed from the staff side — refetch immediately instead
+    // of waiting up to 15s for the next poll tick.
+    const unsubscribe = subscribeRealtime?.(`/topic/guest/orders/${orderId}`, fetchStatus)
+
+    return () => {
+      clearInterval(interval)
+      unsubscribe?.()
+    }
+  }, [orderId, subscribeRealtime])
 
   if (!orderId) return null
 

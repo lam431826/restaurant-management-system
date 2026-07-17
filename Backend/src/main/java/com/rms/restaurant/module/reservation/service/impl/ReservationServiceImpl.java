@@ -7,6 +7,7 @@ import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.module.notification.dto.ReservationNotificationRequest;
 import com.rms.restaurant.module.notification.service.NotificationService;
 import com.rms.restaurant.module.reservation.dto.CreateReservationRequest;
@@ -21,6 +22,7 @@ import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +51,7 @@ public class ReservationServiceImpl implements ReservationService {
     private final TableRepository tableRepository;
     private final NotificationService notificationService;
     private final AuditService auditService;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -268,8 +271,37 @@ public class ReservationServiceImpl implements ReservationService {
 
         reservation.setStatus(ReservationStatus.NO_SHOW);
         reservationRepository.save(reservation);
+
+        if (reservation.getGuestEmail() != null && !reservation.getGuestEmail().isBlank()) {
+            try {
+                notificationService.sendReservationNotification(
+                        new ReservationNotificationRequest(id, NotificationType.NO_SHOW));
+            } catch (Exception e) {
+                log.warn("NM-01 NO_SHOW trigger failed for reservation {}: {}", id, e.getMessage());
+            }
+        }
+
         audit("RESERVATION_NO_SHOW", id,
                 "{\"guestName\":\"" + esc(reservation.getGuestName()) + "\"}");
+    }
+
+    /**
+     * BR-04: auto-detect reservations whose 15-minute grace period has elapsed
+     * without check-in, and mark them No-show. Runs offset from the reminder
+     * cron's :00 tick to avoid same-instant DB contention.
+     */
+    @Scheduled(cron = "30 */5 * * * *")
+    public void detectNoShows() {
+        List<Reservation> overdue = reservationRepository.findConfirmedPastCutoff(
+                LocalDateTime.now().minusMinutes(15));
+
+        for (Reservation r : overdue) {
+            try {
+                markNoShow(r.getId());
+            } catch (Exception e) {
+                log.warn("BR-04 auto no-show failed for reservation {}: {}", r.getId(), e.getMessage());
+            }
+        }
     }
 
     /**
@@ -388,7 +420,8 @@ public class ReservationServiceImpl implements ReservationService {
         tableRepository.findById(tableId).ifPresent(t -> {
             if (onlyIfCurrent == null || t.getStatus() == onlyIfCurrent) {
                 t.setStatus(newStatus);
-                tableRepository.save(t);
+                RestaurantTable saved = tableRepository.save(t);
+                realtimeEventPublisher.publishTableStatus(saved);
             }
         });
     }

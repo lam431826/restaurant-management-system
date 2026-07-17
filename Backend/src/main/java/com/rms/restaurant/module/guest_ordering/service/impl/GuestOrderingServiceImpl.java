@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.guest_ordering.service.impl;
 
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
@@ -40,6 +41,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     private final AssistanceRequestRepository assistanceRequestRepository;
     private final OrderMapper orderMapper;
     private final InvoiceRepository invoiceRepository;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     // ── GO-03: Khách quét QR → gọi món ──────────────────────────────────────
 
@@ -72,9 +74,13 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
 
         table.setStatus(TableStatus.OCCUPIED);
         tableRepository.save(table);
+        realtimeEventPublisher.publishTableStatus(table);
 
         Order savedOrder = orderRepository.save(order);
-        return toStatusResponse(savedOrder, null);
+        realtimeEventPublisher.publishOrderEvent("ORDER_CREATED", orderMapper.toResponse(savedOrder));
+        OrderStatusResponse status = toStatusResponse(savedOrder, null);
+        realtimeEventPublisher.publishGuestOrderStatus(status);
+        return status;
     }
 
     // ── GO-02: Khách cập nhật items (chỉ khi order còn PENDING) ─────────────
@@ -94,7 +100,10 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
         appendItems(order, request);
 
         Order savedOrder = orderRepository.save(order);
-        return toStatusResponse(savedOrder, null);
+        realtimeEventPublisher.publishOrderEvent("ORDER_UPDATED", orderMapper.toResponse(savedOrder));
+        OrderStatusResponse status = toStatusResponse(savedOrder, null);
+        realtimeEventPublisher.publishGuestOrderStatus(status);
+        return status;
     }
 
     // ── Khách gọi thêm món vào đơn đã có ─────────────────────────────────────
@@ -108,7 +117,10 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
         appendItems(order, request);
 
         Order savedOrder = orderRepository.save(order);
-        return toStatusResponse(savedOrder, null);
+        realtimeEventPublisher.publishOrderEvent("ORDER_UPDATED", orderMapper.toResponse(savedOrder));
+        OrderStatusResponse status = toStatusResponse(savedOrder, null);
+        realtimeEventPublisher.publishGuestOrderStatus(status);
+        return status;
     }
 
     @Override
@@ -131,6 +143,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
                         .build();
 
         assistanceRequestRepository.save(entity);
+        realtimeEventPublisher.publishAssistanceEvent("CREATED", entity);
     }
 
     @Override

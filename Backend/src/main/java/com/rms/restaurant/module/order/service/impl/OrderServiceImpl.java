@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.order.service.impl;
 
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.order.dto.*;
 import com.rms.restaurant.module.order.service.OrderService;
@@ -40,6 +41,7 @@ public class OrderServiceImpl implements OrderService {
     private final TableRepository tableRepository;
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     @Override
     public PageResponse<OrderResponse> list(Pageable pageable) {
@@ -105,6 +107,7 @@ public class OrderServiceImpl implements OrderService {
             if (activeOrder == null || activeOrder.getId().equals(order.getId())) {
                 table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.AVAILABLE);
                 tableRepository.save(table);
+                realtimeEventPublisher.publishTableStatus(table);
             }
         }
         // Auto-cancel any remaining PENDING orders for this table (BR-QR-09)
@@ -122,7 +125,10 @@ public class OrderServiceImpl implements OrderService {
             orderRepository.save(po);
         }
 
-        return orderMapper.toResponse(orderRepository.save(order));
+        OrderResponse response = orderMapper.toResponse(orderRepository.save(order));
+        realtimeEventPublisher.publishOrderEvent("ORDER_CLOSED", response);
+        realtimeEventPublisher.publishGuestOrderStatus(response);
+        return response;
     }
 
     @Override
@@ -139,7 +145,10 @@ public class OrderServiceImpl implements OrderService {
                 }
             }
         }
-        return orderMapper.toResponse(orderRepository.save(order));
+        OrderResponse response = orderMapper.toResponse(orderRepository.save(order));
+        realtimeEventPublisher.publishOrderEvent("ORDER_ACCEPTED", response);
+        realtimeEventPublisher.publishGuestOrderStatus(response);
+        return response;
     }
 
     @Override public OrderResponse addItem(String id, com.rms.restaurant.module.order.dto.AddOrderItemRequest request) { return null; }
@@ -199,9 +208,12 @@ public class OrderServiceImpl implements OrderService {
 
         table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.OCCUPIED);
         tableRepository.save(table);
+        realtimeEventPublisher.publishTableStatus(table);
 
         Order savedOrder = orderRepository.save(order);
-        return orderMapper.toResponse(savedOrder);
+        OrderResponse response = orderMapper.toResponse(savedOrder);
+        realtimeEventPublisher.publishOrderEvent("ORDER_CREATED", response);
+        return response;
     }
 
     @Override
@@ -262,7 +274,10 @@ public class OrderServiceImpl implements OrderService {
 
         // Optional: auto-update order status based on items? We'll keep it simple for now or implement if needed.
         Order savedOrder = orderRepository.save(order);
-        return orderMapper.toResponse(savedOrder);
+        OrderResponse response = orderMapper.toResponse(savedOrder);
+        realtimeEventPublisher.publishOrderEvent("ITEM_STATUS_CHANGED", response);
+        realtimeEventPublisher.publishGuestOrderStatus(response);
+        return response;
     }
 
     private OrderItem findOrderItem(Order order, String itemId) {
@@ -358,10 +373,14 @@ public class OrderServiceImpl implements OrderService {
             if (activeOrder == null || activeOrder.getId().equals(order.getId())) {
                 table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.AVAILABLE);
                 tableRepository.save(table);
+                realtimeEventPublisher.publishTableStatus(table);
             }
         }
 
-        return orderMapper.toResponse(orderRepository.save(order));
+        OrderResponse response = orderMapper.toResponse(orderRepository.save(order));
+        realtimeEventPublisher.publishOrderEvent("ORDER_CANCELLED", response);
+        realtimeEventPublisher.publishGuestOrderStatus(response);
+        return response;
     }
 
     private void validateOrderHasNoInvoiceOrPayment(Order order) {
@@ -398,6 +417,7 @@ public class OrderServiceImpl implements OrderService {
         if (entity != null) {
             entity.setResolved(true);
             assistanceRequestRepository.save(entity);
+            realtimeEventPublisher.publishAssistanceEvent("RESOLVED", entity);
         }
     }
 
