@@ -15,7 +15,9 @@ import com.rms.restaurant.module.payment.model.Payment;
 import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.payment.repository.PaymentRepository;
 import com.rms.restaurant.module.payment.service.PaymentService;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -34,6 +37,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
     private final OrderRepository orderRepository;
     private final PaymentMapper paymentMapper;
+    private final AuditService auditService;
 
     @Override
     public PaymentResponse process(ProcessPaymentRequest request) {
@@ -69,6 +73,10 @@ public class PaymentServiceImpl implements PaymentService {
         Payment savedPayment = paymentRepository.save(payment);
         invoice.setPaid(true);
         invoiceRepository.save(invoice);
+
+        audit("PAYMENT_PROCESS", savedPayment.getId(),
+                "{\"invoiceId\":\"" + esc(invoice.getId()) + "\",\"amount\":" + savedPayment.getAmount()
+                        + ",\"method\":\"" + esc(String.valueOf(savedPayment.getMethod())) + "\"}");
 
         return paymentMapper.toResponse(savedPayment);
     }
@@ -127,5 +135,14 @@ public class PaymentServiceImpl implements PaymentService {
         if (expectedTotal.compareTo(totalAmount) != 0) {
             throw new ApplicationException(ApplicationError.INVALID_INVOICE_TOTAL);
         }
+    }
+
+    private void audit(String action, String id, String detail) {
+        try { auditService.log(action, "Payment", id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

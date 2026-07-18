@@ -24,14 +24,54 @@ const ACTION_META: Record<string, ActionMeta> = {
   AUTH_PASSWORD_CHANGED:    { label: 'Đổi mật khẩu',      color: '#e67e00', bg: '#e67e0018' },
   AUTH_PASSWORD_RESET:      { label: 'Reset mật khẩu',    color: '#e67e00', bg: '#e67e0018' },
   AUTH_ACCOUNT_ACTIVATED:   { label: 'Kích hoạt TK',      color: '#0d9e6e', bg: '#0d9e6e18' },
+  PAYMENT_PROCESS:          { label: 'Thanh toán',         color: '#0891b2', bg: '#0891b218' },
+  INVOICE_GENERATE:         { label: 'Tạo hóa đơn',       color: '#0891b2', bg: '#0891b218' },
+  INVOICE_APPLY_DISCOUNT:   { label: 'Áp mã giảm giá',    color: '#0891b2', bg: '#0891b218' },
+  PROMOTION_CREATE:         { label: 'Tạo khuyến mãi',     color: '#c026d3', bg: '#c026d318' },
+  PROMOTION_UPDATE:         { label: 'Sửa khuyến mãi',     color: '#c026d3', bg: '#c026d318' },
+  PROMOTION_DELETE:         { label: 'Xóa khuyến mãi',     color: '#e53935', bg: '#e5393518' },
+  MENU_ITEM_CREATE:         { label: 'Tạo món',            color: '#4f46e5', bg: '#4f46e518' },
+  MENU_ITEM_UPDATE:         { label: 'Sửa món',            color: '#4f46e5', bg: '#4f46e518' },
+  MENU_ITEM_DELETE:         { label: 'Xóa món',            color: '#e53935', bg: '#e5393518' },
+  MENU_CATEGORY_CREATE:     { label: 'Tạo danh mục',       color: '#4f46e5', bg: '#4f46e518' },
+  MENU_CATEGORY_UPDATE:     { label: 'Sửa danh mục',       color: '#4f46e5', bg: '#4f46e518' },
+  MENU_CATEGORY_DELETE:     { label: 'Xóa danh mục',       color: '#e53935', bg: '#e5393518' },
+  MENU_CATEGORY_REORDER:    { label: 'Sắp xếp danh mục',   color: '#4f46e5', bg: '#4f46e518' },
+  MENU_IMPORT:              { label: 'Nhập thực đơn',      color: '#4f46e5', bg: '#4f46e518' },
+  TABLE_CREATE:             { label: 'Tạo bàn',            color: '#0ea5e9', bg: '#0ea5e918' },
+  TABLE_UPDATE:             { label: 'Sửa bàn',            color: '#0ea5e9', bg: '#0ea5e918' },
+  TABLE_DELETE:             { label: 'Xóa bàn',            color: '#e53935', bg: '#e5393518' },
+  TABLE_IMPORT:             { label: 'Nhập danh sách bàn', color: '#0ea5e9', bg: '#0ea5e918' },
+  AREA_CREATE:              { label: 'Tạo khu vực',        color: '#0ea5e9', bg: '#0ea5e918' },
+  AREA_DELETE:              { label: 'Xóa khu vực',        color: '#e53935', bg: '#e5393518' },
+  SHIFT_OPEN:               { label: 'Mở ca',               color: '#ca8a04', bg: '#ca8a0418' },
+  SHIFT_CLOSE:              { label: 'Đóng ca',             color: '#ca8a04', bg: '#ca8a0418' },
+  SHIFT_CASH_MOVEMENT:      { label: 'Thu/chi tiền mặt',    color: '#ca8a04', bg: '#ca8a0418' },
+  ROSTER_ASSIGNMENT_CREATE: { label: 'Xếp lịch làm việc',   color: '#0f766e', bg: '#0f766e18' },
+  ROSTER_ASSIGNMENT_UPDATE: { label: 'Sửa lịch làm việc',   color: '#0f766e', bg: '#0f766e18' },
+  ROSTER_ASSIGNMENT_DELETE: { label: 'Xóa lịch làm việc',   color: '#e53935', bg: '#e5393518' },
+  ROSTER_WEEK_PUBLISH:      { label: 'Công bố lịch tuần',   color: '#0f766e', bg: '#0f766e18' },
+  ROSTER_REQUEST_APPROVE:   { label: 'Duyệt yêu cầu ca',    color: '#0d9e6e', bg: '#0d9e6e18' },
+  ROSTER_REQUEST_REJECT:    { label: 'Từ chối yêu cầu ca',  color: '#e53935', bg: '#e5393518' },
 }
 
-const ENTITY_OPTIONS = ['', 'Reservation', 'User']
+const ENTITY_OPTIONS = ['', 'Reservation', 'User', 'Payment', 'Invoice', 'Promotion', 'MenuItem', 'MenuCategory', 'Table', 'Area', 'Shift', 'RosterAssignment', 'RosterRequest', 'RosterWeek']
 const ACTION_OPTIONS = ['', ...Object.keys(ACTION_META)]
 
 const ENTITY_LABELS: Record<string, string> = {
   Reservation: 'Đặt bàn',
   User: 'Nhân viên',
+  Payment: 'Thanh toán',
+  Invoice: 'Hóa đơn',
+  Promotion: 'Khuyến mãi',
+  MenuItem: 'Món ăn',
+  MenuCategory: 'Danh mục món',
+  Table: 'Bàn',
+  Area: 'Khu vực',
+  Shift: 'Ca làm việc',
+  RosterAssignment: 'Lịch làm việc',
+  RosterRequest: 'Yêu cầu đổi/nghỉ ca',
+  RosterWeek: 'Công bố lịch tuần',
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

@@ -18,7 +18,7 @@ public class PublicMenuController {
     private final MenuService menuService;
 
     @GetMapping
-    public ResponseEntity<List<PublicMenuResponse>> getPublicMenu() {
+    public ResponseEntity< List<PublicMenuResponse>> getPublicMenu() {
         return ResponseEntity.ok(menuService.getPublicMenu());
     }
 }

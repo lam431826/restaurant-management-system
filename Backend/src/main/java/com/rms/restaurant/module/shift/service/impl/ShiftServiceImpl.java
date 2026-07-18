@@ -21,7 +21,9 @@ import com.rms.restaurant.module.shift.repository.ShiftCashMovementRepository;
 import com.rms.restaurant.module.shift.repository.ShiftPaymentReconciliationRepository;
 import com.rms.restaurant.module.shift.repository.ShiftRepository;
 import com.rms.restaurant.module.shift.service.ShiftService;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -33,6 +35,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -59,6 +62,7 @@ public class ShiftServiceImpl implements ShiftService {
     private final UserRepository userRepo;
     private final RosterAttendanceRepository attendanceRepo;
     private final ShiftMapper shiftMapper;
+    private final AuditService auditService;
 
     // ── SM-01: Open Shift ─────────────────────────────────────────────────────
 
@@ -85,6 +89,9 @@ public class ShiftServiceImpl implements ShiftService {
                 .openingCash(request.openingCash())
                 .status(STATUS_OPEN)
                 .build());
+
+        audit("SHIFT_OPEN", shift.getId(),
+                "{\"cashierId\":\"" + esc(cashier.getId()) + "\",\"openingCash\":" + shift.getOpeningCash() + "}");
 
         return shiftMapper.toSummary(shift, List.of(), List.of(), BigDecimal.ZERO, BigDecimal.ZERO);
     }
@@ -121,6 +128,10 @@ public class ShiftServiceImpl implements ShiftService {
                 .amount(request.amount())
                 .reason(request.reason())
                 .build());
+
+        audit("SHIFT_CASH_MOVEMENT", shiftId,
+                "{\"type\":\"" + type + "\",\"amount\":" + request.amount()
+                        + ",\"reason\":\"" + esc(request.reason()) + "\"}");
     }
 
     // ── SM-03: Close Shift ────────────────────────────────────────────────────
@@ -222,6 +233,10 @@ public class ShiftServiceImpl implements ShiftService {
         shift.setTotalRevenue(totalRevenue);
         shift.setClosingNote(request.closingNote());
         shiftRepo.save(shift);
+
+        audit("SHIFT_CLOSE", shift.getId(),
+                "{\"status\":\"" + shift.getStatus() + "\",\"closingCash\":" + actualCash
+                        + ",\"cashVariance\":" + cashVariance + ",\"totalRevenue\":" + totalRevenue + "}");
 
         return shiftMapper.toSummary(shift, reconciliations, movements, totalCashIn, totalCashOut);
     }
@@ -460,5 +475,14 @@ public class ShiftServiceImpl implements ShiftService {
                 .filter(m -> type.equals(m.getType()))
                 .map(ShiftCashMovement::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private void audit(String action, String id, String detail) {
+        try { auditService.log(action, "Shift", id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

@@ -25,7 +25,9 @@ import com.rms.restaurant.module.roster.repository.ShiftTemplateRepository;
 import com.rms.restaurant.module.roster.repository.WeekPublicationRepository;
 import com.rms.restaurant.module.roster.service.RosterService;
 import com.rms.restaurant.module.shift.repository.ShiftRepository;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -63,6 +66,7 @@ public class RosterServiceImpl implements RosterService {
     private final UserRepository userRepo;
     private final ShiftRepository cashShiftRepo;
     private final RosterMapper mapper;
+    private final AuditService auditService;
 
     // ─────────────────────────── Templates (WS-01) ───────────────────────────
 
@@ -169,6 +173,13 @@ public class RosterServiceImpl implements RosterService {
                 created.add(assignmentRepo.save(assignment));
             }
         }
+
+        audit("ROSTER_ASSIGNMENT_CREATE", "RosterAssignment", null,
+                "{\"employeeIds\":\"" + esc(String.join(",", request.employeeIds())) + "\""
+                        + ",\"shiftTemplateIds\":\"" + esc(String.join(",", request.shiftTemplateIds())) + "\""
+                        + ",\"date\":\"" + request.date() + "\",\"repeatWeekly\":" + request.repeatWeekly()
+                        + ",\"count\":" + created.size() + "}");
+
         return created.stream().map(mapper::toAssignmentResponse).toList();
     }
 
@@ -190,15 +201,24 @@ public class RosterServiceImpl implements RosterService {
         assignment.setRepeatDays(request.repeatWeekly() && request.repeatDays() != null ? request.repeatDays() : List.of());
         assignment.setRepeatEnd(request.repeatWeekly() ? request.repeatEnd() : null);
         assignment.setHolidayWork(request.holidayWork());
-        return mapper.toAssignmentResponse(assignmentRepo.save(assignment));
+        RosterAssignment saved = assignmentRepo.save(assignment);
+
+        audit("ROSTER_ASSIGNMENT_UPDATE", "RosterAssignment", saved.getId(),
+                "{\"employeeId\":\"" + esc(saved.getEmployeeId()) + "\",\"shiftTemplateId\":\""
+                        + esc(saved.getShiftTemplateId()) + "\",\"repeatWeekly\":" + saved.isRepeatWeekly() + "}");
+
+        return mapper.toAssignmentResponse(saved);
     }
 
     @Override
     public void deleteAssignment(String id) {
-        if (!assignmentRepo.existsById(id)) {
-            throw new ResourceNotFoundException(ApplicationError.ASSIGNMENT_NOT_FOUND);
-        }
+        RosterAssignment assignment = assignmentRepo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ASSIGNMENT_NOT_FOUND));
         assignmentRepo.deleteById(id);
+
+        audit("ROSTER_ASSIGNMENT_DELETE", "RosterAssignment", id,
+                "{\"employeeId\":\"" + esc(assignment.getEmployeeId()) + "\",\"shiftTemplateId\":\""
+                        + esc(assignment.getShiftTemplateId()) + "\",\"startDate\":\"" + assignment.getStartDate() + "\"}");
     }
 
     // ───────────────────── Publish workflow (WS-02, BR-WS-03/04) ─────────────
@@ -220,7 +240,12 @@ public class RosterServiceImpl implements RosterService {
         pub.setStatus(WeekStatus.PUBLISHED);
         pub.setVersion(pub.getVersion() + 1);
         pub.setPublishedAt(LocalDateTime.now());
-        return mapper.toWeekStatus(weekPubRepo.save(pub));
+        WeekPublication saved = weekPubRepo.save(pub);
+
+        audit("ROSTER_WEEK_PUBLISH", "RosterWeek", saved.getWeekStart().toString(),
+                "{\"version\":" + saved.getVersion() + "}");
+
+        return mapper.toWeekStatus(saved);
     }
 
     private LocalDate toMonday(LocalDate date) {
@@ -420,7 +445,14 @@ public class RosterServiceImpl implements RosterService {
 
         shiftRequest.setStatus(ShiftRequestStatus.APPROVED);
         shiftRequest.setManagerNote(request.managerNote());
-        return mapper.toRequestResponse(requestRepo.save(shiftRequest));
+        RosterRequest saved = requestRepo.save(shiftRequest);
+
+        audit("ROSTER_REQUEST_APPROVE", "RosterRequest", saved.getId(),
+                "{\"requesterId\":\"" + esc(saved.getRequesterId()) + "\",\"type\":\"" + saved.getType()
+                        + "\",\"workDate\":\"" + saved.getWorkDate() + "\",\"managerNote\":\""
+                        + esc(saved.getManagerNote()) + "\"}");
+
+        return mapper.toRequestResponse(saved);
     }
 
     @Override
@@ -428,7 +460,14 @@ public class RosterServiceImpl implements RosterService {
         RosterRequest shiftRequest = requireRequest(id);
         shiftRequest.setStatus(ShiftRequestStatus.REJECTED);
         shiftRequest.setManagerNote(request.managerNote());
-        return mapper.toRequestResponse(requestRepo.save(shiftRequest));
+        RosterRequest saved = requestRepo.save(shiftRequest);
+
+        audit("ROSTER_REQUEST_REJECT", "RosterRequest", saved.getId(),
+                "{\"requesterId\":\"" + esc(saved.getRequesterId()) + "\",\"type\":\"" + saved.getType()
+                        + "\",\"workDate\":\"" + saved.getWorkDate() + "\",\"managerNote\":\""
+                        + esc(saved.getManagerNote()) + "\"}");
+
+        return mapper.toRequestResponse(saved);
     }
 
     private RosterRequest requireRequest(String id) {
@@ -559,5 +598,14 @@ public class RosterServiceImpl implements RosterService {
     private User requireUserByUsername(String username) {
         return userRepo.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.USER_NOT_FOUND));
+    }
+
+    private void audit(String action, String targetEntity, String id, String detail) {
+        try { auditService.log(action, targetEntity, id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

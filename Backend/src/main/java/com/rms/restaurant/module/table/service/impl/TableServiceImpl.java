@@ -18,6 +18,7 @@ import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.module.reservation.repository.ReservationRepository;
 import com.rms.restaurant.common.utils.enums.ReservationStatus;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
@@ -58,6 +59,7 @@ public class TableServiceImpl implements TableService {
     private final OrderRepository orderRepository;
     private final ReservationRepository reservationRepository;
     private final RealtimeEventPublisher realtimeEventPublisher;
+    private final AuditService auditService;
 
     // ── Tables ───────────────────────────────────────────────────────────
 
@@ -102,7 +104,9 @@ public class TableServiceImpl implements TableService {
                 .status(TableStatus.AVAILABLE)
                 .qrToken("QR-" + name)
                 .build();
-        return tableMapper.toResponse(tableRepository.save(table));
+        RestaurantTable saved = tableRepository.save(table);
+        audit("TABLE_CREATE", "Table", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        return tableMapper.toResponse(saved);
     }
 
     @Override
@@ -121,12 +125,16 @@ public class TableServiceImpl implements TableService {
         if (request.capacity() != null) table.setCapacity(request.capacity());
         if (request.displayOrder() != null) table.setDisplayOrder(request.displayOrder());
         if (request.active() != null) table.setActive(request.active());
-        return tableMapper.toResponse(tableRepository.save(table));
+        RestaurantTable saved = tableRepository.save(table);
+        audit("TABLE_UPDATE", "Table", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        return tableMapper.toResponse(saved);
     }
 
     @Override
     public void deleteTable(String id) {
-        tableRepository.delete(findTable(id));
+        RestaurantTable table = findTable(id);
+        tableRepository.delete(table);
+        audit("TABLE_DELETE", "Table", id, "{\"name\":\"" + esc(table.getName()) + "\"}");
     }
 
     @Override
@@ -134,6 +142,7 @@ public class TableServiceImpl implements TableService {
         RestaurantTable table = findTable(id);
         table.setActive(active);
         tableRepository.save(table);
+        audit("TABLE_UPDATE", "Table", id, "{\"name\":\"" + esc(table.getName()) + "\",\"active\":" + active + "}");
     }
 
     @Override
@@ -203,6 +212,10 @@ public class TableServiceImpl implements TableService {
                         errors.add(new TableImportResult.RowError((int) rowNumber, "Name is required"));
                         continue;
                     }
+                    if (name.length() > 20) {
+                        errors.add(new TableImportResult.RowError((int) rowNumber, "Name must not exceed 20 characters"));
+                        continue;
+                    }
                     int capacity = 0;
                     String capacityRaw = column(record, "capacity");
                     if (StringUtils.hasText(capacityRaw)) {
@@ -262,6 +275,9 @@ public class TableServiceImpl implements TableService {
             throw new ConflictException(ApplicationError.TABLE_IMPORT_INVALID);
         }
 
+        audit("TABLE_IMPORT", "Table", null, "{\"created\":" + created + ",\"updated\":" + updated
+                + ",\"errors\":" + errors.size() + "}");
+
         return new TableImportResult(created, updated, errors.size(), errors);
     }
 
@@ -286,7 +302,9 @@ public class TableServiceImpl implements TableService {
                 .note(trimToNull(request.note()))
                 .displayOrder(request.displayOrder() == null ? 0 : request.displayOrder())
                 .build();
-        return tableMapper.toAreaResponse(areaRepository.save(area));
+        TableArea saved = areaRepository.save(area);
+        audit("AREA_CREATE", "Area", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        return tableMapper.toAreaResponse(saved);
     }
 
     @Override
@@ -297,6 +315,7 @@ public class TableServiceImpl implements TableService {
             throw new ConflictException(ApplicationError.AREA_HAS_TABLES);
         }
         areaRepository.delete(area);
+        audit("AREA_DELETE", "Area", id, "{\"name\":\"" + esc(area.getName()) + "\"}");
     }
 
     // ── TM-04 (not yet implemented) ──────────────────────────────────────
@@ -347,5 +366,14 @@ public class TableServiceImpl implements TableService {
         if (!StringUtils.hasText(value)) return true;
         String v = value.trim();
         return v.equalsIgnoreCase("true") || v.equals("1") || v.equalsIgnoreCase("yes");
+    }
+
+    private void audit(String action, String targetEntity, String id, String detail) {
+        try { auditService.log(action, targetEntity, id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

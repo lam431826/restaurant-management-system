@@ -9,6 +9,7 @@ import com.rms.restaurant.module.user.repository.AuditLogRepository;
 import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -17,10 +18,22 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+/**
+ * {@link #log} only publishes an event — it does not touch the database. The actual
+ * AuditLog row is written by {@link #onAuditLogEvent}, which fires AFTER the caller's
+ * own transaction commits (fallbackExecution covers the rare case of no active
+ * transaction). This is deliberate: a previous REQUIRES_NEW-based design committed the
+ * audit row independently and *before* the caller's own save() actually flushed to the
+ * DB (JPA defers INSERTs for GenerationType.UUID entities), so a late DB-level failure
+ * (e.g. a column-length violation) rolled back the real mutation while the audit log
+ * still recorded it as successful. See CLAUDE.md "Audit logging" for the incident.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -31,9 +44,9 @@ public class AuditServiceImpl implements AuditService {
     private final AuditLogRepository auditLogRepository;
     private final UserRepository userRepository;
     private final RealtimeEventPublisher realtimeEventPublisher;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void log(String action, String targetEntity, String targetId, String detail) {
         String actorId = SYSTEM;
         String actorUsername = SYSTEM;
@@ -46,13 +59,13 @@ public class AuditServiceImpl implements AuditService {
                     .orElse(SYSTEM);
         }
 
-        persist(actorId, actorUsername, action, targetEntity, targetId, detail);
+        eventPublisher.publishEvent(new AuditLogEvent(actorId, actorUsername, action, targetEntity, targetId, detail));
     }
 
     @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void log(String actorId, String actorUsername, String action, String targetEntity, String targetId, String detail) {
-        persist(actorId != null ? actorId : SYSTEM, actorUsername, action, targetEntity, targetId, detail);
+        eventPublisher.publishEvent(new AuditLogEvent(
+                actorId != null ? actorId : SYSTEM, actorUsername, action, targetEntity, targetId, detail));
     }
 
     @Override
@@ -72,18 +85,23 @@ public class AuditServiceImpl implements AuditService {
                         .map(this::toResponse));
     }
 
-    private void persist(String actorId, String actorUsername, String action,
-                         String targetEntity, String targetId, String detail) {
-        AuditLog entry = AuditLog.builder()
-                .actorId(actorId)
-                .actorUsername(actorUsername)
-                .action(action)
-                .targetEntity(targetEntity)
-                .targetId(targetId)
-                .detail(detail)
-                .build();
-        AuditLog saved = auditLogRepository.save(entry);
-        realtimeEventPublisher.publishAuditEvent(toResponse(saved));
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onAuditLogEvent(AuditLogEvent event) {
+        try {
+            AuditLog entry = AuditLog.builder()
+                    .actorId(event.actorId())
+                    .actorUsername(event.actorUsername())
+                    .action(event.action())
+                    .targetEntity(event.targetEntity())
+                    .targetId(event.targetId())
+                    .detail(event.detail())
+                    .build();
+            AuditLog saved = auditLogRepository.save(entry);
+            realtimeEventPublisher.publishAuditEvent(toResponse(saved));
+        } catch (Exception e) {
+            log.warn("Audit log persist failed: {}", e.getMessage());
+        }
     }
 
     private AuditLogResponse toResponse(AuditLog a) {

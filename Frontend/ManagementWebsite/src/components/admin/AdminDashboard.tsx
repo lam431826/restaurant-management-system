@@ -517,7 +517,7 @@ type Modal =
   | { type: 'delete'; user: UserDto }
   | { type: 'unlock'; user: UserDto }
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 5
 
 const AdminDashboard = () => {
   const navigate = useNavigate()

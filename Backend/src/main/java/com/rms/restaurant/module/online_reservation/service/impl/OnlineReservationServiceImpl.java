@@ -21,6 +21,7 @@ import com.rms.restaurant.module.reservation.mapper.ReservationMapper;
 import com.rms.restaurant.module.reservation.model.Reservation;
 import com.rms.restaurant.module.reservation.repository.ReservationRepository;
 import com.rms.restaurant.module.table.repository.TableRepository;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -52,6 +53,7 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
     private final ReservationMapper reservationMapper;
     private final NotificationService notificationService;
     private final GmailService gmailService;
+    private final AuditService auditService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     // ── ORM-01: Kiểm tra slot bàn trống ──────────────────────────────────────
@@ -108,6 +110,9 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         } catch (Exception e) {
             log.warn("NM-01 PENDING trigger failed for reservation {}: {}", saved.getId(), e.getMessage());
         }
+
+        audit("RESERVATION_CREATE", saved.getId(),
+                "{\"channel\":\"ONLINE\",\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
 
         return reservationMapper.toResponse(saved);
     }
@@ -193,6 +198,8 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         } catch (Exception e) {
             log.warn("NM-01 CANCELLATION trigger failed for reservation {}: {}", reservationId, e.getMessage());
         }
+
+        audit("RESERVATION_CANCEL", reservationId, "{\"channel\":\"ONLINE\"}");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -230,5 +237,14 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         if (partySize <= 10) return new int[]{9,  10};
         if (partySize <= 12) return new int[]{11, 12};
         return                      new int[]{13, 20};
+    }
+
+    private void audit(String action, String id, String detail) {
+        try { auditService.log(action, "Reservation", id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

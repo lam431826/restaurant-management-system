@@ -23,7 +23,9 @@ import com.rms.restaurant.module.payment.repository.PromotionRepository;
 import com.rms.restaurant.module.payment.service.InvoiceService;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -53,6 +56,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final TableRepository tableRepository;
     private final UserRepository userRepository;
     private final InvoiceMapper invoiceMapper;
+    private final AuditService auditService;
 
     @Override
     @Transactional(readOnly = true)
@@ -121,6 +125,10 @@ public class InvoiceServiceImpl implements InvoiceService {
             incrementUsedCount(promotion);
         }
 
+        audit("INVOICE_GENERATE", savedInvoice.getId(),
+                "{\"orderId\":\"" + esc(orderId) + "\",\"totalAmount\":" + savedInvoice.getTotalAmount()
+                        + ",\"promotionCode\":\"" + esc(request.promotionCode()) + "\"}");
+
         return invoiceMapper.toResponse(savedInvoice);
     }
 
@@ -151,6 +159,10 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         Invoice savedInvoice = invoiceRepository.save(invoice);
         incrementUsedCount(promotion);
+
+        audit("INVOICE_APPLY_DISCOUNT", savedInvoice.getId(),
+                "{\"promotionCode\":\"" + esc(promotion.getCode()) + "\",\"discountAmount\":" + discountAmount
+                        + ",\"totalAmount\":" + totalAmount + "}");
 
         return invoiceMapper.toResponse(savedInvoice);
     }
@@ -449,5 +461,14 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     private String normalizeCode(String promotionCode) {
         return promotionCode.trim().toUpperCase();
+    }
+
+    private void audit(String action, String id, String detail) {
+        try { auditService.log(action, "Invoice", id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }
