@@ -23,6 +23,8 @@ import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.payment.repository.PaymentRepository;
 import com.rms.restaurant.module.payment.repository.PromotionRepository;
 import com.rms.restaurant.module.payment.service.InvoiceService;
+import com.rms.restaurant.module.payment.service.internal.InvoiceSplitPersistenceService;
+import com.rms.restaurant.module.payment.service.internal.PersistedInvoiceSplitResult;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import lombok.RequiredArgsConstructor;
@@ -61,6 +63,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final TableRepository tableRepository;
     private final UserRepository userRepository;
     private final InvoiceMapper invoiceMapper;
+    private final InvoiceSplitPersistenceService invoiceSplitPersistenceService;
 
     @Override
     @Transactional(readOnly = true)
@@ -243,6 +246,28 @@ public class InvoiceServiceImpl implements InvoiceService {
                 invoice.getStatus(),
                 invoice.getMergedIntoInvoiceId(),
                 invoice.getSplitFromInvoiceId()
+        );
+    }
+
+    @Override
+    public SplitInvoiceResponse split(String invoiceId, SplitInvoiceRequest request) {
+        PersistedInvoiceSplitResult result = invoiceSplitPersistenceService.splitAtomically(invoiceId, request);
+        List<SplitInvoiceChildResponse> children = result.children().stream()
+                .map(child -> new SplitInvoiceChildResponse(
+                        child.childInvoiceId(),
+                        child.subtotal(),
+                        child.totalAmount(),
+                        child.sourceAllocationIds(),
+                        child.childAllocationIds()
+                ))
+                .toList();
+
+        return new SplitInvoiceResponse(
+                result.sourceInvoiceId(),
+                result.sourceStatus(),
+                result.sourceSubtotal(),
+                result.sourceTotal(),
+                children
         );
     }
 
@@ -488,7 +513,8 @@ public class InvoiceServiceImpl implements InvoiceService {
                 line.allocation().getUnitPriceSnapshot(),
                 line.lineTotal(),
                 line.orderItem().getNote(),
-                line.orderItem().getId()
+                line.orderItem().getId(),
+                line.allocation().getId()
         );
     }
 

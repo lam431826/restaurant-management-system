@@ -7,6 +7,8 @@ import com.rms.restaurant.module.payment.dto.InvoiceDetailResponse;
 import com.rms.restaurant.module.payment.dto.InvoiceResponse;
 import com.rms.restaurant.module.payment.dto.InvoiceSummaryResponse;
 import com.rms.restaurant.module.payment.dto.SendInvoiceResponse;
+import com.rms.restaurant.module.payment.dto.SplitInvoiceRequest;
+import com.rms.restaurant.module.payment.dto.SplitInvoiceResponse;
 import com.rms.restaurant.module.payment.service.InvoiceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +44,14 @@ public class InvoiceController {
     @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<InvoiceDetailResponse>> getById(@PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success(invoiceService.getById(id)));
+    }
+
+    @PostMapping("/{invoiceId}/split")
+    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<SplitInvoiceResponse>> split(
+            @PathVariable String invoiceId,
+            @Valid @RequestBody SplitInvoiceRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(invoiceService.split(invoiceId, request)));
     }
 
     @PostMapping
