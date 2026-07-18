@@ -56,6 +56,35 @@ export const updateEmployee = (id: string, req: Partial<EmployeeFormPayload> & {
 export const deactivateEmployee = (id: string) =>
   apiClient.post(`/employees/${id}/deactivate`)
 
+/* ── Thiết lập lương (UC-EMP-07 / UC-PAY-01) ─────────────────────────────── */
+export type SalaryType = 'SHIFT' | 'HOURLY' | 'FIXED'
+
+export interface SalarySettingDto {
+  id: string | null // null = employee has no salary setting yet (server default)
+  employeeId: string
+  mainSalaryType: SalaryType
+  mainBaseWage: number
+  mainAdvancedRatesJson: string | null
+  overtimeEnabled: boolean
+  overtimeRatesJson: string | null
+  salaryTemplate: string | null
+}
+
+export interface SalarySettingPayload {
+  mainSalaryType: SalaryType
+  mainBaseWage: number
+  mainAdvancedRatesJson?: string | null
+  overtimeEnabled: boolean
+  overtimeRatesJson?: string | null
+  salaryTemplate?: string | null
+}
+
+export const getSalarySetting = (employeeId: string) =>
+  apiClient.get<{ data: SalarySettingDto }>(`/employees/${employeeId}/salary-setting`)
+
+export const putSalarySetting = (employeeId: string, req: SalarySettingPayload) =>
+  apiClient.put<{ data: SalarySettingDto }>(`/employees/${employeeId}/salary-setting`, req)
+
 /** Adapts a server DTO to the app's local Employee shape. */
 export const toEmployee = (dto: EmployeeDto): Employee => ({
   id: dto.id,

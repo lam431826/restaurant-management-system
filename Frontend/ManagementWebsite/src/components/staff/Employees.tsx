@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import EmployeeFilters from './EmployeeFilters'
 import type { EmpStatus } from './EmployeeFilters'
 import EmployeeToolbar from './EmployeeToolbar'
-import EmployeeTable from './EmployeeTable'
+import EmployeeTable, { EMPLOYEE_COLUMNS, DEFAULT_VISIBLE_COLUMNS } from './EmployeeTable'
 import EmployeeModal from './EmployeeModal'
 import { listEmployees, createEmployee, deactivateEmployee, updateEmployee, toEmployee } from '../../api/employees'
 import type { EmployeeFormPayload, EmployeeStatus } from '../../api/employees'
@@ -23,6 +23,7 @@ const Employees = () => {
   const [status, setStatus] = useState<EmpStatus>('active')
 
   const [showAdd, setShowAdd] = useState(false)
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(DEFAULT_VISIBLE_COLUMNS)
 
   const fetchEmployees = useCallback(async (p: number, s: EmpStatus) => {
     setLoading(true)
@@ -49,9 +50,10 @@ const Employees = () => {
   }, [items, search])
 
   const handleCreate = async (payload: EmployeeFormPayload) => {
-    await createEmployee(payload)
+    const res = await createEmployee(payload)
     await fetchEmployees(0, status)
     setShowAdd(false)
+    return res.data.data
   }
 
   const handleUpdate = () => {
@@ -90,6 +92,9 @@ const Employees = () => {
           onSearch={setSearch}
           onAdd={() => setShowAdd(true)}
           employees={items}
+          columns={EMPLOYEE_COLUMNS}
+          visibleColumns={visibleColumns}
+          onToggleColumn={key => setVisibleColumns(v => ({ ...v, [key]: !v[key] }))}
         />
         <EmployeeTable
           employees={filtered}
@@ -97,6 +102,7 @@ const Employees = () => {
           page={page}
           totalPages={totalPages}
           total={total}
+          visibleColumns={visibleColumns}
           onPageChange={p => fetchEmployees(p, status)}
           onAdd={() => setShowAdd(true)}
           onSave={handleUpdate}

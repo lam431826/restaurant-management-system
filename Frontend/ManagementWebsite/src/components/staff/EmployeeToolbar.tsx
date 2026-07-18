@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Employee } from '../../data/mockData'
+import type { EmployeeColumn } from './EmployeeTable'
 
 interface Props {
   search: string
   onSearch: (v: string) => void
   onAdd: () => void
   employees: Employee[]
+  columns: EmployeeColumn[]
+  visibleColumns: Record<string, boolean>
+  onToggleColumn: (key: string) => void
 }
 
 const exportCsv = (employees: Employee[]) => {
@@ -23,13 +27,18 @@ const exportCsv = (employees: Employee[]) => {
   URL.revokeObjectURL(url)
 }
 
-const EmployeeToolbar = ({ search, onSearch, onAdd, employees }: Props) => {
+const EmployeeToolbar = ({ search, onSearch, onAdd, employees, columns, visibleColumns, onToggleColumn }: Props) => {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [colsOpen, setColsOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const colsRef = useRef<HTMLDivElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setMenuOpen(false) }
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setMenuOpen(false)
+      if (colsRef.current && !colsRef.current.contains(e.target as Node)) setColsOpen(false)
+    }
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [])
@@ -81,16 +90,36 @@ const EmployeeToolbar = ({ search, onSearch, onAdd, employees }: Props) => {
           )}
         </div>
 
-        <button
-          className="w-10 h-10 flex items-center justify-center border border-line-default rounded-md bg-card text-ink-subtle cursor-pointer shrink-0 transition-colors hover:border-primary hover:text-primary"
-          aria-label="Tùy chọn cột"
-          title="Tùy chọn hiển thị cột"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
-            <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
-          </svg>
-        </button>
+        <div ref={colsRef} className="relative">
+          <button
+            className="w-10 h-10 flex items-center justify-center border border-line-default rounded-md bg-card text-ink-subtle cursor-pointer shrink-0 transition-colors hover:border-primary hover:text-primary"
+            aria-label="Tùy chọn cột"
+            title="Tùy chọn hiển thị cột"
+            onClick={() => setColsOpen(o => !o)}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+              <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+            </svg>
+          </button>
+          {colsOpen && (
+            <div className="absolute right-0 top-[calc(100%+0.6rem)] w-[18rem] bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] p-4">
+              <div className="flex flex-col gap-2.5">
+                {columns.map(c => (
+                  <label key={c.key} className="flex items-center gap-2.5 cursor-pointer text-md text-ink">
+                    <input
+                      type="checkbox"
+                      checked={!!visibleColumns[c.key]}
+                      onChange={() => onToggleColumn(c.key)}
+                      className="accent-primary w-4 h-4"
+                    />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

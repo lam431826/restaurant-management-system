@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Employee } from '../../data/mockData'
-import type { EmployeeFormPayload } from '../../api/employees'
+import { getSalarySetting, putSalarySetting } from '../../api/employees'
+import type { EmployeeDto, EmployeeFormPayload, SalaryType } from '../../api/employees'
 import { listUsers, createUser } from '../../api/users'
 import type { UserDto } from '../../api/users'
+
+type TabKey = 'info' | 'salary'
 
 interface Props {
   employee?: Employee
   onClose: () => void
-  onSave: (payload: EmployeeFormPayload) => Promise<void>
+  // Resolves with the saved employee so the salary setting can be PUT against its id.
+  onSave: (payload: EmployeeFormPayload) => Promise<EmployeeDto | void>
+  initialTab?: TabKey
 }
-
-type TabKey = 'info' | 'salary'
 
 const CloseIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -214,8 +217,17 @@ const SHIFT_OPTIONS = [
 const TrashIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
 )
+// Comma-groups a raw digit string for display (e.g. "200000" -> "200,000"); stored state stays digit-only.
+const fmtMoneyInput = (raw?: string) => {
+  const digits = (raw ?? '').replace(/\D/g, '')
+  return digits ? Number(digits).toLocaleString('en-US') : ''
+}
 const CellInput = ({ value, onChange, defaultValue, center, w = 'w-[10rem]' }: { value?: string; onChange?: (v: string) => void; defaultValue?: string; center?: boolean; w?: string }) => (
-  <input value={value} defaultValue={defaultValue} onChange={e => onChange?.(e.target.value)}
+  <input
+    inputMode="numeric"
+    value={value !== undefined ? fmtMoneyInput(value) : undefined}
+    defaultValue={value === undefined ? fmtMoneyInput(defaultValue) : undefined}
+    onChange={e => onChange?.(e.target.value.replace(/\D/g, ''))}
     className={`${w} h-9 px-2 bg-field border border-line-default rounded-md text-md text-ink focus:border-primary focus:outline-none ${center ? 'text-center' : ''}`} />
 )
 const PlusBtn = () => (<button type="button" className="text-primary text-xl leading-none hover:opacity-80 cursor-pointer" aria-label="Thêm">+</button>)
@@ -254,7 +266,7 @@ const ShiftPicker = ({ value, onChange }: { value: string; onChange: (v: string)
 }
 
 // a day-type rate cell that can hold a % or a fixed VND amount, edited in a popover
-type Rate = { amount: string; unit: 'percent' | 'vnd' } | null
+export type Rate = { amount: string; unit: 'percent' | 'vnd' } | null
 // limits: 999 for %, 99,999,999 for VND. Returns a display string ("," separators for VND).
 const fmtRate = (raw: string, unit: 'percent' | 'vnd') => {
   const digits = raw.replace(/\D/g, '')
@@ -262,7 +274,7 @@ const fmtRate = (raw: string, unit: 'percent' | 'vnd') => {
   const n = Math.min(parseInt(digits, 10), unit === 'percent' ? 999 : 99999999)
   return unit === 'vnd' ? n.toLocaleString('en-US') : String(n)
 }
-const rateLabel = (r: Rate) => r ? (r.unit === 'percent' ? `${r.amount}%` : `${Number(r.amount || 0).toLocaleString('en-US')}`) : ''
+export const rateLabel = (r: Rate) => r ? (r.unit === 'percent' ? `${r.amount}%` : `${Number(r.amount || 0).toLocaleString('en-US')}`) : ''
 const RateCell = ({ value, onChange }: { value: Rate; onChange: (v: Rate) => void }) => {
   const [open, setOpen] = useState(false)
   const [amt, setAmt] = useState('')
@@ -303,14 +315,36 @@ const RateCell = ({ value, onChange }: { value: Rate; onChange: (v: Rate) => voi
 }
 
 interface CondRow { id: number; shift: string; wage: string; sat: Rate; sun: Rate; off: Rate; holiday: Rate }
-const ShiftSalaryBody = ({ suffix = '/ ca', firstCol = 'Ca', wageCol = 'Lương/ca', showOvertime = true, noAdvanced = false }: { suffix?: string; firstCol?: string; wageCol?: string; showOvertime?: boolean; noAdvanced?: boolean }) => {
-  const [advanced, setAdvanced] = useState(false)
-  const [overtime, setOvertime] = useState(false)
-  const [base, setBase] = useState('0')
-  const pct = (a: string): Rate => ({ amount: a, unit: 'percent' })
-  const [def, setDef] = useState<{ sat: Rate; sun: Rate; off: Rate; holiday: Rate }>({ sat: null, sun: null, off: pct('100'), holiday: pct('100') })
+
+// Lifted salary-config state, round-tripped to /api/employees/{id}/salary-setting.
+// The JSON shape of `def`/`ot` is the canonical rates format the payroll module parses.
+export interface DayRates { sat: Rate; sun: Rate; off: Rate; holiday: Rate }
+export interface OtRates extends DayRates { normal: Rate }
+export interface SalaryConfig { base: string; def: DayRates; overtimeEnabled: boolean; ot: OtRates }
+const pct = (a: string): Rate => ({ amount: a, unit: 'percent' })
+export const defaultSalaryConfig = (): SalaryConfig => ({
+  base: '0',
+  def: { sat: null, sun: null, off: pct('100'), holiday: pct('100') },
+  overtimeEnabled: false,
+  ot: { normal: pct('150'), sat: pct('200'), sun: pct('200'), off: pct('200'), holiday: pct('300') },
+})
+
+const ShiftSalaryBody = ({ value, onChange, suffix = '/ ca', firstCol = 'Ca', wageCol = 'Lương/ca', showOvertime = true, noAdvanced = false }: { value: SalaryConfig; onChange: (v: SalaryConfig) => void; suffix?: string; firstCol?: string; wageCol?: string; showOvertime?: boolean; noAdvanced?: boolean }) => {
+  // Auto-expand when an already-saved setting has weekend rates, so loaded data is visible
+  // without the manager having to know to flip the toggle themselves. Never for noAdvanced
+  // (Cố định) — otherwise leftover def.sat/sun from a previously-selected salary type would
+  // force the table open even though its toggle is hidden.
+  const [advanced, setAdvanced] = useState(() => !noAdvanced && (value.def.sat !== null || value.def.sun !== null))
+  useEffect(() => {
+    if (!noAdvanced && (value.def.sat !== null || value.def.sun !== null)) setAdvanced(true)
+  }, [value.def.sat, value.def.sun, noAdvanced])
+  // per-shift condition rows remain UI-only (deferred until per-shift rates are specced)
   const [rows, setRows] = useState<CondRow[]>([])
-  const [ot, setOt] = useState<{ normal: Rate; sat: Rate; sun: Rate; off: Rate; holiday: Rate }>({ normal: pct('150'), sat: pct('200'), sun: pct('200'), off: pct('200'), holiday: pct('300') })
+  const { base, def, overtimeEnabled: overtime, ot } = value
+  const setBase = (b: string) => onChange({ ...value, base: b })
+  const setOvertime = (v: boolean) => onChange({ ...value, overtimeEnabled: v })
+  const setDef = (f: (d: DayRates) => DayRates) => onChange({ ...value, def: f(value.def) })
+  const setOt = (f: (o: OtRates) => OtRates) => onChange({ ...value, ot: f(value.ot) })
   const addRow = () => setRows(rs => [...rs, { id: Date.now(), shift: '', wage: '', sat: null, sun: null, off: null, holiday: null }])
   const removeRow = (id: number) => setRows(rs => rs.filter(r => r.id !== id))
   const setRow = (id: number, p: Partial<CondRow>) => setRows(rs => rs.map(r => r.id === id ? { ...r, ...p } : r))
@@ -323,7 +357,7 @@ const ShiftSalaryBody = ({ suffix = '/ ca', firstCol = 'Ca', wageCol = 'Lương/
           <label className="text-md font-bold text-ink w-[8rem] shrink-0">Mức lương</label>
           {!advanced && (
             <div className="relative w-[40rem] max-w-full">
-              <input value={base} onChange={e => setBase(e.target.value)} className={`${inputCls} pr-14`} />
+              <input inputMode="numeric" value={fmtMoneyInput(base)} onChange={e => setBase(e.target.value.replace(/\D/g, ''))} className={`${inputCls} pr-14`} />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-md text-ink-subtle">{suffix}</span>
             </div>
           )}
@@ -354,7 +388,7 @@ const ShiftSalaryBody = ({ suffix = '/ ca', firstCol = 'Ca', wageCol = 'Lương/
                 <tbody>
                   <tr className="border-t border-line">
                     <td className="px-4 py-3 text-md text-ink">Mặc định</td>
-                    <td className="px-4 py-3"><CellInput defaultValue="0" w="w-full" /></td>
+                    <td className="px-4 py-3"><CellInput value={base} onChange={setBase} w="w-full" /></td>
                     <td className="px-4 py-3"><RateCell value={def.sat} onChange={v => setDef(d => ({ ...d, sat: v }))} /></td>
                     <td className="px-4 py-3"><RateCell value={def.sun} onChange={v => setDef(d => ({ ...d, sun: v }))} /></td>
                     <td className="px-4 py-3"><RateCell value={def.off} onChange={v => setDef(d => ({ ...d, off: v }))} /></td>
@@ -419,8 +453,26 @@ const ShiftSalaryBody = ({ suffix = '/ ca', firstCol = 'Ca', wageCol = 'Lương/
   )
 }
 
-// Local option sets for UI-only pickers.
+// Salary-type labels ↔ backend enum values.
 const salaryTypes = ['Theo ca làm việc', 'Theo giờ làm việc', 'Cố định']
+const LABEL_TO_SALARY_TYPE: Record<string, SalaryType> = {
+  'Theo ca làm việc': 'SHIFT',
+  'Theo giờ làm việc': 'HOURLY',
+  'Cố định': 'FIXED',
+}
+const SALARY_TYPE_TO_LABEL: Record<SalaryType, string> = {
+  SHIFT: 'Theo ca làm việc',
+  HOURLY: 'Theo giờ làm việc',
+  FIXED: 'Cố định',
+}
+export const parseRates = (json: string | null): DayRates | null => {
+  if (!json) return null
+  try {
+    return JSON.parse(json) as DayRates
+  } catch {
+    return null
+  }
+}
 const salaryTemplates: string[] = []
 // Manager may create accounts, but never with role ADMIN (enforced server-side too) — so
 // "Quản trị viên" is intentionally not offered here at all.
@@ -545,9 +597,9 @@ const TempPasswordModal = ({ username, tempPassword, onClose }: { username: stri
   )
 }
 
-const EmployeeModal = ({ employee, onClose, onSave }: Props) => {
+const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props) => {
   const isEdit = !!employee
-  const [tab, setTab] = useState<TabKey>('info')
+  const [tab, setTab] = useState<TabKey>(initialTab)
 
   // ── Thông tin khởi tạo
   const [name, setName] = useState(employee?.name ?? '')
@@ -568,9 +620,10 @@ const EmployeeModal = ({ employee, onClose, onSave }: Props) => {
   const [gender, setGender] = useState(employee?.gender ?? '')
   const [address, setAddress] = useState(employee?.address ?? '')
 
-  // ── Thiết lập lương (UI-only)
+  // ── Thiết lập lương (round-tripped to /api/employees/{id}/salary-setting)
   const [salaryType, setSalaryType] = useState('')
   const [salaryTemplate, setSalaryTemplate] = useState('')
+  const [salaryConfig, setSalaryConfig] = useState<SalaryConfig>(defaultSalaryConfig)
 
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -593,6 +646,23 @@ const EmployeeModal = ({ employee, onClose, onSave }: Props) => {
   useEffect(() => {
     listUsers(0, 100).then(res => setAccounts(res.data.data)).catch(() => {})
   }, [])
+
+  // Load the existing salary setting when editing (id === null ⇒ never configured).
+  useEffect(() => {
+    if (!employee?.id) return
+    getSalarySetting(employee.id).then(res => {
+      const s = res.data.data
+      if (!s.id) return
+      setSalaryType(SALARY_TYPE_TO_LABEL[s.mainSalaryType] ?? '')
+      setSalaryTemplate(s.salaryTemplate ?? '')
+      setSalaryConfig(cfg => ({
+        base: String(s.mainBaseWage ?? 0),
+        def: parseRates(s.mainAdvancedRatesJson) ?? cfg.def,
+        overtimeEnabled: s.overtimeEnabled,
+        ot: (parseRates(s.overtimeRatesJson) as OtRates | null) ?? cfg.ot,
+      }))
+    }).catch(() => {})
+  }, [employee?.id])
 
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -636,7 +706,19 @@ const EmployeeModal = ({ employee, onClose, onSave }: Props) => {
     }
     setSaving(true)
     try {
-      await onSave(payload)
+      const saved = await onSave(payload)
+      const employeeId = saved?.id ?? employee?.id
+      if (employeeId && salaryType && LABEL_TO_SALARY_TYPE[salaryType]) {
+        await putSalarySetting(employeeId, {
+          mainSalaryType: LABEL_TO_SALARY_TYPE[salaryType],
+          mainBaseWage: parseInt(salaryConfig.base.replace(/\D/g, '') || '0', 10),
+          mainAdvancedRatesJson: JSON.stringify(salaryConfig.def),
+          // BR-PAY-05: overtime only applies to shift-based main salary
+          overtimeEnabled: salaryType === 'Theo ca làm việc' && salaryConfig.overtimeEnabled,
+          overtimeRatesJson: JSON.stringify(salaryConfig.ot),
+          salaryTemplate: salaryTemplate || null,
+        })
+      }
       onClose()
     } catch (err) {
       setError(extractMessage(err))
@@ -780,9 +862,9 @@ const EmployeeModal = ({ employee, onClose, onSave }: Props) => {
                   </div>
                   <InfoIcon />
                 </div>
-                {salaryType === 'Theo ca làm việc' && <ShiftSalaryBody />}
-                {salaryType === 'Theo giờ làm việc' && <ShiftSalaryBody suffix="/ Giờ" firstCol="Mức lương" wageCol="Lương/giờ" showOvertime={false} />}
-                {salaryType === 'Cố định' && <ShiftSalaryBody suffix="/ kỳ lương" showOvertime={false} noAdvanced />}
+                {salaryType === 'Theo ca làm việc' && <ShiftSalaryBody value={salaryConfig} onChange={setSalaryConfig} />}
+                {salaryType === 'Theo giờ làm việc' && <ShiftSalaryBody value={salaryConfig} onChange={setSalaryConfig} suffix="/ Giờ" firstCol="Mức lương" wageCol="Lương/giờ" showOvertime={false} />}
+                {salaryType === 'Cố định' && <ShiftSalaryBody value={salaryConfig} onChange={setSalaryConfig} suffix="/ kỳ lương" showOvertime={false} noAdvanced />}
               </SectionCard>
 
               {/* Mẫu lương */}
