@@ -18,7 +18,8 @@ public record InvoiceDetailItem(
         List<LineItem> lines,
         List<PaymentRecord> payments,
         InvoiceStatus status,
-        String mergedIntoInvoiceId
+        String mergedIntoInvoiceId,
+        String splitFromInvoiceId
 ) {
     public record LineItem(
             String name,

@@ -45,6 +45,9 @@ public class Invoice {
     @Column(name = "merged_into_invoice_id", length = 36)
     private String mergedIntoInvoiceId;
 
+    @Column(name = "split_from_invoice_id", length = 36)
+    private String splitFromInvoiceId;
+
     @CreatedDate
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

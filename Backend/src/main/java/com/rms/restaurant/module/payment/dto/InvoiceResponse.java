@@ -14,5 +14,6 @@ public record InvoiceResponse(
         boolean paid,
         LocalDateTime createdAt,
         InvoiceStatus status,
-        String mergedIntoInvoiceId
+        String mergedIntoInvoiceId,
+        String splitFromInvoiceId
 ) {}

@@ -15,5 +15,6 @@ public record InvoiceSummaryResponse(
         String promotionId,
         LocalDateTime createdAt,
         InvoiceStatus status,
-        String mergedIntoInvoiceId
+        String mergedIntoInvoiceId,
+        String splitFromInvoiceId
 ) {}

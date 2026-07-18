@@ -19,5 +19,6 @@ public record InvoiceListItem(
         String cashierName,
         String itemsText,
         InvoiceStatus status,
-        String mergedIntoInvoiceId
+        String mergedIntoInvoiceId,
+        String splitFromInvoiceId
 ) {}

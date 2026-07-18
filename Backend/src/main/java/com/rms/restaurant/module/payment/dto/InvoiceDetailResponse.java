@@ -18,5 +18,6 @@ public record InvoiceDetailResponse(
         String promotionCode,
         List<InvoiceItemResponse> items,
         InvoiceStatus status,
-        String mergedIntoInvoiceId
+        String mergedIntoInvoiceId,
+        String splitFromInvoiceId
 ) {}

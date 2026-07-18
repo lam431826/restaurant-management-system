@@ -17,7 +17,8 @@ public class InvoiceMapper {
                 invoice.isPaid(),
                 invoice.getCreatedAt(),
                 invoice.getStatus(),
-                invoice.getMergedIntoInvoiceId()
+                invoice.getMergedIntoInvoiceId(),
+                invoice.getSplitFromInvoiceId()
         );
     }
 
@@ -32,7 +33,8 @@ public class InvoiceMapper {
                 invoice.getPromotionId(),
                 invoice.getCreatedAt(),
                 invoice.getStatus(),
-                invoice.getMergedIntoInvoiceId()
+                invoice.getMergedIntoInvoiceId(),
+                invoice.getSplitFromInvoiceId()
         );
     }
 }

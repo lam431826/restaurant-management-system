@@ -127,6 +127,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .paid(false)
                 .status(InvoiceStatus.ACTIVE)
                 .mergedIntoInvoiceId(null)
+                .splitFromInvoiceId(null)
                 .build();
 
         Invoice savedInvoice = invoiceRepository.save(invoice);
@@ -208,7 +209,8 @@ public class InvoiceServiceImpl implements InvoiceService {
                 promotionCode,
                 items,
                 invoice.getStatus(),
-                invoice.getMergedIntoInvoiceId()
+                invoice.getMergedIntoInvoiceId(),
+                invoice.getSplitFromInvoiceId()
         );
     }
 
@@ -266,7 +268,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                     inv.getId(), inv.getCreatedAt(), tableName,
                     inv.getSubtotal(), inv.getDiscountAmount(), inv.getTotalAmount(),
                     inv.isPaid(), method, status, note, cashierName, itemsText,
-                    inv.getStatus(), inv.getMergedIntoInvoiceId()));
+                    inv.getStatus(), inv.getMergedIntoInvoiceId(), inv.getSplitFromInvoiceId()));
         }
         return result;
     }
@@ -302,7 +304,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         return new InvoiceDetailItem(
                 inv.getId(), inv.getOrderId(), inv.getCreatedAt(), tableName,
                 inv.getSubtotal(), inv.getDiscountAmount(), inv.getTotalAmount(), inv.isPaid(),
-                lines, payments, inv.getStatus(), inv.getMergedIntoInvoiceId());
+                lines, payments, inv.getStatus(), inv.getMergedIntoInvoiceId(), inv.getSplitFromInvoiceId());
     }
 
     private List<ResolvedAllocationLine> resolveAllocationLines(Invoice invoice) {
@@ -367,7 +369,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         return switch (invoice.getStatus()) {
             case ACTIVE -> invoiceItemAllocationRepository
                     .findAllByInvoiceIdAndActiveTrueOrderByCreatedAtAscIdAsc(invoice.getId());
-            case MERGED -> invoiceItemAllocationRepository
+            case MERGED, SPLIT -> invoiceItemAllocationRepository
                     .findAllByInvoiceIdOrderByCreatedAtAscIdAsc(invoice.getId());
         };
     }
@@ -384,7 +386,7 @@ public class InvoiceServiceImpl implements InvoiceService {
             case ACTIVE -> allAllocations.stream()
                     .filter(InvoiceItemAllocation::isActive)
                     .collect(Collectors.toList());
-            case MERGED -> allAllocations;
+            case MERGED, SPLIT -> allAllocations;
         };
     }
 
