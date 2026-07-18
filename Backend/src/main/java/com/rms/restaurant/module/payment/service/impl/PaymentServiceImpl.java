@@ -38,8 +38,9 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     public PaymentResponse process(ProcessPaymentRequest request) {
-        Invoice invoice = invoiceRepository.findByIdForUpdate(request.invoiceId())
-                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
+        LockedPaymentContext lockContext = lockOrderAndInvoice(request.invoiceId());
+        Order order = lockContext.order();
+        Invoice invoice = lockContext.invoice();
 
         if (invoice.getStatus() != InvoiceStatus.ACTIVE) {
             throw new ApplicationException(ApplicationError.INVOICE_NOT_PAYABLE);
@@ -59,8 +60,6 @@ public class PaymentServiceImpl implements PaymentService {
             );
         }
 
-        Order order = orderRepository.findById(invoice.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         validateOrderCanBePaid(order);
         validateInvoiceTotalBeforePayment(invoice);
 
@@ -76,6 +75,39 @@ public class PaymentServiceImpl implements PaymentService {
         invoiceRepository.save(invoice);
 
         return paymentMapper.toResponse(savedPayment);
+    }
+
+    private LockedPaymentContext lockOrderAndInvoice(String invoiceId) {
+        String projectedOrderId = invoiceRepository.findOrderIdById(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
+        if (projectedOrderId.isBlank()) {
+            throw new ApplicationException(ApplicationError.INVOICE_ALLOCATION_DATA_INVALID);
+        }
+
+        Order order = orderRepository.findByIdForUpdate(projectedOrderId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        Invoice invoice = invoiceRepository.findByIdForUpdate(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
+        validateLockedOwnership(invoiceId, projectedOrderId, order, invoice);
+        return new LockedPaymentContext(order, invoice);
+    }
+
+    private void validateLockedOwnership(
+            String requestedInvoiceId,
+            String projectedOrderId,
+            Order order,
+            Invoice invoice
+    ) {
+        if (order.getId() == null
+                || !projectedOrderId.equals(order.getId())
+                || invoice.getId() == null
+                || !requestedInvoiceId.equals(invoice.getId())
+                || invoice.getOrderId() == null
+                || invoice.getOrderId().isBlank()
+                || !projectedOrderId.equals(invoice.getOrderId())
+                || !order.getId().equals(invoice.getOrderId())) {
+            throw new ApplicationException(ApplicationError.INVOICE_ALLOCATION_DATA_INVALID);
+        }
     }
 
     @Override
@@ -133,4 +165,6 @@ public class PaymentServiceImpl implements PaymentService {
             throw new ApplicationException(ApplicationError.INVALID_INVOICE_TOTAL);
         }
     }
+
+    private record LockedPaymentContext(Order order, Invoice invoice) {}
 }

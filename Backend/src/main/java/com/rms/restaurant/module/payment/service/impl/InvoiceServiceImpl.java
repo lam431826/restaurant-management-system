@@ -151,13 +151,12 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     @Override
     public InvoiceResponse applyDiscount(String invoiceId, ApplyDiscountRequest request) {
-        Invoice invoice = invoiceRepository.findByIdForUpdate(invoiceId)
-                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
+        LockedDiscountContext lockContext = lockOrderAndInvoiceForDiscount(invoiceId);
+        Order order = lockContext.order();
+        Invoice invoice = lockContext.invoice();
 
         validateInvoiceCanApplyDiscount(invoice);
 
-        Order order = orderRepository.findById(invoice.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         validateOrderCanApplyDiscount(order);
         validateInvoiceHasNoOrphanDiscount(invoice);
 
@@ -178,6 +177,39 @@ public class InvoiceServiceImpl implements InvoiceService {
         incrementUsedCount(promotion);
 
         return invoiceMapper.toResponse(savedInvoice);
+    }
+
+    private LockedDiscountContext lockOrderAndInvoiceForDiscount(String invoiceId) {
+        String projectedOrderId = invoiceRepository.findOrderIdById(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
+        if (projectedOrderId.isBlank()) {
+            throw invalidAllocationData();
+        }
+
+        Order order = orderRepository.findByIdForUpdate(projectedOrderId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        Invoice invoice = invoiceRepository.findByIdForUpdate(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
+        validateLockedInvoiceOwnership(invoiceId, projectedOrderId, order, invoice);
+        return new LockedDiscountContext(order, invoice);
+    }
+
+    private void validateLockedInvoiceOwnership(
+            String requestedInvoiceId,
+            String projectedOrderId,
+            Order order,
+            Invoice invoice
+    ) {
+        if (order.getId() == null
+                || !projectedOrderId.equals(order.getId())
+                || invoice.getId() == null
+                || !requestedInvoiceId.equals(invoice.getId())
+                || invoice.getOrderId() == null
+                || invoice.getOrderId().isBlank()
+                || !projectedOrderId.equals(invoice.getOrderId())
+                || !order.getId().equals(invoice.getOrderId())) {
+            throw invalidAllocationData();
+        }
     }
 
     @Override
@@ -656,4 +688,6 @@ public class InvoiceServiceImpl implements InvoiceService {
     private String normalizeCode(String promotionCode) {
         return promotionCode.trim().toUpperCase();
     }
+
+    private record LockedDiscountContext(Order order, Invoice invoice) {}
 }
