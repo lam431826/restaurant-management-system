@@ -1,55 +1,47 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import {
+  cancelPayslip, cancelSheet, createSheet, fmtDate, fmtDateTime, getPayslip,
+  listSheetPayments, listSheetPayslips, listSheets, money, paySheet, reloadSheet,
+  toIsoDate,
+  ATTENDANCE_STATUS_LABEL, METHOD_LABEL, SALARY_TYPE_LABEL, SCOPE_LABEL, SHEET_STATUS_LABEL, TERM_LABEL,
+} from '../../../api/payroll'
+import type {
+  CreateSheetPayload, PaymentDto, PayrollSheetDto, PayrollSheetStatus, PayrollTerm,
+  PayslipDetailDto, PayslipRowDto, ReloadMode, SalaryPaymentMethod,
+} from '../../../api/payroll'
+import { listEmployees, toEmployee } from '../../../api/employees'
+import type { Employee } from '../../../data/mockData'
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * Bảng lương (Payroll) — faithful re-creation of the KiotViet screen.
+ * Bảng lương (Payroll) — KiotViet-style screen, wired to /api/payroll.
  * Left filter rail + payroll table with an expandable detail (Thông tin /
  * Phiếu lương / Lịch sử thanh toán), a payment modal and an individual payslip.
  * ──────────────────────────────────────────────────────────────────────────── */
 
-interface Payslip { code: string; empCode: string; employee: string; total: number; paid: number; remaining: number }
-interface Payroll {
-  code: string; name: string; term: string; period: string
-  total: number; paid: number; remaining: number; status: PayrollStatus
-  createdAt: string; createdBy: string; preparedBy: string
-  employeeCount: number; scope: string; approvedBy?: string; note?: string
-  updatedAt: string; payslips: Payslip[]
-}
-type PayrollStatus = 'Đang tạo' | 'Tạm tính' | 'Đã chốt lương' | 'Đã hủy'
+const STATUS_FILTERS: PayrollSheetStatus[] = ['GENERATING', 'DRAFT', 'FINALIZED', 'CANCELLED']
+const TERM_PLACEHOLDER = 'Chọn kỳ hạn trả lương'
+const TERM_OPTIONS = [TERM_PLACEHOLDER, TERM_LABEL.MONTHLY, TERM_LABEL.CUSTOM]
 
-const money = (n: number) => n.toLocaleString('vi-VN')
+const errMsg = (err: unknown, fallback: string) =>
+  (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
 
-const PAYSLIPS: Payslip[] = [
-  { code: 'PL000001', empCode: 'NV000001', employee: 'Nguyen Van A', total: 0, paid: 0, remaining: 0 },
-  { code: 'PL000002', empCode: 'NV000002', employee: 'Nguyen Van B', total: 0, paid: 0, remaining: 0 },
-]
-const PAYROLLS: Payroll[] = [
-  {
-    code: 'BL000001', name: 'Bảng lương tháng 8/2026', term: 'Hàng tháng', period: '01/08/2026 - 31/08/2026',
-    total: 0, paid: 0, remaining: 0, status: 'Tạm tính',
-    createdAt: '10/07/2026 14:17:39', createdBy: 'Nguyen Van A', preparedBy: 'Nguyen Van A',
-    employeeCount: 2, scope: 'Tất cả nhân viên', approvedBy: '', note: '', updatedAt: '10/07/2026 14:39:32',
-    payslips: PAYSLIPS,
-  },
-]
+const periodLabel = (p: PayrollSheetDto) => `${fmtDate(p.periodStart)} - ${fmtDate(p.periodEnd)}`
 
-const STATUS_FILTERS: PayrollStatus[] = ['Đang tạo', 'Tạm tính', 'Đã chốt lương', 'Đã hủy']
-const TERM_OPTIONS = ['Chọn kỳ hạn trả lương', 'Hàng tháng', 'Tùy chọn']
-
-interface Col { key: string; label: string; align?: 'right'; sum?: boolean; render: (p: Payroll) => React.ReactNode }
+interface Col { key: string; label: string; align?: 'right'; sum?: boolean; render: (p: PayrollSheetDto) => React.ReactNode }
 const ALL_COLUMNS: Col[] = [
   { key: 'code', label: 'Mã', render: p => p.code },
   { key: 'name', label: 'Tên', render: p => p.name },
-  { key: 'term', label: 'Kỳ hạn trả', render: p => p.term },
-  { key: 'period', label: 'Kỳ làm việc', render: p => <span className="whitespace-nowrap">{p.period}</span> },
+  { key: 'term', label: 'Kỳ hạn trả', render: p => TERM_LABEL[p.term] },
+  { key: 'period', label: 'Kỳ làm việc', render: p => <span className="whitespace-nowrap">{periodLabel(p)}</span> },
   { key: 'employeeCount', label: 'Số nhân viên', align: 'right', render: p => p.employeeCount },
   { key: 'total', label: 'Tổng lương', align: 'right', sum: true, render: p => money(p.total) },
   { key: 'paid', label: 'Đã trả nhân viên', align: 'right', sum: true, render: p => money(p.paid) },
   { key: 'remaining', label: 'Còn cần trả', align: 'right', sum: true, render: p => money(p.remaining) },
-  { key: 'status', label: 'Trạng thái', render: p => p.status },
-  { key: 'createdBy', label: 'Người tạo', render: p => p.createdBy },
-  { key: 'preparedBy', label: 'Người lập bảng', render: p => p.preparedBy },
-  { key: 'createdAt', label: 'Ngày tạo', render: p => p.createdAt },
+  { key: 'status', label: 'Trạng thái', render: p => SHEET_STATUS_LABEL[p.status] },
+  { key: 'createdBy', label: 'Người tạo', render: p => p.createdBy || '' },
+  { key: 'preparedBy', label: 'Người lập bảng', render: p => p.createdBy || '' },
+  { key: 'createdAt', label: 'Ngày tạo', render: p => fmtDateTime(p.createdAt) },
   { key: 'note', label: 'Ghi chú', render: p => p.note || '' },
 ]
 const DEFAULT_VISIBLE: Record<string, boolean> = {
@@ -78,9 +70,11 @@ const GearIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="no
 const FieldRO = ({ label, value, placeholder }: { label: string; value?: string; placeholder?: boolean }) => (
   <div className="flex flex-col gap-1.5">
     <span className="text-sm text-ink-subtle">{label}</span>
-    <span className={`text-md border-b border-line pb-2 min-h-[1.6rem] ${placeholder ? 'text-ink-muted italic' : 'text-ink'}`}>{value || ' '}</span>
+    <span className={`text-md border-b border-line pb-2 min-h-[1.6rem] ${placeholder ? 'text-ink-muted italic' : 'text-ink'}`}>{value || ' '}</span>
   </div>
 )
+
+interface SheetDetailData { payslips: PayslipRowDto[]; payments: PaymentDto[] }
 
 const Payroll = () => {
   const navigate = useNavigate()
@@ -91,28 +85,61 @@ const Payroll = () => {
   const [colsOpen, setColsOpen] = useState(false)
   const colsRef = useRef<HTMLDivElement>(null)
   const visibleCols = ALL_COLUMNS.filter(c => visible[c.key])
-  const [statuses, setStatuses] = useState<Record<PayrollStatus, boolean>>({ 'Đang tạo': true, 'Tạm tính': true, 'Đã chốt lương': true, 'Đã hủy': false })
+  const [statuses, setStatuses] = useState<Record<PayrollSheetStatus, boolean>>({ GENERATING: true, DRAFT: true, FINALIZED: true, CANCELLED: false })
   const [search, setSearch] = useState('')
-  const [expanded, setExpanded] = useState<string | null>('BL000001')
+  const [size, setSize] = useState(15)
+  const [rows, setRows] = useState<PayrollSheetDto[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState<string | null>(null)
   const [detailTab, setDetailTab] = useState<'info' | 'payslips' | 'history'>('info')
-  const [payModal, setPayModal] = useState<Payroll | null>(null)
-  const [payslipModal, setPayslipModal] = useState<Payslip | null>(null)
+  const [details, setDetails] = useState<Record<string, SheetDetailData>>({})
+  const [payModal, setPayModal] = useState<PayrollSheetDto | null>(null)
+  const [payslipModal, setPayslipModal] = useState<{ id: string } | null>(null)
   const [addOpen, setAddOpen] = useState(false)
 
-  useEffect(() => {
-    const h = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (termRef.current && !termRef.current.contains(t)) setTermOpen(false)
-      if (colsRef.current && !colsRef.current.contains(t)) setColsOpen(false)
+  const fetchSheets = useCallback(async () => {
+    setLoading(true)
+    try {
+      const selected = STATUS_FILTERS.filter(s => statuses[s])
+      const res = await listSheets({
+        search: search.trim() || undefined,
+        term: term === TERM_LABEL.MONTHLY ? 'MONTHLY' : term === TERM_LABEL.CUSTOM ? 'CUSTOM' : undefined,
+        statuses: selected.length ? selected : undefined,
+        size,
+      })
+      setRows(res.data.data)
+    } catch {
+      setRows([])
+    } finally {
+      setLoading(false)
     }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
+  }, [search, term, statuses, size])
+
+  useEffect(() => {
+    const t = setTimeout(fetchSheets, search ? 350 : 0)
+    return () => clearTimeout(t)
+  }, [fetchSheets, search])
+
+  const fetchDetail = useCallback(async (sheetId: string) => {
+    try {
+      const [ps, pm] = await Promise.all([listSheetPayslips(sheetId), listSheetPayments(sheetId)])
+      setDetails(d => ({ ...d, [sheetId]: { payslips: ps.data.data, payments: pm.data.data } }))
+    } catch {
+      /* keep previous detail on failure */
+    }
   }, [])
 
-  const rows = PAYROLLS.filter(p => statuses[p.status]
-    && (!search.trim() || p.code.toLowerCase().includes(search.trim().toLowerCase()) || p.name.toLowerCase().includes(search.trim().toLowerCase())))
+  useEffect(() => {
+    if (expanded && !details[expanded]) void fetchDetail(expanded)
+  }, [expanded, details, fetchDetail])
 
-  const toggleStatus = (s: PayrollStatus) => setStatuses(m => ({ ...m, [s]: !m[s] }))
+  /** Refresh the list plus the detail of one sheet (after mutations). */
+  const refresh = useCallback(async (sheetId?: string) => {
+    await fetchSheets()
+    if (sheetId) await fetchDetail(sheetId)
+  }, [fetchSheets, fetchDetail])
+
+  const toggleStatus = (s: PayrollSheetStatus) => setStatuses(m => ({ ...m, [s]: !m[s] }))
 
   return (
     <div className="flex flex-col h-[calc(100vh-var(--kv-header-height))] min-h-0 pt-4 pb-4 px-6">
@@ -126,7 +153,7 @@ const Payroll = () => {
               <div className="text-md font-bold text-ink mb-2">Kỳ hạn trả lương</div>
               <div ref={termRef} className="relative">
                 <button onClick={() => setTermOpen(o => !o)} className={`flex items-center justify-between gap-2 w-full h-10 px-3 bg-card border rounded-md cursor-pointer transition-colors ${termOpen ? 'border-primary' : 'border-line-default hover:border-line-strong'}`}>
-                  <span className={`text-md truncate ${term === TERM_OPTIONS[0] ? 'text-ink' : 'text-ink'}`}>{term}</span>
+                  <span className="text-md truncate text-ink">{term}</span>
                   <ChevronDown />
                 </button>
                 {termOpen && (
@@ -147,7 +174,7 @@ const Payroll = () => {
                 {STATUS_FILTERS.map(s => (
                   <label key={s} className="flex items-center gap-2.5 cursor-pointer text-md text-ink">
                     <input type="checkbox" checked={statuses[s]} onChange={() => toggleStatus(s)} className="accent-primary w-4 h-4" />
-                    {s}
+                    {SHEET_STATUS_LABEL[s]}
                   </label>
                 ))}
               </div>
@@ -161,7 +188,7 @@ const Payroll = () => {
           <div className="flex items-center gap-3 mb-3">
             <div className="relative flex-1 max-w-[34rem]">
               <span className="absolute left-3 top-1/2 -translate-y-1/2"><SearchIcon /></span>
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Theo mã, tên bảng lương"
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Theo mã, tên bảng lương, nhân viên"
                 className="w-full h-10 pl-9 pr-10 bg-card border border-line-default rounded-md text-md text-ink placeholder:text-ink-muted focus:border-primary outline-none" />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"><SlidersIcon /></span>
             </div>
@@ -206,10 +233,10 @@ const Payroll = () => {
               </thead>
               <tbody>
                 {rows.map(p => {
-                  const open = expanded === p.code
+                  const open = expanded === p.id
                   return (
-                    <Fragment key={p.code}>
-                      <tr onClick={() => setExpanded(open ? null : p.code)}
+                    <Fragment key={p.id}>
+                      <tr onClick={() => { setExpanded(open ? null : p.id); if (!open) setDetailTab('info') }}
                         className={`cursor-pointer border-b border-line ${open ? 'bg-fill' : 'hover:bg-[var(--kv-state-hover-bg)]'}`}>
                         <td className="px-4 py-4" onClick={e => e.stopPropagation()}><input type="checkbox" className="accent-primary w-4 h-4" /></td>
                         {visibleCols.map(c => (
@@ -219,9 +246,11 @@ const Payroll = () => {
                       {open && (
                         <tr className="border-b-2 border-primary">
                           <td colSpan={visibleCols.length + 1} className="p-0">
-                            <PayrollDetail payroll={p} tab={detailTab} setTab={setDetailTab}
-                              onPay={() => setPayModal(p)} onOpenPayslip={ps => setPayslipModal(ps)}
-                              onView={() => navigate('/manager/payroll/update')} />
+                            <PayrollDetail payroll={p} detail={details[p.id]} tab={detailTab} setTab={setDetailTab}
+                              onPay={() => setPayModal(p)} onOpenPayslip={id => setPayslipModal({ id })}
+                              onView={() => navigate(`/manager/payroll/update?id=${p.id}`)}
+                              onCancelled={() => { setExpanded(null); void refresh() }}
+                              onReloaded={() => void refresh(p.id)} />
                           </td>
                         </tr>
                       )}
@@ -229,7 +258,9 @@ const Payroll = () => {
                   )
                 })}
                 {rows.length === 0 && (
-                  <tr><td colSpan={visibleCols.length + 1} className="px-4 py-16 text-center text-md text-ink-subtle">Không có bảng lương phù hợp</td></tr>
+                  <tr><td colSpan={visibleCols.length + 1} className="px-4 py-16 text-center text-md text-ink-subtle">
+                    {loading ? 'Đang tải…' : 'Không có bảng lương phù hợp'}
+                  </td></tr>
                 )}
               </tbody>
             </table>
@@ -239,8 +270,8 @@ const Payroll = () => {
           <div className="flex items-center gap-3 mt-3 text-md text-ink-subtle">
             Hiển thị
             <div className="relative">
-              <select className="h-9 pl-3 pr-8 bg-card border border-line-default rounded-md text-md text-ink appearance-none cursor-pointer outline-none focus:border-primary">
-                <option>15 bản ghi</option><option>30 bản ghi</option><option>50 bản ghi</option>
+              <select value={size} onChange={e => setSize(parseInt(e.target.value, 10))} className="h-9 pl-3 pr-8 bg-card border border-line-default rounded-md text-md text-ink appearance-none cursor-pointer outline-none focus:border-primary">
+                <option value={15}>15 bản ghi</option><option value={30}>30 bản ghi</option><option value={50}>50 bản ghi</option>
               </select>
               <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"><ChevronDown /></span>
             </div>
@@ -253,19 +284,66 @@ const Payroll = () => {
         <GearIcon /> Khởi tạo
       </button>
 
-      {addOpen && <AddPayrollModal onClose={() => setAddOpen(false)} />}
-      {payModal && <PaymentModal payroll={payModal} onClose={() => setPayModal(null)} />}
-      {payslipModal && <PayslipModal payslip={payslipModal} onClose={() => setPayslipModal(null)} />}
+      {addOpen && <AddPayrollModal onClose={() => setAddOpen(false)} onCreated={sheet => { setAddOpen(false); setExpanded(sheet.id); void refresh(sheet.id) }} />}
+      {payModal && <PaymentModal payroll={payModal} payslips={(details[payModal.id]?.payslips ?? []).filter(s => s.status === 'ACTIVE' && s.remaining > 0)}
+        onClose={() => setPayModal(null)} onDone={() => { const id = payModal.id; setPayModal(null); void refresh(id) }} />}
+      {payslipModal && <PayslipModal payslipId={payslipModal.id} onClose={() => setPayslipModal(null)}
+        onChanged={sheetId => { setPayslipModal(null); void refresh(sheetId) }} />}
     </div>
   )
 }
 
 /* ── expandable detail ─────────────────────────────────────────────────────── */
-const PayrollDetail = ({ payroll, tab, setTab, onPay, onOpenPayslip, onView }: {
-  payroll: Payroll; tab: 'info' | 'payslips' | 'history'; setTab: (t: 'info' | 'payslips' | 'history') => void
-  onPay: () => void; onOpenPayslip: (p: Payslip) => void; onView: () => void
+const PayrollDetail = ({ payroll, detail, tab, setTab, onPay, onOpenPayslip, onView, onCancelled, onReloaded }: {
+  payroll: PayrollSheetDto; detail?: SheetDetailData
+  tab: 'info' | 'payslips' | 'history'; setTab: (t: 'info' | 'payslips' | 'history') => void
+  onPay: () => void; onOpenPayslip: (payslipId: string) => void; onView: () => void
+  onCancelled: () => void; onReloaded: () => void
 }) => {
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [reloadOpen, setReloadOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const reloadRef = useRef<HTMLDivElement>(null)
+  const isDraft = payroll.status === 'DRAFT'
+  const payslips = detail?.payslips ?? []
+  const payments = detail?.payments ?? []
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (reloadRef.current && !reloadRef.current.contains(e.target as Node)) setReloadOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
+  const doCancel = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await cancelSheet(payroll.id)
+      setConfirmCancel(false)
+      onCancelled()
+    } catch (err) {
+      setError(errMsg(err, 'Không thể hủy bảng lương'))
+      setConfirmCancel(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const doReload = async (mode: ReloadMode) => {
+    setReloadOpen(false)
+    setBusy(true)
+    setError('')
+    try {
+      await reloadSheet(payroll.id, mode)
+      onReloaded()
+    } catch (err) {
+      setError(errMsg(err, 'Không thể tải lại dữ liệu'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
   <div className="bg-card px-6 py-5">
     {/* tabs */}
@@ -277,23 +355,25 @@ const PayrollDetail = ({ payroll, tab, setTab, onPay, onOpenPayslip, onView }: {
       ))}
     </div>
 
+    {error && <div className="mt-3 text-sm text-danger">{error}</div>}
+
     {tab === 'info' && (
       <>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-5 py-5">
           <FieldRO label="Mã:" value={payroll.code} />
           <FieldRO label="Tên:" value={payroll.name} />
-          <FieldRO label="Kỳ hạn trả:" value={payroll.term} />
-          <FieldRO label="Kỳ làm việc:" value={payroll.period} />
-          <FieldRO label="Ngày tạo:" value={payroll.createdAt} />
-          <FieldRO label="Người tạo:" value={payroll.createdBy} />
-          <FieldRO label="Người lập bảng:" value={payroll.preparedBy} />
-          <FieldRO label="Trạng thái:" value={payroll.status} />
+          <FieldRO label="Kỳ hạn trả:" value={TERM_LABEL[payroll.term]} />
+          <FieldRO label="Kỳ làm việc:" value={periodLabel(payroll)} />
+          <FieldRO label="Ngày tạo:" value={fmtDateTime(payroll.createdAt)} />
+          <FieldRO label="Người tạo:" value={payroll.createdBy || ''} />
+          <FieldRO label="Người lập bảng:" value={payroll.createdBy || ''} />
+          <FieldRO label="Trạng thái:" value={SHEET_STATUS_LABEL[payroll.status]} />
           <FieldRO label="Tổng số nhân viên:" value={String(payroll.employeeCount)} />
           <FieldRO label="Tổng lương:" value={money(payroll.total)} />
           <FieldRO label="Đã trả nhân viên:" value={money(payroll.paid)} />
           <FieldRO label="Còn cần trả:" value={money(payroll.remaining)} />
-          <FieldRO label="Phạm vi áp dụng:" value={payroll.scope} />
-          <FieldRO label="Người chốt lương:" value={payroll.approvedBy} />
+          <FieldRO label="Phạm vi áp dụng:" value={SCOPE_LABEL[payroll.scope]} />
+          <FieldRO label="Người chốt lương:" value={payroll.finalizedBy || ''} />
           <div className="lg:col-span-2 flex flex-col gap-1.5">
             <span className="text-sm text-ink-subtle">&nbsp;</span>
             <div className="min-h-[6rem] p-3 border border-line rounded-md text-md text-ink-muted italic">{payroll.note || 'Ghi chú...'}</div>
@@ -301,10 +381,22 @@ const PayrollDetail = ({ payroll, tab, setTab, onPay, onOpenPayslip, onView }: {
         </div>
 
         <div className="flex items-center justify-between gap-4 border-t border-line pt-4">
-          <button onClick={() => setConfirmCancel(true)} className="flex items-center gap-1.5 text-md text-ink-subtle hover:text-danger cursor-pointer"><TrashIcon /> Hủy bỏ</button>
+          {isDraft
+            ? <button onClick={() => setConfirmCancel(true)} disabled={busy} className="flex items-center gap-1.5 text-md text-ink-subtle hover:text-danger cursor-pointer"><TrashIcon /> Hủy bỏ</button>
+            : <span />}
           <div className="flex items-center gap-2 text-sm text-ink-subtle">
-            Dữ liệu được cập nhật vào: <span className="font-semibold text-ink">{payroll.updatedAt}</span> <InfoIcon />
-            <button className="kv-btn kv-btn-outline-neutral h-9 bg-card ml-2"><RefreshIcon /> Tải lại dữ liệu</button>
+            Dữ liệu được cập nhật vào: <span className="font-semibold text-ink">{fmtDateTime(payroll.dataRefreshedAt) || '—'}</span> <InfoIcon />
+            {isDraft && (
+              <div ref={reloadRef} className="relative ml-2">
+                <button onClick={() => setReloadOpen(o => !o)} disabled={busy} className="kv-btn kv-btn-outline-neutral h-9 bg-card"><RefreshIcon /> {busy ? 'Đang xử lý…' : 'Tải lại dữ liệu'}</button>
+                {reloadOpen && (
+                  <div className="absolute right-0 top-[calc(100%+0.3rem)] w-[24rem] bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] py-1">
+                    <button onClick={() => void doReload('FULL')} className="w-full text-left px-3 py-2.5 text-md text-ink cursor-pointer hover:bg-[var(--kv-state-hover-bg)]">Tải lại toàn bộ</button>
+                    <button onClick={() => void doReload('BY_WORKDAY')} className="w-full text-left px-3 py-2.5 text-md text-ink cursor-pointer hover:bg-[var(--kv-state-hover-bg)]">Chỉ cập nhật theo ngày làm việc</button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onView} className="kv-btn kv-btn-primary h-9"><CheckIcon /> Xem bảng lương</button>
@@ -325,38 +417,79 @@ const PayrollDetail = ({ payroll, tab, setTab, onPay, onOpenPayslip, onView }: {
               <th className="px-4 py-3 text-right">Tổng lương</th>
               <th className="px-4 py-3 text-right">Đã trả NV</th>
               <th className="px-4 py-3 text-right">Còn cần trả</th>
+              <th className="px-4 py-3 text-left">Trạng thái</th>
             </tr>
             <tr className="border-b border-line text-md font-semibold text-ink">
               <td className="px-4 py-2.5" colSpan={3} />
-              <td className="px-4 py-2.5 text-right">{money(payroll.payslips.reduce((a, s) => a + s.total, 0))}</td>
-              <td className="px-4 py-2.5 text-right">{money(payroll.payslips.reduce((a, s) => a + s.paid, 0))}</td>
-              <td className="px-4 py-2.5 text-right">{money(payroll.payslips.reduce((a, s) => a + s.remaining, 0))}</td>
+              <td className="px-4 py-2.5 text-right">{money(payslips.filter(s => s.status === 'ACTIVE').reduce((a, s) => a + s.total, 0))}</td>
+              <td className="px-4 py-2.5 text-right">{money(payslips.filter(s => s.status === 'ACTIVE').reduce((a, s) => a + s.paidAmount, 0))}</td>
+              <td className="px-4 py-2.5 text-right">{money(payslips.filter(s => s.status === 'ACTIVE').reduce((a, s) => a + s.remaining, 0))}</td>
+              <td className="px-4 py-2.5" />
             </tr>
           </thead>
           <tbody>
-            {payroll.payslips.map(s => (
-              <tr key={s.code} className="border-b border-line hover:bg-[var(--kv-state-hover-bg)]">
+            {payslips.map(s => (
+              <tr key={s.id} className={`border-b border-line hover:bg-[var(--kv-state-hover-bg)] ${s.status === 'CANCELLED' ? 'opacity-50' : ''}`}>
                 <td className="px-4 py-3.5"><input type="checkbox" className="accent-primary w-4 h-4" /></td>
-                <td className="px-4 py-3.5"><button onClick={() => onOpenPayslip(s)} className="text-md text-primary hover:underline cursor-pointer">{s.code}</button></td>
-                <td className="px-4 py-3.5"><button onClick={() => onOpenPayslip(s)} className="text-md text-primary hover:underline cursor-pointer">{s.employee}</button></td>
+                <td className="px-4 py-3.5"><button onClick={() => onOpenPayslip(s.id)} className="text-md text-primary hover:underline cursor-pointer">{s.code}</button></td>
+                <td className="px-4 py-3.5"><button onClick={() => onOpenPayslip(s.id)} className="text-md text-primary hover:underline cursor-pointer">{s.employeeName}</button></td>
                 <td className="px-4 py-3.5 text-md text-ink text-right">{money(s.total)}</td>
-                <td className="px-4 py-3.5 text-md text-ink text-right">{money(s.paid)}</td>
+                <td className="px-4 py-3.5 text-md text-ink text-right">{money(s.paidAmount)}</td>
                 <td className="px-4 py-3.5 text-md text-ink text-right">{money(s.remaining)}</td>
+                <td className="px-4 py-3.5 text-md text-ink">{s.status === 'CANCELLED' ? 'Đã hủy' : ''}</td>
               </tr>
             ))}
+            {payslips.length === 0 && (
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-md text-ink-subtle">{detail ? 'Chưa có phiếu lương' : 'Đang tải…'}</td></tr>
+            )}
           </tbody>
         </table>
-        <div className="flex justify-end mt-4">
-          <button onClick={onPay} className="kv-btn kv-btn-primary h-10"><CalcIcon /> Thanh toán</button>
-        </div>
+        {payroll.status === 'FINALIZED' && payroll.remaining > 0 && (
+          <div className="flex justify-end mt-4">
+            <button onClick={onPay} className="kv-btn kv-btn-primary h-10"><CalcIcon /> Thanh toán</button>
+          </div>
+        )}
       </div>
     )}
 
     {tab === 'history' && (
-      <div className="py-12 text-center text-md text-ink-subtle">Chưa có lịch sử thanh toán</div>
+      payments.length === 0
+        ? <div className="py-12 text-center text-md text-ink-subtle">{detail ? 'Chưa có lịch sử thanh toán' : 'Đang tải…'}</div>
+        : (
+          <div className="py-5">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-fill text-sm font-semibold text-ink-subtle">
+                  <th className="px-4 py-3 text-left">Mã phiếu chi</th>
+                  <th className="px-4 py-3 text-left">Phiếu lương</th>
+                  <th className="px-4 py-3 text-left">Nhân viên</th>
+                  <th className="px-4 py-3 text-left">Thời gian</th>
+                  <th className="px-4 py-3 text-left">Phương thức</th>
+                  <th className="px-4 py-3 text-right">Tiền trả</th>
+                  <th className="px-4 py-3 text-left">Người tạo</th>
+                  <th className="px-4 py-3 text-left">Ghi chú</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map(p => (
+                  <tr key={p.id} className="border-b border-line hover:bg-[var(--kv-state-hover-bg)]">
+                    <td className="px-4 py-3.5 text-md text-primary">{p.voucherCode}</td>
+                    <td className="px-4 py-3.5 text-md text-ink">{p.payslipCode}</td>
+                    <td className="px-4 py-3.5 text-md text-ink">{p.employeeName}</td>
+                    <td className="px-4 py-3.5 text-md text-ink whitespace-nowrap">{fmtDateTime(p.paidAt)}</td>
+                    <td className="px-4 py-3.5 text-md text-ink">{METHOD_LABEL[p.method]}</td>
+                    <td className="px-4 py-3.5 text-md text-ink text-right">{money(p.amount)}</td>
+                    <td className="px-4 py-3.5 text-md text-ink">{p.createdBy || ''}</td>
+                    <td className="px-4 py-3.5 text-md text-ink">{p.note || ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
     )}
 
-    {confirmCancel && <CancelPayrollModal code={payroll.code} onClose={() => setConfirmCancel(false)} onConfirm={() => setConfirmCancel(false)} />}
+    {confirmCancel && <CancelPayrollModal code={payroll.code} onClose={() => setConfirmCancel(false)} onConfirm={() => void doCancel()} />}
   </div>
   )
 }
@@ -388,10 +521,48 @@ const CancelPayrollModal = ({ code, onClose, onConfirm }: { code: string; onClos
 }
 
 /* ── Thanh toán bảng lương modal ───────────────────────────────────────────── */
-const PaymentModal = ({ payroll, onClose }: { payroll: Payroll; onClose: () => void }) => {
-  const [rows, setRows] = useState(payroll.payslips.map(s => ({ ...s, pay: s.remaining })))
-  const [checked, setChecked] = useState<Record<string, boolean>>(Object.fromEntries(payroll.payslips.map(s => [s.code, true])))
-  const total = rows.filter(r => checked[r.code]).reduce((a, r) => a + r.pay, 0)
+const nowLocalInput = () => {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** "dd/MM/yyyy HH:mm" → ISO "yyyy-MM-ddTHH:mm:00" */
+const parsePaidAt = (s: string): string | null => {
+  const m = s.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/)
+  if (!m) return null
+  return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}T${m[4].padStart(2, '0')}:${m[5]}:00`
+}
+
+const PaymentModal = ({ payroll, payslips, onClose, onDone }: {
+  payroll: PayrollSheetDto; payslips: PayslipRowDto[]; onClose: () => void; onDone: () => void
+}) => {
+  const [rows, setRows] = useState(payslips.map(s => ({ ...s, pay: s.remaining })))
+  const [checked, setChecked] = useState<Record<string, boolean>>(Object.fromEntries(payslips.map(s => [s.id, true])))
+  const [paidAt, setPaidAt] = useState(nowLocalInput())
+  const [method, setMethod] = useState<SalaryPaymentMethod>('CASH')
+  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const total = rows.filter(r => checked[r.id]).reduce((a, r) => a + r.pay, 0)
+
+  const submit = async () => {
+    const iso = parsePaidAt(paidAt)
+    if (!iso) { setError('Thời gian không hợp lệ (dd/MM/yyyy HH:mm)'); return }
+    const items = rows.filter(r => checked[r.id] && r.pay > 0).map(r => ({ payslipId: r.id, amount: r.pay }))
+    if (items.length === 0) { setError('Chọn ít nhất một phiếu lương với số tiền lớn hơn 0'); return }
+    setSaving(true)
+    setError('')
+    try {
+      await paySheet(payroll.id, { paidAt: iso, method, note: note.trim() || undefined, items })
+      onDone()
+    } catch (err) {
+      setError(errMsg(err, 'Không thể tạo phiếu chi'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 overflow-y-auto bg-black/50" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="w-full max-w-[64rem] my-[5vh] bg-card rounded-xl shadow-2xl flex flex-col">
@@ -399,35 +570,37 @@ const PaymentModal = ({ payroll, onClose }: { payroll: Payroll; onClose: () => v
           <h2 className="text-xl font-bold text-ink">Thanh toán bảng lương</h2>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-ink-muted hover:bg-fill hover:text-ink cursor-pointer"><CloseIcon /></button>
         </div>
-        <div className="px-6 text-sm text-ink-subtle">{payroll.name} | Kỳ làm việc: {payroll.period} | Trạng thái: {payroll.status}</div>
+        <div className="px-6 text-sm text-ink-subtle">{payroll.name} | Kỳ làm việc: {periodLabel(payroll)} | Trạng thái: {SHEET_STATUS_LABEL[payroll.status]}</div>
 
         <div className="px-6 py-4 grid grid-cols-2 gap-x-8 gap-y-3">
           <div className="flex items-center gap-3"><span className="w-[9rem] text-md text-ink">Tiền trả nhân viên</span><span className="text-md font-bold text-ink">{money(total)}</span></div>
           <div className="flex items-center gap-3">
             <span className="w-[7rem] text-md text-ink">Thời gian</span>
             <div className="relative flex-1">
-              <input defaultValue="11/07/2026 23:45" className="w-full h-10 pl-3 pr-9 bg-card border border-line-default rounded-md text-md text-ink focus:border-primary outline-none" />
+              <input value={paidAt} onChange={e => setPaidAt(e.target.value)} className="w-full h-10 pl-3 pr-9 bg-card border border-line-default rounded-md text-md text-ink focus:border-primary outline-none" />
               <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"><CalendarIcon /></span>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <span className="w-[9rem] text-md text-ink">Phương thức</span>
             <div className="relative flex-1">
-              <select className="w-full h-10 pl-3 pr-9 bg-card border border-line-default rounded-md text-md text-ink appearance-none cursor-pointer focus:border-primary outline-none">
-                <option>Tiền mặt</option><option>Chuyển khoản</option>
+              <select value={method} onChange={e => setMethod(e.target.value as SalaryPaymentMethod)} className="w-full h-10 pl-3 pr-9 bg-card border border-line-default rounded-md text-md text-ink appearance-none cursor-pointer focus:border-primary outline-none">
+                <option value="CASH">Tiền mặt</option><option value="TRANSFER">Chuyển khoản</option>
               </select>
               <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"><ChevronDown /></span>
             </div>
           </div>
-          <div className="flex items-center gap-3"><span className="w-[7rem] text-md text-ink">Ghi chú</span><input className="flex-1 h-10 px-3 bg-card border border-line-default rounded-md text-md text-ink focus:border-primary outline-none" /></div>
+          <div className="flex items-center gap-3"><span className="w-[7rem] text-md text-ink">Ghi chú</span><input value={note} onChange={e => setNote(e.target.value)} className="flex-1 h-10 px-3 bg-card border border-line-default rounded-md text-md text-ink focus:border-primary outline-none" /></div>
         </div>
+
+        {error && <div className="px-6 pb-2 text-sm text-danger">{error}</div>}
 
         <div className="px-6">
           <div className="max-h-[22rem] overflow-y-auto border border-line rounded-md">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-primary-25 text-sm font-semibold text-ink-subtle">
-                  <th className="sticky top-0 bg-primary-25 px-3 py-2.5 w-[3rem] text-left"><input type="checkbox" checked={rows.every(r => checked[r.code])} onChange={e => setChecked(Object.fromEntries(rows.map(r => [r.code, e.target.checked])))} className="accent-primary w-4 h-4" /></th>
+                  <th className="sticky top-0 bg-primary-25 px-3 py-2.5 w-[3rem] text-left"><input type="checkbox" checked={rows.length > 0 && rows.every(r => checked[r.id])} onChange={e => setChecked(Object.fromEntries(rows.map(r => [r.id, e.target.checked])))} className="accent-primary w-4 h-4" /></th>
                   <th className="sticky top-0 bg-primary-25 px-3 py-2.5 text-left">Mã phiếu</th>
                   <th className="sticky top-0 bg-primary-25 px-3 py-2.5 text-left">Nhân viên</th>
                   <th className="sticky top-0 bg-primary-25 px-3 py-2.5 text-right">Thành tiền</th>
@@ -438,19 +611,22 @@ const PaymentModal = ({ payroll, onClose }: { payroll: Payroll; onClose: () => v
               </thead>
               <tbody>
                 {rows.map((r, i) => (
-                  <tr key={r.code} className="border-b border-line">
-                    <td className="px-3 py-3"><input type="checkbox" checked={!!checked[r.code]} onChange={e => setChecked(c => ({ ...c, [r.code]: e.target.checked }))} className="accent-primary w-4 h-4" /></td>
+                  <tr key={r.id} className="border-b border-line">
+                    <td className="px-3 py-3"><input type="checkbox" checked={!!checked[r.id]} onChange={e => setChecked(c => ({ ...c, [r.id]: e.target.checked }))} className="accent-primary w-4 h-4" /></td>
                     <td className="px-3 py-3 text-md text-primary">{r.code}</td>
-                    <td className="px-3 py-3"><div className="text-md text-primary">{r.employee}</div><div className="text-sm text-ink-subtle">{r.empCode}</div></td>
+                    <td className="px-3 py-3"><div className="text-md text-primary">{r.employeeName}</div><div className="text-sm text-ink-subtle">{r.employeeCode}</div></td>
                     <td className="px-3 py-3 text-md text-ink text-right">{money(r.total)}</td>
-                    <td className="px-3 py-3 text-md text-primary text-right">{money(r.paid)}</td>
+                    <td className="px-3 py-3 text-md text-primary text-right">{money(r.paidAmount)}</td>
                     <td className="px-3 py-3 text-md text-ink text-right">{money(r.remaining)}</td>
                     <td className="px-3 py-3 text-right">
-                      <input value={money(r.pay)} onChange={e => { const v = parseInt(e.target.value.replace(/\D/g, '') || '0', 10); setRows(rs => rs.map((x, xi) => xi === i ? { ...x, pay: v } : x)) }}
+                      <input value={money(r.pay)} onChange={e => { const v = Math.min(parseInt(e.target.value.replace(/\D/g, '') || '0', 10), r.remaining); setRows(rs => rs.map((x, xi) => xi === i ? { ...x, pay: v } : x)) }}
                         className="w-[8rem] h-9 px-2 text-right bg-card border border-line-default rounded-md text-md text-ink focus:border-primary outline-none" />
                     </td>
                   </tr>
                 ))}
+                {rows.length === 0 && (
+                  <tr><td colSpan={7} className="px-3 py-10 text-center text-md text-ink-subtle">Không còn phiếu lương cần thanh toán</td></tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -458,7 +634,7 @@ const PaymentModal = ({ payroll, onClose }: { payroll: Payroll; onClose: () => v
 
         <div className="flex items-center justify-end gap-3 px-6 py-4">
           <button onClick={onClose} className="kv-btn kv-btn-outline-neutral h-10 bg-card">Bỏ qua</button>
-          <button onClick={onClose} className="kv-btn kv-btn-primary h-10">Tạo phiếu chi</button>
+          <button onClick={() => void submit()} disabled={saving} className="kv-btn kv-btn-primary h-10">{saving ? 'Đang lưu…' : 'Tạo phiếu chi'}</button>
         </div>
       </div>
     </div>
@@ -475,13 +651,44 @@ const PayLine = ({ label, value, sub, strong, blue }: { label: string; value: st
     <span className={`text-md ${blue ? 'text-primary' : strong ? 'text-ink font-bold' : 'text-ink'}`}>{value}</span>
   </div>
 )
-const PayslipModal = ({ payslip, onClose }: { payslip: Payslip; onClose: () => void }) => {
+
+const PayslipModal = ({ payslipId, onClose, onChanged }: {
+  payslipId: string; onClose: () => void; onChanged: (sheetId: string) => void
+}) => {
   const [tab, setTab] = useState<'pay' | 'attendance'>('pay')
+  const [detail, setDetail] = useState<PayslipDetailDto | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    getPayslip(payslipId)
+      .then(res => setDetail(res.data.data))
+      .catch(err => setError(errMsg(err, 'Không thể tải phiếu lương')))
+  }, [payslipId])
+
+  const doCancel = async () => {
+    if (!detail || !window.confirm(`Hủy phiếu lương ${detail.code}?`)) return
+    setBusy(true)
+    try {
+      await cancelPayslip(detail.id)
+      onChanged(detail.sheetId)
+    } catch (err) {
+      setError(errMsg(err, 'Không thể hủy phiếu lương'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const statusLabel = detail
+    ? (detail.status === 'CANCELLED' ? 'Đã hủy' : SHEET_STATUS_LABEL[detail.sheetStatus])
+    : ''
+  const canCancel = !!detail && detail.status === 'ACTIVE' && detail.paidAmount === 0 && detail.sheetStatus !== 'CANCELLED'
+
   return (
     <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 overflow-y-auto bg-black/50" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="w-full max-w-[62rem] my-[5vh] bg-card rounded-xl shadow-2xl flex flex-col">
         <div className="flex items-center justify-between px-7 pt-5 pb-3">
-          <h2 className="text-xl font-bold text-ink">Phiếu lương cá nhân {payslip.code}</h2>
+          <h2 className="text-xl font-bold text-ink">Phiếu lương cá nhân {detail?.code ?? ''}</h2>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-ink-muted hover:bg-fill hover:text-ink cursor-pointer"><CloseIcon /></button>
         </div>
 
@@ -493,37 +700,79 @@ const PayslipModal = ({ payslip, onClose }: { payslip: Payslip; onClose: () => v
           ))}
         </div>
 
-        {tab === 'pay' ? (
+        {error && <div className="px-7 pt-3 text-sm text-danger">{error}</div>}
+
+        {!detail ? (
+          <div className="px-7 py-16 text-center text-md text-ink-subtle">Đang tải…</div>
+        ) : tab === 'pay' ? (
           <div className="px-7 py-5 grid grid-cols-2 gap-x-12">
             {/* left */}
             <div>
-              <PayLine label={`${payslip.empCode} :`} value={payslip.employee} strong />
-              <PayLine label="Phòng ban :" value="" />
-              <PayLine label="Chức danh :" value="" />
-              <PayLine label="Loại lương chính :" value="Theo ca làm việc" />
-              <PayLine label="Trạng thái :" value="Tạm tính" />
-              <PayLine label="Bảng lương :" value="Bảng lương tháng 8/2026" />
-              <PayLine label="Kỳ làm việc :" value="01/08/2026 - 31/08/2026" />
-              <PayLine label="Ngày công chuẩn :" value="31" strong />
+              <PayLine label={`${detail.employeeCode} :`} value={detail.employeeName} strong />
+              <PayLine label="Loại lương chính :" value={detail.salaryType ? SALARY_TYPE_LABEL[detail.salaryType] : 'Chưa thiết lập'} />
+              <PayLine label="Trạng thái :" value={statusLabel} />
+              <PayLine label="Bảng lương :" value={detail.sheetName} />
+              <PayLine label="Kỳ làm việc :" value={`${fmtDate(detail.periodStart)} - ${fmtDate(detail.periodEnd)}`} />
+              <PayLine label="Số ca làm :" value={String(detail.shiftCount)} strong />
+              <PayLine label="Giờ công :" value={`${Math.round(detail.workedMinutes / 6) / 10} giờ`} />
               <div className="pt-3 text-md text-ink-muted italic">Ghi chú</div>
             </div>
             {/* right */}
             <div>
-              <PayLine label="Lương chính :" value={money(0)} blue />
-              <PayLine label="Thưởng :" value={money(0)} blue />
-              <PayLine label="Tổng thu nhập (I) :" value={money(0)} strong />
-              <PayLine label="Giảm trừ (II) :" value={money(0)} blue />
-              <PayLine label="Lương thực nhận (III) :" sub="(III) = (I) - (II)" value={money(0)} />
-              <PayLine label="Đã trả nhân viên :" value={money(payslip.paid)} />
-              <PayLine label="Còn cần trả :" value={money(payslip.remaining)} strong />
+              <PayLine label="Lương chính :" value={money(detail.mainSalary)} blue />
+              <PayLine label="Lương làm thêm giờ :" value={money(detail.overtimeSalary)} blue />
+              <PayLine label="Tổng thu nhập (I) :" value={money(detail.mainSalary + detail.overtimeSalary)} strong />
+              <PayLine label="Giảm trừ (II) :" value={money(detail.deduction)} blue />
+              <PayLine label="Lương thực nhận (III) :" sub="(III) = (I) - (II)" value={money(detail.total)} />
+              <PayLine label="Đã trả nhân viên :" value={money(detail.paidAmount)} />
+              <PayLine label="Còn cần trả :" value={money(detail.remaining)} strong />
             </div>
           </div>
         ) : (
-          <div className="px-7 py-12 text-center text-md text-ink-subtle">Chưa có dữ liệu chấm công chi tiết</div>
+          detail.attendance.length === 0 ? (
+            <div className="px-7 py-12 text-center text-md text-ink-subtle">Chưa có dữ liệu chấm công chi tiết</div>
+          ) : (
+            <div className="px-7 py-5">
+              <div className="max-h-[24rem] overflow-y-auto border border-line rounded-md">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-fill text-sm font-semibold text-ink-subtle">
+                      <th className="sticky top-0 bg-fill px-3 py-2.5 text-left">Ngày</th>
+                      <th className="sticky top-0 bg-fill px-3 py-2.5 text-left">Ca</th>
+                      <th className="sticky top-0 bg-fill px-3 py-2.5 text-left">Trạng thái</th>
+                      <th className="sticky top-0 bg-fill px-3 py-2.5 text-left">Vào - Ra</th>
+                      <th className="sticky top-0 bg-fill px-3 py-2.5 text-right">Giờ công</th>
+                      <th className="sticky top-0 bg-fill px-3 py-2.5 text-right">OT (phút)</th>
+                      <th className="sticky top-0 bg-fill px-3 py-2.5 text-left">Mức áp dụng</th>
+                      <th className="sticky top-0 bg-fill px-3 py-2.5 text-right">Thành tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.attendance.map((a, i) => (
+                      <tr key={i} className="border-b border-line">
+                        <td className="px-3 py-3 text-md text-ink whitespace-nowrap">{fmtDate(a.date)}</td>
+                        <td className="px-3 py-3 text-md text-ink">{a.shiftName || '—'}</td>
+                        <td className="px-3 py-3 text-md text-ink">{ATTENDANCE_STATUS_LABEL[a.status] || a.status}</td>
+                        <td className="px-3 py-3 text-md text-ink whitespace-nowrap">
+                          {a.checkInAt ? fmtDateTime(a.checkInAt).slice(11) : '--'} - {a.checkOutAt ? fmtDateTime(a.checkOutAt).slice(11) : '--'}
+                        </td>
+                        <td className="px-3 py-3 text-md text-ink text-right">{a.workedMinutes != null ? `${Math.round(a.workedMinutes / 6) / 10}h` : ''}</td>
+                        <td className="px-3 py-3 text-md text-ink text-right">{a.otMinutes || ''}</td>
+                        <td className="px-3 py-3 text-md text-ink">{a.rateApplied || ''}</td>
+                        <td className="px-3 py-3 text-md text-ink text-right">{money(a.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
         )}
 
         <div className="flex items-center justify-between gap-3 px-7 py-4 border-t border-line">
-          <button className="kv-btn kv-btn-outline-neutral h-10 bg-card"><TrashIcon /> Hủy</button>
+          {canCancel
+            ? <button onClick={() => void doCancel()} disabled={busy} className="kv-btn kv-btn-outline-neutral h-10 bg-card"><TrashIcon /> Hủy</button>
+            : <span />}
           <div className="flex items-center gap-3">
             <button onClick={onClose} className="kv-btn kv-btn-outline-neutral h-10 bg-card">Bỏ qua</button>
             <button className="kv-btn kv-btn-outline-neutral h-10 bg-card"><ExportIcon /> Xuất file</button>
@@ -538,7 +787,7 @@ const PayslipModal = ({ payslip, onClose }: { payslip: Payslip; onClose: () => v
 /* ── Thêm bảng tính lương modal ────────────────────────────────────────────── */
 const MONTH_PERIODS = (() => {
   const out: string[] = []
-  const base = new Date(2026, 6, 1) // July 2026
+  const base = new Date()
   for (let i = 0; i < 12; i++) {
     const d = new Date(base.getFullYear(), base.getMonth() - i, 1)
     const mm = String(d.getMonth() + 1).padStart(2, '0')
@@ -625,17 +874,68 @@ const DatePicker = ({ value, onChange }: { value: Date; onChange: (d: Date) => v
   )
 }
 
-const AddPayrollModal = ({ onClose }: { onClose: () => void }) => {
-  const [term, setTerm] = useState('Hàng tháng')
+const AddPayrollModal = ({ onClose, onCreated }: { onClose: () => void; onCreated: (sheet: PayrollSheetDto) => void }) => {
+  const [term, setTerm] = useState<PayrollTerm>('MONTHLY')
   const [period, setPeriod] = useState(MONTH_PERIODS[0])
-  const [from, setFrom] = useState(new Date(2026, 6, 11))
-  const [to, setTo] = useState(new Date(2026, 6, 11))
+  const [from, setFrom] = useState(new Date())
+  const [to, setTo] = useState(new Date())
   const [scope, setScope] = useState<'all' | 'custom'>('all')
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [empSearch, setEmpSearch] = useState('')
+  const [selected, setSelected] = useState<Record<string, Employee>>({})
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  useEffect(() => {
+    if (scope !== 'custom' || employees.length > 0) return
+    listEmployees({ status: 'ACTIVE', size: 100 })
+      .then(res => setEmployees(res.data.data.map(toEmployee)))
+      .catch(() => setEmployees([]))
+  }, [scope, employees.length])
+
+  const q = empSearch.trim().toLowerCase()
+  const matches = q
+    ? employees.filter(e => !selected[e.id] && (e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q))).slice(0, 8)
+    : []
+  const selectedList = Object.values(selected)
+
+  const submit = async () => {
+    let periodStart: string, periodEnd: string
+    if (term === 'MONTHLY') {
+      const parts = period.split(' - ')
+      const s = parts[0].split('/'), e = parts[1].split('/')
+      periodStart = `${s[2]}-${s[1]}-${s[0]}`
+      periodEnd = `${e[2]}-${e[1]}-${e[0]}`
+    } else {
+      periodStart = toIsoDate(from)
+      periodEnd = toIsoDate(to)
+      if (periodStart > periodEnd) { setError('Kỳ làm việc không hợp lệ'); return }
+    }
+    if (scope === 'custom' && selectedList.length === 0) { setError('Chọn ít nhất một nhân viên'); return }
+    setSaving(true)
+    setError('')
+    const payload: CreateSheetPayload = {
+      term,
+      periodStart,
+      periodEnd,
+      scope: scope === 'all' ? 'ALL' : 'CUSTOM',
+      employeeIds: scope === 'custom' ? selectedList.map(e => e.id) : undefined,
+    }
+    try {
+      const res = await createSheet(payload)
+      onCreated(res.data.data)
+    } catch (err) {
+      setError(errMsg(err, 'Không thể tạo bảng lương'))
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 overflow-y-auto bg-black/50" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="w-full max-w-[58rem] my-[12vh] bg-card rounded-xl shadow-2xl flex flex-col">
@@ -647,12 +947,13 @@ const AddPayrollModal = ({ onClose }: { onClose: () => void }) => {
         <div className="px-7 py-4 flex flex-col gap-5">
           <div className="flex items-center gap-4">
             <label className="w-[10rem] shrink-0 text-md text-ink">Kỳ hạn trả lương</label>
-            <Dropdown value={term} options={['Hàng tháng', 'Tùy chọn']} onChange={setTerm} />
+            <Dropdown value={TERM_LABEL[term]} options={[TERM_LABEL.MONTHLY, TERM_LABEL.CUSTOM]}
+              onChange={v => setTerm(v === TERM_LABEL.MONTHLY ? 'MONTHLY' : 'CUSTOM')} />
           </div>
 
           <div className="flex items-center gap-4">
             <label className="w-[10rem] shrink-0 text-md text-ink">Kỳ làm việc</label>
-            {term === 'Hàng tháng'
+            {term === 'MONTHLY'
               ? <Dropdown value={period} options={MONTH_PERIODS} onChange={setPeriod} />
               : (
                 <div className="flex items-center gap-3 flex-1">
@@ -679,29 +980,48 @@ const AddPayrollModal = ({ onClose }: { onClose: () => void }) => {
             <div className="flex flex-col gap-3">
               <div className="relative w-[24rem] max-w-full">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2"><SearchIcon /></span>
-                <input placeholder="Tìm theo mã, tên nhân viên"
-                  className="w-full h-11 pl-9 pr-16 bg-card border border-line-default rounded-md text-md text-ink placeholder:text-ink-muted focus:border-primary outline-none" />
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-ink-muted">
-                  <button type="button" className="w-7 h-7 flex items-center justify-center rounded hover:bg-fill cursor-pointer" aria-label="Danh sách"><ColumnsIcon /></button>
-                  <button type="button" className="w-7 h-7 flex items-center justify-center rounded hover:bg-fill cursor-pointer text-lg leading-none" aria-label="Thêm">+</button>
-                </div>
+                <input value={empSearch} onChange={e => setEmpSearch(e.target.value)} placeholder="Tìm theo mã, tên nhân viên"
+                  className="w-full h-11 pl-9 pr-4 bg-card border border-line-default rounded-md text-md text-ink placeholder:text-ink-muted focus:border-primary outline-none" />
+                {matches.length > 0 && (
+                  <div className="absolute left-0 right-0 top-[calc(100%+0.3rem)] bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] py-1 max-h-[16rem] overflow-y-auto">
+                    {matches.map(e => (
+                      <button key={e.id} type="button" onClick={() => { setSelected(s => ({ ...s, [e.id]: e })); setEmpSearch('') }}
+                        className="flex items-center justify-between w-full text-left px-3 py-2.5 text-md text-ink cursor-pointer hover:bg-[var(--kv-state-hover-bg)]">
+                        <span>{e.name}</span><span className="text-sm text-ink-subtle">{e.code}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="border border-line rounded-md overflow-hidden">
                 <div className="grid grid-cols-3 bg-primary-25 px-4 py-3 text-sm font-semibold text-ink-subtle">
                   <span>Mã nhân viên</span>
                   <span>Tên nhân viên</span>
-                  <span>Phòng ban</span>
+                  <span />
                 </div>
-                <div className="py-8 text-center text-md text-ink-subtle">Chưa có nhân viên nào được chọn</div>
+                {selectedList.length === 0
+                  ? <div className="py-8 text-center text-md text-ink-subtle">Chưa có nhân viên nào được chọn</div>
+                  : selectedList.map(e => (
+                    <div key={e.id} className="grid grid-cols-3 items-center px-4 py-2.5 border-t border-line text-md text-ink">
+                      <span>{e.code}</span>
+                      <span>{e.name}</span>
+                      <span className="text-right">
+                        <button type="button" onClick={() => setSelected(s => { const n = { ...s }; delete n[e.id]; return n })}
+                          className="w-8 h-8 inline-flex items-center justify-center rounded-md text-ink-muted hover:text-danger cursor-pointer" aria-label="Xóa"><TrashIcon /></button>
+                      </span>
+                    </div>
+                  ))}
               </div>
             </div>
           )}
+
+          {error && <div className="text-sm text-danger">{error}</div>}
         </div>
 
         <div className="flex items-center justify-end gap-3 px-7 py-4 border-t border-line">
           <button onClick={onClose} className="kv-btn kv-btn-outline-neutral h-10 bg-card">Bỏ qua</button>
-          <button onClick={onClose} className="kv-btn kv-btn-primary h-10">Lưu</button>
+          <button onClick={() => void submit()} disabled={saving} className="kv-btn kv-btn-primary h-10">{saving ? 'Đang tạo…' : 'Lưu'}</button>
         </div>
       </div>
     </div>
