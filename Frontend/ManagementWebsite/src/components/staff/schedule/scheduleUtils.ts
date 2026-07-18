@@ -1,4 +1,4 @@
-import type { Assignment } from '../../../services/rosterService'
+import type { ScheduleDto } from '../../../api/attendance'
 
 export const WEEKDAY_LABELS = ['Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy', 'Chủ nhật']
 export const MONTHS = ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12']
@@ -43,20 +43,11 @@ export const weekDays = (weekStart: Date) => Array.from({ length: 7 }, (_, i) =>
 export const weekOfMonth = (weekStart: Date) => Math.ceil(weekStart.getDate() / 7)
 
 /** Backend LocalTime serializes as 'HH:mm:ss' — trim to 'HH:mm' for display. */
-export const formatTime = (t: string) => t.slice(0, 5)
+export const formatTime = (t: string | null | undefined) => (t ? t.slice(0, 5) : '')
 
 /**
- * Whether `assignment`'s recurrence rule produces a concrete occurrence on `date`.
- * Pure rendering helper — authoritative validation (overlap/rest/etc.) lives server-side.
+ * Schedules are already materialized one row per occurrence (BR-AT-04) — no client-side
+ * recurrence expansion needed, just a direct employeeId + date match.
  */
-export const occursOn = (assignment: Assignment, date: Date): boolean => {
-  const anchor = parseYMD(assignment.date)
-  if (stripTime(date) < anchor) return false
-  if (assignment.excludedDates.includes(toYMD(date))) return false
-  if (!assignment.repeatWeekly) return sameDay(anchor, date)
-  if (assignment.repeatEnd && stripTime(date) > parseYMD(assignment.repeatEnd)) return false
-  return assignment.repeatDays.includes(isoWeekday(date))
-}
-
-export const entriesOn = (assignments: Assignment[], employeeId: string, date: Date) =>
-  assignments.filter(a => a.employeeId === employeeId && occursOn(a, date))
+export const entriesOn = (schedules: ScheduleDto[], employeeId: string, date: Date) =>
+  schedules.filter(s => s.employeeId === employeeId && s.workDate === toYMD(date))

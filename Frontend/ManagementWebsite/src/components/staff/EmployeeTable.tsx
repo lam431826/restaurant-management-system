@@ -2,12 +2,28 @@ import { Fragment, useState } from 'react'
 import type { Employee } from '../../data/mockData'
 import EmployeeDetail from './EmployeeDetail'
 
+export interface EmployeeColumn { key: string; label: string; width?: string; render: (e: Employee) => React.ReactNode }
+
+// Toggleable via the "Tùy chọn cột" dropdown in EmployeeToolbar — kept in one place so the
+// toolbar's checkbox list and the table's rendering never drift out of sync.
+export const EMPLOYEE_COLUMNS: EmployeeColumn[] = [
+  { key: 'code', label: 'Mã nhân viên', width: 'w-[13rem]', render: e => <span className="text-primary font-medium">{e.code}</span> },
+  { key: 'timekeepCode', label: 'Mã chấm công', width: 'w-[13rem]', render: e => e.timekeepCode },
+  { key: 'name', label: 'Tên nhân viên', render: e => e.name },
+  { key: 'phone', label: 'Số điện thoại', width: 'w-[14rem]', render: e => e.phone },
+  { key: 'idNumber', label: 'Số CMND/CCCD', width: 'w-[15rem]', render: e => e.idNumber },
+  { key: 'note', label: 'Ghi chú', width: 'w-[16rem]', render: e => <span className="text-ink-muted">{e.note}</span> },
+]
+export const DEFAULT_VISIBLE_COLUMNS: Record<string, boolean> =
+  Object.fromEntries(EMPLOYEE_COLUMNS.map(c => [c.key, true]))
+
 interface Props {
   employees: Employee[]
   loading?: boolean
   page: number
   totalPages: number
   total: number
+  visibleColumns: Record<string, boolean>
   onPageChange: (page: number) => void
   onAdd: () => void
   onSave: (emp: Employee) => void
@@ -33,7 +49,7 @@ const EmptyState = ({ onAdd }: { onAdd: () => void }) => (
 
 const pageBtnCls = 'h-9 min-w-[2.25rem] px-2 flex items-center justify-center border border-line-default rounded-md text-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:border-primary hover:text-primary cursor-pointer'
 
-const EmployeeTable = ({ employees, loading, page, totalPages, total, onPageChange, onAdd, onSave, onToggleActive }: Props) => {
+const EmployeeTable = ({ employees, loading, page, totalPages, total, visibleColumns, onPageChange, onAdd, onSave, onToggleActive }: Props) => {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [expandedCode, setExpandedCode] = useState<string | null>(null)
 
@@ -45,6 +61,9 @@ const EmployeeTable = ({ employees, loading, page, totalPages, total, onPageChan
       if (next.has(code)) next.delete(code); else next.add(code)
       return next
     })
+
+  const visibleCols = EMPLOYEE_COLUMNS.filter(c => visibleColumns[c.key])
+  const colSpan = visibleCols.length + 1
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-card border border-line rounded-t-lg overflow-hidden">
@@ -58,18 +77,15 @@ const EmployeeTable = ({ employees, loading, page, totalPages, total, onPageChan
                   <span className="kv-check-box" />
                 </label>
               </th>
-              <th className={`${th} w-[13rem]`}>Mã nhân viên</th>
-              <th className={`${th} w-[13rem]`}>Mã chấm công</th>
-              <th className={th}>Tên nhân viên</th>
-              <th className={`${th} w-[14rem]`}>Số điện thoại</th>
-              <th className={`${th} w-[15rem]`}>Số CMND/CCCD</th>
-              <th className={`${th} w-[16rem]`}>Ghi chú</th>
+              {visibleCols.map(c => (
+                <th key={c.key} className={`${th} ${c.width ?? ''}`}>{c.label}</th>
+              ))}
             </tr>
           </thead>
           {loading && (
             <tbody>
               <tr>
-                <td colSpan={7} className="py-16 text-center text-md text-ink-subtle">
+                <td colSpan={colSpan} className="py-16 text-center text-md text-ink-subtle">
                   <div className="inline-block w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2 align-[-0.35em]" />
                   Đang tải...
                 </td>
@@ -90,16 +106,13 @@ const EmployeeTable = ({ employees, loading, page, totalPages, total, onPageChan
                         <span className="kv-check-box" />
                       </label>
                     </td>
-                    <td className={`${td} text-primary font-medium`}>{e.code}</td>
-                    <td className={td}>{e.timekeepCode}</td>
-                    <td className={td}>{e.name}</td>
-                    <td className={td}>{e.phone}</td>
-                    <td className={td}>{e.idNumber}</td>
-                    <td className={`${td} text-ink-muted`}>{e.note}</td>
+                    {visibleCols.map(c => (
+                      <td key={c.key} className={td}>{c.render(e)}</td>
+                    ))}
                   </tr>
                   {expandedCode === e.code && (
                     <tr>
-                      <td colSpan={7} className="p-0 border-b border-line" onClick={ev => ev.stopPropagation()}>
+                      <td colSpan={colSpan} className="p-0 border-b border-line" onClick={ev => ev.stopPropagation()}>
                         <EmployeeDetail
                           employee={e}
                           onSave={onSave}

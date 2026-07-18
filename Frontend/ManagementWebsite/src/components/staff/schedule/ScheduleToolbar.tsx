@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { StaffSummary } from '../../../services/rosterService'
+import type { StaffSummary } from './Schedule'
 import { addDays, sameDay, startOfWeek, weekOfMonth } from './scheduleUtils'
 import WeekPicker from './WeekPicker'
 

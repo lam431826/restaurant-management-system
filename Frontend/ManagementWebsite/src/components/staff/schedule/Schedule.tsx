@@ -3,29 +3,29 @@ import ScheduleToolbar from './ScheduleToolbar'
 import ScheduleGrid from './ScheduleGrid'
 import ScheduleModal from './ScheduleModal'
 import type { ScheduleSavePayload } from './ScheduleModal'
-import TemplateManagerModal from './TemplateManagerModal'
+import ShiftTemplateModal from './ShiftTemplateModal'
 import { startOfWeek, weekDays as buildWeekDays, entriesOn, toYMD } from './scheduleUtils'
-import {
-  listStaff, listTemplates, listAssignments, createAssignments, updateAssignment, deleteAssignment,
-  getWeekStatus, publishWeek,
-} from '../../../services/rosterService'
-import type { StaffSummary, ShiftTemplate, Assignment, WeekStatus } from '../../../services/rosterService'
+import { listShifts, listSchedules, createSchedules, deleteSchedule, cancelScheduleRule, formatTime } from '../../../api/attendance'
+import type { ShiftDto, ScheduleDto } from '../../../api/attendance'
+import { listEmployees } from '../../../api/employees'
 import { ApiError } from '../../../services/api'
+
+/** UI-local employee summary shared by the schedule sub-components. */
+export interface StaffSummary { id: string; fullName: string; code: string }
 
 interface ModalState {
   mode: 'add' | 'edit'
   employee?: StaffSummary
   date: Date
-  entry?: Assignment
+  entry?: ScheduleDto
   // Shift-first add ("Xem theo ca" → Thêm nhân viên): the shift the chosen staff are added to.
-  lockedShift?: ShiftTemplate
+  lockedShift?: ShiftDto
 }
 
 const Schedule = () => {
   const [employees, setEmployees] = useState<StaffSummary[]>([])
-  const [shiftTypes, setShiftTypes] = useState<ShiftTemplate[]>([])
-  const [entries, setEntries] = useState<Assignment[]>([])
-  const [weekPub, setWeekPub] = useState<WeekStatus | null>(null)
+  const [shiftTypes, setShiftTypes] = useState<ShiftDto[]>([])
+  const [entries, setEntries] = useState<ScheduleDto[]>([])
   const [error, setError] = useState('')
 
   const [search, setSearch] = useState('')
@@ -33,32 +33,28 @@ const Schedule = () => {
   const [viewMode, setViewMode] = useState<'employee' | 'shift'>('employee')
   const [modal, setModal] = useState<ModalState | null>(null)
   const [modalError, setModalError] = useState('')
-  const [showTemplates, setShowTemplates] = useState(false)
+  const [addShiftOpen, setAddShiftOpen] = useState(false)
 
   const weekDaysList = useMemo(() => buildWeekDays(weekStart), [weekStart])
   const weekStartKey = toYMD(weekStart)
+  const weekEndKey = toYMD(weekDaysList[6])
 
   const loadStaticData = useCallback(async () => {
     try {
-      const [staff, templates, assignments] = await Promise.all([listStaff(), listTemplates(), listAssignments()])
-      setEmployees(staff)
-      setShiftTypes(templates)
-      setEntries(assignments)
+      const [empRes, shiftRes, scheduleRes] = await Promise.all([
+        listEmployees({ status: 'ACTIVE', size: 500 }),
+        listShifts({ status: 'ACTIVE' }),
+        listSchedules(weekStartKey, weekEndKey),
+      ])
+      setEmployees(empRes.data.data.map(e => ({ id: e.id, fullName: e.name, code: e.code })))
+      setShiftTypes(shiftRes.data.data)
+      setEntries(scheduleRes.data.data)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Không tải được dữ liệu lịch làm việc.')
     }
-  }, [])
-
-  const loadWeekStatus = useCallback(async () => {
-    try {
-      setWeekPub(await getWeekStatus(weekStartKey))
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Không tải được trạng thái xuất bản.')
-    }
-  }, [weekStartKey])
+  }, [weekStartKey, weekEndKey])
 
   useEffect(() => { void loadStaticData() }, [loadStaticData])
-  useEffect(() => { void loadWeekStatus() }, [loadWeekStatus])
 
   const filteredEmployees = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -68,44 +64,29 @@ const Schedule = () => {
 
   const closeModal = () => { setModal(null); setModalError('') }
 
-  const handlePublish = async () => {
-    try {
-      setWeekPub(await publishWeek(weekStartKey))
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Không thể xuất bản lịch làm việc.')
-    }
-  }
-
   const handleSave = async (payload: ScheduleSavePayload) => {
     if (!modal) return
     try {
-      if (modal.mode === 'edit' && modal.entry) {
-        await updateAssignment(modal.entry.id, {
-          repeatWeekly: payload.repeatWeekly,
-          repeatDays: payload.repeatDays,
-          repeatEnd: payload.repeatEnd,
-          holidayWork: payload.holidayWork,
-        })
-      } else if (modal.lockedShift) {
+      if (modal.lockedShift) {
         // Shift-first add: the chosen staff are all added to the locked shift.
-        await createAssignments({
+        await createSchedules({
           employeeIds: payload.staffIds ?? [],
           date: toYMD(modal.date),
-          shiftTemplateIds: [modal.lockedShift.id],
+          shiftIds: [modal.lockedShift.id],
           repeatWeekly: payload.repeatWeekly,
           repeatDays: payload.repeatDays,
           repeatEnd: payload.repeatEnd,
-          holidayWork: payload.holidayWork,
+          workOnHolidays: payload.workOnHolidays,
         })
       } else if (modal.employee) {
-        await createAssignments({
+        await createSchedules({
           employeeIds: [modal.employee.id, ...payload.applyToEmployeeIds],
           date: toYMD(modal.date),
-          shiftTemplateIds: payload.shiftIds,
+          shiftIds: payload.shiftIds,
           repeatWeekly: payload.repeatWeekly,
           repeatDays: payload.repeatDays,
           repeatEnd: payload.repeatEnd,
-          holidayWork: payload.holidayWork,
+          workOnHolidays: payload.workOnHolidays,
         })
       }
       await loadStaticData()
@@ -115,10 +96,10 @@ const Schedule = () => {
     }
   }
 
-  const handleDelete = async () => {
+  const handleDeleteOccurrence = async () => {
     if (!modal?.entry) return
     try {
-      await deleteAssignment(modal.entry.id)
+      await deleteSchedule(modal.entry.id)
       await loadStaticData()
       closeModal()
     } catch (err) {
@@ -126,14 +107,25 @@ const Schedule = () => {
     }
   }
 
+  const handleCancelRule = async () => {
+    if (!modal?.entry?.ruleId) return
+    try {
+      await cancelScheduleRule(modal.entry.ruleId)
+      await loadStaticData()
+      closeModal()
+    } catch (err) {
+      setModalError(err instanceof ApiError ? err.message : 'Không thể ngừng lặp lịch làm việc.')
+    }
+  }
+
   const handleExport = () => {
     const header = ['Mã nhân viên', 'Tên nhân viên', 'Ngày', 'Ca làm việc', 'Giờ làm']
     const rows = filteredEmployees.flatMap(emp =>
       weekDaysList.flatMap(d =>
-        entriesOn(entries, emp.id, d).map(e => {
-          const st = shiftTypes.find(s => s.id === e.shiftTemplateId)
-          return [emp.id, emp.fullName, toYMD(d), st?.name ?? '', st ? `${st.startTime} - ${st.endTime}` : '']
-        })
+        entriesOn(entries, emp.id, d).map(e => [
+          emp.code, emp.fullName, toYMD(d), e.shiftName ?? '',
+          e.shiftStartTime ? `${formatTime(e.shiftStartTime)} - ${formatTime(e.shiftEndTime)}` : '',
+        ])
       )
     )
     const csv = [header, ...rows]
@@ -149,10 +141,10 @@ const Schedule = () => {
   }
 
   const dayEntriesForModal = modal?.employee ? entriesOn(entries, modal.employee.id, modal.date) : []
-  const availableShiftTypes = shiftTypes.filter(st => !dayEntriesForModal.some(e => e.shiftTemplateId === st.id))
+  const availableShiftTypes = shiftTypes.filter(st => !dayEntriesForModal.some(e => e.shiftId === st.id))
   // Shift-first add: only offer staff not already on this shift that day.
   const lockedShiftStaffOptions = modal?.lockedShift
-    ? employees.filter(emp => !entriesOn(entries, emp.id, modal.date).some(e => e.shiftTemplateId === modal.lockedShift!.id))
+    ? employees.filter(emp => !entriesOn(entries, emp.id, modal.date).some(e => e.shiftId === modal.lockedShift!.id))
     : []
 
   return (
@@ -172,18 +164,6 @@ const Schedule = () => {
       {error && (
         <div className="px-4 py-2 rounded-md bg-danger-50 text-danger text-md border border-danger/30">{error}</div>
       )}
-
-      {weekPub && (weekPub.status === 'DRAFT' ? (
-        <div className="flex items-center justify-between gap-4 px-4 py-2.5 rounded-md bg-warning-50 border border-warning/30">
-          <span className="text-md text-warning-700 font-medium">Lịch tuần này đang ở trạng thái Nháp — nhân viên chưa thể xem.</span>
-          <button className="kv-btn kv-btn-primary h-9" onClick={handlePublish}>Xuất bản</button>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between gap-4 px-4 py-2.5 rounded-md bg-success-50 border border-success/30">
-          <span className="text-md text-success-700 font-medium">Đã xuất bản (phiên bản {weekPub.version}) — nhân viên đã được thông báo.</span>
-          <button className="kv-btn kv-btn-outline-neutral h-9" onClick={handlePublish}>Xuất bản lại</button>
-        </div>
-      ))}
 
       <ScheduleGrid
         employees={filteredEmployees}
@@ -210,16 +190,17 @@ const Schedule = () => {
           error={modalError}
           onClose={closeModal}
           onSave={handleSave}
-          onDelete={modal.mode === 'edit' ? handleDelete : undefined}
-          onManageTemplates={() => setShowTemplates(true)}
+          onDeleteOccurrence={modal.mode === 'edit' ? handleDeleteOccurrence : undefined}
+          onCancelRule={modal.mode === 'edit' ? handleCancelRule : undefined}
+          onAddShift={() => setAddShiftOpen(true)}
         />
       )}
 
-      {showTemplates && (
-        <TemplateManagerModal
-          templates={shiftTypes}
-          onClose={() => setShowTemplates(false)}
-          onChanged={loadStaticData}
+      {addShiftOpen && (
+        <ShiftTemplateModal
+          shift={null}
+          onClose={() => setAddShiftOpen(false)}
+          onSaved={() => { setAddShiftOpen(false); void loadStaticData() }}
         />
       )}
     </div>

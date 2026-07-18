@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import type { StaffSummary, Assignment, ShiftTemplate } from '../../../services/rosterService'
-import { WEEKDAY_LABELS, WEEKDAY_PILLS, formatTime, toYMD } from './scheduleUtils'
+import type { ScheduleDto, ShiftDto } from '../../../api/attendance'
+import { formatTime } from '../../../api/attendance'
+import type { StaffSummary } from './Schedule'
+import { WEEKDAY_LABELS, WEEKDAY_PILLS, toYMD } from './scheduleUtils'
 
 export interface ScheduleSavePayload {
   shiftIds: string[]
   repeatWeekly: boolean
   repeatDays: number[]
   repeatEnd: string | null
-  holidayWork: boolean
+  workOnHolidays: boolean
   applyToEmployeeIds: string[]
   // Shift-first add ("Xem theo ca" → Thêm nhân viên): the employees chosen for the locked shift.
   staffIds?: string[]
@@ -17,19 +19,20 @@ interface Props {
   mode: 'add' | 'edit'
   employee?: StaffSummary
   date: Date
-  entry?: Assignment
-  shiftTypes: ShiftTemplate[]
-  availableShiftTypes: ShiftTemplate[]
+  entry?: ScheduleDto
+  shiftTypes: ShiftDto[]
+  availableShiftTypes: ShiftDto[]
   otherEmployees: StaffSummary[]
   // When set, the modal adds staff to this fixed shift (shift-first flow).
-  lockedShift?: ShiftTemplate
+  lockedShift?: ShiftDto
   // Candidate employees for the shift-first picker (those not yet on the shift that day).
   staffOptions?: StaffSummary[]
   error?: string
   onClose: () => void
   onSave: (payload: ScheduleSavePayload) => void
-  onDelete?: () => void
-  onManageTemplates: () => void
+  onDeleteOccurrence?: () => void
+  onCancelRule?: () => void
+  onAddShift: () => void
 }
 
 const CloseIcon = () => (
@@ -91,7 +94,7 @@ const EmployeeMultiSelect = ({ options, selected, onToggle }: { options: StaffSu
               <button key={e.id} type="button" onClick={() => onToggle(e.id)} className={`flex items-center justify-between w-full px-3 py-2.5 text-left cursor-pointer ${on ? 'bg-primary-25' : 'hover:bg-[var(--kv-state-hover-bg)]'}`}>
                 <div>
                   <div className="text-md font-semibold text-ink">{e.fullName}</div>
-                  <div className="text-sm text-ink-subtle">{e.id}</div>
+                  <div className="text-sm text-ink-subtle">{e.code}</div>
                 </div>
                 {on && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0"><polyline points="20 6 9 17 4 12" /></svg>}
               </button>
@@ -116,13 +119,14 @@ const Toggle = ({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 )
 
 const ScheduleModal = ({
-  mode, employee, date, entry, shiftTypes, availableShiftTypes, otherEmployees, lockedShift, staffOptions = [], error, onClose, onSave, onDelete, onManageTemplates,
+  mode, employee, date, entry, shiftTypes, availableShiftTypes, otherEmployees, lockedShift, staffOptions = [], error,
+  onClose, onSave, onDeleteOccurrence, onCancelRule, onAddShift,
 }: Props) => {
   const [selectedShiftIds, setSelectedShiftIds] = useState<Set<string>>(new Set())
-  const [repeatWeekly, setRepeatWeekly] = useState(entry?.repeatWeekly ?? false)
-  const [repeatDays, setRepeatDays] = useState<number[]>(entry?.repeatDays.length ? entry.repeatDays : WEEKDAY_PILLS.map(p => p.value))
-  const [repeatEnd, setRepeatEnd] = useState(entry?.repeatEnd ?? '')
-  const [holidayWork, setHolidayWork] = useState(entry?.holidayWork ?? false)
+  const [repeatWeekly, setRepeatWeekly] = useState(false)
+  const [repeatDays, setRepeatDays] = useState<number[]>(WEEKDAY_PILLS.map(p => p.value))
+  const [repeatEnd, setRepeatEnd] = useState('')
+  const [workOnHolidays, setWorkOnHolidays] = useState(false)
   const [applyToOthers, setApplyToOthers] = useState(false)
   const [otherIds, setOtherIds] = useState<Set<string>>(new Set())
   // Shift-first flow: which employees to add to the locked shift.
@@ -164,23 +168,63 @@ const ScheduleModal = ({
       return next
     })
 
-  const editingShift = entry ? shiftTypes.find(s => s.id === entry.shiftTemplateId) : undefined
+  const editingShift = entry ? shiftTypes.find(s => s.id === entry.shiftId) : undefined
 
   const canSave = lockedShift
     ? staffIds.size > 0
-    : mode === 'edit' ? true : selectedShiftIds.size > 0
+    : selectedShiftIds.size > 0
 
   const handleSave = () => {
     if (!canSave) return
     onSave({
-      shiftIds: lockedShift ? [lockedShift.id] : mode === 'edit' ? [entry!.shiftTemplateId] : Array.from(selectedShiftIds),
+      shiftIds: lockedShift ? [lockedShift.id] : Array.from(selectedShiftIds),
       repeatWeekly,
       repeatDays: repeatWeekly ? repeatDays : [],
       repeatEnd: repeatWeekly ? (repeatEnd || null) : null,
-      holidayWork,
-      applyToEmployeeIds: !lockedShift && mode === 'add' && applyToOthers ? Array.from(otherIds) : [],
+      workOnHolidays,
+      applyToEmployeeIds: !lockedShift && applyToOthers ? Array.from(otherIds) : [],
       staffIds: lockedShift ? Array.from(staffIds) : undefined,
     })
+  }
+
+  // ── Edit mode: schedules are materialized occurrences with no update endpoint —
+  // the only actions are removing this occurrence or ending the repeat rule (BR-AT-04).
+  if (mode === 'edit' && entry) {
+    return (
+      <div
+        className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center p-6 overflow-y-auto"
+        style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }}
+        onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
+      >
+        <div className="w-full max-w-[32rem] my-[10vh] bg-card rounded-lg shadow-lg flex flex-col">
+          <div className="flex items-center justify-between px-6 pt-5 pb-3">
+            <h2 className="text-h3 font-bold text-ink">Lịch làm việc</h2>
+            <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer hover:bg-fill hover:text-ink" aria-label="Đóng">
+              <CloseIcon />
+            </button>
+          </div>
+          <div className="px-6 pb-4">
+            <div className="bg-fill rounded-md p-4">
+              <div className="text-md font-semibold text-ink">{employee?.fullName}</div>
+              <div className="text-sm text-ink-subtle mt-1">{editingShift?.name ?? entry.shiftName} · {formatTime(editingShift?.startTime ?? entry.shiftStartTime)} - {formatTime(editingShift?.endTime ?? entry.shiftEndTime)}</div>
+              <div className="text-sm text-ink-subtle">{WEEKDAY_LABELS[(date.getDay() + 6) % 7]}, {String(date.getDate()).padStart(2, '0')}/{String(date.getMonth() + 1).padStart(2, '0')}/{date.getFullYear()}</div>
+            </div>
+            {error && <p className="text-md text-danger mt-3">{error}</p>}
+          </div>
+          <div className="flex items-center justify-between gap-4 px-6 py-4 border-t border-line">
+            <div className="flex items-center gap-4">
+              {entry.ruleId && (
+                <button className="text-md text-ink-subtle hover:text-primary cursor-pointer" onClick={onCancelRule}>Ngừng lặp lịch</button>
+              )}
+              <button className="flex items-center gap-2 text-md font-medium text-danger cursor-pointer hover:underline" onClick={onDeleteOccurrence}>
+                <TrashIcon /> Xóa lịch này
+              </button>
+            </div>
+            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose}>Đóng</button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -191,7 +235,7 @@ const ScheduleModal = ({
     >
       <div className="w-full max-w-[72rem] my-6 bg-card rounded-lg shadow-lg flex flex-col max-h-[calc(100vh-6rem)]">
         <div className="flex items-center justify-between px-6 pt-5 shrink-0">
-          <h2 className="text-h3 font-bold text-ink">{mode === 'edit' ? 'Cập nhật lịch làm việc' : 'Thêm lịch làm việc'}</h2>
+          <h2 className="text-h3 font-bold text-ink">Thêm lịch làm việc</h2>
           <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">
             <CloseIcon />
           </button>
@@ -217,7 +261,7 @@ const ScheduleModal = ({
                 </div>
                 {(() => {
                   const q = staffSearch.trim().toLowerCase()
-                  const list = q ? staffOptions.filter(s => s.fullName.toLowerCase().includes(q) || s.id.toLowerCase().includes(q)) : staffOptions
+                  const list = q ? staffOptions.filter(s => s.fullName.toLowerCase().includes(q) || s.code.toLowerCase().includes(q)) : staffOptions
                   if (staffOptions.length === 0) return <span className="text-md text-ink-subtle">Tất cả nhân viên đã được xếp vào ca này.</span>
                   if (list.length === 0) return <span className="text-md text-ink-subtle">Không tìm thấy nhân viên phù hợp.</span>
                   return (
@@ -227,7 +271,7 @@ const ScheduleModal = ({
                           <input type="checkbox" checked={staffIds.has(s.id)} onChange={() => toggleStaff(s.id)} className="accent-primary w-4 h-4 mt-0.5" />
                           <div>
                             <div className="text-md font-semibold text-ink">{s.fullName}</div>
-                            <div className="text-sm text-ink-subtle">{s.id}</div>
+                            <div className="text-sm text-ink-subtle">{s.code}</div>
                           </div>
                         </label>
                       ))}
@@ -240,39 +284,30 @@ const ScheduleModal = ({
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-md font-semibold text-ink">Chọn ca làm việc</span>
-              {mode === 'add' && (
-                <button
-                  className="w-6 h-6 flex items-center justify-center rounded-full bg-fill text-ink-subtle cursor-pointer hover:bg-fill-strong"
-                  onClick={onManageTemplates}
-                  aria-label="Quản lý ca làm việc"
-                >
-                  <PlusIcon />
-                </button>
-              )}
+              <button
+                className="w-6 h-6 flex items-center justify-center rounded-full bg-fill text-ink-subtle cursor-pointer hover:bg-fill-strong"
+                onClick={onAddShift}
+                aria-label="Thêm ca làm việc"
+              >
+                <PlusIcon />
+              </button>
             </div>
 
-            {mode === 'edit' && editingShift ? (
-              <div className="bg-fill rounded-md p-4">
-                <div className="text-md font-semibold text-ink">{editingShift.name}</div>
-                <div className="text-sm text-ink-subtle">{formatTime(editingShift.startTime)} - {formatTime(editingShift.endTime)}</div>
-              </div>
-            ) : (
-              <div className="bg-fill rounded-md p-4 grid grid-cols-2 gap-4">
-                {availableShiftTypes.length === 0 && (
-                  <span className="col-span-2 text-md text-ink-subtle">Đã chọn đủ ca cho ngày này.</span>
-                )}
-                {availableShiftTypes.map(st => (
-                  <label key={st.id} className="kv-check items-start">
-                    <input type="checkbox" checked={selectedShiftIds.has(st.id)} onChange={() => toggleShift(st.id)} />
-                    <span className="kv-check-box mt-0.5" />
-                    <span>
-                      <span className="block text-md text-ink">{st.name}</span>
-                      <span className="block text-sm text-ink-subtle">{formatTime(st.startTime)} - {formatTime(st.endTime)}</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )}
+            <div className="bg-fill rounded-md p-4 grid grid-cols-2 gap-4">
+              {availableShiftTypes.length === 0 && (
+                <span className="col-span-2 text-md text-ink-subtle">Đã chọn đủ ca cho ngày này.</span>
+              )}
+              {availableShiftTypes.map(st => (
+                <label key={st.id} className="kv-check items-start">
+                  <input type="checkbox" checked={selectedShiftIds.has(st.id)} onChange={() => toggleShift(st.id)} />
+                  <span className="kv-check-box mt-0.5" />
+                  <span>
+                    <span className="block text-md text-ink">{st.name}</span>
+                    <span className="block text-sm text-ink-subtle">{formatTime(st.startTime)} - {formatTime(st.endTime)}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
           </div>
           )}
 
@@ -320,7 +355,7 @@ const ScheduleModal = ({
                     </div>
                   </div>
                   <label className="kv-check">
-                    <input type="checkbox" checked={holidayWork} onChange={() => setHolidayWork(v => !v)} />
+                    <input type="checkbox" checked={workOnHolidays} onChange={() => setWorkOnHolidays(v => !v)} />
                     <span className="kv-check-box" />
                     <span className="kv-check-text">Làm việc cả ngày lễ tết</span>
                   </label>
@@ -329,7 +364,7 @@ const ScheduleModal = ({
             )}
           </div>
 
-          {!lockedShift && mode === 'add' && otherEmployees.length > 0 && (
+          {!lockedShift && otherEmployees.length > 0 && (
             <div className="border-t border-line pt-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -351,11 +386,7 @@ const ScheduleModal = ({
           </div>
         )}
         <div className="flex items-center justify-between gap-4 px-6 py-4 mt-2 shrink-0">
-          {mode === 'edit' ? (
-            <button className="flex items-center gap-2 text-md font-medium text-danger cursor-pointer hover:underline" onClick={onDelete}>
-              <TrashIcon /> Xóa
-            </button>
-          ) : <span />}
+          <span />
           <div className="flex items-center gap-2">
             <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose}>Bỏ qua</button>
             <button className="kv-btn kv-btn-primary h-10" disabled={!canSave} onClick={handleSave}>Lưu</button>

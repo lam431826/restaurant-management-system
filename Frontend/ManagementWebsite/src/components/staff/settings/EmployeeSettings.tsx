@@ -1,18 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
+import type { AttendanceSettingsDto, ManualTimeMode, ShiftDto } from '../../../api/attendance'
+import { deleteShift, formatTime, getSettings, listShifts, updateSettings, updateShift } from '../../../api/attendance'
+import { ApiError } from '../../../services/api'
+import ShiftTemplateModal from '../schedule/ShiftTemplateModal'
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Thiết lập nhân viên — faithful re-creation of the KiotViet employee-settings
  * screen. Only the "Chấm công" and "Tính lương" tabs are kept.
+ * "Chấm công" is wired to the real UC-AT-05 settings API + UC-AT-01 shift CRUD.
  * ──────────────────────────────────────────────────────────────────────────── */
 
 type Tab = 'attendance' | 'payroll'
-
-interface ShiftRow { id: string; name: string; time: string; hours: string; active: boolean }
-const INITIAL_SHIFTS: ShiftRow[] = [
-  { id: 'morning', name: 'Sáng', time: '07:00 - 11:00', hours: '4 giờ', active: true },
-  { id: 'afternoon', name: 'Chiều', time: '13:00 - 17:00', hours: '4 giờ', active: true },
-  { id: 'night', name: 'Đêm', time: '21:00 - 01:00', hours: '4 giờ', active: true },
-]
 
 /* ── icons ─────────────────────────────────────────────────────────────────── */
 const InfoIcon = () => (
@@ -36,115 +34,6 @@ const PencilIcon = () => (
 const TrashIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
 )
-const ClockIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted shrink-0"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
-)
-const CloseIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-)
-
-/* ── shift-time helpers (for the Thêm/Sửa ca modal) ────────────────────────── */
-const uid = () => Math.random().toString(36).slice(2, 9)
-const TIME_OPTIONS: string[] = (() => {
-  const out: string[] = []
-  for (let mm = 0; mm < 24 * 60; mm += 15) out.push(`${String(Math.floor(mm / 60)).padStart(2, '0')}:${String(mm % 60).padStart(2, '0')}`)
-  return out
-})()
-const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
-const addH = (t: string, h: number) => { const x = ((toMin(t) + h * 60) % (24 * 60) + 24 * 60) % (24 * 60); return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}` }
-const durationText = (start: string, end: string) => {
-  let d = toMin(end) - toMin(start)
-  if (d <= 0) d += 24 * 60
-  const h = Math.floor(d / 60), m = d % 60
-  return m === 0 ? `${h} giờ` : `${h} giờ ${m} phút`
-}
-
-/* 15-minute time picker */
-const ShiftTimePicker = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  const listRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [])
-  useEffect(() => {
-    if (open && listRef.current) {
-      const el = listRef.current.querySelector('[data-selected="true"]') as HTMLElement | null
-      if (el) listRef.current.scrollTop = el.offsetTop - listRef.current.clientHeight / 2 + el.clientHeight / 2
-    }
-  }, [open])
-  return (
-    <div ref={ref} className="relative">
-      <button type="button" onClick={() => setOpen(o => !o)}
-        className={`flex items-center justify-between gap-2 w-[8rem] h-10 px-3 bg-card border rounded-md cursor-pointer transition-colors ${open ? 'border-primary' : 'border-line-default hover:border-line-strong'}`}>
-        <span className="text-md text-ink">{value}</span><ClockIcon />
-      </button>
-      {open && (
-        <div ref={listRef} className="absolute top-[calc(100%+0.4rem)] left-0 w-[8rem] max-h-[15rem] overflow-y-auto bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] py-1">
-          {TIME_OPTIONS.map(t => (
-            <button key={t} type="button" data-selected={t === value} onClick={() => { onChange(t); setOpen(false) }}
-              className={`block w-full text-left px-4 py-2 text-md cursor-pointer ${t === value ? 'text-primary font-medium bg-primary-25' : 'text-ink hover:bg-[var(--kv-state-hover-bg)]'}`}>{t}</button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/* Thêm / Sửa ca làm việc modal (same shape as the one in Lịch làm việc) */
-const ShiftModal = ({ shift, onClose, onSave }: { shift: ShiftRow | null; onClose: () => void; onSave: (name: string, start: string, end: string) => void }) => {
-  const [ps, pe] = (shift?.time ?? '07:00 - 11:00').split(' - ')
-  const [name, setName] = useState(shift?.name ?? '')
-  const [start, setStart] = useState(ps)
-  const [end, setEnd] = useState(pe)
-  const [error, setError] = useState('')
-  const nameRef = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    nameRef.current?.focus()
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
-  const handleStart = (t: string) => { setStart(t); setEnd(addH(t, 4)) }
-  const save = () => {
-    if (!name.trim()) { setError('Vui lòng nhập tên ca làm việc'); nameRef.current?.focus(); return }
-    onSave(name.trim(), start, end)
-  }
-  return (
-    <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 sm:p-6 overflow-y-auto bg-black/45" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="w-full max-w-[46rem] my-[8vh] bg-card rounded-xl shadow-lg flex flex-col">
-        <div className="flex items-center justify-between px-7 h-16 shrink-0">
-          <h2 className="text-h3 font-bold text-ink">{shift ? 'Sửa ca làm việc' : 'Thêm ca làm việc'}</h2>
-          <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer hover:bg-fill hover:text-ink" aria-label="Đóng"><CloseIcon /></button>
-        </div>
-        <div className="px-7 py-4 flex flex-col gap-5">
-          <div className="flex items-center gap-4">
-            <label className="w-[10rem] shrink-0 text-md text-ink">Tên</label>
-            <input ref={nameRef} value={name} onChange={e => { setName(e.target.value); if (error) setError('') }}
-              className="flex-1 min-w-0 h-10 px-3 bg-card border border-line-default rounded-md text-md text-ink outline-none focus:border-primary" />
-          </div>
-          <div className="flex items-center gap-4">
-            <label className="w-[10rem] shrink-0 text-md text-ink flex items-center gap-1.5">Giờ làm việc <InfoIcon /></label>
-            <div className="flex items-center flex-wrap gap-x-3 gap-y-2">
-              <ShiftTimePicker value={start} onChange={handleStart} />
-              <span className="text-md text-ink-subtle">Đến</span>
-              <ShiftTimePicker value={end} onChange={setEnd} />
-              <span className="text-md text-ink-subtle whitespace-nowrap">{durationText(start, end)}</span>
-            </div>
-          </div>
-          {error && <span className="text-md text-danger">{error}</span>}
-        </div>
-        <div className="flex items-center justify-end gap-3 px-7 py-4 border-t border-line shrink-0">
-          <button className="kv-btn kv-btn-outline-neutral h-10 bg-card" onClick={onClose}>Bỏ qua</button>
-          <button className="kv-btn kv-btn-primary h-10" onClick={save}>Lưu</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 /* ── primitives ────────────────────────────────────────────────────────────── */
 const Toggle = ({ on, onChange, disabled }: { on: boolean; onChange?: (v: boolean) => void; disabled?: boolean }) => (
   <button type="button" disabled={disabled} onClick={() => onChange?.(!on)}
@@ -153,9 +42,12 @@ const Toggle = ({ on, onChange, disabled }: { on: boolean; onChange?: (v: boolea
   </button>
 )
 
-const NumUnit = ({ value, unit, disabled, w = 'w-[14rem]' }: { value: string; unit: string; disabled?: boolean; w?: string }) => (
+/* plain minutes input used for "Tính đi muộn sau X phút" style fields */
+const NumUnit = ({ value, onChange, unit, disabled, w = 'w-[14rem]' }: { value: number; onChange: (v: number) => void; unit: string; disabled?: boolean; w?: string }) => (
   <div className={`inline-flex items-center h-9 px-3 border rounded-md ${disabled ? 'bg-fill border-line-default text-ink-muted' : 'bg-card border-line-default text-ink'} ${w}`}>
-    <input defaultValue={value} disabled={disabled} className="w-full min-w-0 bg-transparent outline-none text-md text-right" />
+    <input value={value} disabled={disabled} inputMode="numeric"
+      onChange={e => onChange(parseInt(e.target.value.replace(/\D/g, '') || '0', 10))}
+      className="w-full min-w-0 bg-transparent outline-none text-md text-right" />
     <span className="text-md text-ink-subtle ml-1.5 whitespace-nowrap">{unit}</span>
   </div>
 )
@@ -169,13 +61,13 @@ const MiniUnit = ({ value, onChange, unit }: { value: number; onChange: (v: numb
   </div>
 )
 
-/* giờ+phút input that opens a popover with Hủy / Lưu (Image #18) */
-const TimePopover = ({ initialH, initialM, disabled, w = 'w-[14rem]' }: { initialH: number; initialM: number; disabled?: boolean; w?: string }) => {
-  const [h, setH] = useState(initialH)
-  const [m, setM] = useState(initialM)
+/** minutes ⇄ giờ+phút popover with Hủy / Lưu, committing the total minutes on save. */
+const TimePopover = ({ minutes, onChange, disabled, w = 'w-[14rem]' }: { minutes: number; onChange: (v: number) => void; disabled?: boolean; w?: string }) => {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
   const [open, setOpen] = useState(false)
-  const [draftH, setDraftH] = useState(initialH)
-  const [draftM, setDraftM] = useState(initialM)
+  const [draftH, setDraftH] = useState(h)
+  const [draftM, setDraftM] = useState(m)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
@@ -197,7 +89,7 @@ const TimePopover = ({ initialH, initialM, disabled, w = 'w-[14rem]' }: { initia
           </div>
           <div className="flex items-center justify-end gap-2 mt-3">
             <button onClick={() => setOpen(false)} className="kv-btn kv-btn-outline-neutral h-8 bg-card">Hủy</button>
-            <button onClick={() => { setH(draftH); setM(draftM); setOpen(false) }} className="kv-btn kv-btn-primary h-8">Lưu</button>
+            <button onClick={() => { onChange(draftH * 60 + draftM); setOpen(false) }} className="kv-btn kv-btn-primary h-8">Lưu</button>
           </div>
         </div>
       )}
@@ -208,6 +100,13 @@ const TimePopover = ({ initialH, initialM, disabled, w = 'w-[14rem]' }: { initia
 const CheckLabel = ({ checked, onChange, disabled, children }: { checked: boolean; onChange?: (v: boolean) => void; disabled?: boolean; children: React.ReactNode }) => (
   <label className={`flex items-center gap-3 ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
     <input type="checkbox" checked={checked} disabled={disabled} onChange={e => onChange?.(e.target.checked)} className="accent-primary w-4 h-4 shrink-0" />
+    {children}
+  </label>
+)
+
+const RadioLabel = ({ checked, onChange, children }: { checked: boolean; onChange: () => void; children: React.ReactNode }) => (
+  <label className="flex items-center gap-2 cursor-pointer text-md text-ink">
+    <input type="radio" checked={checked} onChange={onChange} className="accent-primary w-4 h-4" />
     {children}
   </label>
 )
@@ -230,23 +129,38 @@ const Block = ({ title, desc, right, children, last }: { title: string; desc?: s
 const EmployeeSettings = () => {
   const [tab, setTab] = useState<Tab>('attendance')
   const [shiftListOpen, setShiftListOpen] = useState(false)
-  const [shifts, setShifts] = useState<ShiftRow[]>(INITIAL_SHIFTS)
+  const [shifts, setShifts] = useState<ShiftDto[]>([])
 
-  // attendance toggles / checkboxes
-  const [halfDay, setHalfDay] = useState(false)
-  const [countLate, setCountLate] = useState(true)
-  const [countEarly, setCountEarly] = useState(true)
-  const [otBefore, setOtBefore] = useState(true)
-  const [otAfter, setOtAfter] = useState(true)
-  const [singleInOut, setSingleInOut] = useState(false)
-  const [autoAttendance, setAutoAttendance] = useState(false)
-  const [noSchedule, setNoSchedule] = useState(true)
+  const [settings, setSettings] = useState<AttendanceSettingsDto | null>(null)
+  const [loadError, setLoadError] = useState('')
+  const [saveError, setSaveError] = useState('')
 
-  // payroll toggles
+  // payroll toggles (out of AT scope — display-only, no persistence)
   const [autoCreate, setAutoCreate] = useState(true)
   const [autoUpdate, setAutoUpdate] = useState(true)
   const [pit, setPit] = useState(false)
   const [insurance, setInsurance] = useState(false)
+
+  const loadShifts = () => {
+    listShifts().then(res => setShifts(res.data.data)).catch(() => {})
+  }
+
+  useEffect(() => {
+    loadShifts()
+    getSettings()
+      .then(res => setSettings(res.data.data))
+      .catch(err => setLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập chấm công.'))
+  }, [])
+
+  const commit = async (next: AttendanceSettingsDto) => {
+    setSettings(next) // optimistic
+    try {
+      await updateSettings(next)
+      setSaveError('')
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : 'Không thể lưu thiết lập chấm công.')
+    }
+  }
 
   const NAV = [
     { id: 'attendance' as Tab, label: 'Chấm công', icon: <CalCheckIcon /> },
@@ -274,15 +188,18 @@ const EmployeeSettings = () => {
         {/* ── main + right aside ───────────────────────────────────────── */}
         <div className="flex-1 min-w-0 flex gap-6 min-h-0">
           <main className="flex-1 min-w-0 bg-card border border-line rounded-lg px-8 py-6 overflow-y-auto min-h-0">
-            {tab === 'attendance' && !shiftListOpen && (
-              <AttendanceSettings
+            {loadError && <div className="mb-4 px-4 py-2 rounded-md bg-danger-50 text-danger text-md border border-danger/30">{loadError}</div>}
+            {tab === 'attendance' && !shiftListOpen && settings && (
+              <AttendanceSettingsView
                 onOpenShiftList={() => setShiftListOpen(true)}
-                shiftCount={shifts.filter(s => s.active).length}
-                state={{ halfDay, setHalfDay, countLate, setCountLate, countEarly, setCountEarly, otBefore, setOtBefore, otAfter, setOtAfter, singleInOut, setSingleInOut, autoAttendance, setAutoAttendance, noSchedule, setNoSchedule }}
+                shiftCount={shifts.filter(s => s.status === 'ACTIVE').length}
+                settings={settings}
+                commit={commit}
+                saveError={saveError}
               />
             )}
             {tab === 'attendance' && shiftListOpen && (
-              <ShiftList shifts={shifts} setShifts={setShifts} onBack={() => setShiftListOpen(false)} />
+              <ShiftList shifts={shifts} onBack={() => setShiftListOpen(false)} onChanged={loadShifts} />
             )}
             {tab === 'payroll' && (
               <PayrollSettings state={{ autoCreate, setAutoCreate, autoUpdate, setAutoUpdate, pit, setPit, insurance, setInsurance }} />
@@ -295,98 +212,142 @@ const EmployeeSettings = () => {
 }
 
 /* ── Chấm công tab ─────────────────────────────────────────────────────────── */
-interface AttnState {
-  halfDay: boolean; setHalfDay: (v: boolean) => void
-  countLate: boolean; setCountLate: (v: boolean) => void
-  countEarly: boolean; setCountEarly: (v: boolean) => void
-  otBefore: boolean; setOtBefore: (v: boolean) => void
-  otAfter: boolean; setOtAfter: (v: boolean) => void
-  singleInOut: boolean; setSingleInOut: (v: boolean) => void
-  autoAttendance: boolean; setAutoAttendance: (v: boolean) => void
-  noSchedule: boolean; setNoSchedule: (v: boolean) => void
+const AttendanceSettingsView = ({ onOpenShiftList, shiftCount, settings, commit, saveError }: {
+  onOpenShiftList: () => void
+  shiftCount: number
+  settings: AttendanceSettingsDto
+  commit: (next: AttendanceSettingsDto) => void
+  saveError: string
+}) => {
+  const set = <K extends keyof AttendanceSettingsDto>(key: K, value: AttendanceSettingsDto[K]) =>
+    commit({ ...settings, [key]: value })
+
+  return (
+    <div>
+      <h2 className="text-lg font-bold text-ink mb-2">Thiết lập chấm công</h2>
+      {saveError && <div className="mb-3 px-4 py-2 rounded-md bg-danger-50 text-danger text-md border border-danger/30">{saveError}</div>}
+
+      <Block title="Thiết lập ca làm việc" desc="Quản lý các ca làm việc của cửa hàng"
+        right={<button onClick={onOpenShiftList} className="flex items-center gap-1 text-md text-ink hover:text-primary cursor-pointer">{shiftCount} ca làm việc <ChevronRight /></button>} />
+
+      <Block title="Số giờ của ngày công chuẩn" desc="Thiết lập số giờ tính 1 công hay 0,5 công của loại lương Theo ngày công chuẩn (BR-AT-08)">
+        <div className="flex items-center gap-3">
+          <span className="text-md text-ink">Số giờ của 1 ngày công chuẩn là</span>
+          <TimePopover minutes={settings.standardWorkdayMinutes} onChange={v => set('standardWorkdayMinutes', v)} />
+          <InfoIcon />
+        </div>
+        <CheckLabel checked={settings.halfDayEnabled} onChange={v => set('halfDayEnabled', v)}>
+          <span className="text-md text-ink">Tính nửa công khi thời gian làm việc</span>
+          <InfoIcon />
+        </CheckLabel>
+        <div className="flex items-center gap-3 pl-7">
+          <span className="text-md text-ink-subtle">Từ</span>
+          <TimePopover minutes={settings.halfDayMinMinutes} onChange={v => set('halfDayMinMinutes', v)} disabled={!settings.halfDayEnabled} />
+          <span className="text-md text-ink-subtle">Đến</span>
+          <TimePopover minutes={settings.halfDayMaxMinutes} onChange={v => set('halfDayMaxMinutes', v)} disabled={!settings.halfDayEnabled} w="w-[18rem]" />
+        </div>
+        <CheckLabel checked={false} disabled>
+          <span className="text-md text-ink-muted">Ghi nhận đi muộn - về sớm nếu nhân viên làm nửa công</span>
+        </CheckLabel>
+      </Block>
+
+      <Block title="Cài đặt đi muộn - về sớm" desc="Cài đặt thời gian tối đa được đi muộn hoặc về sớm (BR-AT-09)">
+        <CheckLabel checked={settings.lateEnabled} onChange={v => set('lateEnabled', v)}>
+          <span className="w-[11rem] text-md text-ink">Tính đi muộn sau</span>
+          <NumUnit value={settings.lateGraceMinutes} onChange={v => set('lateGraceMinutes', v)} unit="phút" disabled={!settings.lateEnabled} />
+          <InfoIcon />
+        </CheckLabel>
+        <CheckLabel checked={settings.earlyLeaveEnabled} onChange={v => set('earlyLeaveEnabled', v)}>
+          <span className="w-[11rem] text-md text-ink">Tính về sớm trước</span>
+          <NumUnit value={settings.earlyLeaveGraceMinutes} onChange={v => set('earlyLeaveGraceMinutes', v)} unit="phút" disabled={!settings.earlyLeaveEnabled} />
+          <InfoIcon />
+        </CheckLabel>
+      </Block>
+
+      <Block title="Cài đặt làm thêm giờ" desc="Tính làm thêm giờ cho nhân viên khi vào ca sớm hoặc tan ca muộn (BR-AT-10)">
+        <CheckLabel checked={settings.otBeforeEnabled} onChange={v => set('otBeforeEnabled', v)}>
+          <span className="w-[11rem] text-md text-ink">Tính làm thêm giờ trước ca</span>
+          <NumUnit value={settings.otBeforeMinMinutes} onChange={v => set('otBeforeMinMinutes', v)} unit="phút" disabled={!settings.otBeforeEnabled} />
+          <InfoIcon />
+        </CheckLabel>
+        <CheckLabel checked={settings.otAfterEnabled} onChange={v => set('otAfterEnabled', v)}>
+          <span className="w-[11rem] text-md text-ink">Tính làm thêm giờ sau ca</span>
+          <NumUnit value={settings.otAfterMinMinutes} onChange={v => set('otAfterMinMinutes', v)} unit="phút" disabled={!settings.otAfterEnabled} />
+          <InfoIcon />
+        </CheckLabel>
+      </Block>
+
+      <Block title="Cho phép chấm 1 lượt Vào - Ra khi làm nhiều ca liên tục"
+        desc="Ví dụ: Ca 1 (7:00 - 12:00), Ca 2(13:00 - 18:00). Bạn chỉ cần chấm công Vào ca 1, chấm công Ra ca 2, hệ thống sẽ tự động ghi nhận Ra ca 1 lúc 12:00, Vào ca 2 lúc 13:00 (BR-AT-11)"
+        right={<Toggle on={settings.mergedShiftEnabled} onChange={v => set('mergedShiftEnabled', v)} />}>
+        {settings.mergedShiftEnabled && (
+          <div className="flex items-center gap-6 flex-wrap">
+            <div className="flex items-center gap-3">
+              <span className="text-md text-ink">Số ca tối đa</span>
+              <NumUnit value={settings.mergedShiftMaxCount} onChange={v => set('mergedShiftMaxCount', Math.max(2, v))} unit="ca" w="w-[10rem]" />
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-md text-ink">Thời gian nghỉ tối đa giữa 2 ca</span>
+              <NumUnit value={settings.mergedShiftMaxBreakMinutes} onChange={v => set('mergedShiftMaxBreakMinutes', v)} unit="phút" />
+            </div>
+          </div>
+        )}
+      </Block>
+
+      <Block title="Chấm công thủ công ở bảng chấm công" desc="Chế độ giờ mặc định khi Quản lý chấm công thủ công trên Bảng chấm công (BR-AT-05)">
+        <RadioLabel checked={settings.manualDefaultTimeMode === 'SHIFT_TIME'} onChange={() => set('manualDefaultTimeMode', 'SHIFT_TIME' as ManualTimeMode)}>
+          Theo giờ bắt đầu/kết thúc ca
+        </RadioLabel>
+        <RadioLabel checked={settings.manualDefaultTimeMode === 'ACTUAL_TIME'} onChange={() => set('manualDefaultTimeMode', 'ACTUAL_TIME' as ManualTimeMode)}>
+          Theo giờ chấm công thực tế
+        </RadioLabel>
+      </Block>
+
+      <Block title="Tự động chấm công" desc="Nhân viên không phải chủ động chấm công. Hệ thống sẽ tự động chấm công thay nhân viên (ngoài phạm vi hiện tại)"
+        right={<Toggle on={false} disabled />} />
+
+      <Block title="Chấm công không cần xếp lịch" desc="Ngoài các ca làm việc đã được xếp lịch, nhân viên được phép chấm công vào ca làm việc chưa được xếp lịch (ngoài phạm vi hiện tại)"
+        right={<Toggle on={false} disabled />} last />
+    </div>
+  )
 }
-const AttendanceSettings = ({ onOpenShiftList, shiftCount, state }: { onOpenShiftList: () => void; shiftCount: number; state: AttnState }) => (
-  <div>
-    <h2 className="text-lg font-bold text-ink mb-2">Thiết lập chấm công</h2>
-
-    <Block title="Thiết lập ca làm việc" desc="Quản lý các ca làm việc của cửa hàng"
-      right={<button onClick={onOpenShiftList} className="flex items-center gap-1 text-md text-ink hover:text-primary cursor-pointer">{shiftCount} ca làm việc <ChevronRight /></button>} />
-
-    <Block title="Số giờ của ngày công chuẩn" desc="Thiết lập số giờ tính 1 công hay 0,5 công của loại lương Theo ngày công chuẩn">
-      <div className="flex items-center gap-3">
-        <span className="text-md text-ink">Số giờ của 1 ngày công chuẩn là</span>
-        <TimePopover initialH={8} initialM={0} />
-        <InfoIcon />
-      </div>
-      <CheckLabel checked={state.halfDay} onChange={state.setHalfDay}>
-        <span className="text-md text-ink">Tính nửa công khi thời gian làm việc</span>
-        <InfoIcon />
-      </CheckLabel>
-      <div className="flex items-center gap-3 pl-7">
-        <span className="text-md text-ink-subtle">Từ</span>
-        <TimePopover initialH={0} initialM={0} disabled={!state.halfDay} />
-        <span className="text-md text-ink-subtle">Đến</span>
-        <TimePopover initialH={4} initialM={30} disabled={!state.halfDay} w="w-[18rem]" />
-      </div>
-      <CheckLabel checked={false} disabled>
-        <span className="text-md text-ink-muted">Ghi nhận đi muộn - về sớm nếu nhân viên làm nửa công</span>
-      </CheckLabel>
-    </Block>
-
-    <Block title="Cài đặt đi muộn - về sớm" desc="Cài đặt thời gian tối đa được đi muộn hoặc về sớm">
-      <CheckLabel checked={state.countLate} onChange={state.setCountLate}>
-        <span className="w-[11rem] text-md text-ink">Tính đi muộn sau</span>
-        <NumUnit value="0" unit="phút" />
-        <InfoIcon />
-      </CheckLabel>
-      <CheckLabel checked={state.countEarly} onChange={state.setCountEarly}>
-        <span className="w-[11rem] text-md text-ink">Tính về sớm trước</span>
-        <NumUnit value="0" unit="phút" />
-        <InfoIcon />
-      </CheckLabel>
-    </Block>
-
-    <Block title="Cài đặt làm thêm giờ" desc="Tính làm thêm giờ cho nhân viên khi vào ca sớm hoặc tan ca muộn">
-      <CheckLabel checked={state.otBefore} onChange={state.setOtBefore}>
-        <span className="w-[11rem] text-md text-ink">Tính làm thêm giờ trước ca</span>
-        <NumUnit value="0" unit="phút" />
-        <InfoIcon />
-      </CheckLabel>
-      <CheckLabel checked={state.otAfter} onChange={state.setOtAfter}>
-        <span className="w-[11rem] text-md text-ink">Tính làm thêm giờ sau ca</span>
-        <NumUnit value="0" unit="phút" />
-        <InfoIcon />
-      </CheckLabel>
-    </Block>
-
-    <Block title="Cho phép chấm 1 lượt Vào - Ra khi làm nhiều ca liên tục"
-      desc="Ví dụ: Ca 1 (7:00 - 12:00), Ca 2(13:00 - 18:00). Bạn chỉ cần chấm công Vào ca 1, chấm công Ra ca 2 (bằng mã QR hoặc chấm vân tay), hệ thống sẽ tự động ghi nhận Ra ca 1 lúc 12:00, Vào ca 2 lúc 13:00"
-      right={<Toggle on={state.singleInOut} onChange={state.setSingleInOut} />} />
-
-    <Block title="Tự động chấm công" desc="Nhân viên không phải chủ động chấm công. Hệ thống sẽ tự động chấm công thay nhân viên"
-      right={<Toggle on={state.autoAttendance} onChange={state.setAutoAttendance} />} />
-
-    <Block title="Chấm công không cần xếp lịch" desc="Ngoài các ca làm việc đã được xếp lịch, nhân viên được phép chấm công vào ca làm việc chưa được xếp lịch."
-      right={<Toggle on={state.noSchedule} onChange={state.setNoSchedule} />} last />
-  </div>
-)
 
 /* ── Danh sách ca làm việc (sub-view of Chấm công) ─────────────────────────── */
-const ShiftList = ({ shifts, setShifts, onBack }: { shifts: ShiftRow[]; setShifts: React.Dispatch<React.SetStateAction<ShiftRow[]>>; onBack: () => void }) => {
-  const [modal, setModal] = useState<{ shift: ShiftRow | null } | null>(null)
-  const toggle = (id: string) => setShifts(rs => rs.map(r => r.id === id ? { ...r, active: !r.active } : r))
-  const remove = (id: string) => setShifts(rs => rs.filter(r => r.id !== id))
-  const save = (name: string, start: string, end: string) => {
-    const time = `${start} - ${end}`
-    const hours = durationText(start, end)
-    if (modal?.shift) {
-      const id = modal.shift.id
-      setShifts(rs => rs.map(r => r.id === id ? { ...r, name, time, hours } : r))
-    } else {
-      setShifts(rs => [...rs, { id: uid(), name, time, hours, active: true }])
+const ShiftList = ({ shifts, onBack, onChanged }: { shifts: ShiftDto[]; onBack: () => void; onChanged: () => void }) => {
+  const [modal, setModal] = useState<{ shift: ShiftDto | null } | null>(null)
+  const [error, setError] = useState('')
+
+  const toggleActive = async (s: ShiftDto) => {
+    try {
+      await updateShift(s.id, {
+        name: s.name, startTime: s.startTime, endTime: s.endTime,
+        checkInWindowStart: s.checkInWindowStart, checkInWindowEnd: s.checkInWindowEnd,
+        status: s.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+      })
+      onChanged()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không thể cập nhật ca làm việc.')
     }
-    setModal(null)
   }
+
+  const remove = async (s: ShiftDto) => {
+    try {
+      await deleteShift(s.id)
+      onChanged()
+    } catch (err) {
+      // BR-AT-02: shifts with attendance history can only be deactivated.
+      setError(err instanceof ApiError ? err.message : 'Ca đã có dữ liệu chấm công. Vui lòng ngừng hoạt động thay vì xóa.')
+    }
+  }
+
+  const durationText = (start: string, end: string) => {
+    const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+    let d = toMin(end) - toMin(start)
+    if (d <= 0) d += 24 * 60
+    const h = Math.floor(d / 60), m = d % 60
+    return m === 0 ? `${h} giờ` : `${h} giờ ${m} phút`
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
@@ -397,6 +358,8 @@ const ShiftList = ({ shifts, setShifts, onBack }: { shifts: ShiftRow[]; setShift
           <span className="text-lg leading-none">+</span> Thêm ca làm việc
         </button>
       </div>
+
+      {error && <div className="mb-3 px-4 py-2 rounded-md bg-danger-50 text-danger text-md border border-danger/30">{error}</div>}
 
       <table className="w-full border-collapse">
         <thead>
@@ -414,33 +377,30 @@ const ShiftList = ({ shifts, setShifts, onBack }: { shifts: ShiftRow[]; setShift
             <tr key={s.id} className="border-b border-line">
               <td className="px-4 py-4 text-md text-ink">{i + 1}</td>
               <td className="px-4 py-4 text-md text-ink">{s.name}</td>
-              <td className="px-4 py-4 text-md text-ink">{s.time}</td>
-              <td className="px-4 py-4 text-md text-ink">{s.hours}</td>
-              <td className="px-4 py-4"><div className="flex justify-center"><Toggle on={s.active} onChange={() => toggle(s.id)} /></div></td>
+              <td className="px-4 py-4 text-md text-ink">{formatTime(s.startTime)} - {formatTime(s.endTime)}</td>
+              <td className="px-4 py-4 text-md text-ink">{durationText(s.startTime, s.endTime)}</td>
+              <td className="px-4 py-4"><div className="flex justify-center"><Toggle on={s.status === 'ACTIVE'} onChange={() => toggleActive(s)} /></div></td>
               <td className="px-4 py-4">
                 <div className="flex items-center justify-end gap-4 text-ink-muted">
                   <button onClick={() => setModal({ shift: s })} className="hover:text-primary cursor-pointer" aria-label="Sửa"><PencilIcon /></button>
-                  <button onClick={() => remove(s.id)} className="hover:text-danger cursor-pointer" aria-label="Xóa"><TrashIcon /></button>
+                  <button onClick={() => remove(s)} className="hover:text-danger cursor-pointer" aria-label="Xóa"><TrashIcon /></button>
                 </div>
               </td>
             </tr>
           ))}
+          {shifts.length === 0 && (
+            <tr><td colSpan={6} className="px-4 py-10 text-center text-md text-ink-subtle">Chưa có ca làm việc nào</td></tr>
+          )}
         </tbody>
       </table>
 
-      <div className="flex items-center gap-3 mt-4 text-md text-ink-subtle">
-        Hiển thị
-        <div className="relative">
-          <select className="h-9 pl-3 pr-8 bg-card border border-line-default rounded-md text-md text-ink appearance-none cursor-pointer outline-none focus:border-primary">
-            <option>10 bản ghi</option>
-            <option>20 bản ghi</option>
-            <option>50 bản ghi</option>
-          </select>
-          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rotate-90"><ChevronRight /></span>
-        </div>
-      </div>
-
-      {modal && <ShiftModal shift={modal.shift} onClose={() => setModal(null)} onSave={save} />}
+      {modal && (
+        <ShiftTemplateModal
+          shift={modal.shift}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); onChanged() }}
+        />
+      )}
     </div>
   )
 }

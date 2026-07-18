@@ -126,6 +126,39 @@ public enum ApplicationError {
     ROSTER_REQUEST_NOT_FOUND("Shift request not found", HttpStatus.NOT_FOUND),
     ROSTER_REQUEST_NOT_PENDING("This request has already been decided", HttpStatus.CONFLICT),
 
+    // Payroll (SRS_PAY) — UC-PAY-03..08, BR-PAY-11..18
+    PAYROLL_SHEET_NOT_FOUND("Payroll sheet not found", HttpStatus.NOT_FOUND),
+    PAYSLIP_NOT_FOUND("Payslip not found", HttpStatus.NOT_FOUND),
+    PAYROLL_SHEET_NOT_DRAFT("Chỉ bảng lương ở trạng thái Tạm tính mới được thực hiện thao tác này", HttpStatus.UNPROCESSABLE_ENTITY),
+    PAYROLL_SHEET_NOT_FINALIZED("Chỉ bảng lương Đã chốt lương mới được thanh toán", HttpStatus.UNPROCESSABLE_ENTITY),
+    PAYROLL_PERIOD_INVALID("Kỳ làm việc không hợp lệ", HttpStatus.BAD_REQUEST),
+    PAYROLL_SCOPE_EMPLOYEES_REQUIRED("Phạm vi Tùy chọn cần ít nhất một nhân viên", HttpStatus.BAD_REQUEST),
+    SALARY_PAYMENT_AMOUNT_INVALID("Tiền trả nhân viên phải lớn hơn 0", HttpStatus.UNPROCESSABLE_ENTITY),
+    SALARY_PAYMENT_EXCEEDS_REMAINING("Tiền trả nhân viên vượt quá số còn cần trả", HttpStatus.UNPROCESSABLE_ENTITY),
+    PAYSLIP_ALREADY_PAID("Phiếu lương đã có thanh toán, không thể hủy", HttpStatus.UNPROCESSABLE_ENTITY),
+    PAYSLIP_CANCELLED("Phiếu lương đã bị hủy", HttpStatus.UNPROCESSABLE_ENTITY),
+
+    // Attendance & Shift (SRS_AT) — UC-AT-01..07, BR-AT-*
+    AT_SHIFT_NOT_FOUND("Không tìm thấy ca làm việc", HttpStatus.NOT_FOUND),
+    AT_SHIFT_NAME_DUPLICATE("Tên ca làm việc đã tồn tại", HttpStatus.CONFLICT),
+    AT_SHIFT_TIME_INVALID("Giờ làm việc của ca không hợp lệ", HttpStatus.BAD_REQUEST),
+    AT_SHIFT_INACTIVE("Ca làm việc đã ngừng hoạt động, không thể chọn khi xếp lịch", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_SHIFT_HAS_ATTENDANCE("Ca đã có dữ liệu chấm công, chỉ có thể ngừng hoạt động", HttpStatus.CONFLICT),
+    AT_SCHEDULE_NOT_FOUND("Không tìm thấy lịch làm việc", HttpStatus.NOT_FOUND),
+    AT_SCHEDULE_DUPLICATE("Nhân viên đã được xếp ca này trong ngày", HttpStatus.CONFLICT),
+    AT_SCHEDULE_OVERLAP_LIMIT("Tổng thời gian trùng giữa các ca trong ngày vượt quá 12 giờ", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_SCHEDULE_HAS_ATTENDANCE("Lịch đã có dữ liệu chấm công, không thể xóa", HttpStatus.CONFLICT),
+    AT_SCHEDULE_RULE_NOT_FOUND("Không tìm thấy quy tắc lặp lịch", HttpStatus.NOT_FOUND),
+    AT_EMPLOYEE_INACTIVE("Nhân viên đã ngừng làm việc, không thể xếp lịch mới", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_RECORD_NOT_FOUND("Không tìm thấy bản ghi chấm công", HttpStatus.NOT_FOUND),
+    AT_RECORD_TIME_INVALID("Giờ ra phải sau giờ vào", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_SUBSTITUTE_SINGLE_ONLY("Chỉ có thể chỉ định người làm thay khi chọn đúng một lịch làm việc", HttpStatus.BAD_REQUEST),
+    AT_SUBSTITUTE_SELF("Người làm thay phải khác nhân viên được xếp ca", HttpStatus.BAD_REQUEST),
+    AT_MERGE_LIMIT_EXCEEDED("Vượt giới hạn gộp ca liên tục", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_MERGE_DISABLED("Chế độ chấm 1 lượt Vào–Ra cho nhiều ca liên tục chưa được bật", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_VIOLATION_TYPE_NOT_FOUND("Không tìm thấy loại vi phạm", HttpStatus.NOT_FOUND),
+    AT_SETTING_INVALID("Thiết lập chấm công không hợp lệ", HttpStatus.BAD_REQUEST),
+
     // System
     INTERNAL_ERROR("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR);
 
