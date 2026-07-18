@@ -28,4 +28,10 @@ public interface InvoiceItemAllocationRepository extends JpaRepository<InvoiceIt
     List<InvoiceItemAllocation> findActiveByOrderItemIdsForUpdate(
             @Param("orderItemIds") Collection<String> orderItemIds
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM InvoiceItemAllocation a "
+            + "WHERE a.invoiceId = :invoiceId AND a.active = true "
+            + "ORDER BY a.orderItemId ASC, a.id ASC")
+    List<InvoiceItemAllocation> findActiveByInvoiceIdForUpdate(@Param("invoiceId") String invoiceId);
 }

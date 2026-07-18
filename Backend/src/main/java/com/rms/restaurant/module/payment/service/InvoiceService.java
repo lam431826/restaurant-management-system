@@ -11,7 +11,6 @@ public interface InvoiceService {
     InvoiceDetailResponse getById(String invoiceId);
     SendInvoiceResponse sendInvoice(String invoiceId);
     InvoiceResponse getByOrderId(String orderId);
-    InvoiceResponse[] split(SplitBillRequest request);
     InvoiceResponse merge(MergeBillRequest request);
 
     // PM-06 / PM-07 — manager read-only views

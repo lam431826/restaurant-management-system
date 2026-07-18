@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,6 +21,10 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, String> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT oi FROM OrderItem oi WHERE oi.id = :id")
     Optional<OrderItem> findByIdForUpdate(@Param("id") String id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT oi FROM OrderItem oi WHERE oi.id IN :ids ORDER BY oi.id ASC")
+    List<OrderItem> findAllByIdsForUpdate(@Param("ids") Collection<String> ids);
 
     boolean existsByMenuItemId(String menuItemId);
 }

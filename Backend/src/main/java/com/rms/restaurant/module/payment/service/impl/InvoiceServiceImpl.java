@@ -232,7 +232,6 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     @Override public InvoiceResponse getByOrderId(String orderId) { return null; }
-    @Override public InvoiceResponse[] split(SplitBillRequest request) { return null; }
     @Override public InvoiceResponse merge(MergeBillRequest request) { return null; }
 
     // ── PM-07: invoice / payment history list ────────────────────────────
