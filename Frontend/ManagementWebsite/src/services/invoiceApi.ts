@@ -1,5 +1,7 @@
 import { apiData } from './apiClient'
 
+export type InvoiceStatus = 'ACTIVE' | 'MERGED' | 'SPLIT'
+
 export interface InvoiceSummary {
   id: string
   orderId: string
@@ -9,6 +11,9 @@ export interface InvoiceSummary {
   paid: boolean
   promotionId: string | null
   createdAt: string
+  status: InvoiceStatus
+  mergedIntoInvoiceId: string | null
+  splitFromInvoiceId: string | null
 }
 
 export interface InvoiceItem {
@@ -18,6 +23,8 @@ export interface InvoiceItem {
   unitPrice: number
   lineTotal: number
   note: string | null
+  orderItemId: string
+  allocationId: string
 }
 
 export interface InvoiceDetail extends InvoiceSummary {
@@ -33,6 +40,33 @@ export interface InvoiceMutationResponse {
   totalAmount: number
   paid: boolean
   createdAt: string
+  status: InvoiceStatus
+  mergedIntoInvoiceId: string | null
+  splitFromInvoiceId: string | null
+}
+
+export interface SplitInvoiceGroupRequest {
+  allocationIds: string[]
+}
+
+export interface SplitInvoiceRequest {
+  groups: SplitInvoiceGroupRequest[]
+}
+
+export interface SplitInvoiceChildResponse {
+  invoiceId: string
+  subtotal: number
+  totalAmount: number
+  sourceAllocationIds: string[]
+  newAllocationIds: string[]
+}
+
+export interface SplitInvoiceResponse {
+  sourceInvoiceId: string
+  sourceStatus: InvoiceStatus
+  sourceSubtotal: number
+  sourceTotal: number
+  children: SplitInvoiceChildResponse[]
 }
 
 export interface InvoiceFilters {
@@ -81,4 +115,10 @@ export const applyInvoiceDiscount = (invoiceId: string, promotionCode: string) =
 export const sendInvoice = (invoiceId: string) =>
   apiData<SendInvoiceResponse>(`/api/invoices/${invoiceId}/send`, {
     method: 'POST',
+  })
+
+export const splitInvoice = (invoiceId: string, request: SplitInvoiceRequest) =>
+  apiData<SplitInvoiceResponse>(`/api/invoices/${invoiceId}/split`, {
+    method: 'POST',
+    body: JSON.stringify(request),
   })

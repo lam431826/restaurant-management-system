@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { logout } from "../../api/auth";
@@ -17,8 +17,13 @@ import {
   getInvoiceById,
   getInvoices,
   sendInvoice,
+  splitInvoice,
 } from "../../services/invoiceApi";
-import type { InvoiceDetail, InvoiceSummary } from "../../services/invoiceApi";
+import type {
+  InvoiceDetail,
+  InvoiceSummary,
+  SplitInvoiceRequest,
+} from "../../services/invoiceApi";
 import { processPayment } from "../../services/paymentApi";
 import type { PaymentMethod } from "../../services/paymentApi";
 import { getStoredUser } from "../../services/tokenStorage";
@@ -360,6 +365,62 @@ const getInvoiceUiErrorMessage = (
   return fallback?.[1] ?? fallbackMessage;
 };
 
+const SPLIT_INVOICE_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_NOT_FOUND: "Hóa đơn không còn tồn tại. Danh sách đã được làm mới.",
+  ORDER_NOT_FOUND: "Đơn hàng không còn tồn tại. Dữ liệu đã được làm mới.",
+  INVOICE_NOT_PAYABLE:
+    "Trạng thái hóa đơn đã thay đổi và không còn có thể chia.",
+  INVOICE_ALREADY_PAID:
+    "Hóa đơn đã được thanh toán bởi một thao tác khác.",
+  INVOICE_NOT_SPLITTABLE: "Hóa đơn không đáp ứng điều kiện để chia.",
+  INVALID_INVOICE_SPLIT:
+    "Nhóm chia hóa đơn chưa hợp lệ. Vui lòng kiểm tra lại các món.",
+  INVALID_INVOICE_TOTAL:
+    "Trạng thái tài chính của hóa đơn không hợp lệ để chia.",
+  INVOICE_ALLOCATION_DATA_INVALID:
+    "Dữ liệu phân bổ món không nhất quán. Vui lòng tải lại hóa đơn.",
+};
+
+const STALE_INVOICE_ERROR_CODES = new Set([
+  "INVOICE_NOT_FOUND",
+  "ORDER_NOT_FOUND",
+  "INVOICE_NOT_PAYABLE",
+  "INVOICE_ALREADY_PAID",
+  "INVOICE_NOT_SPLITTABLE",
+  "INVALID_INVOICE_TOTAL",
+  "INVOICE_ALLOCATION_DATA_INVALID",
+]);
+
+const getSplitInvoiceErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return (
+      SPLIT_INVOICE_ERROR_MESSAGES[error.code] ??
+      "Không thể chia hóa đơn. Vui lòng thử lại."
+    );
+  }
+  return "Không thể chia hóa đơn. Vui lòng thử lại.";
+};
+
+const chooseInvoiceId = (
+  invoiceList: InvoiceSummary[],
+  preferredInvoiceId: string | null,
+) => {
+  if (
+    preferredInvoiceId &&
+    invoiceList.some((candidate) => candidate.id === preferredInvoiceId)
+  ) {
+    return preferredInvoiceId;
+  }
+  return (
+    invoiceList.find(
+      (candidate) => candidate.status === "ACTIVE" && !candidate.paid,
+    )?.id ??
+    invoiceList.find((candidate) => candidate.status === "ACTIVE")?.id ??
+    invoiceList[0]?.id ??
+    null
+  );
+};
+
 const CashierOrders = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -393,21 +454,29 @@ const CashierOrders = () => {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [successTotal, setSuccessTotal] = useState<number | null>(null);
   const [showChangePw, setShowChangePw] = useState(false);
-  const [backendOrderId, setBackendOrderId] = useState("");
-  const [invoiceChecked, setInvoiceChecked] = useState(false);
-  const [invoice, setInvoice] = useState<InvoiceSummary | null>(null);
-  const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(
+  const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
+  const [invoiceListOrderId, setInvoiceListOrderId] = useState<string | null>(
     null,
   );
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [selectedInvoiceDetail, setSelectedInvoiceDetail] =
+    useState<InvoiceDetail | null>(null);
   const [promotionCode, setPromotionCode] = useState("");
-  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceListLoading, setInvoiceListLoading] = useState(false);
+  const [invoiceListError, setInvoiceListError] = useState("");
+  const [invoiceDetailLoading, setInvoiceDetailLoading] = useState(false);
+  const [invoiceDetailError, setInvoiceDetailError] = useState("");
   const [invoiceAction, setInvoiceAction] = useState<string | null>(null);
+  const [splitError, setSplitError] = useState("");
   const [invoiceMessage, setInvoiceMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const invoiceListRequestRef = useRef(0);
+  const invoiceDetailRequestRef = useRef(0);
+  const splitSubmissionRef = useRef(false);
   const [orderActionMessage, setOrderActionMessage] = useState<{
     type: "error";
     text: string;
@@ -600,23 +669,36 @@ const CashierOrders = () => {
         quantity: item.quantity,
         note: item.rejectionNote,
       })) ?? [];
-  const orderHasInvoice =
-    !!invoice && !!selectedOrderId && invoice.orderId === selectedOrderId;
-  const currentOrderInvoice = orderHasInvoice ? invoice : null;
+  const invoiceListMatchesOrder =
+    !!selectedOrderId && invoiceListOrderId === selectedOrderId;
+  const currentOrderInvoices = invoiceListMatchesOrder ? invoices : [];
+  const selectedInvoice =
+    currentOrderInvoices.find(
+      (candidate) => candidate.id === selectedInvoiceId,
+    ) ?? null;
   const currentOrderInvoiceDetail =
-    currentOrderInvoice &&
-    invoiceDetail?.id === currentOrderInvoice.id &&
-    invoiceDetail.orderId === selectedOrderId
-      ? invoiceDetail
+    selectedInvoice &&
+    selectedInvoiceDetail?.id === selectedInvoice.id &&
+    selectedInvoiceDetail.orderId === selectedOrderId
+      ? selectedInvoiceDetail
       : null;
+  const activeOrderInvoices = currentOrderInvoices.filter(
+    (candidate) => candidate.status === "ACTIVE",
+  );
+  const orderHasInvoice = currentOrderInvoices.length > 0;
+  const invoiceChecked =
+    invoiceListMatchesOrder && !invoiceListLoading && !invoiceListError;
   const orderIsFinal =
     selectedOrder?.status === "CLOSED" || selectedOrder?.status === "CANCELLED";
   const canCloseSelectedOrder =
-    !!selectedOrder && !!currentOrderInvoice?.paid && !orderIsFinal;
+    !!selectedOrder &&
+    activeOrderInvoices.length > 0 &&
+    activeOrderInvoices.every((candidate) => candidate.paid) &&
+    !orderIsFinal;
   const emptyOrderWithoutInvoice =
     !!selectedOrder &&
     invoiceChecked &&
-    !currentOrderInvoice &&
+    !orderHasInvoice &&
     !orderIsFinal &&
     selectedOrderItemCount === 0;
   const disableItemMutation = orderHasInvoice || orderIsFinal;
@@ -631,57 +713,112 @@ const CashierOrders = () => {
     });
   };
 
-  const resetInvoiceLink = () => {
-    setBackendOrderId("");
-    setInvoiceChecked(false);
-    setInvoice(null);
-    setInvoiceDetail(null);
+  const resetInvoiceLink = useCallback(() => {
+    invoiceListRequestRef.current += 1;
+    invoiceDetailRequestRef.current += 1;
+    setInvoices([]);
+    setInvoiceListOrderId(null);
+    setSelectedInvoiceId(null);
+    setSelectedInvoiceDetail(null);
     setPromotionCode("");
+    setInvoiceListLoading(false);
+    setInvoiceListError("");
+    setInvoiceDetailLoading(false);
+    setInvoiceDetailError("");
     setInvoiceAction(null);
+    setSplitError("");
+    splitSubmissionRef.current = false;
     setInvoiceMessage(null);
     setPaymentOpen(false);
     setPaymentError("");
     setPaymentProcessing(false);
     setOrderActionMessage(null);
-  };
+  }, []);
 
-  const loadInvoiceForOrder = async (orderId: string) => {
-    const normalizedOrderId = orderId.trim();
-    if (!normalizedOrderId) {
-      setInvoiceMessage({
-        type: "error",
-        text: "Vui lòng chọn đơn hàng trước khi tạo hóa đơn",
-      });
-      return null;
-    }
+  const loadInvoiceDetail = useCallback(
+    async (invoiceId: string, expectedOrderId: string) => {
+      const requestId = ++invoiceDetailRequestRef.current;
+      setSelectedInvoiceDetail(null);
+      setInvoiceDetailLoading(true);
+      setInvoiceDetailError("");
+      try {
+        const detailData = await getInvoiceById(invoiceId);
+        if (requestId !== invoiceDetailRequestRef.current) return null;
+        if (detailData.orderId !== expectedOrderId) {
+          setInvoiceDetailError("Hóa đơn không thuộc đơn hàng đang chọn.");
+          return null;
+        }
+        setSelectedInvoiceDetail(detailData);
+        return detailData;
+      } catch (loadError) {
+        if (requestId !== invoiceDetailRequestRef.current) return null;
+        setInvoiceDetailError(
+          getInvoiceUiErrorMessage(
+            loadError,
+            INVOICE_DETAIL_LOAD_FALLBACK_ERROR,
+          ),
+        );
+        return null;
+      } finally {
+        if (requestId === invoiceDetailRequestRef.current) {
+          setInvoiceDetailLoading(false);
+        }
+      }
+    },
+    [],
+  );
 
-    setInvoiceLoading(true);
-    setInvoiceMessage(null);
-    try {
-      const foundInvoice =
-        (await getInvoices({ orderId: normalizedOrderId }))[0] ?? null;
-      setInvoiceChecked(true);
-      setInvoice(foundInvoice);
-      setInvoiceDetail(null);
+  const refreshInvoices = useCallback(
+    async (
+      orderId: string,
+      preferredInvoiceId: string | null = null,
+    ) => {
+      const normalizedOrderId = orderId.trim();
+      if (!normalizedOrderId) return null;
 
-      if (!foundInvoice) return null;
-
-      const detailData = await getInvoiceById(foundInvoice.id);
-      setInvoiceDetail(detailData);
-      return foundInvoice;
-    } catch (loadError) {
-      setInvoiceMessage({
-        type: "error",
-        text: getInvoiceUiErrorMessage(
-          loadError,
-          INVOICE_DETAIL_LOAD_FALLBACK_ERROR,
-        ),
-      });
-      return null;
-    } finally {
-      setInvoiceLoading(false);
-    }
-  };
+      const requestId = ++invoiceListRequestRef.current;
+      setInvoiceListLoading(true);
+      setInvoiceListError("");
+      try {
+        const foundInvoices = await getInvoices({ orderId: normalizedOrderId });
+        if (requestId !== invoiceListRequestRef.current) return null;
+        const nextSelectedId = chooseInvoiceId(
+          foundInvoices,
+          preferredInvoiceId,
+        );
+        setInvoices(foundInvoices);
+        setInvoiceListOrderId(normalizedOrderId);
+        setSelectedInvoiceId(nextSelectedId);
+        setSelectedInvoiceDetail(null);
+        setInvoiceDetailError("");
+        if (nextSelectedId) {
+          await loadInvoiceDetail(nextSelectedId, normalizedOrderId);
+        } else {
+          invoiceDetailRequestRef.current += 1;
+          setInvoiceDetailLoading(false);
+        }
+        return nextSelectedId;
+      } catch (loadError) {
+        if (requestId !== invoiceListRequestRef.current) return null;
+        setInvoices([]);
+        setInvoiceListOrderId(normalizedOrderId);
+        setSelectedInvoiceId(null);
+        setSelectedInvoiceDetail(null);
+        setInvoiceListError(
+          getInvoiceUiErrorMessage(
+            loadError,
+            "Không thể tải danh sách hóa đơn.",
+          ),
+        );
+        return null;
+      } finally {
+        if (requestId === invoiceListRequestRef.current) {
+          setInvoiceListLoading(false);
+        }
+      }
+    },
+    [loadInvoiceDetail],
+  );
 
   const handleGenerateInvoice = async () => {
     const invoiceOrderId = selectedOrderId.trim();
@@ -705,13 +842,12 @@ const CashierOrders = () => {
     setInvoiceMessage(null);
     setOrderActionMessage(null);
     try {
-      setBackendOrderId(invoiceOrderId);
-      await generateInvoice({
+      const createdInvoice = await generateInvoice({
         orderId: invoiceOrderId,
         promotionCode: null,
       });
-      const createdInvoice = await loadInvoiceForOrder(invoiceOrderId);
-      if (createdInvoice) setPaymentOpen(true);
+      await refreshInvoices(invoiceOrderId, createdInvoice.id);
+      setPaymentOpen(true);
       setInvoiceMessage({
         type: "success",
         text: "Hóa đơn đã được tạo và sẵn sàng thanh toán.",
@@ -733,12 +869,12 @@ const CashierOrders = () => {
   };
 
   const handleApplyDiscount = async () => {
-    if (!invoice || !promotionCode.trim()) return;
+    if (!selectedInvoice || !promotionCode.trim()) return;
     setInvoiceAction("discount");
     setInvoiceMessage(null);
     try {
-      await applyInvoiceDiscount(invoice.id, promotionCode.trim());
-      await loadInvoiceForOrder(invoice.orderId);
+      await applyInvoiceDiscount(selectedInvoice.id, promotionCode.trim());
+      await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
       setPromotionCode("");
       setInvoiceMessage({
         type: "success",
@@ -749,17 +885,24 @@ const CashierOrders = () => {
         type: "error",
         text: getPromotionDiscountErrorMessage(discountError),
       });
+      if (
+        discountError instanceof ApiClientError &&
+        discountError.code &&
+        STALE_INVOICE_ERROR_CODES.has(discountError.code)
+      ) {
+        await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
+      }
     } finally {
       setInvoiceAction(null);
     }
   };
 
   const handleSendInvoice = async () => {
-    if (!invoice) return;
+    if (!selectedInvoice) return;
     setInvoiceAction("send");
     setInvoiceMessage(null);
     try {
-      await sendInvoice(invoice.id);
+      await sendInvoice(selectedInvoice.id);
       setInvoiceMessage({ type: "success", text: SEND_INVOICE_SUCCESS_MESSAGE });
     } catch (sendError) {
       setInvoiceMessage({
@@ -772,11 +915,11 @@ const CashierOrders = () => {
   };
 
   const handlePrintInvoice = () => {
-    if (!invoiceDetail) return;
+    if (!currentOrderInvoiceDetail) return;
     const cashierName = getStoredUser()?.fullName || "Duy Tan";
     if (
       !printCashierInvoice(
-        invoiceDetail,
+        currentOrderInvoiceDetail,
         selectedTable?.name || "-",
         cashierName,
       )
@@ -789,7 +932,7 @@ const CashierOrders = () => {
   };
 
   const handleProcessPayment = async (method: PaymentMethod) => {
-    if (!invoice) {
+    if (!selectedInvoice) {
       setPaymentError("Không xác định được hóa đơn cần thanh toán");
       return;
     }
@@ -797,15 +940,84 @@ const CashierOrders = () => {
     setPaymentProcessing(true);
     setPaymentError("");
     try {
-      const createdPayment = await processPayment(invoice.id, method);
+      const createdPayment = await processPayment(selectedInvoice.id, method);
       setPaymentOpen(false);
       setSuccessTotal(createdPayment.amount);
-      await loadInvoiceForOrder(invoice.orderId);
+      await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
       setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
     } catch (processError) {
       setPaymentError(getPaymentProcessErrorMessage(processError));
+      if (
+        processError instanceof ApiClientError &&
+        processError.code &&
+        STALE_INVOICE_ERROR_CODES.has(processError.code)
+      ) {
+        await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
+      }
     } finally {
       setPaymentProcessing(false);
+    }
+  };
+
+  const handleSelectInvoice = (invoiceId: string) => {
+    if (!selectedOrderId || invoiceId === selectedInvoiceId) return;
+    setSelectedInvoiceId(invoiceId);
+    setSelectedInvoiceDetail(null);
+    setInvoiceDetailError("");
+    setInvoiceMessage(null);
+    setPaymentError("");
+    setSplitError("");
+    setPromotionCode("");
+    void loadInvoiceDetail(invoiceId, selectedOrderId);
+  };
+
+  const handleSplitInvoice = async (
+    request: SplitInvoiceRequest,
+  ): Promise<boolean> => {
+    if (
+      splitSubmissionRef.current ||
+      !selectedInvoice ||
+      !currentOrderInvoiceDetail
+    ) {
+      return false;
+    }
+    splitSubmissionRef.current = true;
+    setInvoiceAction("split");
+    setSplitError("");
+    setInvoiceMessage(null);
+    try {
+      const result = await splitInvoice(selectedInvoice.id, request);
+      const firstChildId = result.children[0]?.invoiceId;
+      if (!firstChildId) {
+        setSplitError(
+          "Máy chủ không trả về hóa đơn con. Danh sách hóa đơn đã được làm mới.",
+        );
+        await refreshInvoices(selectedInvoice.orderId, null);
+        return false;
+      }
+      await refreshInvoices(selectedInvoice.orderId, firstChildId);
+      setInvoiceMessage({
+        type: "success",
+        text: "Chia hóa đơn thành công. Hóa đơn con đầu tiên đã được chọn.",
+      });
+      setPaymentOpen(true);
+      return true;
+    } catch (splitFailure) {
+      setSplitError(getSplitInvoiceErrorMessage(splitFailure));
+      if (
+        splitFailure instanceof ApiClientError &&
+        splitFailure.code &&
+        STALE_INVOICE_ERROR_CODES.has(splitFailure.code)
+      ) {
+        await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
+        if (splitFailure.code === "ORDER_NOT_FOUND") {
+          setRefreshTrigger((value) => value + 1);
+        }
+      }
+      return false;
+    } finally {
+      splitSubmissionRef.current = false;
+      setInvoiceAction(null);
     }
   };
 
@@ -848,17 +1060,11 @@ const CashierOrders = () => {
   };
 
   useEffect(() => {
-    if (
-      selectedTable &&
-      selectedTable.occupied &&
-      selectedTable.orderId &&
-      selectedOrder?.id === selectedTable.orderId &&
-      !backendOrderId
-    ) {
-      setBackendOrderId(selectedTable.orderId);
-      loadInvoiceForOrder(selectedTable.orderId);
+    resetInvoiceLink();
+    if (selectedOrderId && selectedOrder?.id === selectedOrderId) {
+      void refreshInvoices(selectedOrderId, null);
     }
-  }, [selectedTable?.orderId, selectedTable?.occupied, selectedOrder?.id, backendOrderId]);
+  }, [selectedOrderId, selectedOrder?.id, refreshInvoices, resetInvoiceLink]);
 
   const handleStatusChange = async (
     orderId: string,
@@ -1124,19 +1330,17 @@ const CashierOrders = () => {
   };
   const checkoutDisabled =
     invoiceAction !== null ||
-    invoiceLoading ||
+    invoiceListLoading ||
     !selectedOrderId ||
     emptyOrderWithoutInvoice ||
-    (currentOrderInvoice
-      ? !currentOrderInvoiceDetail || currentOrderInvoice.paid
-      : !invoiceChecked);
-  const checkoutLabel = currentOrderInvoice?.paid
-    ? "Đã thanh toán"
-    : currentOrderInvoice
+    (orderHasInvoice ? !selectedInvoiceId : !invoiceChecked);
+  const checkoutLabel = orderHasInvoice
+    ? activeOrderInvoices.some((candidate) => !candidate.paid)
       ? "Mở thanh toán"
-      : invoiceChecked
-        ? "Tạo hóa đơn"
-        : "Đang kiểm tra hóa đơn";
+      : "Mở hóa đơn"
+    : invoiceChecked
+      ? "Tạo hóa đơn"
+      : "Đang kiểm tra hóa đơn";
 
   if (shiftLoading) {
     return (
@@ -1318,7 +1522,8 @@ const CashierOrders = () => {
           onCheckout={() => {
             setOrderActionMessage(null);
             setPaymentError("");
-            if (currentOrderInvoice) {
+            setSplitError("");
+            if (orderHasInvoice) {
               setPaymentOpen(true);
             } else {
               void handleGenerateInvoice();
@@ -1353,22 +1558,35 @@ const CashierOrders = () => {
 
       <BottomNav active="orders" />
 
-      {paymentOpen && currentOrderInvoiceDetail && (
+      {paymentOpen && selectedOrderId && (
         <PaymentModal
+          invoices={currentOrderInvoices}
+          selectedInvoiceId={selectedInvoiceId}
           invoice={currentOrderInvoiceDetail}
           table={selectedTable}
+          invoiceListLoading={invoiceListLoading}
+          invoiceListError={invoiceListError}
+          detailLoading={invoiceDetailLoading}
+          detailError={invoiceDetailError}
           processing={paymentProcessing}
           error={paymentError}
           promotionCode={promotionCode}
           action={invoiceAction}
+          splitError={splitError}
+          role={user?.role}
           invoiceMessage={invoiceMessage}
           nonPayableItems={nonPayableRejectedItems}
           onClose={() => setPaymentOpen(false)}
+          onSelectInvoice={handleSelectInvoice}
+          onRefreshInvoices={() => {
+            void refreshInvoices(selectedOrderId, selectedInvoiceId);
+          }}
           onConfirm={(method) => void handleProcessPayment(method)}
           onPromotionCodeChange={setPromotionCode}
           onApplyDiscount={() => void handleApplyDiscount()}
           onPrint={handlePrintInvoice}
           onSend={() => void handleSendInvoice()}
+          onSplit={handleSplitInvoice}
         />
       )}
       {successTotal !== null && (

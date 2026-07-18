@@ -1,9 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { InvoiceDetail } from "../../../services/invoiceApi";
+import type {
+  InvoiceDetail,
+  InvoiceSummary,
+  SplitInvoiceRequest,
+} from "../../../services/invoiceApi";
 import type { PaymentMethod } from "../../../services/paymentApi";
+import type { UserRole } from "../../../context/AuthContext";
 import type { TableItem } from "./types";
 import { PAYMENT_METHOD_LABELS } from "./types";
+import { SplitInvoiceModal } from "./SplitInvoiceModal";
 import {
   ChevronDownIcon,
   CashMethodIcon,
@@ -29,42 +35,73 @@ const PAYMENT_METHODS = [
 ];
 
 export const PaymentModal = ({
+  invoices,
+  selectedInvoiceId,
   invoice,
   table,
+  invoiceListLoading,
+  invoiceListError,
+  detailLoading,
+  detailError,
   processing,
   error,
   promotionCode,
   action,
+  splitError,
+  role,
   invoiceMessage,
   nonPayableItems = [],
   onClose,
+  onSelectInvoice,
+  onRefreshInvoices,
   onConfirm,
   onPromotionCodeChange,
   onApplyDiscount,
   onPrint,
   onSend,
+  onSplit,
 }: {
-  invoice: InvoiceDetail;
+  invoices: InvoiceSummary[];
+  selectedInvoiceId: string | null;
+  invoice: InvoiceDetail | null;
   table: TableItem | null;
+  invoiceListLoading: boolean;
+  invoiceListError: string;
+  detailLoading: boolean;
+  detailError: string;
   processing: boolean;
   error: string;
   promotionCode: string;
   action: string | null;
+  splitError: string;
+  role?: UserRole;
   invoiceMessage: { type: "success" | "error"; text: string } | null;
   nonPayableItems?: NonPayableReceiptItem[];
   onClose: () => void;
+  onSelectInvoice: (invoiceId: string) => void;
+  onRefreshInvoices: () => void;
   onConfirm: (method: PaymentMethod) => void;
   onPromotionCodeChange: (value: string) => void;
   onApplyDiscount: () => void;
   onPrint: () => void;
   onSend: () => void;
+  onSplit: (request: SplitInvoiceRequest) => Promise<boolean>;
 }) => {
   const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [cashInput, setCashInput] = useState("");
+  const [splitOpen, setSplitOpen] = useState(false);
 
-  const subtotal = invoice.subtotal;
-  const total = invoice.totalAmount;
+  useEffect(() => {
+    setSplitOpen(false);
+    setDropdownOpen(false);
+    setCashInput("");
+  }, [selectedInvoiceId]);
+
+  const selectedInvoice =
+    invoices.find((candidate) => candidate.id === selectedInvoiceId) ?? null;
+  const subtotal = invoice?.subtotal ?? 0;
+  const total = invoice?.totalAmount ?? selectedInvoice?.totalAmount ?? 0;
 
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", {
@@ -95,12 +132,37 @@ export const PaymentModal = ({
     ? parseInt(cashInput, 10).toLocaleString("vi-VN") + "đ"
     : "0đ";
   const actionBusy = action !== null;
+  const isActiveInvoice = selectedInvoice?.status === "ACTIVE";
+  const splitVisible =
+    (role === "CASHIER" || role === "ADMIN") &&
+    isActiveInvoice &&
+    !selectedInvoice?.paid;
+  const splitDisabledReason = (() => {
+    if (!splitVisible) return "";
+    if (detailLoading || !invoice) return "Đang tải chi tiết hóa đơn.";
+    if (invoice.items.length < 2) return "Cần ít nhất hai món để chia hóa đơn.";
+    if (invoice.items.some((item) => !item.allocationId?.trim())) {
+      return "Dữ liệu định danh món chưa đầy đủ.";
+    }
+    if (invoice.promotionId || invoice.discountAmount > 0) {
+      return "Hóa đơn có khuyến mãi hoặc giảm giá không thể chia.";
+    }
+    if (
+      invoice.subtotal <= 0 ||
+      invoice.totalAmount <= 0 ||
+      Math.abs(invoice.subtotal - invoice.totalAmount) >= 0.01
+    ) {
+      return "Tổng tiền hóa đơn chưa đủ điều kiện để chia.";
+    }
+    if (actionBusy || processing) return "Đang xử lý thao tác hóa đơn khác.";
+    return "";
+  })();
   const nonPayableFallbackNote = "Nhà hàng không thể phục vụ món này.";
   const confirmLabel = processing
     ? method === "QR"
       ? "Đang xác nhận..."
       : "Đang thanh toán..."
-    : invoice.paid
+    : invoice?.paid
       ? "Đã thanh toán"
       : method === "QR"
         ? "Xác nhận đã thanh toán"
@@ -113,7 +175,12 @@ export const PaymentModal = ({
         style={{ opacity: 0.6 }}
         onClick={onClose}
       />
-      <div className="relative bg-white rounded-[16px] p-6 flex flex-col gap-2.5 overflow-hidden w-[95vw] max-w-[711px] max-h-[95vh]">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Thanh toán hóa đơn"
+        className="relative bg-white rounded-[16px] p-6 flex flex-col gap-2.5 overflow-hidden w-[95vw] max-w-[711px] max-h-[95vh]"
+      >
         <div
           className="flex items-center justify-between shrink-0"
           style={{ height: 44 }}
@@ -127,6 +194,61 @@ export const PaymentModal = ({
           </button>
         </div>
 
+        <div className="shrink-0 rounded-[10px] border border-[#e8e8e8] bg-white px-3 py-2">
+          {invoiceListLoading ? (
+            <p className="text-[13px] text-[#636566]">Đang tải danh sách hóa đơn...</p>
+          ) : invoiceListError ? (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[13px] text-[#d92d20]">{invoiceListError}</p>
+              <button
+                type="button"
+                onClick={onRefreshInvoices}
+                className="text-[13px] font-medium text-[#025cca]"
+              >
+                Tải lại
+              </button>
+            </div>
+          ) : invoices.length === 0 ? (
+            <p className="text-[13px] text-[#636566]">Đơn hàng chưa có hóa đơn.</p>
+          ) : (
+            <label className="flex items-center gap-3 text-[13px] text-[#636566]">
+              <span className="shrink-0">Hóa đơn</span>
+              <select
+                value={selectedInvoiceId ?? ""}
+                onChange={(event) => onSelectInvoice(event.target.value)}
+                className="h-9 min-w-0 flex-1 rounded-[8px] border border-[#d9d9d9] bg-white px-2 text-[13px] text-[#202325] outline-none focus:border-[#025cca]"
+              >
+                {invoices.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.id.slice(0, 8)} · {candidate.status} ·{" "}
+                    {candidate.paid ? "Đã thanh toán" : "Chưa thanh toán"} ·{" "}
+                    {candidate.totalAmount.toLocaleString("vi-VN")} đ
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+
+        {detailLoading && (
+          <div className="flex min-h-[280px] items-center justify-center text-[14px] text-[#636566]">
+            Đang tải chi tiết hóa đơn...
+          </div>
+        )}
+        {!detailLoading && detailError && (
+          <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 text-center">
+            <p className="text-[14px] text-[#d92d20]">{detailError}</p>
+            <button
+              type="button"
+              onClick={onRefreshInvoices}
+              className="h-9 rounded-[8px] border border-[#025cca] px-4 text-[13px] font-medium text-[#025cca]"
+            >
+              Tải lại hóa đơn
+            </button>
+          </div>
+        )}
+
+        {invoice && !detailLoading && !detailError && (
         <div className="flex gap-6 lg:gap-10 items-start flex-1 min-h-0 overflow-hidden">
           {/* Receipt */}
           <div
@@ -261,13 +383,20 @@ export const PaymentModal = ({
                   <p className="text-[15px] font-semibold text-[#202325]">
                     Thao tác hóa đơn
                   </p>
+                  <span className="text-[11px] font-medium text-[#636566]">
+                    {invoice.status}
+                  </span>
                   {invoice.paid && (
                     <span className="text-[12px] font-medium text-[#286b4a]">
                       Đã thanh toán
                     </span>
                   )}
                 </div>
-                {!invoice.paid ? (
+                {!isActiveInvoice ? (
+                  <p className="text-[12px] text-[#636566]">
+                    Hóa đơn lịch sử chỉ cho phép xem, in và gửi.
+                  </p>
+                ) : !invoice.paid ? (
                   <div className="flex gap-2">
                     <input
                       value={promotionCode}
@@ -289,6 +418,23 @@ export const PaymentModal = ({
                   <p className="text-[12px] text-[#636566]">
                     Không thể áp dụng mã sau khi hóa đơn đã thanh toán
                   </p>
+                )}
+                {splitVisible && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setSplitOpen(true)}
+                      disabled={Boolean(splitDisabledReason)}
+                      className="h-[36px] w-full rounded-[10px] border border-[#025cca] bg-white text-[12px] font-medium text-[#025cca] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Chia hóa đơn
+                    </button>
+                    {splitDisabledReason && (
+                      <p className="mt-1 text-[11px] text-[#797b7c]">
+                        {splitDisabledReason}
+                      </p>
+                    )}
+                  </div>
                 )}
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -314,12 +460,18 @@ export const PaymentModal = ({
                 )}
               </div>
 
-              <p className="text-[16px] font-semibold text-[#202325]">
+              {!isActiveInvoice && (
+                <div className="rounded-[10px] bg-[#f5f5f5] px-4 py-5 text-center text-[13px] text-[#636566]">
+                  Hóa đơn {invoice.status} không thể thanh toán hoặc áp dụng khuyến mãi.
+                </div>
+              )}
+
+              <p className={`text-[16px] font-semibold text-[#202325] ${!isActiveInvoice ? "hidden" : ""}`}>
                 Chọn phương thức thanh toán
               </p>
               <button
                 onClick={() => setDropdownOpen((v) => !v)}
-                className={`flex items-center justify-between px-2 py-3 rounded-[12px] border transition-colors ${dropdownOpen ? "border-[#025cca] bg-white" : "border-[#e8e8e8] bg-[#f5f5f5]"}`}
+                className={`items-center justify-between px-2 py-3 rounded-[12px] border transition-colors ${isActiveInvoice ? "flex" : "hidden"} ${dropdownOpen ? "border-[#025cca] bg-white" : "border-[#e8e8e8] bg-[#f5f5f5]"}`}
               >
                 <div className="flex items-center gap-2 px-3">
                   {methodIcons[method]}
@@ -331,7 +483,7 @@ export const PaymentModal = ({
                   className={`w-6 h-6 text-[#636566] transition-transform ${dropdownOpen ? "rotate-180" : ""}`}
                 />
               </button>
-              {dropdownOpen && (
+              {isActiveInvoice && dropdownOpen && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#e8e8e8] rounded-[12px] shadow-md z-10 flex flex-col gap-1 px-2 py-3">
                   {PAYMENT_METHODS.map((pm) => (
                     <button
@@ -352,7 +504,7 @@ export const PaymentModal = ({
               )}
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto mt-6 pr-1">
+            <div className={`flex-1 min-h-0 overflow-y-auto mt-6 pr-1 ${!isActiveInvoice ? "hidden" : ""}`}>
               {method === "CASH" && (
                 <div className="flex flex-col items-center gap-5 pb-2">
                   <div className="flex flex-col items-center gap-2 py-2">
@@ -454,7 +606,7 @@ export const PaymentModal = ({
               )}
             </div>
 
-            <div className="shrink-0 mt-5 pt-4 border-t border-[#e8e8e8]">
+            <div className={`shrink-0 mt-5 pt-4 border-t border-[#e8e8e8] ${!isActiveInvoice ? "hidden" : ""}`}>
               {error && (
                 <p className="text-[13px] text-[#d92d20] text-center mb-3">
                   {error}
@@ -462,7 +614,9 @@ export const PaymentModal = ({
               )}
               <button
                 onClick={() => onConfirm(method)}
-                disabled={processing || invoice.paid}
+                disabled={
+                  processing || invoice.paid || !isActiveInvoice || actionBusy
+                }
                 className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60"
               >
                 {confirmLabel}
@@ -470,7 +624,25 @@ export const PaymentModal = ({
             </div>
           </div>
         </div>
+        )}
       </div>
+      {splitOpen && selectedInvoice && invoice && (
+        <SplitInvoiceModal
+          open={splitOpen}
+          invoice={selectedInvoice}
+          invoiceDetail={invoice}
+          submitting={action === "split"}
+          error={splitError}
+          onClose={() => {
+            if (action !== "split") setSplitOpen(false);
+          }}
+          onSubmit={(request) => {
+            void onSplit(request).then((succeeded) => {
+              if (succeeded) setSplitOpen(false);
+            });
+          }}
+        />
+      )}
     </div>
   );
 };
