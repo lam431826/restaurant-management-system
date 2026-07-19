@@ -65,6 +65,7 @@ public enum ApplicationError {
     TABLE_CAPACITY_EXCEEDED("Party size exceeds table capacity", HttpStatus.UNPROCESSABLE_ENTITY),
     TABLE_IN_USE("Table is currently occupied and cannot be deleted", HttpStatus.CONFLICT),
     TABLE_HAS_PENDING_ORDER("Table already has a pending order", HttpStatus.CONFLICT),
+    TABLE_HAS_ACTIVE_ORDER("Table already has an active order", HttpStatus.CONFLICT),
     INVALID_TABLE_TOKEN("Table token is invalid or expired", HttpStatus.UNAUTHORIZED),
     SHIFT_ALREADY_OPEN("A shift is already open", HttpStatus.CONFLICT),
     SHIFT_NOT_OPEN("No open shift found", HttpStatus.NOT_FOUND),

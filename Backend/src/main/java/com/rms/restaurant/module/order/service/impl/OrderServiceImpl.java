@@ -183,6 +183,10 @@ public class OrderServiceImpl implements OrderService {
         RestaurantTable table = tableRepository.findById(request.tableId())
                 .orElseThrow(() -> new ApplicationException(ApplicationError.TABLE_NOT_FOUND));
 
+        orderRepository.findTopByTableIdOrderByCreatedAtDesc(table.getId())
+                .filter(o -> o.getStatus() != OrderStatus.CLOSED && o.getStatus() != OrderStatus.CANCELLED)
+                .ifPresent(o -> { throw new ApplicationException(ApplicationError.TABLE_HAS_ACTIVE_ORDER); });
+
         Order order = new Order();
         order.setTableId(table.getId());
         order.setStatus(OrderStatus.ACCEPTED); // Cashier creates order, it's already accepted

@@ -105,6 +105,7 @@ const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
   INVALID_STATUS_TRANSITION:
     "Thao tác đổi trạng thái không hợp lệ. Vui lòng dùng đúng luồng xử lý.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  TABLE_HAS_ACTIVE_ORDER: "Bàn này đã có đơn hàng đang xử lý.",
 };
 
 const ORDER_ACTION_FALLBACK_ERROR =
@@ -1292,10 +1293,6 @@ const CashierOrders = () => {
   };
 
   const handleCreateOrder = async () => {
-    if (cart.length === 0) {
-      setTab("menu");
-      return;
-    }
     if (!selectedTable) return;
     try {
       await createOrder(
@@ -1312,6 +1309,10 @@ const CashierOrders = () => {
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 

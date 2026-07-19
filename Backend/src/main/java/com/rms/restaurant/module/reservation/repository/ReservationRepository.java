@@ -110,4 +110,11 @@ public interface ReservationRepository extends JpaRepository<Reservation, String
             @Param("minPartySize") int minPartySize,
             @Param("maxPartySize") int maxPartySize
     );
+
+    /** Table IDs (within the given set) that currently have a reservation in the given status. */
+    @Query("SELECT r.tableId FROM Reservation r WHERE r.tableId IN :tableIds AND r.status = :status")
+    List<String> findTableIdsByTableIdInAndStatus(
+            @Param("tableIds") List<String> tableIds,
+            @Param("status")   ReservationStatus status
+    );
 }
