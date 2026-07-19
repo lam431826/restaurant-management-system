@@ -84,7 +84,13 @@ export const OpenShiftModal = ({
         ) {
           setBlockReason("CLOCKED_OUT");
         } else {
-          setBlockReason("NO_SHIFT");
+          // No legacy roster record for today is no longer conclusive proof of
+          // "no shift" — staff can now also be scheduled through the newer
+          // Manager "Lịch làm việc" screen (module/attendance), which this
+          // roster-only check cannot see. Let them try; the server enforces
+          // BR-X-01 against both sources and returns CASHIER_NOT_CHECKED_IN
+          // (handled below) if truly unscheduled.
+          setBlockReason(null);
         }
       })
       .catch(() => {

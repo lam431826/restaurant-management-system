@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface EmployeeRepository extends JpaRepository<Employee, String> {
 
@@ -19,6 +20,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, String> {
     boolean existsByPhoneAndIdNot(String phone, String id);
 
     boolean existsByUserId(String userId);
+
+    Optional<Employee> findByUserId(String userId);
 
     @Query("SELECT e FROM Employee e WHERE " +
            "(:code IS NULL OR e.code = :code) AND " +
