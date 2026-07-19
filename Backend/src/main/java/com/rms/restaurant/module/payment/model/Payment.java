@@ -22,6 +22,14 @@ public class Payment {
     @Column(name = "invoice_id", nullable = false)
     private String invoiceId;
 
+    // BR-CS-08: the cash shift this payment is attributed to, and the cashier who
+    // processed it (kept even after a floating shift is merged — BR-CS-19).
+    @Column(name = "shift_id")
+    private String shiftId;
+
+    @Column(name = "cashier_id")
+    private String cashierId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private PaymentMethod method;

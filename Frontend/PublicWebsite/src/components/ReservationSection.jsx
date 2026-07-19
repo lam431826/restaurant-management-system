@@ -4,6 +4,21 @@ import { useInView } from '../hooks/useInView'
 
 const API_BASE = 'http://localhost:8080/api'
 
+// BR-03: reservations must be made at least 30 minutes ahead of the requested time.
+const MIN_LEAD_MINUTES = 30
+
+// Restaurant opening hours (see ContactSection.jsx "Opening Hours" card) — applies every day of the week.
+const OPENING_TIME = '16:00'
+const CLOSING_TIME = '22:30'
+// BR: max dining duration is 1.5h, and that must fit before closing — after 22:30 is wrap-up/cleanup only,
+// not guest dining time. So the latest a reservation can start is closing time minus the dining window.
+const MAX_DINING_MINUTES = 90
+const LAST_RESERVATION_TIME = (() => {
+  const [h, m] = CLOSING_TIME.split(':').map(Number)
+  const total = h * 60 + m - MAX_DINING_MINUTES
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+})()
+
 export default function ReservationSection() {
   const [form, setForm] = useState({
     name: '', phone: '', email: '', guests: '', date: '', time: '', note: '',
@@ -33,11 +48,21 @@ export default function ReservationSection() {
       e.guests = 'Số khách từ 1 đến 20'
     if (!form.date) {
       e.date = 'Vui lòng chọn ngày'
-    } else {
-      const chosen = new Date(`${form.date}T${form.time || '00:00'}:00`)
-      if (chosen <= new Date()) e.date = 'Ngày/giờ phải là tương lai'
+    } else if (form.time) {
+      // FE-PUB-01 fix: this only checked "> now" (0 min lead), not BR-03's real 30-minute
+      // rule, so a booking 5 minutes out passed client-side and only failed server-side
+      // with a message that didn't explain why. Mirror the backend rule exactly.
+      const chosen = new Date(`${form.date}T${form.time}:00`)
+      const earliestAllowed = new Date(Date.now() + MIN_LEAD_MINUTES * 60 * 1000)
+      if (chosen <= earliestAllowed) {
+        e.date = `Vui lòng đặt bàn trước ít nhất ${MIN_LEAD_MINUTES} phút`
+      }
     }
-    if (!form.time) e.time = 'Vui lòng chọn giờ'
+    if (!form.time) {
+      e.time = 'Vui lòng chọn giờ'
+    } else if (form.time < OPENING_TIME || form.time > LAST_RESERVATION_TIME) {
+      e.time = `Nhà hàng chỉ nhận đặt bàn từ ${OPENING_TIME} đến ${LAST_RESERVATION_TIME} (đóng cửa lúc ${CLOSING_TIME})`
+    }
     return e
   }
 

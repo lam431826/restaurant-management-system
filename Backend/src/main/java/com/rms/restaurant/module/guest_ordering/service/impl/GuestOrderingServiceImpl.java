@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.guest_ordering.service.impl;
 
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
@@ -45,12 +46,19 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     private final AssistanceRequestRepository assistanceRequestRepository;
     private final OrderMapper orderMapper;
     private final InvoiceRepository invoiceRepository;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     // ── GO-03: Khách quét QR → gọi món ──────────────────────────────────────
 
     @Override
     public OrderStatusResponse placeOrder(GuestOrderRequest request) {
         RestaurantTable table = resolveTable(request.tableToken());
+
+        // BE-TBL-01 fix: BR-07 (a table cannot have two PENDING orders simultaneously) was
+        // never checked on the guest-facing create path.
+        if (!orderRepository.findByTableIdAndStatus(table.getId(), OrderStatus.PENDING).isEmpty()) {
+            throw new ApplicationException(ApplicationError.TABLE_HAS_PENDING_ORDER);
+        }
 
         Order order = new Order();
         order.setTableId(table.getId());
@@ -77,18 +85,23 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
 
         table.setStatus(TableStatus.OCCUPIED);
         tableRepository.save(table);
+        realtimeEventPublisher.publishTableStatus(table);
 
         Order savedOrder = orderRepository.save(order);
-        return toStatusResponse(savedOrder, null);
+        realtimeEventPublisher.publishOrderEvent("ORDER_CREATED", orderMapper.toResponse(savedOrder));
+        OrderStatusResponse status = toStatusResponse(savedOrder, null);
+        realtimeEventPublisher.publishGuestOrderStatus(status);
+        return status;
     }
 
     // ── GO-02: Khách cập nhật items (chỉ khi order còn PENDING) ─────────────
 
     @Override
-    public OrderStatusResponse updateOrderItems(String orderId, UpdateOrderItemsRequest request) {
+    public OrderStatusResponse updateOrderItems(String orderId, String tableToken, UpdateOrderItemsRequest request) {
         String normalizedOrderId = normalizeOrderId(orderId);
         Order order = orderRepository.findByIdForUpdate(normalizedOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        verifyOrderBelongsToTable(order, tableToken);
         ensureOrderItemsCanBeModified(order);
 
         if (order.getStatus() != OrderStatus.PENDING) {
@@ -100,28 +113,36 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
         appendItems(order, request);
 
         Order savedOrder = orderRepository.save(order);
-        return toStatusResponse(savedOrder, null);
+        realtimeEventPublisher.publishOrderEvent("ORDER_UPDATED", orderMapper.toResponse(savedOrder));
+        OrderStatusResponse status = toStatusResponse(savedOrder, null);
+        realtimeEventPublisher.publishGuestOrderStatus(status);
+        return status;
     }
 
     // ── Khách gọi thêm món vào đơn đã có ─────────────────────────────────────
 
     @Override
-    public OrderStatusResponse addOrderItems(String orderId, UpdateOrderItemsRequest request) {
+    public OrderStatusResponse addOrderItems(String orderId, String tableToken, UpdateOrderItemsRequest request) {
         String normalizedOrderId = normalizeOrderId(orderId);
         Order order = orderRepository.findByIdForUpdate(normalizedOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        verifyOrderBelongsToTable(order, tableToken);
         ensureOrderItemsCanBeModified(order);
 
         appendItems(order, request);
 
         Order savedOrder = orderRepository.save(order);
-        return toStatusResponse(savedOrder, null);
+        realtimeEventPublisher.publishOrderEvent("ORDER_UPDATED", orderMapper.toResponse(savedOrder));
+        OrderStatusResponse status = toStatusResponse(savedOrder, null);
+        realtimeEventPublisher.publishGuestOrderStatus(status);
+        return status;
     }
 
     @Override
-    public OrderStatusResponse getOrderStatus(String orderId) {
+    public OrderStatusResponse getOrderStatus(String orderId, String tableToken) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        verifyOrderBelongsToTable(order, tableToken);
         return toStatusResponse(order, "15 minutes");
     }
 
@@ -138,6 +159,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
                         .build();
 
         assistanceRequestRepository.save(entity);
+        realtimeEventPublisher.publishAssistanceEvent("CREATED", entity);
     }
 
     @Override
@@ -159,8 +181,26 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     // ── Helper ────────────────────────────────────────────────────────────────
 
     private RestaurantTable resolveTable(String tableToken) {
-        return tableRepository.findByQrToken(tableToken)
+        RestaurantTable table = tableRepository.findByQrToken(tableToken)
                 .orElseThrow(() -> new ApplicationException(ApplicationError.INVALID_TABLE_TOKEN));
+        // BE-TBL-04 fix: a deactivated table's QR token still resolved successfully, letting
+        // guests order/request assistance on a table that's out of service.
+        if (!table.isActive()) {
+            throw new ApplicationException(ApplicationError.INVALID_TABLE_TOKEN);
+        }
+        return table;
+    }
+
+    /**
+     * BE-TBL-02 fix: confirms the presented table token actually resolves to the table that
+     * owns this order, before returning/modifying it — previously orderId alone was trusted
+     * with no proof of table ownership (IDOR: any guest could act on any other table's order).
+     */
+    private void verifyOrderBelongsToTable(Order order, String tableToken) {
+        RestaurantTable table = resolveTable(tableToken);
+        if (!table.getId().equals(order.getTableId())) {
+            throw new ApplicationException(ApplicationError.INVALID_TABLE_TOKEN);
+        }
     }
 
     private void appendItems(Order order, UpdateOrderItemsRequest request) {

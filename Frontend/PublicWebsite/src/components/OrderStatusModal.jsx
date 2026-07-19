@@ -18,7 +18,7 @@ const ClockIcon = () => (
   </svg>
 )
 
-export default function OrderStatusModal({ orderId, onClose, onEditOrder, onOrderFinished }) {
+export default function OrderStatusModal({ orderId, tableToken, onClose, onEditOrder, onOrderFinished, subscribeRealtime }) {
   const [statusData, setStatusData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -27,7 +27,10 @@ export default function OrderStatusModal({ orderId, onClose, onEditOrder, onOrde
 
     const fetchStatus = async () => {
       try {
-        const res = await fetch(`/api/guest/orders/${orderId}/status`)
+        // X-Table-Token required (BE-TBL-02) — proves this guest holds the table the order belongs to.
+        const res = await fetch(`/api/guest/orders/${orderId}/status`, {
+          headers: { 'X-Table-Token': tableToken },
+        })
         if (res.ok) {
           const data = await res.json()
           setStatusData(data)
@@ -40,10 +43,18 @@ export default function OrderStatusModal({ orderId, onClose, onEditOrder, onOrde
     }
 
     fetchStatus()
-    // Poll every 15 seconds
+    // Poll every 15 seconds — kept as a backstop; the WS subscription below races it.
     const interval = setInterval(fetchStatus, 15000)
-    return () => clearInterval(interval)
-  }, [orderId])
+
+    // Cooking/order status pushed from the staff side — refetch immediately instead
+    // of waiting up to 15s for the next poll tick.
+    const unsubscribe = subscribeRealtime?.(`/topic/guest/orders/${orderId}`, fetchStatus)
+
+    return () => {
+      clearInterval(interval)
+      unsubscribe?.()
+    }
+  }, [orderId, subscribeRealtime])
 
   if (!orderId) return null
 
@@ -126,14 +137,14 @@ export default function OrderStatusModal({ orderId, onClose, onEditOrder, onOrde
                         <span className={`text-xs font-semibold px-2 py-1 rounded-md ${
                           item.cookingStatus === 'PENDING' ? 'bg-[#ffedd5] text-[#f97316]' :
                           item.cookingStatus === 'COOKING' ? 'bg-[#dbeafe] text-[#2563eb]' :
-                          item.cookingStatus === 'COMPLETED' ? 'bg-[#dcf7ea] text-[#286b4a]' :
+                          item.cookingStatus === 'READY' ? 'bg-[#dcf7ea] text-[#286b4a]' :
                           item.cookingStatus === 'SERVED' ? 'bg-[#e0e7ff] text-[#4f46e5]' :
                           'bg-[#fee2e2] text-[#ef4444]'
                         }`}>
                           {item.cookingStatus === 'PENDING' ? 'Chờ duyệt' :
-                           item.cookingStatus === 'COOKING' ? 'Đang nấu' :
-                           item.cookingStatus === 'COMPLETED' ? 'Nấu xong' :
-                           item.cookingStatus === 'SERVED' ? 'Đã phục vụ' : 'Đã hủy'}
+                           item.cookingStatus === 'COOKING' ? 'Đang nấu' : 
+                           item.cookingStatus === 'READY' ? 'Nấu xong' : 
+                           item.cookingStatus === 'SERVED' ? 'Đã phục vụ' : item.cookingStatus === 'REJECTED' ? 'Đã hủy' : ''}
                         </span>
                       </div>
                     </div>

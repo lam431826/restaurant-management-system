@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { NotificationLogDto } from '../../api/notifications'
+import type { ReservationDto } from '../../api/reservations'
 
 type Tab = 'calendar' | 'list'
 
@@ -33,9 +34,12 @@ interface Props {
   notifLoading?: boolean
   bellOpen?: boolean
   onBellToggle?: () => void
+  newReservations?: ReservationDto[]
+  unseenNotifCount?: number
+  onOpenReservation?: (dto: ReservationDto) => void
 }
 
-const ReservationHeader = ({ tab, onTab, onLogout, onChangePassword, notifLogs = [], notifLoading = false, bellOpen = false, onBellToggle }: Props) => {
+const ReservationHeader = ({ tab, onTab, onLogout, onChangePassword, notifLogs = [], notifLoading = false, bellOpen = false, onBellToggle, newReservations = [], unseenNotifCount = 0, onOpenReservation }: Props) => {
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -57,6 +61,8 @@ const ReservationHeader = ({ tab, onTab, onLogout, onChangePassword, notifLogs =
     ].join(' ')
 
   const failedCount = notifLogs.filter(n => n.status === 'FAILED').length
+  const unseenTotal = newReservations.length + unseenNotifCount
+  const alertCount = unseenTotal > 0 ? unseenTotal : failedCount
 
   return (
     <header className="shrink-0 bg-[#3a4a8c] text-white flex items-stretch h-14 pl-5 pr-4">
@@ -86,16 +92,16 @@ const ReservationHeader = ({ tab, onTab, onLogout, onChangePassword, notifLogs =
             <button
               onClick={onBellToggle}
               className="hover:opacity-90 cursor-pointer w-8 h-8 flex items-center justify-center rounded-md hover:bg-white/10 transition-colors"
-              aria-label="Thông báo email"
+              aria-label="Thông báo"
               aria-expanded={bellOpen}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
               </svg>
             </button>
-            {failedCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[1rem] h-4 bg-red-400 rounded-full text-white text-[10px] font-bold flex items-center justify-center px-0.5 pointer-events-none">
-                {failedCount > 9 ? '9+' : failedCount}
+            {alertCount > 0 && (
+              <span className={`absolute -top-1 -right-1 min-w-[1rem] h-4 rounded-full text-white text-[10px] font-bold flex items-center justify-center px-0.5 pointer-events-none ${unseenTotal > 0 ? 'bg-[#025cca]' : 'bg-red-400'}`}>
+                {alertCount > 9 ? '9+' : alertCount}
               </span>
             )}
           </div>
@@ -103,8 +109,35 @@ const ReservationHeader = ({ tab, onTab, onLogout, onChangePassword, notifLogs =
           {bellOpen && (
             <div className="absolute right-0 top-full mt-2 bg-white rounded-[10px] shadow-lg border border-[#e8e8e8] w-[36rem] z-50 flex flex-col overflow-hidden max-h-[50rem]">
               <div className="flex items-center justify-between px-4 py-3 border-b border-[#e8e8e8]">
-                <span className="text-[15px] font-bold text-[#202325]">Kết quả gửi email thông báo</span>
+                <span className="text-[15px] font-bold text-[#202325]">Thông báo</span>
               </div>
+
+              {newReservations.length > 0 && (
+                <div className="border-b border-[#e8e8e8]">
+                  <div className="px-4 pt-3 pb-1 text-[12px] font-bold text-[#025cca] uppercase tracking-wide">
+                    Đặt bàn mới ({newReservations.length})
+                  </div>
+                  {newReservations.map(r => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => { onOpenReservation?.(r); onBellToggle?.() }}
+                      className="flex items-start gap-3 px-4 py-3 border-t border-[#f0f0f0] hover:bg-[#f0f6ff] w-full text-left bg-transparent"
+                    >
+                      <div className="text-[1.3rem] mt-0.5 shrink-0">🔔</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[14px] font-semibold text-[#202325]">{r.guestName} — {r.partySize} khách</div>
+                        <div className="text-[12px] text-[#636566] mt-0.5">{r.phone}{r.note ? ` · ${r.note}` : ''}</div>
+                        <div className="text-[12px] text-[#797b7c] mt-0.5">
+                          {new Date(r.datetime).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="px-4 py-2 text-[12px] font-semibold text-[#797b7c] border-b border-[#e8e8e8]">Kết quả gửi email thông báo</div>
 
               <div className="overflow-y-auto flex-1">
                 {notifLoading ? (

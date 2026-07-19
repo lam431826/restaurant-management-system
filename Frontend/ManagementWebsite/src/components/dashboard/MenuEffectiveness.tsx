@@ -42,7 +42,7 @@ const MenuEffectiveness = () => {
       <CardHeader
         title="Hiệu quả thực đơn"
         actions={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <div className="inline-flex items-center bg-fill rounded-full p-[0.3rem]">
               <button className={segBtn(view === 'group')} onClick={() => setView('group')}>
                 Theo nhóm

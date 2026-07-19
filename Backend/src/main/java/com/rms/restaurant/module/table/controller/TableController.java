@@ -1,10 +1,13 @@
 package com.rms.restaurant.module.table.controller;
 
 import com.rms.restaurant.common.utils.wrapper.ApiResponse;
+import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.table.dto.*;
 import com.rms.restaurant.module.table.service.TableService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -26,9 +29,13 @@ public class TableController {
     // ── Tables ───────────────────────────────────────────────────────────
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER', 'MANAGER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<List<TableResponse>>> list() {
-        return ResponseEntity.ok(ApiResponse.success(tableService.listAll()));
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','WAITER','CASHIER')")
+    public ResponseEntity<PageResponse<TableResponse>> list(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String area,
+            @RequestParam(required = false) Boolean active,
+            @PageableDefault(size = 20, sort = {"displayOrder", "name"}) Pageable pageable) {
+        return ResponseEntity.ok(tableService.search(q, area, active, pageable));
     }
 
     @GetMapping("/{id}")

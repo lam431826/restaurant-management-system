@@ -5,6 +5,7 @@ import type { ReservationTab } from './ReservationHeader'
 import CalendarView from './CalendarView'
 import ListView from './ListView'
 import ReservationModal from './ReservationModal'
+import EditReservationModal from './EditReservationModal'
 import type { Reservation as Res } from '../../data/mockData'
 import { useAuth } from '../../context/AuthContext'
 import { logout } from '../../api/auth'
@@ -21,6 +22,7 @@ import {
 import { listTables, type TableDto } from '../../api/tables'
 import { pollReservationNotifResult, getNotificationLogs, type NotificationLogDto } from '../../api/notifications'
 import ChangePasswordModal from '../auth/ChangePasswordModal'
+import { useRealtime } from '../../hooks/useRealtime'
 
 const toDisplay = (dto: ReservationDto): Res => {
   const dt = new Date(dto.datetime)
@@ -63,6 +65,8 @@ const Reservation = () => {
   const [showChangePw, setShowChangePw] = useState(false)
   const [tab, setTab] = useState<ReservationTab>('calendar')
   const [items, setItems] = useState<Res[]>([])
+  const [dtos, setDtos] = useState<ReservationDto[]>([])
+  const [editingDto, setEditingDto] = useState<ReservationDto | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [showModal, setShowModal] = useState(false)
@@ -72,12 +76,22 @@ const Reservation = () => {
   const [bellOpen, setBellOpen] = useState(false)
   const [notifLogs, setNotifLogs] = useState<NotificationLogDto[]>([])
   const [notifLoading, setNotifLoading] = useState(false)
+  const [newReservations, setNewReservations] = useState<ReservationDto[]>([])
+  const [unseenNotifCount, setUnseenNotifCount] = useState(0)
 
   const showToast = (msg: string, type: 'success' | 'info' | 'error' = 'success', ms = 3500) => {
     if (toastTimer.current) clearTimeout(toastTimer.current)
     setToast({ msg, type })
     toastTimer.current = setTimeout(() => setToast(null), ms)
   }
+
+  // Load once on mount so the list (and any FAILED badge) is ready even before the bell is
+  // ever opened — the dropdown-open effect below still refreshes it for freshness each time.
+  useEffect(() => {
+    getNotificationLogs({ size: 20 })
+      .then(r => setNotifLogs(r.data.data))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!bellOpen) return
@@ -87,6 +101,15 @@ const Reservation = () => {
       .catch(() => {})
       .finally(() => setNotifLoading(false))
   }, [bellOpen])
+
+  // Live push for any notification (payment, reservation confirm/cancel/reminder, table
+  // update, ...) — not just new bookings — so the bell/list update in real time everywhere.
+  useRealtime('/topic/notifications', (body) => {
+    const log = body as NotificationLogDto | null
+    if (!log?.id) return
+    setNotifLogs(prev => prev.some(l => l.id === log.id) ? prev : [log, ...prev].slice(0, 50))
+    setUnseenNotifCount(c => c + 1)
+  })
 
   const pollEmailResult = async (reservationId: string, _actionLabel: string, expectedTemplate?: string) => {
     // Poll at 3s / 5s / 7s — async SMTP can be slow; FAILED may only appear after ~10s
@@ -121,17 +144,37 @@ const Reservation = () => {
     setLoading(true)
     try {
       const res = await listReservations(0, 200)
-      setItems(res.data.data.data.map(toDisplay))
+      const rawDtos = res.data.data.data
+      setDtos(rawDtos)
+      setItems(rawDtos.map(toDisplay))
     } catch { /* ignore */ } finally {
       setLoading(false)
     }
   }, [])
+
+  const handleEdit = (id: string) => {
+    const dto = dtos.find(d => d.id === id)
+    if (dto) setEditingDto(dto)
+  }
 
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
     listTables().then(r => setTables(r.data.data)).catch(() => {})
   }, [])
+
+  // Live push on new bookings (online or staff-created) — refresh the list immediately instead
+  // of waiting for a manual reload, and surface online (PENDING) requests in the bell as they
+  // need staff review.
+  useRealtime('/topic/reservations', (body) => {
+    const evt = body as { eventType?: string; reservation?: ReservationDto } | null
+    if (evt?.eventType !== 'CREATED' || !evt.reservation) return
+    load()
+    if (evt.reservation.status === 'PENDING') {
+      setNewReservations(prev => [evt.reservation as ReservationDto, ...prev].slice(0, 20))
+      showToast(`Có yêu cầu đặt bàn mới: ${evt.reservation.guestName} — ${evt.reservation.partySize} khách`, 'info', 6000)
+    }
+  })
 
   const handleConfirm = async (id: string) => {
     const guestEmail = items.find(r => r.id === id)?.guestEmail ?? null
@@ -209,7 +252,14 @@ const Reservation = () => {
         notifLogs={notifLogs}
         notifLoading={notifLoading}
         bellOpen={bellOpen}
-        onBellToggle={() => setBellOpen(v => !v)}
+        onBellToggle={() => setBellOpen(v => {
+          const next = !v
+          if (!next) { setNewReservations([]); setUnseenNotifCount(0) }
+          return next
+        })}
+        newReservations={newReservations}
+        unseenNotifCount={unseenNotifCount}
+        onOpenReservation={(dto) => setEditingDto(dto)}
       />
 
       <div className="relative flex-1 min-h-0 flex flex-col">
@@ -247,6 +297,7 @@ const Reservation = () => {
             onCheckIn={handleCheckIn}
             onCancel={handleCancel}
             onNoShow={handleNoShow}
+            onEdit={handleEdit}
           />
         ) : (
           <ListView
@@ -257,6 +308,7 @@ const Reservation = () => {
             onNoShow={handleNoShow}
             onCancel={handleCancel}
             onAssignTable={handleAssignTable}
+            onEdit={handleEdit}
           />
         )}
       </div>
@@ -271,6 +323,13 @@ const Reservation = () => {
       )}
 
       {showModal && <ReservationModal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load() }} />}
+      {editingDto && (
+        <EditReservationModal
+          dto={editingDto}
+          onClose={() => setEditingDto(null)}
+          onSaved={() => { setEditingDto(null); void load() }}
+        />
+      )}
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
     </div>
   )

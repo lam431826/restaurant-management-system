@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { closeShift, PAYMENT_METHOD_LABELS } from '../../../services/shiftService'
+import { closeShift, getMyShift } from '../../../services/shiftService'
 import type { ShiftSummary, PaymentMethodKey } from '../../../services/shiftService'
 import { ApiError } from '../../../services/api'
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(n)
+/** Plain number with comma thousands separators, matching the handover sheet. */
+const num = (n: number) => n.toLocaleString('en-US')
 
 /** Strip everything except digits, then re-format with dot thousands separators. */
 const formatDots = (value: string): string => {
@@ -16,56 +16,113 @@ const formatDots = (value: string): string => {
 /** Parse a dot-formatted string back to a plain number. */
 const parseDots = (value: string): number => parseInt(value.replace(/\D/g, '') || '0', 10) || 0
 
+type CellValue = number | '—'
+
+const fmtCell = (v: CellValue) => (v === '—' ? '—' : num(v))
+
+// ── One cash-source column (Bán hàng / Phiếu thu / Phiếu chi) ────────────
+const BreakdownCard = ({
+  title, count, unit, rows, total,
+}: { title: string; count: number; unit: string; rows: { label: string; value: CellValue }[]; total: number }) => (
+  <div className="flex-1 bg-[#fafafa] border border-[#eeeeee] rounded-xl px-5 py-4">
+    <div className="flex items-baseline gap-2 mb-3">
+      <span className="text-[15px] font-bold text-[#202325]">{title}</span>
+      <span className="text-[13px] text-[#9499a0]">{count} {unit}</span>
+    </div>
+    {rows.map((r, i) => (
+      <div key={r.label} className="flex items-center justify-between py-1.5">
+        <span className={`text-[14px] ${i === 0 ? 'font-semibold text-[#202325]' : 'text-[#636566]'}`}>
+          {i + 1}. {r.label}
+        </span>
+        <span className={`text-[14px] ${i === 0 ? 'font-semibold text-[#202325]' : 'text-[#636566]'}`}>
+          {fmtCell(r.value)}
+        </span>
+      </div>
+    ))}
+    <div className="flex items-center justify-between pt-3 mt-2 border-t border-[#ececec]">
+      <span className="text-[14px] text-[#636566]">Tổng</span>
+      <span className="text-[14px] font-medium text-[#202325]">{num(total)}</span>
+    </div>
+  </div>
+)
+
+const HelpIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-[#9499a0] inline-block align-middle">
+    <circle cx="12" cy="12" r="10" /><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .7-1 1.7" strokeLinecap="round" /><line x1="12" y1="17" x2="12.01" y2="17" strokeLinecap="round" />
+  </svg>
+)
+
 export const CloseShiftModal = ({
   shift,
+  cashierName,
   onClosed,
   onCancel,
 }: {
   shift: ShiftSummary
+  cashierName: string
   onClosed: (closed: ShiftSummary) => void
   onCancel: () => void
 }) => {
-  // Store formatted strings (e.g. "10.000.000") — parse with parseDots() for math
-  const initialActuals = Object.fromEntries(
-    shift.paymentBreakdown.map(b => [b.method, ''])
-  ) as Record<PaymentMethodKey, string>
+  const [data, setData] = useState<ShiftSummary>(shift)
+  const [cashActual, setCashActual] = useState('')
+  const [note, setNote]             = useState('')
+  const [loading, setLoading]       = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError]           = useState('')
 
-  const [actuals, setActuals]   = useState<Record<PaymentMethodKey, string>>(initialActuals)
-  const [handover, setHandover] = useState('')
-  const [note, setNote]         = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState('')
+  const byMethod = (m: PaymentMethodKey) =>
+    data.paymentBreakdown.find(b => b.method === m)?.expectedAmount ?? 0
 
-  const handleActualChange = (method: PaymentMethodKey, value: string) =>
-    setActuals(prev => ({ ...prev, [method]: formatDots(value) }))
+  const openingCash  = data.openingCash
+  const expectedCash = byMethod('CASH')                 // opening + cash movements (BR-CS-03)
+  const cashInShift  = expectedCash - openingCash       // net cash generated this shift
+  const cashSales    = cashInShift - data.totalCashIn + data.totalCashOut
 
-  // Live variance
-  const variances = shift.paymentBreakdown.map(b => {
-    const actual = parseDots(actuals[b.method] ?? '')
-    return { method: b.method, expected: b.expectedAmount, actual, variance: actual - b.expectedAmount }
-  })
-  const hasVariance = variances.some(v => v.variance !== 0)
+  const salesTransfer = byMethod('QR')
+  const salesCard     = byMethod('CARD')
+  const salesWallet   = byMethod('E_WALLET')
+  const salesTotal    = cashSales + salesTransfer + salesCard + salesWallet
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const handoverAmt = parseDots(handover)
-    if (!handover.trim()) {
-      setError('Vui lòng nhập số tiền bàn giao hợp lệ (≥ 0)')
+  const cashActualNum = parseDots(cashActual)
+  const variance      = cashActual ? cashActualNum - expectedCash : 0
+  const hasVariance   = cashActual !== '' && variance !== 0
+  const canClose      = cashActual !== ''
+
+  const fmtDateTime = (iso: string) =>
+    new Date(iso).toLocaleString('vi-VN', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    })
+
+  const digits = data.id.replace(/\D/g, '')
+  const shiftCode = digits ? 'CA' + digits.slice(-6).padStart(6, '0') : 'CA-' + data.id.slice(0, 6).toUpperCase()
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      const fresh = await getMyShift()
+      if (fresh) setData(fresh)
+    } catch {
+      /* keep current data on failure */
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const submit = async (print: boolean) => {
+    if (!canClose) {
+      setError('Vui lòng nhập số tiền mặt bàn giao thực tế')
       return
     }
     if (hasVariance && !note.trim()) {
-      setError('Vui lòng nhập ghi chú lý do chênh lệch')
+      setError('Vui lòng nhập ghi chú lý do chênh lệch tiền mặt')
       return
     }
     setLoading(true)
     setError('')
     try {
-      const closed = await closeShift(
-        shift.id,
-        variances.map(v => ({ method: v.method, amount: v.actual })),
-        handoverAmt,
-        note.trim() || undefined,
-      )
+      // Counted cash doubles as the handover amount in this simplified sheet.
+      const closed = await closeShift(data.id, cashActualNum, cashActualNum, undefined, note.trim() || undefined)
+      if (print) window.print()
       onClosed(closed)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Không thể đóng ca. Vui lòng thử lại.')
@@ -74,126 +131,175 @@ export const CloseShiftModal = ({
     }
   }
 
-  const openedAt = new Date(shift.openedAt).toLocaleString('vi-VN', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
+  const statusLabel = data.status === 'OPEN' ? 'ĐANG MỞ' : data.status === 'PENDING_RECON' ? 'CHỜ ĐỐI SOÁT' : 'ĐÃ ĐÓNG'
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[540px] mx-4 overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="bg-[#025cca] px-6 py-5 shrink-0">
-          <h2 className="text-[20px] font-bold text-white">Đóng ca thu ngân</h2>
-          <p className="text-[13px] text-blue-100 mt-1">Mở lúc {openedAt} · Doanh thu: {fmt(shift.totalRevenue)}</p>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[1180px] max-h-[95vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#ececec] shrink-0">
+          <div className="flex items-center gap-3">
+            <button onClick={onCancel} className="w-8 h-8 flex items-center justify-center rounded-lg text-[#636566] hover:bg-[#f0f0f0] transition-colors" aria-label="Quay lại">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <h2 className="text-[18px] font-semibold text-[#202325]">
+              Phiếu bàn giao ca: <span className="font-bold">{shiftCode}</span>
+            </h2>
+            <span className="px-2.5 py-1 rounded-md bg-[#e8f1fc] text-[#025cca] text-[12px] font-semibold">{statusLabel}</span>
+          </div>
+          <button onClick={onCancel} className="w-8 h-8 flex items-center justify-center rounded-lg text-[#636566] hover:bg-[#f0f0f0] transition-colors" aria-label="Đóng">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
-        <form onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-0 overflow-y-auto">
-          {/* Payment method actuals */}
-          <div className="px-6 pt-5 pb-4 flex flex-col gap-3">
-            <p className="text-[13px] font-semibold text-[#636566] uppercase tracking-wide">
-              Kiểm đếm theo phương thức thanh toán
-            </p>
-            <div className="rounded-xl border border-[#e8e8e8] overflow-hidden">
-              <table className="w-full text-[14px]">
-                <thead>
-                  <tr className="bg-[#f5f5f5]">
-                    <th className="text-left px-4 py-2.5 text-[#636566] font-medium">Phương thức</th>
-                    <th className="text-right px-4 py-2.5 text-[#636566] font-medium">Dự kiến</th>
-                    <th className="text-right px-4 py-2.5 text-[#636566] font-medium">Thực tế</th>
-                    <th className="text-right px-4 py-2.5 text-[#636566] font-medium">Chênh lệch</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {variances.map(v => (
-                    <tr key={v.method} className="border-t border-[#f0f0f0]">
-                      <td className="px-4 py-2.5 font-medium text-[#202325]">
-                        {PAYMENT_METHOD_LABELS[v.method]}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-[#636566]">
-                        {fmt(v.expected)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder="0"
-                          value={actuals[v.method]}
-                          onChange={e => handleActualChange(v.method, e.target.value)}
-                          className="w-[130px] h-8 px-2 text-right border border-[#d1d5db] rounded-md text-[13px] outline-none focus:border-[#025cca]"
-                        />
-                      </td>
-                      <td className={`px-4 py-2.5 text-right font-medium text-[13px] ${
-                        v.variance > 0 ? 'text-green-600' : v.variance < 0 ? 'text-red-500' : 'text-[#636566]'
-                      }`}>
-                        {v.variance === 0
-                          ? fmt(0)
-                          : (v.variance > 0 ? '+' : '') + fmt(v.variance)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* Sub-header */}
+        <div className="flex flex-wrap items-center gap-x-10 gap-y-1 px-6 py-3 text-[14px] text-[#636566] border-b border-[#f2f2f2] shrink-0">
+          <span>Nhân viên: <span className="font-semibold text-[#202325]">{cashierName}</span></span>
+          <span>Giờ mở ca: <span className="font-semibold text-[#202325]">{fmtDateTime(data.openedAt)}</span></span>
+          <span>Giờ đóng ca: <span className="font-semibold text-[#202325]">{data.closedAt ? fmtDateTime(data.closedAt) : ''}</span></span>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 flex flex-col gap-4 bg-white">
+          {/* Tiền mặt đầu ca */}
+          <div className="border border-[#ececec] rounded-2xl px-6 py-4 flex items-center justify-between">
+            <span className="text-[16px] font-semibold text-[#202325]">Tiền mặt đầu ca</span>
+            <span className="text-[22px] font-bold text-[#025cca]">{num(openingCash)}</span>
+          </div>
+
+          {/* Tiền mặt trong ca */}
+          <div className="border border-[#ececec] rounded-2xl px-6 py-5">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[16px] font-semibold text-[#202325]">Tiền mặt trong ca</span>
+              <span className="flex items-center gap-1.5">
+                <HelpIcon />
+                <span className="text-[22px] font-bold text-[#025cca]">{num(cashInShift)}</span>
+              </span>
+            </div>
+            <div className="flex gap-4">
+              <BreakdownCard
+                title="Bán hàng" count={0} unit="hóa đơn"
+                rows={[
+                  { label: 'Tiền mặt', value: cashSales },
+                  { label: 'Chuyển khoản', value: salesTransfer },
+                  { label: 'Thẻ', value: salesCard },
+                  { label: 'Ví điện tử', value: salesWallet },
+                  { label: 'Điểm', value: 0 },
+                  { label: 'Công nợ', value: 0 },
+                ]}
+                total={salesTotal}
+              />
+              <BreakdownCard
+                title="Phiếu thu" count={0} unit="phiếu"
+                rows={[
+                  { label: 'Tiền mặt', value: data.totalCashIn },
+                  { label: 'Chuyển khoản', value: 0 },
+                  { label: 'Thẻ', value: 0 },
+                  { label: 'Điểm', value: '—' },
+                ]}
+                total={data.totalCashIn}
+              />
+              <BreakdownCard
+                title="Phiếu chi" count={0} unit="phiếu"
+                rows={[
+                  { label: 'Tiền mặt', value: data.totalCashOut },
+                  { label: 'Chuyển khoản', value: 0 },
+                  { label: 'Thẻ', value: 0 },
+                  { label: 'Điểm', value: '—' },
+                ]}
+                total={data.totalCashOut}
+              />
             </div>
           </div>
 
-          {/* Handover amount */}
-          <div className="px-6 pb-4 flex flex-col gap-1.5">
-            <label className="text-[14px] font-medium text-[#202325]">
-              Số tiền bàn giao (VNĐ)
-              <span className="text-[12px] text-[#636566] font-normal ml-1">
-                — tiền mặt chuyển cho ca tiếp theo
+          {/* Tiền mặt cuối ca */}
+          <div className="border border-[#ececec] rounded-2xl px-6 py-5">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[16px] font-semibold text-[#202325]">Tiền mặt cuối ca</span>
+              <span className="flex items-center gap-1.5">
+                <HelpIcon />
+                <span className="text-[22px] font-bold text-[#025cca]">{num(expectedCash)}</span>
               </span>
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="0"
-              value={handover}
-              onChange={e => setHandover(formatDots(e.target.value))}
-              className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[15px] outline-none focus:border-[#025cca] focus:ring-2 focus:ring-[#025cca]/20"
-            />
-          </div>
-
-          {/* Closing note */}
-          <div className="px-6 pb-4 flex flex-col gap-1.5">
-            <label className="text-[14px] font-medium text-[#202325]">
-              Ghi chú đóng ca
-              {hasVariance && <span className="text-red-500 ml-1">*</span>}
-              {!hasVariance && <span className="text-[12px] text-[#636566] font-normal ml-1">(tuỳ chọn)</span>}
-            </label>
-            <textarea
-              rows={2}
-              value={note}
-              onChange={e => setNote(e.target.value)}
-              placeholder={hasVariance ? 'Bắt buộc khi có chênh lệch' : 'Ghi chú nếu cần...'}
-              className="px-4 py-2.5 border border-[#d1d5db] rounded-lg text-[14px] resize-none outline-none focus:border-[#025cca] focus:ring-2 focus:ring-[#025cca]/20"
-            />
+            </div>
+            <div className="grid grid-cols-3 gap-8">
+              <div className="flex flex-col gap-2">
+                <label className="text-[14px] text-[#636566]">Tiền mặt bàn giao thực tế</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Nhập số tiền mặt đang có cuối ca"
+                  value={cashActual}
+                  onChange={e => { setCashActual(formatDots(e.target.value)); if (error) setError('') }}
+                  autoFocus
+                  className="border-b-2 border-[#025cca] pb-1.5 text-[15px] text-[#202325] outline-none bg-transparent placeholder:text-[#9499a0]"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[14px] text-[#636566]">Số tiền chênh lệch</label>
+                <div className={`border-b border-[#d1d5db] pb-1.5 text-[15px] font-medium ${
+                  variance > 0 ? 'text-green-600' : variance < 0 ? 'text-red-500' : 'text-[#202325]'
+                }`}>
+                  {variance > 0 ? '+' : ''}{num(variance)}
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[14px] text-[#636566]">
+                  Ghi chú{hasVariance && <span className="text-red-500 ml-0.5">*</span>}
+                </label>
+                <input
+                  type="text"
+                  placeholder="Nhập ghi chú. Ví dụ: mua đồ hết 50k"
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  className="border-b border-[#d1d5db] pb-1.5 text-[15px] text-[#202325] outline-none bg-transparent placeholder:text-[#9499a0] focus:border-[#025cca]"
+                />
+              </div>
+            </div>
           </div>
 
           {error && (
-            <div className="mx-6 mb-4 px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-600">
+            <div className="px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-600">
               {error}
             </div>
           )}
+        </div>
 
-          <div className="px-6 pb-6 flex gap-3 shrink-0">
+        {/* Footer */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-[#ececec] shrink-0">
+          <button
+            type="button"
+            onClick={() => void handleRefresh()}
+            disabled={refreshing}
+            className="flex items-center gap-2 text-[15px] font-medium text-[#025cca] hover:underline disabled:opacity-60"
+          >
+            <svg className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M4 9a8 8 0 0114-3m2 9a8 8 0 01-14 3" />
+            </svg>
+            Cập nhật dữ liệu
+          </button>
+          <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={onCancel}
-              disabled={loading}
-              className="flex-1 h-11 rounded-lg border border-[#d1d5db] text-[#202325] font-medium text-[15px] hover:bg-[#f5f5f5] transition-colors disabled:opacity-60"
+              onClick={() => void submit(false)}
+              disabled={loading || !canClose}
+              className="px-6 h-11 rounded-xl bg-[#f0f0f0] text-[#636566] font-semibold text-[15px] hover:bg-[#e6e6e6] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Huỷ
+              Đóng ca
             </button>
             <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 h-11 rounded-lg bg-[#025cca] text-white font-semibold text-[15px] hover:bg-[#0251b3] transition-colors disabled:opacity-60"
+              type="button"
+              onClick={() => void submit(true)}
+              disabled={loading || !canClose}
+              className="px-6 h-11 rounded-xl bg-[#025cca] text-white font-semibold text-[15px] hover:bg-[#0251b3] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Đang đóng ca...' : 'Xác nhận đóng ca'}
+              {loading ? 'Đang đóng ca...' : 'Đóng ca và in phiếu bàn giao'}
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   )

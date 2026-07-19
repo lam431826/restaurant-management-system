@@ -1,16 +1,21 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import AssistanceButton from './AssistanceButton'
 import OrderStatusModal from './OrderStatusModal'
 import imgMakiSpicyTuna from '../assets/images/menu-maki-spicy-tuna.jpg'
+import { getImageUrl } from '../utils/api'
+import { createGuestClient } from '../services/realtimeClient'
 
 const GUEST_ORDER_ALREADY_INVOICED_MESSAGE =
   'Đơn hàng đã được lập hóa đơn nên không thể thêm hoặc sửa món.'
 
 export default function GuestOrderPage() {
   const [searchParams] = useSearchParams()
-  const tableToken = searchParams.get('token') || 'token-ban-01'
-  
+  // FE-PUB-02 fix: this silently fell back to a hardcoded, non-existent table token when
+  // ?token= was missing from the URL, routing an unrecognized guest onto a real table
+  // without any warning. No fallback now — a missing token renders an explicit error state.
+  const tableToken = searchParams.get('token')
+
   const [tableInfo, setTableInfo] = useState({ id: '', name: 'Đang tải...' })
   const [menuData, setMenuData] = useState([])
   const [loading, setLoading] = useState(true)
@@ -22,7 +27,19 @@ export default function GuestOrderPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
 
+  // Guest STOMP connection, scoped to this table session (table-token auth, no login).
+  // Kept in a ref so OrderStatusModal can subscribe without triggering re-renders here.
+  const realtimeRef = useRef(null)
   useEffect(() => {
+    if (!tableToken) return
+    const rt = createGuestClient(tableToken)
+    realtimeRef.current = rt
+    return () => rt.disconnect()
+  }, [tableToken])
+
+  useEffect(() => {
+    if (!tableToken) return
+
     // Fetch Table Info
     fetch(`/api/guest/orders/table-info?token=${tableToken}`)
       .then(res => res.json())
@@ -50,39 +67,65 @@ export default function GuestOrderPage() {
       })
   }, [tableToken])
 
-  // Count how many of this item type are in the cart
+  // Get quantity of an item in cart (for new items only, not original/editing)
   const getQuantity = (itemId) => {
-    return cart.filter(i => i.id === itemId).length
+    const found = cart.find(i => i.id === itemId && !i.isOriginal)
+    return found ? found.quantity : 0
   }
 
   const handleAddToCart = (item) => {
-    // Each item is independent to allow separate notes
-    setCart(prev => [...prev, { ...item, cartItemId: Date.now() + Math.random(), quantity: 1, note: '' }])
+    // Group by item ID — increment quantity if already in cart
+    setCart(prev => {
+      const existing = prev.find(i => i.id === item.id && !i.isOriginal)
+      if (existing) {
+        return prev.map(i =>
+          i.id === item.id && !i.isOriginal
+            ? { ...i, quantity: i.quantity + 1 }
+            : i
+        )
+      }
+      return [...prev, { ...item, cartItemId: Date.now() + Math.random(), quantity: 1, note: '' }]
+    })
   }
 
   const handleRemoveFromCart = (itemId) => {
-    // Remove the last added instance of this item
+    // Decrement quantity; remove entry if quantity reaches 0
     setCart(prev => {
-      const lastIndex = prev.map(i => i.id).lastIndexOf(itemId)
-      if (lastIndex >= 0) {
-        const newCart = [...prev]
-        newCart.splice(lastIndex, 1)
-        return newCart
+      const existing = prev.find(i => i.id === itemId && !i.isOriginal)
+      if (!existing) return prev
+      if (existing.quantity <= 1) {
+        return prev.filter(i => !(i.id === itemId && !i.isOriginal))
       }
-      return prev
+      return prev.map(i =>
+        i.id === itemId && !i.isOriginal
+          ? { ...i, quantity: i.quantity - 1 }
+          : i
+      )
     })
   }
 
   const handleRemoveSpecificCartItem = (cartItemId) => {
-    setCart(prev => prev.filter(i => i.cartItemId !== cartItemId))
+    // Decrement quantity; remove entry if quantity reaches 0
+    setCart(prev => {
+      const existing = prev.find(i => i.cartItemId === cartItemId)
+      if (!existing) return prev
+      if (existing.quantity <= 1) {
+        return prev.filter(i => i.cartItemId !== cartItemId)
+      }
+      return prev.map(i =>
+        i.cartItemId === cartItemId
+          ? { ...i, quantity: i.quantity - 1 }
+          : i
+      )
+    })
   }
 
   const handleUpdateNote = (cartItemId, text) => {
     setCart(prev => prev.map(item => item.cartItemId === cartItemId ? { ...item, note: text } : item))
   }
 
-  const totalItems = cart.length
-  const totalPrice = cart.reduce((sum, item) => sum + item.price, 0)
+  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0)
+  const totalPrice = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
 
   const handleSubmitOrder = async () => {
     if (cart.length === 0) return
@@ -92,7 +135,7 @@ export default function GuestOrderPage() {
       tableToken: tableToken,
       items: cart.filter(item => !item.isOriginal || item.cookingStatus === 'PENDING').map(item => ({
         menuItemId: item.id,
-        quantity: 1, // Always 1 because we don't group
+        quantity: item.quantity,
         note: item.note || ''
       }))
     }
@@ -111,7 +154,9 @@ export default function GuestOrderPage() {
       
       const res = await fetch(url, {
         method: method,
-        headers: { 'Content-Type': 'application/json' },
+        // X-Table-Token required on /items endpoints (BE-TBL-02) — proves this guest
+        // actually holds the table the order belongs to, not just a guessed orderId.
+        headers: { 'Content-Type': 'application/json', 'X-Table-Token': tableToken },
         body: JSON.stringify(payload)
       })
       
@@ -159,6 +204,7 @@ export default function GuestOrderPage() {
         note: item.note || '',
         image: '/images/food-item.jpg', // Placeholder
         cookingStatus: item.cookingStatus,
+        quantity: item.quantity,
         isOriginal: true
       }))
       setCart(newCart)
@@ -169,6 +215,19 @@ export default function GuestOrderPage() {
 
   function scrollToCategory(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  if (!tableToken) {
+    return (
+      <div className="bg-[#f5f5f5] min-h-screen font-sans flex items-center justify-center px-6">
+        <div className="text-center max-w-sm">
+          <p className="text-lg font-semibold text-gray-800 mb-2">Liên kết không hợp lệ</p>
+          <p className="text-sm text-gray-500">
+            Không tìm thấy mã bàn. Vui lòng quét lại mã QR trên bàn để đặt món.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -219,15 +278,15 @@ export default function GuestOrderPage() {
                 <div className="bg-white rounded-xl shadow-sm overflow-hidden flex flex-col divide-y">
                   {cat.items.map((item) => {
                     const q = getQuantity(item.id)
-                    const imgUrl = item.imageUrl || imgMakiSpicyTuna
+                    const imgUrl = getImageUrl(item.imageUrl) || imgMakiSpicyTuna
                     return (
                       <div key={item.id} className="p-3 flex gap-3">
                         <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden shrink-0">
-                          <img src={imgUrl} alt={item.name} className="w-full h-full object-cover" />
+                          <img src={imgUrl} alt={item.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = imgMakiSpicyTuna }} />
                         </div>
                         <div className="flex-1 flex flex-col justify-between">
                           <div>
-                            <h3 className="text-base font-medium text-gray-900 leading-tight">{item.name}</h3>
+                            <h3 className="text-base font-medium text-gray-900 leading-tight line-clamp-2">{item.name}</h3>
                             <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.description}</p>
                           </div>
                           <div className="flex justify-between items-end mt-2">
@@ -302,14 +361,23 @@ export default function GuestOrderPage() {
                   </button>
                 )}
                 <div className="flex justify-between mb-3 pr-8">
-                  <div>
-                    <h3 className="font-bold text-gray-800">{index + 1}. {item.name}</h3>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-gray-800">{index + 1}. {item.name}</h3>
+                      {item.quantity > 1 && !item.isOriginal && (
+                        <span className="text-xs bg-orange-100 text-orange-600 font-bold px-2 py-0.5 rounded-full">x{item.quantity}</span>
+                      )}
+                    </div>
                     {item.isOriginal && item.cookingStatus !== 'PENDING' && (
                       <span className="text-xs text-blue-500 font-semibold bg-blue-50 px-2 py-0.5 rounded-full mt-1 inline-block">
-                        {item.cookingStatus === 'COOKING' ? 'Đang nấu' : item.cookingStatus === 'COMPLETED' ? 'Nấu xong' : item.cookingStatus === 'SERVED' ? 'Đã phục vụ' : 'Đã hủy'}
+                        {item.cookingStatus === 'COOKING' ? 'Đang nấu' : item.cookingStatus === 'READY' ? 'Nấu xong' : item.cookingStatus === 'SERVED' ? 'Đã phục vụ' : item.cookingStatus === 'REJECTED' ? 'Đã hủy' : ''}
                       </span>
                     )}
-                    <p className="text-orange-500 font-semibold text-sm mt-1">{item.price.toLocaleString('vi-VN')}đ</p>
+                    <p className="text-orange-500 font-semibold text-sm mt-1">
+                      {item.quantity > 1
+                        ? <>{(item.price * item.quantity).toLocaleString('vi-VN')}đ <span className="text-gray-400 font-normal">({item.price.toLocaleString('vi-VN')}đ x{item.quantity})</span></>
+                        : <>{item.price.toLocaleString('vi-VN')}đ</>}
+                    </p>
                   </div>
                 </div>
                 <input 
@@ -344,11 +412,13 @@ export default function GuestOrderPage() {
       )}
 
       {isStatusOpen && (
-        <OrderStatusModal 
-          orderId={currentOrderId} 
-          onClose={() => setIsStatusOpen(false)} 
+        <OrderStatusModal
+          orderId={currentOrderId}
+          tableToken={tableToken}
+          onClose={() => setIsStatusOpen(false)}
           onEditOrder={handleEditOrder}
           onOrderFinished={() => setCurrentOrderId(null)}
+          subscribeRealtime={(destination, onMessage) => realtimeRef.current?.subscribe(destination, onMessage)}
         />
       )}
 

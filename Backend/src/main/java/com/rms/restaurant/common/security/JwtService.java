@@ -25,12 +25,15 @@ public class JwtService {
     @Value("${app.jwt.refresh-token-expiration}")
     private long refreshExpirationMs;
 
-    public String generateAccessToken(UserDetails userDetails, Map<String, Object> extraClaims) {
-        return buildToken(userDetails, extraClaims, expirationMs);
+    public String generateAccessToken(UserDetails userDetails, Map<String, Object> extraClaims, int tokenVersion) {
+        Map<String, Object> claims = new java.util.HashMap<>(extraClaims);
+        claims.put("typ", "access");
+        claims.put("tv", tokenVersion);
+        return buildToken(userDetails, claims, expirationMs);
     }
 
     public String generateRefreshToken(UserDetails userDetails) {
-        return buildToken(userDetails, Map.of(), refreshExpirationMs);
+        return buildToken(userDetails, Map.of("typ", "refresh"), refreshExpirationMs);
     }
 
     private String buildToken(UserDetails userDetails, Map<String, Object> extra, long ttl) {
@@ -54,6 +57,21 @@ public class JwtService {
     public boolean isTokenValid(String token, UserDetails userDetails) {
         String username = extractUsername(token);
         return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
+    }
+
+    /**
+     * Access-token validity check used by JwtAuthenticationFilter: in addition to the
+     * subject/expiry check, requires typ=access (so a raw refresh token is rejected) and
+     * a matching token-version claim (so revocation — logout/lock/deactivate/password-reset —
+     * takes effect immediately instead of only at natural expiry). See BE-AUTH-01/02.
+     */
+    public boolean isAccessTokenValid(String token, UserDetails userDetails, int currentTokenVersion) {
+        if (!isTokenValid(token, userDetails)) return false;
+        Claims claims = extractAllClaims(token);
+        Object typ = claims.get("typ");
+        if (!"access".equals(typ)) return false;
+        Object tv = claims.get("tv");
+        return tv instanceof Number && ((Number) tv).intValue() == currentTokenVersion;
     }
 
     private boolean isTokenExpired(String token) {

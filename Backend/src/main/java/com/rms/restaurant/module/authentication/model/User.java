@@ -50,6 +50,12 @@ public class User {
     @Column(name = "locked_at")
     private LocalDateTime lockedAt;
 
+    // Bumped on logout/lock/deactivate/password-reset; embedded as a JWT claim so an
+    // already-issued access token can be invalidated before its natural expiry (BE-AUTH-02).
+    @Builder.Default
+    @Column(name = "token_version", nullable = false)
+    private int tokenVersion = 0;
+
     @CreatedDate
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

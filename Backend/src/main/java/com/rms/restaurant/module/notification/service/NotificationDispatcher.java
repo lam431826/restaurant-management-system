@@ -1,7 +1,9 @@
 package com.rms.restaurant.module.notification.service;
 
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.common.utils.enums.NotificationChannel;
 import com.rms.restaurant.common.utils.mail.GmailService;
+import com.rms.restaurant.module.notification.mapper.NotificationMapper;
 import com.rms.restaurant.module.notification.model.NotificationLog;
 import com.rms.restaurant.module.notification.repository.NotificationLogRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +29,8 @@ public class NotificationDispatcher {
 
     private final GmailService gmailService;
     private final NotificationLogRepository notificationLogRepository;
+    private final NotificationMapper notificationMapper;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     @Async("notificationExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -52,6 +56,7 @@ public class NotificationDispatcher {
             log.warn("Email FAILED [recipient={}, template={}]: {}", recipient, template, e.getMessage());
         } finally {
             notificationLogRepository.save(notifLog);
+            realtimeEventPublisher.publishNotificationEvent(notificationMapper.toResponse(notifLog));
         }
     }
 
@@ -77,6 +82,11 @@ public class NotificationDispatcher {
                     (LocalDateTime) vars.get("datetime")
             );
             case "RESERVATION_CANCELLATION" -> gmailService.sendReservationCancellationEmail(
+                    recipient,
+                    (String) vars.get("guestName"),
+                    (LocalDateTime) vars.get("datetime")
+            );
+            case "RESERVATION_NO_SHOW" -> gmailService.sendNoShowEmail(
                     recipient,
                     (String) vars.get("guestName"),
                     (LocalDateTime) vars.get("datetime")

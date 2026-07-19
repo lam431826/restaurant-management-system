@@ -1,9 +1,11 @@
 package com.rms.restaurant.module.user.service.impl;
 
+import com.rms.restaurant.common.utils.enums.UserRole;
 import com.rms.restaurant.common.utils.enums.UserStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ConflictException;
+import com.rms.restaurant.common.utils.exception.ForbiddenException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.mail.GmailService;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
@@ -19,6 +21,8 @@ import com.rms.restaurant.module.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,6 +61,9 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public CreateUserResponse createUser(CreateUserRequest request) {
+        if (request.role() == UserRole.ADMIN && !isAdmin()) {
+            throw new ForbiddenException(ApplicationError.MANAGER_CANNOT_ASSIGN_ADMIN_ROLE);
+        }
         if (userRepository.existsByUsername(request.username())) {
             throw new ConflictException(ApplicationError.DUPLICATE_USERNAME);
         }
@@ -122,10 +129,16 @@ public class UserServiceImpl implements UserService {
             log.info("Admin changed role of user '{}' to {}", user.getUsername(), request.role());
         }
         if (request.status() != null) {
+            boolean leavingActive = user.getStatus() == UserStatus.ACTIVE && request.status() != UserStatus.ACTIVE;
             user.setStatus(request.status());
             if (request.status() == UserStatus.ACTIVE) {
                 user.setFailedLoginAttempts(0);
                 user.setLockedAt(null);
+            }
+            if (leavingActive) {
+                // BE-AUTH-02: an already-issued access token must stop working the instant
+                // an admin locks/deactivates the account, not just at its natural 8h expiry.
+                user.setTokenVersion(user.getTokenVersion() + 1);
             }
             log.info("Admin changed status of user '{}' to {}", user.getUsername(), request.status());
         }
@@ -142,6 +155,8 @@ public class UserServiceImpl implements UserService {
     public void deleteUser(String id) {
         User user = findUserById(id);
         user.setStatus(UserStatus.INACTIVE);
+        // BE-AUTH-02: invalidate any already-issued access token immediately on soft-delete.
+        user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
         log.info("Soft-deleted user '{}'", user.getUsername());
         try {
@@ -165,6 +180,12 @@ public class UserServiceImpl implements UserService {
             auditService.log("USER_UNLOCK", "User", user.getId(),
                     "{\"username\":\"" + user.getUsername() + "\"}");
         } catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private boolean isAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
     }
 
     private User findUserById(String id) {

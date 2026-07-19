@@ -7,6 +7,7 @@ import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.module.notification.dto.ReservationNotificationRequest;
 import com.rms.restaurant.module.notification.service.NotificationService;
 import com.rms.restaurant.module.reservation.dto.CreateReservationRequest;
@@ -21,6 +22,7 @@ import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,8 +37,8 @@ import java.util.stream.Collectors;
 @Transactional
 public class ReservationServiceImpl implements ReservationService {
 
-    // Each booking occupies [T-60min, T+120min) on a table (1h setup + 1.5h dining + 0.5h cleanup).
-    // Two bookings on the same table conflict when |T1-T2| < 180 min.
+    // Two bookings on the same table conflict when |T1-T2| < 180 min (each booking is treated
+    // as occupying a symmetric 180-minute footprint around its own time for conflict purposes).
     private static final int WINDOW_MINUTES = 180;
 
     private static final List<ReservationStatus> ACTIVE_STATUSES =
@@ -49,6 +51,7 @@ public class ReservationServiceImpl implements ReservationService {
     private final TableRepository tableRepository;
     private final NotificationService notificationService;
     private final AuditService auditService;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -105,7 +108,9 @@ public class ReservationServiceImpl implements ReservationService {
 
         audit("RESERVATION_CREATE", saved.getId(),
                 "{\"guestName\":\"" + esc(saved.getGuestName()) + "\",\"tableId\":\"" + esc(saved.getTableId()) + "\"}");
-        return enrich(saved);
+        ReservationResponse response = enrich(saved);
+        realtimeEventPublisher.publishReservationEvent("CREATED", response);
+        return response;
     }
 
     @Override
@@ -130,7 +135,9 @@ public class ReservationServiceImpl implements ReservationService {
 
         audit("RESERVATION_CONFIRM", saved.getId(),
                 "{\"from\":\"PENDING\",\"to\":\"CONFIRMED\",\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
-        return enrich(saved);
+        ReservationResponse response = enrich(saved);
+        realtimeEventPublisher.publishReservationEvent("UPDATED", response);
+        return response;
     }
 
     @Override
@@ -152,6 +159,17 @@ public class ReservationServiceImpl implements ReservationService {
                     request.datetime() != null ? request.datetime() : reservation.getDatetime(),
                     id);
             reservation.setTableId(request.tableId());
+        } else if (reservation.getTableId() != null
+                && (request.partySize() != null || request.datetime() != null)) {
+            // BE-RES-02 fix: a party-size or datetime-only edit (no tableId in the request)
+            // previously skipped capacity/conflict re-validation entirely, even though the
+            // reservation still has a table assigned — allowing capacity overflow and
+            // double-booking via reschedule. Re-run both checks against the existing table.
+            int effectivePartySize = request.partySize() != null ? request.partySize() : reservation.getPartySize();
+            validateTableCapacity(reservation.getTableId(), effectivePartySize);
+            checkTableAvailability(reservation.getTableId(),
+                    request.datetime() != null ? request.datetime() : reservation.getDatetime(),
+                    id);
         }
 
         // Edit guest info
@@ -207,7 +225,9 @@ public class ReservationServiceImpl implements ReservationService {
             auditDetail = "{\"guestName\":\"" + esc(saved.getGuestName()) + "\"}";
         }
         audit(auditAction, saved.getId(), auditDetail);
-        return enrich(saved);
+        ReservationResponse response = enrich(saved);
+        realtimeEventPublisher.publishReservationEvent("UPDATED", response);
+        return response;
     }
 
     @Override
@@ -235,6 +255,7 @@ public class ReservationServiceImpl implements ReservationService {
 
         audit("RESERVATION_CANCEL", id,
                 "{\"from\":\"" + prevStatus + "\",\"guestName\":\"" + esc(reservation.getGuestName()) + "\"}");
+        realtimeEventPublisher.publishReservationEvent("UPDATED", enrich(reservation));
     }
 
     @Override
@@ -252,7 +273,9 @@ public class ReservationServiceImpl implements ReservationService {
 
         audit("RESERVATION_CHECK_IN", saved.getId(),
                 "{\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
-        return enrich(saved);
+        ReservationResponse response = enrich(saved);
+        realtimeEventPublisher.publishReservationEvent("UPDATED", response);
+        return response;
     }
 
     @Override
@@ -268,8 +291,38 @@ public class ReservationServiceImpl implements ReservationService {
 
         reservation.setStatus(ReservationStatus.NO_SHOW);
         reservationRepository.save(reservation);
+
+        if (reservation.getGuestEmail() != null && !reservation.getGuestEmail().isBlank()) {
+            try {
+                notificationService.sendReservationNotification(
+                        new ReservationNotificationRequest(id, NotificationType.NO_SHOW));
+            } catch (Exception e) {
+                log.warn("NM-01 NO_SHOW trigger failed for reservation {}: {}", id, e.getMessage());
+            }
+        }
+
         audit("RESERVATION_NO_SHOW", id,
                 "{\"guestName\":\"" + esc(reservation.getGuestName()) + "\"}");
+        realtimeEventPublisher.publishReservationEvent("UPDATED", enrich(reservation));
+    }
+
+    /**
+     * BR-04: auto-detect reservations whose 15-minute grace period has elapsed
+     * without check-in, and mark them No-show. Runs offset from the reminder
+     * cron's :00 tick to avoid same-instant DB contention.
+     */
+    @Scheduled(cron = "30 */5 * * * *")
+    public void detectNoShows() {
+        List<Reservation> overdue = reservationRepository.findConfirmedPastCutoff(
+                LocalDateTime.now().minusMinutes(15));
+
+        for (Reservation r : overdue) {
+            try {
+                markNoShow(r.getId());
+            } catch (Exception e) {
+                log.warn("BR-04 auto no-show failed for reservation {}: {}", r.getId(), e.getMessage());
+            }
+        }
     }
 
     /**
@@ -313,7 +366,9 @@ public class ReservationServiceImpl implements ReservationService {
         audit("RESERVATION_TRANSFER_TABLE", saved.getId(),
                 "{\"from\":\"" + esc(oldTableId) + "\",\"to\":\"" + esc(tableId)
                         + "\",\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
-        return enrich(saved);
+        ReservationResponse response = enrich(saved);
+        realtimeEventPublisher.publishReservationEvent("UPDATED", response);
+        return response;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -361,8 +416,13 @@ public class ReservationServiceImpl implements ReservationService {
      */
     private void checkTableAvailabilityForStatuses(String tableId, LocalDateTime datetime,
                                                     String excludeId, List<ReservationStatus> statuses) {
-        LocalDateTime windowStart = datetime.minusMinutes(60);
-        LocalDateTime windowEnd   = datetime.plusMinutes(120);
+        // BE-RES-01 fix: was hardcoded to an asymmetric [-60,+120) window, which doesn't
+        // implement this class's own documented "conflict when |T1-T2| < 180" rule — a
+        // double-booking ~121-180 min apart in one direction slipped through. Use the real
+        // symmetric occupancy-overlap window instead (still strict inequality at the DB
+        // query level, so exactly 180 min apart still does not conflict).
+        LocalDateTime windowStart = datetime.minusMinutes(WINDOW_MINUTES);
+        LocalDateTime windowEnd   = datetime.plusMinutes(WINDOW_MINUTES);
         List<Reservation> conflicts = reservationRepository.findConflictingForUpdate(
                 tableId, statuses, windowStart, windowEnd,
                 excludeId != null ? excludeId : "");
@@ -388,7 +448,8 @@ public class ReservationServiceImpl implements ReservationService {
         tableRepository.findById(tableId).ifPresent(t -> {
             if (onlyIfCurrent == null || t.getStatus() == onlyIfCurrent) {
                 t.setStatus(newStatus);
-                tableRepository.save(t);
+                RestaurantTable saved = tableRepository.save(t);
+                realtimeEventPublisher.publishTableStatus(saved);
             }
         });
     }

@@ -21,7 +21,10 @@ import com.rms.restaurant.module.shift.repository.ShiftCashMovementRepository;
 import com.rms.restaurant.module.shift.repository.ShiftPaymentReconciliationRepository;
 import com.rms.restaurant.module.shift.repository.ShiftRepository;
 import com.rms.restaurant.module.shift.service.ShiftService;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -30,17 +33,43 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.*;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class ShiftServiceImpl implements ShiftService {
 
-    private static final String STATUS_OPEN   = "OPEN";
-    private static final String STATUS_CLOSED = "CLOSED";
+    private static final String STATUS_OPEN          = "OPEN";
+    private static final String STATUS_CLOSED        = "CLOSED";
+    private static final String STATUS_PENDING_RECON = "PENDING_RECON";
+    private static final String STATUS_STALE         = "STALE";          // BR-CS-15
+    private static final String STATUS_FORCE_CLOSED  = "FORCE_CLOSED";   // BR-CS-15
+    private static final String STATUS_MERGED        = "MERGED";         // BR-CS-19
+    private static final String TYPE_NORMAL          = "NORMAL";         // BR-CS-18
+    private static final String TYPE_FLOATING        = "FLOATING";       // BR-CS-18
     private static final List<OrderStatus> ACTIVE_ORDER_STATUSES =
             List.of(OrderStatus.PENDING, OrderStatus.ACCEPTED, OrderStatus.PREPARING, OrderStatus.SERVED);
+
+    // BR-CS-06: when the restaurant matches online channels against bank/PSP
+    // settlement reports, a closed shift sits in PENDING_RECON until a manager
+    // finalizes it. When disabled (default), online actuals = recorded and the
+    // shift closes straight to CLOSED.
+    @Value("${rms.shift.settlement-matching-enabled:false}")
+    private boolean settlementMatchingEnabled;
+
+    // BR-CS-14: business-day cutoff (default 05:00). A shift opened before the cutoff
+    // belongs to the previous business date, so an evening trading day is not split
+    // at midnight. Parsed lazily (ISO local time, e.g. "05:00").
+    @Value("${rms.shift.business-day-cutoff:05:00}")
+    private String businessDayCutoff;
+
+    // BR-CS-05: cash discrepancy tolerance. A closing note is mandatory only when the
+    // absolute cash variance exceeds this band (default 0 = any non-zero variance).
+    @Value("${rms.shift.discrepancy-tolerance:0}")
+    private BigDecimal discrepancyTolerance;
 
     private final ShiftRepository shiftRepo;
     private final ShiftCashMovementRepository cashMovRepo;
@@ -50,6 +79,7 @@ public class ShiftServiceImpl implements ShiftService {
     private final UserRepository userRepo;
     private final RosterAttendanceRepository attendanceRepo;
     private final ShiftMapper shiftMapper;
+    private final AuditService auditService;
 
     // ── SM-01: Open Shift ─────────────────────────────────────────────────────
 
@@ -70,14 +100,127 @@ public class ShiftServiceImpl implements ShiftService {
                     "You already have an open shift (opened at " + existing.getOpenedAt() + ")");
         });
 
+        LocalDateTime openedAt = LocalDateTime.now();
         Shift shift = shiftRepo.save(Shift.builder()
                 .cashierId(cashier.getId())
-                .openedAt(LocalDateTime.now())
+                .openedAt(openedAt)
+                .businessDate(businessDate(openedAt))   // BR-CS-14
                 .openingCash(request.openingCash())
                 .status(STATUS_OPEN)
+                .shiftType(TYPE_NORMAL)
+                .build());
+
+        audit("SHIFT_OPEN", shift.getId(),
+                "{\"cashierId\":\"" + esc(cashier.getId()) + "\",\"openingCash\":" + shift.getOpeningCash() + "}");
+
+        return shiftMapper.toSummary(shift, List.of(), List.of(), BigDecimal.ZERO, BigDecimal.ZERO);
+    }
+
+    // ── CS-07 / BR-CS-18: Open a floating shift ───────────────────────────────
+
+    @Override
+    public ShiftSummaryResponse openFloating(String cashierUsername) {
+        User cashier = resolveUser(cashierUsername);
+
+        // BR-CS-01: a floating shift counts as the helper's one OPEN shift.
+        shiftRepo.findByCashierIdAndStatus(cashier.getId(), STATUS_OPEN).ifPresent(existing -> {
+            throw new ApplicationException(ApplicationError.SHIFT_ALREADY_OPEN,
+                    "You already have an open shift (opened at " + existing.getOpenedAt() + ")");
+        });
+
+        // BR-X-05a: only allowed while ANOTHER cashier has an OPEN NORMAL shift to cover for.
+        // BR-X-05: CHECKED_IN is intentionally NOT required for a floating shift.
+        if (!shiftRepo.existsByStatusAndShiftTypeAndCashierIdNot(STATUS_OPEN, TYPE_NORMAL, cashier.getId())) {
+            throw new ApplicationException(ApplicationError.FLOATING_REQUIRES_MAIN_SHIFT);
+        }
+
+        LocalDateTime openedAt = LocalDateTime.now();
+        Shift shift = shiftRepo.save(Shift.builder()
+                .cashierId(cashier.getId())
+                .openedAt(openedAt)
+                .businessDate(businessDate(openedAt))
+                .openingCash(BigDecimal.ZERO)      // BR-CS-18: floating float = 0
+                .status(STATUS_OPEN)
+                .shiftType(TYPE_FLOATING)
                 .build());
 
         return shiftMapper.toSummary(shift, List.of(), List.of(), BigDecimal.ZERO, BigDecimal.ZERO);
+    }
+
+    // ── CS-07 / BR-CS-19: Merge a floating shift into its main shift ───────────
+
+    @Override
+    public ShiftSummaryResponse mergeFloating(String floatingId, MergeFloatingRequest request, String username) {
+        User user = resolveUser(username);
+
+        Shift floating = shiftRepo.findById(floatingId)
+                .orElseThrow(() -> new ApplicationException(ApplicationError.SHIFT_NOT_FOUND));
+        if (!TYPE_FLOATING.equals(floating.getShiftType())) {
+            throw new ApplicationException(ApplicationError.SHIFT_NOT_FLOATING);
+        }
+        if (!STATUS_OPEN.equals(floating.getStatus())) {
+            throw new ApplicationException(ApplicationError.SHIFT_CLOSED);
+        }
+
+        boolean isOwner   = floating.getCashierId().equals(user.getId());
+        boolean isManager = user.getRole() == UserRole.MANAGER || user.getRole() == UserRole.ADMIN;
+        if (!isOwner && !isManager) {
+            throw new ApplicationException(ApplicationError.FORBIDDEN);
+        }
+
+        Shift main = shiftRepo.findById(request.mainShiftId())
+                .orElseThrow(() -> new ApplicationException(ApplicationError.MERGE_TARGET_INVALID));
+        if (!TYPE_NORMAL.equals(main.getShiftType()) || !STATUS_OPEN.equals(main.getStatus())) {
+            throw new ApplicationException(ApplicationError.MERGE_TARGET_INVALID);
+        }
+
+        // BR-CS-19: re-tag the floating shift's payments to the main shift, KEEPING each
+        // payment's original cashier_id so the main shift's breakdown shows who collected what.
+        // Re-tagging automatically rolls the collected cash into the main shift's expected cash.
+        List<Payment> floatingPayments = paymentRepo.findByShiftIdAndStatus(floatingId, "PAID");
+        BigDecimal floatingCashSales = floatingPayments.stream()
+                .filter(p -> p.getMethod() == PaymentMethod.CASH)
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        for (Payment p : floatingPayments) {
+            p.setShiftId(main.getId());   // cashierId intentionally unchanged
+        }
+        paymentRepo.saveAll(floatingPayments);
+
+        // BR-CS-05 (reused): counted cash vs the floating shift's recorded cash sales.
+        BigDecimal countDiff = request.countedCash().subtract(floatingCashSales);
+        if (countDiff.abs().compareTo(nz(discrepancyTolerance)) > 0
+                && (request.note() == null || request.note().isBlank())) {
+            throw new ApplicationException(ApplicationError.SHIFT_VARIANCE_NOTE_REQUIRED);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        floating.setStatus(STATUS_MERGED);
+        floating.setMergedIntoShiftId(main.getId());
+        floating.setClosedAt(now);
+        floating.setClosedBy(user.getId());
+        floating.setClosingCash(request.countedCash());
+        floating.setClosingNote(request.note());
+        shiftRepo.save(floating);
+
+        List<ShiftCashMovement> mainMovements = cashMovRepo.findByShiftId(main.getId());
+        BigDecimal cashIn  = sumMovements(mainMovements, "CASH_IN");
+        BigDecimal cashOut = sumMovements(mainMovements, "CASH_OUT");
+        return shiftMapper.toSummary(main,
+                buildProvisionalRecs(main, cashIn, cashOut), mainMovements, cashIn, cashOut);
+    }
+
+    // BR-CS-09/11: when a cashier opens a new shift, the suggested opening float is
+    // the handover amount from their most recently closed shift (they may override).
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal getSuggestedOpeningFloat(String username) {
+        User user = resolveUser(username);
+        return shiftRepo.findFirstByCashierIdAndStatusInOrderByClosedAtDesc(
+                        user.getId(), List.of(STATUS_CLOSED, STATUS_PENDING_RECON))
+                .map(Shift::getHandoverAmount)
+                .filter(Objects::nonNull)
+                .orElse(BigDecimal.ZERO);
     }
 
     // ── SM-02: Record Cash In / Cash Out ──────────────────────────────────────
@@ -112,6 +255,10 @@ public class ShiftServiceImpl implements ShiftService {
                 .amount(request.amount())
                 .reason(request.reason())
                 .build());
+
+        audit("SHIFT_CASH_MOVEMENT", shiftId,
+                "{\"type\":\"" + type + "\",\"amount\":" + request.amount()
+                        + ",\"reason\":\"" + esc(request.reason()) + "\"}");
     }
 
     // ── SM-03: Close Shift ────────────────────────────────────────────────────
@@ -142,8 +289,8 @@ public class ShiftServiceImpl implements ShiftService {
 
         LocalDateTime closedAt = LocalDateTime.now();
 
-        // Revenue per method from PAID payments during shift window
-        List<Payment> shiftPayments = paymentRepo.findPaidPaymentsBetween(shift.getOpenedAt(), closedAt);
+        // BR-CS-08: revenue per method from PAID payments attributed to THIS shift
+        List<Payment> shiftPayments = paymentRepo.findByShiftIdAndStatus(shift.getId(), "PAID");
         Map<PaymentMethod, BigDecimal> salesByMethod = sumSalesByMethod(shiftPayments);
 
         List<ShiftCashMovement> movements = cashMovRepo.findByShiftId(shiftId);
@@ -153,20 +300,27 @@ public class ShiftServiceImpl implements ShiftService {
         Map<PaymentMethod, BigDecimal> expectedAmounts = buildExpectedAmounts(
                 shift.getOpeningCash(), salesByMethod, totalCashIn, totalCashOut);
 
-        Map<PaymentMethod, BigDecimal> actualAmounts = new EnumMap<>(PaymentMethod.class);
-        request.actualAmounts().forEach(a -> actualAmounts.put(a.method(), a.amount()));
+        // BR-CS-04 / BR-CS-13: the cashier reconciles CASH only. The three online
+        // channels are auto-recorded at close (actual = recorded, zero variance);
+        // true reconciliation happens later against settlement reports (BR-CS-06).
+        BigDecimal actualCash   = request.cashActual();
+        BigDecimal expectedCash = expectedAmounts.getOrDefault(PaymentMethod.CASH, BigDecimal.ZERO);
+        BigDecimal cashVariance = actualCash.subtract(expectedCash);
 
-        // BR-CS-04: variance per method
         List<ShiftPaymentReconciliation> reconciliations = new ArrayList<>();
-        BigDecimal totalRevenue  = salesByMethod.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalVariance = BigDecimal.ZERO;
+        BigDecimal totalRevenue = salesByMethod.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
 
         for (PaymentMethod method : PaymentMethod.values()) {
             BigDecimal expected = expectedAmounts.getOrDefault(method, BigDecimal.ZERO);
-            BigDecimal actual   = actualAmounts.getOrDefault(method, BigDecimal.ZERO);
-            BigDecimal variance = actual.subtract(expected);
-            totalVariance = totalVariance.add(variance.abs());
-
+            BigDecimal actual;
+            BigDecimal variance;
+            if (method == PaymentMethod.CASH) {
+                actual   = actualCash;
+                variance = cashVariance;
+            } else {
+                actual   = expected;            // online: actual = recorded
+                variance = BigDecimal.ZERO;     // no cashier discrepancy
+            }
             reconciliations.add(ShiftPaymentReconciliation.builder()
                     .shiftId(shiftId)
                     .paymentMethod(method)
@@ -176,15 +330,14 @@ public class ShiftServiceImpl implements ShiftService {
                     .build());
         }
 
-        // BR-CS-05: closing note required when any variance exists
-        boolean hasVariance = reconciliations.stream()
-                .anyMatch(r -> r.getVariance().compareTo(BigDecimal.ZERO) != 0);
-        if (hasVariance && (request.closingNote() == null || request.closingNote().isBlank())) {
+        // BR-CS-05: closing note required only when the cash variance exceeds the
+        // configured tolerance band (default 0 → any non-zero variance requires a note).
+        if (cashVariance.abs().compareTo(nz(discrepancyTolerance)) > 0
+                && (request.closingNote() == null || request.closingNote().isBlank())) {
             throw new ApplicationException(ApplicationError.SHIFT_VARIANCE_NOTE_REQUIRED);
         }
 
         // BR-CS-09: handover must not exceed actual cash on hand
-        BigDecimal actualCash = actualAmounts.getOrDefault(PaymentMethod.CASH, BigDecimal.ZERO);
         if (request.handoverAmount().compareTo(actualCash) > 0) {
             throw new ApplicationException(ApplicationError.SHIFT_HANDOVER_EXCEEDS_CASH,
                     "Handover " + request.handoverAmount() + " exceeds actual cash " + actualCash);
@@ -192,13 +345,86 @@ public class ShiftServiceImpl implements ShiftService {
 
         reconciliationRepo.saveAll(reconciliations);
 
-        shift.setStatus(STATUS_CLOSED);
+        // BR-CS-06: sit in PENDING_RECON only when settlement matching is tracked
+        // AND there are online sales to settle; otherwise close straight to CLOSED.
+        BigDecimal onlineSales = totalRevenue.subtract(
+                salesByMethod.getOrDefault(PaymentMethod.CASH, BigDecimal.ZERO));
+        boolean pendingRecon = settlementMatchingEnabled
+                && onlineSales.compareTo(BigDecimal.ZERO) > 0;
+
+        shift.setStatus(pendingRecon ? STATUS_PENDING_RECON : STATUS_CLOSED);
         shift.setClosedAt(closedAt);
         shift.setClosedBy(closingUser.getId());
         shift.setClosingCash(actualCash);
         shift.setHandoverAmount(request.handoverAmount());
+        shift.setCardBatchTotal(request.cardBatchTotal());     // BR-CS-12
         shift.setTotalRevenue(totalRevenue);
         shift.setClosingNote(request.closingNote());
+        shiftRepo.save(shift);
+
+        audit("SHIFT_CLOSE", shift.getId(),
+                "{\"status\":\"" + shift.getStatus() + "\",\"closingCash\":" + actualCash
+                        + ",\"cashVariance\":" + cashVariance + ",\"totalRevenue\":" + totalRevenue + "}");
+
+        return shiftMapper.toSummary(shift, reconciliations, movements, totalCashIn, totalCashOut);
+    }
+
+    // ── BR-CS-15: Manager force-close of a stale/open shift ───────────────────
+
+    @Override
+    public ShiftSummaryResponse forceClose(String shiftId, ForceCloseShiftRequest request, String managerUsername) {
+        User manager = resolveUser(managerUsername);
+        if (manager.getRole() != UserRole.MANAGER && manager.getRole() != UserRole.ADMIN) {
+            throw new ApplicationException(ApplicationError.FORBIDDEN);
+        }
+
+        Shift shift = shiftRepo.findById(shiftId)
+                .orElseThrow(() -> new ApplicationException(ApplicationError.SHIFT_NOT_FOUND));
+        // Only an unfinished shift can be force-closed (OPEN or already-flagged STALE).
+        if (!STATUS_OPEN.equals(shift.getStatus()) && !STATUS_STALE.equals(shift.getStatus())) {
+            throw new ApplicationException(ApplicationError.SHIFT_CLOSED);
+        }
+
+        LocalDateTime closedAt = LocalDateTime.now();
+        List<Payment> shiftPayments = paymentRepo.findByShiftIdAndStatus(shift.getId(), "PAID");
+        Map<PaymentMethod, BigDecimal> salesByMethod = sumSalesByMethod(shiftPayments);
+
+        List<ShiftCashMovement> movements = cashMovRepo.findByShiftId(shiftId);
+        BigDecimal totalCashIn  = sumMovements(movements, "CASH_IN");
+        BigDecimal totalCashOut = sumMovements(movements, "CASH_OUT");
+
+        Map<PaymentMethod, BigDecimal> expectedAmounts = buildExpectedAmounts(
+                shift.getOpeningCash(), salesByMethod, totalCashIn, totalCashOut);
+
+        // Discrepancy computed exactly as a normal close: manager-counted cash vs expected;
+        // online channels actual = recorded.
+        BigDecimal actualCash   = request.cashActual();
+        BigDecimal expectedCash = expectedAmounts.getOrDefault(PaymentMethod.CASH, BigDecimal.ZERO);
+        BigDecimal cashVariance = actualCash.subtract(expectedCash);
+
+        List<ShiftPaymentReconciliation> reconciliations = new ArrayList<>();
+        BigDecimal totalRevenue = salesByMethod.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        for (PaymentMethod method : PaymentMethod.values()) {
+            BigDecimal expected = expectedAmounts.getOrDefault(method, BigDecimal.ZERO);
+            boolean isCash = method == PaymentMethod.CASH;
+            reconciliations.add(ShiftPaymentReconciliation.builder()
+                    .shiftId(shiftId)
+                    .paymentMethod(method)
+                    .expectedAmount(expected)
+                    .actualAmount(isCash ? actualCash : expected)
+                    .variance(isCash ? cashVariance : BigDecimal.ZERO)
+                    .build());
+        }
+        reconciliationRepo.saveAll(reconciliations);
+
+        // BR-CS-15: original cashier stays accountable (cashierId unchanged); record the
+        // manager as closedBy and stamp the reason for audit.
+        shift.setStatus(STATUS_FORCE_CLOSED);
+        shift.setClosedAt(closedAt);
+        shift.setClosedBy(manager.getId());
+        shift.setClosingCash(actualCash);
+        shift.setTotalRevenue(totalRevenue);
+        shift.setClosingNote("FORCE_CLOSED by manager: " + request.reason().trim());
         shiftRepo.save(shift);
 
         return shiftMapper.toSummary(shift, reconciliations, movements, totalCashIn, totalCashOut);
@@ -217,6 +443,7 @@ public class ShiftServiceImpl implements ShiftService {
         if (!isManager && !shift.getCashierId().equals(user.getId())) {
             throw new ApplicationException(ApplicationError.FORBIDDEN);
         }
+        shift = markStaleIfElapsed(shift);   // BR-CS-15
 
         List<ShiftCashMovement> movements    = cashMovRepo.findByShiftId(shiftId);
         List<ShiftPaymentReconciliation> recs = reconciliationRepo.findByShiftId(shiftId);
@@ -237,6 +464,7 @@ public class ShiftServiceImpl implements ShiftService {
         User user = resolveUser(username);
         Shift shift = shiftRepo.findByCashierIdAndStatus(user.getId(), STATUS_OPEN)
                 .orElseThrow(() -> new ApplicationException(ApplicationError.SHIFT_NOT_OPEN));
+        shift = markStaleIfElapsed(shift);   // BR-CS-15: surface a stale OPEN shift
 
         List<ShiftCashMovement> movements = cashMovRepo.findByShiftId(shift.getId());
         BigDecimal totalCashIn  = sumMovements(movements, "CASH_IN");
@@ -245,6 +473,23 @@ public class ShiftServiceImpl implements ShiftService {
         return shiftMapper.toSummary(shift,
                 buildProvisionalRecs(shift, totalCashIn, totalCashOut),
                 movements, totalCashIn, totalCashOut);
+    }
+
+    // CS-07: open normal shifts that a floating shift can be merged into (excludes caller).
+    @Override
+    @Transactional(readOnly = true)
+    public List<OpenShiftBriefResponse> listOpenNormalShifts(String username) {
+        User user = resolveUser(username);
+        List<Shift> openNormal = shiftRepo.findByStatusAndShiftType(STATUS_OPEN, TYPE_NORMAL);
+        List<String> cashierIds = openNormal.stream().map(Shift::getCashierId).distinct().toList();
+        Map<String, String> names = new HashMap<>();
+        userRepo.findAllById(cashierIds).forEach(u -> names.put(u.getId(), u.getFullName()));
+        return openNormal.stream()
+                .filter(s -> !s.getCashierId().equals(user.getId()))
+                .map(s -> new OpenShiftBriefResponse(
+                        s.getId(), s.getCashierId(),
+                        names.getOrDefault(s.getCashierId(), s.getCashierId()), s.getOpenedAt()))
+                .toList();
     }
 
     // ── CS-05: Manager Daily Summary ──────────────────────────────────────────
@@ -258,8 +503,9 @@ public class ShiftServiceImpl implements ShiftService {
             throw new ApplicationException(ApplicationError.FORBIDDEN);
         }
 
-        List<Shift> shifts = shiftRepo.findByOpenedAtBetweenOrderByOpenedAtAsc(
-                date.atStartOfDay(), date.plusDays(1).atStartOfDay());
+        // BR-CS-14: aggregate by business date (cutoff-based), not a naive midnight
+        // window, so overnight shifts roll into the evening's trading day.
+        List<Shift> shifts = shiftRepo.findByBusinessDateOrderByOpenedAtAsc(date);
 
         // Resolve cashier display names in one query
         List<String> cashierIds = shifts.stream().map(Shift::getCashierId).distinct().toList();
@@ -282,6 +528,10 @@ public class ShiftServiceImpl implements ShiftService {
         List<DailySummaryResponse.CashierShiftRow> rows = new ArrayList<>();
 
         for (Shift shift : shifts) {
+            // BR-CS-19: a merged floating shift's payments now live on its main shift —
+            // skip it here to avoid an empty, double-counted row.
+            if (STATUS_MERGED.equals(shift.getStatus())) continue;
+            shift = markStaleIfElapsed(shift);   // BR-CS-15
             List<ShiftCashMovement> movements    = cashMovRepo.findByShiftId(shift.getId());
             List<ShiftPaymentReconciliation> recs = reconciliationRepo.findByShiftId(shift.getId());
             BigDecimal cashIn  = sumMovements(movements, "CASH_IN");
@@ -323,7 +573,7 @@ public class ShiftServiceImpl implements ShiftService {
         }
 
         return new DailySummaryResponse(
-                date, incomplete, shifts.size(),
+                date, incomplete, rows.size(),
                 totalRevenue, totalCashIn, totalCashOut, totalVariance,
                 methodTotals, rows);
     }
@@ -338,15 +588,41 @@ public class ShiftServiceImpl implements ShiftService {
         }
         return shiftRepo.findAllByOrderByOpenedAtDesc(pageable)
                 .map(shift -> {
-                    List<ShiftCashMovement> movements = cashMovRepo.findByShiftId(shift.getId());
-                    List<ShiftPaymentReconciliation> recs = reconciliationRepo.findByShiftId(shift.getId());
+                    Shift s = markStaleIfElapsed(shift);   // BR-CS-15
+                    List<ShiftCashMovement> movements = cashMovRepo.findByShiftId(s.getId());
+                    List<ShiftPaymentReconciliation> recs = reconciliationRepo.findByShiftId(s.getId());
                     BigDecimal cashIn  = sumMovements(movements, "CASH_IN");
                     BigDecimal cashOut = sumMovements(movements, "CASH_OUT");
-                    return shiftMapper.toSummary(shift, recs, movements, cashIn, cashOut);
+                    return shiftMapper.toSummary(s, recs, movements, cashIn, cashOut);
                 });
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    // BR-CS-15: an OPEN shift left past the end of its business day (cutoff of the next
+    // day) is flagged STALE and locked against new transactions. It is never auto-closed —
+    // only a manager may FORCE_CLOSE it after a physical count.
+    private Shift markStaleIfElapsed(Shift shift) {
+        if (!STATUS_OPEN.equals(shift.getStatus()) || shift.getBusinessDate() == null) {
+            return shift;
+        }
+        LocalTime cutoff = LocalTime.parse(businessDayCutoff.trim());
+        LocalDateTime staleAfter = shift.getBusinessDate().plusDays(1).atTime(cutoff);
+        if (LocalDateTime.now().isAfter(staleAfter)) {
+            shift.setStatus(STATUS_STALE);
+            return shiftRepo.save(shift);
+        }
+        return shift;
+    }
+
+    // BR-CS-14: map an instant to its business date using the configurable cutoff.
+    // An instant before the cutoff time belongs to the previous calendar day.
+    private LocalDate businessDate(LocalDateTime when) {
+        LocalTime cutoff = LocalTime.parse(businessDayCutoff.trim());
+        return when.toLocalTime().isBefore(cutoff)
+                ? when.toLocalDate().minusDays(1)
+                : when.toLocalDate();
+    }
 
     private User resolveUser(String username) {
         return userRepo.findByUsername(username)
@@ -356,6 +632,8 @@ public class ShiftServiceImpl implements ShiftService {
     private Shift requireOpenShift(String shiftId) {
         Shift shift = shiftRepo.findById(shiftId)
                 .orElseThrow(() -> new ApplicationException(ApplicationError.SHIFT_NOT_FOUND));
+        // BR-CS-15: a stale shift is locked against new cash movements.
+        shift = markStaleIfElapsed(shift);
         if (!STATUS_OPEN.equals(shift.getStatus())) {
             throw new ApplicationException(ApplicationError.SHIFT_CLOSED);
         }
@@ -363,8 +641,7 @@ public class ShiftServiceImpl implements ShiftService {
     }
 
     private BigDecimal computeCurrentCashBalance(Shift shift) {
-        List<Payment> payments = paymentRepo.findPaidPaymentsBetween(
-                shift.getOpenedAt(), LocalDateTime.now());
+        List<Payment> payments = paymentRepo.findByShiftIdAndStatus(shift.getId(), "PAID");
         BigDecimal cashSales = payments.stream()
                 .filter(p -> p.getMethod() == PaymentMethod.CASH)
                 .map(Payment::getAmount)
@@ -410,8 +687,7 @@ public class ShiftServiceImpl implements ShiftService {
     private List<ShiftPaymentReconciliation> buildProvisionalRecs(
             Shift shift, BigDecimal totalCashIn, BigDecimal totalCashOut) {
 
-        List<Payment> payments = paymentRepo.findPaidPaymentsBetween(
-                shift.getOpenedAt(), LocalDateTime.now());
+        List<Payment> payments = paymentRepo.findByShiftIdAndStatus(shift.getId(), "PAID");
         Map<PaymentMethod, BigDecimal> salesByMethod = sumSalesByMethod(payments);
         Map<PaymentMethod, BigDecimal> expected =
                 buildExpectedAmounts(shift.getOpeningCash(), salesByMethod, totalCashIn, totalCashOut);
@@ -438,5 +714,14 @@ public class ShiftServiceImpl implements ShiftService {
                 .filter(m -> type.equals(m.getType()))
                 .map(ShiftCashMovement::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private void audit(String action, String id, String detail) {
+        try { auditService.log(action, "Shift", id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

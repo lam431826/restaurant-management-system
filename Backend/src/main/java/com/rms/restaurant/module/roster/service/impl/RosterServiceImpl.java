@@ -25,7 +25,9 @@ import com.rms.restaurant.module.roster.repository.ShiftTemplateRepository;
 import com.rms.restaurant.module.roster.repository.WeekPublicationRepository;
 import com.rms.restaurant.module.roster.service.RosterService;
 import com.rms.restaurant.module.shift.repository.ShiftRepository;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -54,6 +57,9 @@ public class RosterServiceImpl implements RosterService {
     private static final int CLOCK_IN_EARLY_MINUTES = 30;
     private static final int CLOCK_IN_LATE_WINDOW_MINUTES = 60;
     private static final int CLOCK_IN_GRACE_MINUTES = 15;
+    // BR-WS-14: a CHECKED_IN record with no clock-out past end + this grace is flagged
+    // MISSING_CLOCKOUT (never auto-filled; a manager resolves the actual out time).
+    private static final int AUTO_CLOCKOUT_GRACE_MINUTES = 2 * 60;
 
     private final ShiftTemplateRepository templateRepo;
     private final RosterAssignmentRepository assignmentRepo;
@@ -63,6 +69,7 @@ public class RosterServiceImpl implements RosterService {
     private final UserRepository userRepo;
     private final ShiftRepository cashShiftRepo;
     private final RosterMapper mapper;
+    private final AuditService auditService;
 
     // ─────────────────────────── Templates (WS-01) ───────────────────────────
 
@@ -117,12 +124,16 @@ public class RosterServiceImpl implements RosterService {
         templateRepo.deleteById(id);
     }
 
-    // BR-WS-01: end strictly after start; break shorter than total shift length.
+    // BR-WS-01 / BR-WS-13: break shorter than total shift length. end <= start is
+    // permitted and denotes an overnight shift that ends on the next calendar day;
+    // its duration is measured across midnight. All downstream math (worked hours,
+    // overlap, no-show) already rolls the end +1 day, so overnight is fully supported.
     private void validateTemplateTimes(LocalTime start, LocalTime end, int breakMinutes) {
-        if (!end.isAfter(start)) {
+        int spanMinutes = (end.toSecondOfDay() - start.toSecondOfDay()) / 60;
+        int durationMinutes = end.isAfter(start) ? spanMinutes : spanMinutes + 24 * 60; // crosses midnight
+        if (durationMinutes <= 0) {
             throw new ApplicationException(ApplicationError.TEMPLATE_INVALID_TIME_RANGE);
         }
-        int durationMinutes = (end.toSecondOfDay() - start.toSecondOfDay()) / 60;
         if (breakMinutes >= durationMinutes) {
             throw new ApplicationException(ApplicationError.TEMPLATE_BREAK_TOO_LONG);
         }
@@ -169,6 +180,13 @@ public class RosterServiceImpl implements RosterService {
                 created.add(assignmentRepo.save(assignment));
             }
         }
+
+        audit("ROSTER_ASSIGNMENT_CREATE", "RosterAssignment", null,
+                "{\"employeeIds\":\"" + esc(String.join(",", request.employeeIds())) + "\""
+                        + ",\"shiftTemplateIds\":\"" + esc(String.join(",", request.shiftTemplateIds())) + "\""
+                        + ",\"date\":\"" + request.date() + "\",\"repeatWeekly\":" + request.repeatWeekly()
+                        + ",\"count\":" + created.size() + "}");
+
         return created.stream().map(mapper::toAssignmentResponse).toList();
     }
 
@@ -190,15 +208,24 @@ public class RosterServiceImpl implements RosterService {
         assignment.setRepeatDays(request.repeatWeekly() && request.repeatDays() != null ? request.repeatDays() : List.of());
         assignment.setRepeatEnd(request.repeatWeekly() ? request.repeatEnd() : null);
         assignment.setHolidayWork(request.holidayWork());
-        return mapper.toAssignmentResponse(assignmentRepo.save(assignment));
+        RosterAssignment saved = assignmentRepo.save(assignment);
+
+        audit("ROSTER_ASSIGNMENT_UPDATE", "RosterAssignment", saved.getId(),
+                "{\"employeeId\":\"" + esc(saved.getEmployeeId()) + "\",\"shiftTemplateId\":\""
+                        + esc(saved.getShiftTemplateId()) + "\",\"repeatWeekly\":" + saved.isRepeatWeekly() + "}");
+
+        return mapper.toAssignmentResponse(saved);
     }
 
     @Override
     public void deleteAssignment(String id) {
-        if (!assignmentRepo.existsById(id)) {
-            throw new ResourceNotFoundException(ApplicationError.ASSIGNMENT_NOT_FOUND);
-        }
+        RosterAssignment assignment = assignmentRepo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ASSIGNMENT_NOT_FOUND));
         assignmentRepo.deleteById(id);
+
+        audit("ROSTER_ASSIGNMENT_DELETE", "RosterAssignment", id,
+                "{\"employeeId\":\"" + esc(assignment.getEmployeeId()) + "\",\"shiftTemplateId\":\""
+                        + esc(assignment.getShiftTemplateId()) + "\",\"startDate\":\"" + assignment.getStartDate() + "\"}");
     }
 
     // ───────────────────── Publish workflow (WS-02, BR-WS-03/04) ─────────────
@@ -220,6 +247,10 @@ public class RosterServiceImpl implements RosterService {
         pub.setStatus(WeekStatus.PUBLISHED);
         pub.setVersion(pub.getVersion() + 1);
         pub.setPublishedAt(LocalDateTime.now());
+        // BR-WS-02/04: staff-facing visibility is enforced in listMyAttendance (BR-WS-03).
+        // Staff notification on publish/re-publish is intentionally deferred — the only
+        // channel available is email, and an in-app channel is preferred before blasting
+        // every assigned staff member. Re-enable here once that channel exists.
         return mapper.toWeekStatus(weekPubRepo.save(pub));
     }
 
@@ -265,9 +296,19 @@ public class RosterServiceImpl implements RosterService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<AttendanceResponse> listMyAttendance(String username, LocalDate from, LocalDate to) {
-        return listAttendanceForEmployee(requireUserByUsername(username).getId(), from, to);
+        // BR-WS-03: a staff member only sees dates whose week is PUBLISHED. Enforced on the
+        // backend (not just the frontend) so a direct API call cannot reveal a DRAFT schedule.
+        // The manager report path (listAttendanceForEmployee) stays ungated.
+        List<AttendanceResponse> all = listAttendanceForEmployee(requireUserByUsername(username).getId(), from, to);
+        Map<LocalDate, Boolean> publishedByWeek = new java.util.HashMap<>();
+        return all.stream()
+                .filter(a -> publishedByWeek.computeIfAbsent(toMonday(a.date()), monday ->
+                        weekPubRepo.findById(monday)
+                                .map(p -> p.getStatus() == WeekStatus.PUBLISHED)
+                                .orElse(false)))
+                .toList();
     }
 
     @Override
@@ -311,14 +352,22 @@ public class RosterServiceImpl implements RosterService {
         LocalDateTime shiftEnd = !shiftEndRaw.isAfter(shiftStart) ? shiftEndRaw.plusDays(1) : shiftEndRaw;
         LocalDateTime now = LocalDateTime.now();
 
+        // BR-WS-11: clocking out before the scheduled end is an EARLY_LEAVE and requires
+        // a reason (LEAVE_APPROVED / LEAVE_UNAPPROVED / INCIDENT, optional free note).
+        boolean earlyLeave = now.isBefore(shiftEnd);
+        if (earlyLeave && (request.reason() == null || request.reason().isBlank())) {
+            throw new ApplicationException(ApplicationError.EARLY_LEAVE_REASON_REQUIRED);
+        }
+
         // BR-WS-08: paid from scheduled start (not early check-in), capped at scheduled end.
         LocalDateTime effectiveStart = record.getCheckInAt().isAfter(shiftStart) ? record.getCheckInAt() : shiftStart;
         LocalDateTime effectiveEnd = now.isBefore(shiftEnd) ? now : shiftEnd;
         long workedMinutes = Math.max(0, Duration.between(effectiveStart, effectiveEnd).toMinutes());
 
-        record.setStatus(AttendanceStatus.CHECKED_OUT);
+        record.setStatus(earlyLeave ? AttendanceStatus.EARLY_LEAVE : AttendanceStatus.CHECKED_OUT);
         record.setCheckOutAt(now);
         record.setWorkedMinutes((int) workedMinutes);
+        record.setClockOutReason(earlyLeave ? request.reason().trim() : null);
         return mapper.toAttendanceResponse(attendanceRepo.save(record));
     }
 
@@ -329,13 +378,21 @@ public class RosterServiceImpl implements RosterService {
     }
 
     // BR-WS-09: a SCHEDULED shift whose window has fully elapsed is finalized as NO_SHOW.
+    // BR-WS-14: a CHECKED_IN shift still open past end + grace is flagged MISSING_CLOCKOUT
+    // (not auto-filled — worked hours stay null until a manager enters the actual out time).
     private RosterAttendance finalizeIfElapsed(RosterAttendance record, ShiftTemplate template, LocalDate date) {
-        if (record.getStatus() != AttendanceStatus.SCHEDULED) return record;
         LocalDateTime start = LocalDateTime.of(date, template.getStartTime());
         LocalDateTime endRaw = LocalDateTime.of(date, template.getEndTime());
         LocalDateTime end = !endRaw.isAfter(start) ? endRaw.plusDays(1) : endRaw;
-        if (LocalDateTime.now().isAfter(end)) {
+        LocalDateTime now = LocalDateTime.now();
+
+        if (record.getStatus() == AttendanceStatus.SCHEDULED && now.isAfter(end)) {
             record.setStatus(AttendanceStatus.NO_SHOW);
+            return attendanceRepo.save(record);
+        }
+        if (record.getStatus() == AttendanceStatus.CHECKED_IN
+                && now.isAfter(end.plusMinutes(AUTO_CLOCKOUT_GRACE_MINUTES))) {
+            record.setStatus(AttendanceStatus.MISSING_CLOCKOUT);
             return attendanceRepo.save(record);
         }
         return record;
@@ -420,7 +477,14 @@ public class RosterServiceImpl implements RosterService {
 
         shiftRequest.setStatus(ShiftRequestStatus.APPROVED);
         shiftRequest.setManagerNote(request.managerNote());
-        return mapper.toRequestResponse(requestRepo.save(shiftRequest));
+        RosterRequest saved = requestRepo.save(shiftRequest);
+
+        audit("ROSTER_REQUEST_APPROVE", "RosterRequest", saved.getId(),
+                "{\"requesterId\":\"" + esc(saved.getRequesterId()) + "\",\"type\":\"" + saved.getType()
+                        + "\",\"workDate\":\"" + saved.getWorkDate() + "\",\"managerNote\":\""
+                        + esc(saved.getManagerNote()) + "\"}");
+
+        return mapper.toRequestResponse(saved);
     }
 
     @Override
@@ -428,7 +492,14 @@ public class RosterServiceImpl implements RosterService {
         RosterRequest shiftRequest = requireRequest(id);
         shiftRequest.setStatus(ShiftRequestStatus.REJECTED);
         shiftRequest.setManagerNote(request.managerNote());
-        return mapper.toRequestResponse(requestRepo.save(shiftRequest));
+        RosterRequest saved = requestRepo.save(shiftRequest);
+
+        audit("ROSTER_REQUEST_REJECT", "RosterRequest", saved.getId(),
+                "{\"requesterId\":\"" + esc(saved.getRequesterId()) + "\",\"type\":\"" + saved.getType()
+                        + "\",\"workDate\":\"" + saved.getWorkDate() + "\",\"managerNote\":\""
+                        + esc(saved.getManagerNote()) + "\"}");
+
+        return mapper.toRequestResponse(saved);
     }
 
     private RosterRequest requireRequest(String id) {
@@ -468,6 +539,55 @@ public class RosterServiceImpl implements RosterService {
             rows.add(new AttendanceReportRow(user.getId(), user.getFullName(), shiftCount, workedHours, lateCount, noShowCount));
         }
         return rows;
+    }
+
+    // BR-WS-14: all MISSING_CLOCKOUT records in range, for the manager resolve inbox.
+    // Reads through listAttendanceForEmployee so the lazy detection runs (flips stuck
+    // CHECKED_IN rows) before filtering.
+    @Override
+    @Transactional
+    public List<AttendanceResponse> listMissingClockouts(LocalDate from, LocalDate to) {
+        List<User> staff = userRepo.findAll().stream().filter(u -> u.getRole() != UserRole.ADMIN).toList();
+        List<AttendanceResponse> result = new ArrayList<>();
+        for (User user : staff) {
+            listAttendanceForEmployee(user.getId(), from, to).stream()
+                    .filter(a -> a.status() == AttendanceStatus.MISSING_CLOCKOUT)
+                    .forEach(result::add);
+        }
+        return result;
+    }
+
+    // BR-WS-14 (TS-02): manager enters the actual out time + reason; worked minutes are
+    // then computed (paid from scheduled start, capped at scheduled end) and the record
+    // becomes CHECKED_OUT.
+    @Override
+    public AttendanceResponse resolveMissingClockout(String attendanceId, ResolveClockoutRequest request) {
+        RosterAttendance record = attendanceRepo.findById(attendanceId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ATTENDANCE_NOT_FOUND));
+        if (record.getStatus() != AttendanceStatus.MISSING_CLOCKOUT) {
+            throw new ApplicationException(ApplicationError.ATTENDANCE_NOT_MISSING_CLOCKOUT);
+        }
+
+        ShiftTemplate template = loadTemplate(record.getShiftTemplateId());
+        LocalDateTime shiftStart = LocalDateTime.of(record.getWorkDate(), template.getStartTime());
+        LocalDateTime shiftEndRaw = LocalDateTime.of(record.getWorkDate(), template.getEndTime());
+        LocalDateTime shiftEnd = !shiftEndRaw.isAfter(shiftStart) ? shiftEndRaw.plusDays(1) : shiftEndRaw;
+
+        LocalDateTime out = request.checkOutAt();
+        if (record.getCheckInAt() != null && out.isBefore(record.getCheckInAt())) {
+            throw new ApplicationException(ApplicationError.RESOLVE_CLOCKOUT_TIME_INVALID);
+        }
+
+        LocalDateTime effectiveStart = (record.getCheckInAt() != null && record.getCheckInAt().isAfter(shiftStart))
+                ? record.getCheckInAt() : shiftStart;
+        LocalDateTime effectiveEnd = out.isBefore(shiftEnd) ? out : shiftEnd;
+        long workedMinutes = Math.max(0, Duration.between(effectiveStart, effectiveEnd).toMinutes());
+
+        record.setStatus(AttendanceStatus.CHECKED_OUT);
+        record.setCheckOutAt(out);
+        record.setWorkedMinutes((int) workedMinutes);
+        record.setClockOutReason(request.reason().trim());
+        return mapper.toAttendanceResponse(attendanceRepo.save(record));
     }
 
     @Override
@@ -559,5 +679,14 @@ public class RosterServiceImpl implements RosterService {
     private User requireUserByUsername(String username) {
         return userRepo.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.USER_NOT_FOUND));
+    }
+
+    private void audit(String action, String targetEntity, String id, String detail) {
+        try { auditService.log(action, targetEntity, id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

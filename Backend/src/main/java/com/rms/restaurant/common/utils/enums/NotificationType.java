@@ -6,5 +6,6 @@ public enum NotificationType {
     REMINDER,      // Nhắc nhở 1 tiếng trước giờ đặt
     CANCELLATION,  // Đặt bàn đã bị huỷ
     PAYMENT,       // Thanh toán thành công
-    TABLE_UPDATE   // Xếp bàn / chuyển bàn
+    TABLE_UPDATE,  // Xếp bàn / chuyển bàn
+    NO_SHOW        // Khách không đến sau grace period (BR-04)
 }

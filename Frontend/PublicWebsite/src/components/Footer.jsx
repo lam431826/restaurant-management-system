@@ -7,12 +7,12 @@ export default function Footer() {
         </span>
         <Diamond />
         <div className="text-[#efe7d2] text-sm leading-[1.5]" style={{ fontFamily: "'MJ Satoshi', sans-serif" }}>
-          <p className="m-0">SĐT: 0975919999</p>
+          <p className="m-0">SĐT: 0975919989</p>
           <p className="m-0">Email: wasabisushi@gmail.com</p>
         </div>
         <Diamond />
         <span className="text-[#efe7d2] text-sm leading-[1.5] whitespace-nowrap" style={{ fontFamily: "'MJ Satoshi', sans-serif" }}>
-          Open 16:00 pm — Close 23:00 pm
+          Open 16:00 pm — Close 22:30 pm
         </span>
       </div>
     </div>

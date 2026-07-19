@@ -76,6 +76,7 @@ public class AuthServiceImpl implements AuthService {
             if (attempts >= MAX_FAILED_ATTEMPTS) {
                 user.setStatus(UserStatus.LOCKED);
                 user.setLockedAt(LocalDateTime.now());
+                user.setTokenVersion(user.getTokenVersion() + 1);
             }
             userRepository.save(user);
             audit(user.getId(), user.getUsername(), "AUTH_LOGIN_FAILED", "User", user.getId(),
@@ -99,6 +100,13 @@ public class AuthServiceImpl implements AuthService {
     public VerifyInfoResponse verifyInfo(String verifyToken) {
         OtpRecord record = otpRecordRepository.findByVerifyTokenAndUsedFalse(verifyToken)
                 .orElseThrow(() -> new UnauthorizedException(ApplicationError.INVALID_VERIFY_TOKEN));
+
+        // BE-AUTH-03: verify/info regenerates an OTP in place (no new OtpRecord row), so it
+        // was never counted by resendOtp()'s rate limit. Share the same MAX_RESEND_RECORDS cap.
+        if (record.getInfoRequestCount() >= MAX_RESEND_RECORDS) {
+            throw new RateLimitException(ApplicationError.RESEND_LIMIT_EXCEEDED);
+        }
+        record.setInfoRequestCount(record.getInfoRequestCount() + 1);
 
         String otp = generateOtp();
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(OTP_TTL_MINUTES);
@@ -143,6 +151,7 @@ public class AuthServiceImpl implements AuthService {
         User user = record.getUser();
         user.setStatus(UserStatus.ACTIVE);
         user.setFailedLoginAttempts(0);
+        user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
         audit(user.getId(), user.getUsername(), "AUTH_ACCOUNT_ACTIVATED", "User", user.getId(), "{}");
 
@@ -215,6 +224,10 @@ public class AuthServiceImpl implements AuthService {
     public void logout(String username) {
         userRepository.findByUsername(username).ifPresent(user -> {
             refreshTokenRepository.revokeAllByUserId(user.getId());
+            // BE-AUTH-01/02: invalidate any already-issued access token immediately too,
+            // not just the refresh token — otherwise "logout" leaves the current session usable.
+            user.setTokenVersion(user.getTokenVersion() + 1);
+            userRepository.save(user);
             audit(user.getId(), user.getUsername(), "AUTH_LOGOUT", "User", user.getId(), "{}");
         });
     }
@@ -290,6 +303,7 @@ public class AuthServiceImpl implements AuthService {
         User user = record.getUser();
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         user.setFailedLoginAttempts(0);
+        user.setTokenVersion(user.getTokenVersion() + 1);
         if (user.getStatus() == UserStatus.LOCKED) {
             user.setStatus(UserStatus.ACTIVE);
             user.setLockedAt(null);
@@ -322,7 +336,7 @@ public class AuthServiceImpl implements AuthService {
                 .build();
 
         String accessToken = jwtService.generateAccessToken(
-                principal, Map.of("role", user.getRole().name(), "userId", user.getId()));
+                principal, Map.of("role", user.getRole().name(), "userId", user.getId()), user.getTokenVersion());
         String rawRefreshToken = jwtService.generateRefreshToken(principal);
 
         RefreshToken refreshToken = RefreshToken.builder()

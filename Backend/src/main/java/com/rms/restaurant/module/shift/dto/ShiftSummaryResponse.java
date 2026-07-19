@@ -10,6 +10,7 @@ public record ShiftSummaryResponse(
         String cashierId,
         String closedBy,
         String status,
+        String shiftType,
         LocalDateTime openedAt,
         LocalDateTime closedAt,
         BigDecimal openingCash,
@@ -18,6 +19,7 @@ public record ShiftSummaryResponse(
         BigDecimal totalCashOut,
         BigDecimal totalRevenue,
         BigDecimal totalVariance,
+        BigDecimal cardBatchTotal,
         List<PaymentMethodBreakdown> paymentBreakdown,
         List<CashMovementDetail> cashMovements,
         String closingNote

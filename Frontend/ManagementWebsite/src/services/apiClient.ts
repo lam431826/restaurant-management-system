@@ -1,4 +1,5 @@
 import { getAccessToken } from './tokenStorage'
+import { refreshAccessToken, handleAuthFailure } from './authRefresh'
 
 export interface ApiResponse<T> {
   data: T
@@ -43,10 +44,26 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
   const token = getAccessToken()
   if (auth && token) headers.set('Authorization', `Bearer ${token}`)
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  let response = await fetch(`${API_BASE_URL}${path}`, {
     ...requestOptions,
     headers,
   })
+
+  // FE-MGMT-01 fix: this client (backs authApi/invoiceApi/paymentApi/promotionApi) previously
+  // had no 401 handling — a request made after the 8h access token expired just failed
+  // outright instead of silently refreshing and retrying once.
+  if (auth && response.status === 401) {
+    try {
+      const newAccessToken = await refreshAccessToken()
+      headers.set('Authorization', `Bearer ${newAccessToken}`)
+      response = await fetch(`${API_BASE_URL}${path}`, {
+        ...requestOptions,
+        headers,
+      })
+    } catch {
+      handleAuthFailure()
+    }
+  }
 
   const responseText = await response.text()
   let responseBody: unknown = null

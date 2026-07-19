@@ -159,4 +159,21 @@ public class RosterController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return ApiResponse.success(rosterService.getAttendanceReport(from, to));
     }
+
+    // ── Missing clock-out inbox & resolve (BR-WS-14) ──────────────────────
+    @GetMapping("/attendance/missing-clockout")
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    public ApiResponse<List<AttendanceResponse>> listMissingClockouts(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ApiResponse.success(rosterService.listMissingClockouts(from, to));
+    }
+
+    @PostMapping("/attendance/{id}/resolve-clockout")
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    public ApiResponse<AttendanceResponse> resolveMissingClockout(
+            @PathVariable String id,
+            @Valid @RequestBody ResolveClockoutRequest request) {
+        return ApiResponse.success(rosterService.resolveMissingClockout(id, request));
+    }
 }

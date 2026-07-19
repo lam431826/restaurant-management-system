@@ -133,6 +133,7 @@ public class NotificationServiceImpl implements NotificationService {
             case CANCELLATION -> "RESERVATION_CANCELLATION";
             case PAYMENT      -> "PAYMENT_CONFIRMATION";
             case TABLE_UPDATE -> "RESERVATION_TABLE_UPDATE";
+            case NO_SHOW      -> "RESERVATION_NO_SHOW";
         };
     }
 }

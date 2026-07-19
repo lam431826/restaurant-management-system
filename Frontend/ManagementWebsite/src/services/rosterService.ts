@@ -49,7 +49,9 @@ export interface WeekStatus {
   publishedAt: string | null
 }
 
-export type AttendanceStatus = 'SCHEDULED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'NO_SHOW' | 'LEAVE'
+export type AttendanceStatus =
+  | 'SCHEDULED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'NO_SHOW' | 'LEAVE'
+  | 'EARLY_LEAVE' | 'MISSING_CLOCKOUT'
 export interface Attendance {
   id: string | null
   employeeId: string
@@ -61,6 +63,7 @@ export interface Attendance {
   checkOutAt: string | null
   workedMinutes: number | null
   late: boolean
+  clockOutReason: string | null
 }
 
 export type ShiftRequestType = 'SWAP' | 'LEAVE'
@@ -149,8 +152,18 @@ export const listMyAttendance = (from: string, to: string): Promise<Attendance[]
 export const clockIn = (date: string, shiftTemplateId: string): Promise<Attendance> =>
   api.post<ApiResponse<Attendance>>('/api/roster/attendance/clock-in', { date, shiftTemplateId }).then(r => r.data)
 
-export const clockOut = (date: string, shiftTemplateId: string): Promise<Attendance> =>
-  api.post<ApiResponse<Attendance>>('/api/roster/attendance/clock-out', { date, shiftTemplateId }).then(r => r.data)
+// BR-WS-11: reason is required when clocking out before the scheduled shift end.
+export const clockOut = (date: string, shiftTemplateId: string, reason?: string): Promise<Attendance> =>
+  api.post<ApiResponse<Attendance>>('/api/roster/attendance/clock-out',
+    { date, shiftTemplateId, reason: reason ?? null }).then(r => r.data)
+
+// BR-WS-14: manager inbox of MISSING_CLOCKOUT records and the resolve action.
+export const listMissingClockouts = (from: string, to: string): Promise<Attendance[]> =>
+  api.get<ApiResponse<Attendance[]>>('/api/roster/attendance/missing-clockout', { from, to }).then(r => r.data)
+
+export const resolveMissingClockout = (id: string, checkOutAt: string, reason: string): Promise<Attendance> =>
+  api.post<ApiResponse<Attendance>>(`/api/roster/attendance/${id}/resolve-clockout`,
+    { checkOutAt, reason }).then(r => r.data)
 
 // ── Swap / Leave requests (WS-05/06, BR-WS-06 enforced server-side) ────
 

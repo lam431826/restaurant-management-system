@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.table.service.impl;
 
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.enums.ReservationStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
@@ -7,7 +8,7 @@ import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.module.payment.repository.InvoiceRepository;
-import com.rms.restaurant.module.reservation.repository.ReservationRepository;
+import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.table.dto.*;
 import com.rms.restaurant.module.table.mapper.TableMapper;
 import com.rms.restaurant.module.table.model.RestaurantTable;
@@ -18,12 +19,17 @@ import com.rms.restaurant.module.table.service.TableService;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
+import com.rms.restaurant.module.reservation.repository.ReservationRepository;
+import com.rms.restaurant.common.utils.enums.ReservationStatus;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,7 +48,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -65,22 +70,34 @@ public class TableServiceImpl implements TableService {
     private final OrderRepository orderRepository;
     private final InvoiceRepository invoiceRepository;
     private final ReservationRepository reservationRepository;
+    private final RealtimeEventPublisher realtimeEventPublisher;
+    private final AuditService auditService;
 
     // ── Tables ───────────────────────────────────────────────────────────
 
     @Override
     @Transactional(readOnly = true)
-    public List<TableResponse> listAll() {
-        return tableRepository.findAllByOrderByDisplayOrderAscNameAsc().stream()
-                .map(table -> tableMapper.toResponse(table, findActiveOrderId(table.getId())))
-                .collect(Collectors.toList());
+    public PageResponse<TableResponse> search(String q, String area, Boolean active, Pageable pageable) {
+        String term = StringUtils.hasText(q) ? q.trim() : null;
+        Integer termAsCapacity = term != null && term.matches("\\d+") ? Integer.valueOf(term) : null;
+        String areaFilter = StringUtils.hasText(area) ? area : null;
+        Page<TableResponse> page = tableRepository.search(term, termAsCapacity, areaFilter, active, pageable)
+                .map(table -> {
+                    String orderId = findActiveOrderId(table.getId());
+                    TableResponse.ReservationSummary res = table.getStatus() == TableStatus.RESERVED
+                            ? findUpcomingReservation(table.getId()) : null;
+                    return tableMapper.toResponse(table, orderId, res);
+                });
+        return PageResponse.of(page);
     }
 
     @Override
     @Transactional(readOnly = true)
     public TableResponse getById(String id) {
         RestaurantTable table = findTable(id);
-        return tableMapper.toResponse(table, findActiveOrderId(table.getId()));
+        TableResponse.ReservationSummary res = table.getStatus() == TableStatus.RESERVED
+                ? findUpcomingReservation(table.getId()) : null;
+        return tableMapper.toResponse(table, findActiveOrderId(table.getId()), res);
     }
 
     @Override
@@ -97,9 +114,11 @@ public class TableServiceImpl implements TableService {
                 .displayOrder(request.displayOrder() == null ? 0 : request.displayOrder())
                 .active(request.active() == null || request.active())
                 .status(TableStatus.AVAILABLE)
-                .qrToken(UUID.randomUUID().toString())
+                .qrToken("QR-" + name)
                 .build();
-        return tableMapper.toResponse(tableRepository.save(table));
+        RestaurantTable saved = tableRepository.save(table);
+        audit("TABLE_CREATE", "Table", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        return tableMapper.toResponse(saved);
     }
 
     @Override
@@ -111,18 +130,29 @@ public class TableServiceImpl implements TableService {
                 throw new ConflictException(ApplicationError.DUPLICATE_TABLE_NAME);
             }
             table.setName(newName);
+            table.setQrToken("QR-" + newName);
         }
         if (request.note() != null) table.setNote(trimToNull(request.note()));
         if (request.area() != null) table.setArea(trimToNull(request.area()));
         if (request.capacity() != null) table.setCapacity(request.capacity());
         if (request.displayOrder() != null) table.setDisplayOrder(request.displayOrder());
         if (request.active() != null) table.setActive(request.active());
-        return tableMapper.toResponse(tableRepository.save(table));
+        RestaurantTable saved = tableRepository.save(table);
+        audit("TABLE_UPDATE", "Table", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        return tableMapper.toResponse(saved);
     }
 
     @Override
     public void deleteTable(String id) {
-        tableRepository.delete(findTable(id));
+        RestaurantTable table = findTable(id);
+        // BE-TBL-05 fix: orders/reservations/assistance_requests all have a real FK to this
+        // table, so deleting one with history previously surfaced as a raw SQL 500 instead of
+        // a clean error — and the dedicated TABLE_IN_USE error existed but was never thrown.
+        if (orderRepository.existsByTableId(id) || reservationRepository.existsByTableId(id)) {
+            throw new ConflictException(ApplicationError.TABLE_IN_USE);
+        }
+        tableRepository.delete(table);
+        audit("TABLE_DELETE", "Table", id, "{\"name\":\"" + esc(table.getName()) + "\"}");
     }
 
     @Override
@@ -130,13 +160,35 @@ public class TableServiceImpl implements TableService {
         RestaurantTable table = findTable(id);
         table.setActive(active);
         tableRepository.save(table);
+        audit("TABLE_UPDATE", "Table", id, "{\"name\":\"" + esc(table.getName()) + "\",\"active\":" + active + "}");
     }
+
+    // BE-TBL-03 fix: updateStatus() previously applied any requested status with zero
+    // validation, allowing e.g. RESERVED -> CLEANING or CLEANING -> OCCUPIED directly.
+    private static final java.util.Map<TableStatus, java.util.Set<TableStatus>> ALLOWED_STATUS_TRANSITIONS =
+            java.util.Map.of(
+                    TableStatus.AVAILABLE, java.util.Set.of(TableStatus.RESERVED, TableStatus.OCCUPIED),
+                    TableStatus.OCCUPIED,  java.util.Set.of(TableStatus.BILLING, TableStatus.CLEANING, TableStatus.AVAILABLE),
+                    TableStatus.BILLING,   java.util.Set.of(TableStatus.AVAILABLE, TableStatus.CLEANING),
+                    TableStatus.CLEANING,  java.util.Set.of(TableStatus.AVAILABLE),
+                    TableStatus.RESERVED,  java.util.Set.of(TableStatus.OCCUPIED, TableStatus.AVAILABLE)
+            );
 
     @Override
     public TableResponse updateStatus(String id, TableStatusUpdateRequest request) {
         RestaurantTable table = findTable(id);
-        table.setStatus(request.status());
-        return tableMapper.toResponse(tableRepository.save(table));
+        TableStatus current = table.getStatus();
+        TableStatus next = request.status();
+        if (current != next
+                && !ALLOWED_STATUS_TRANSITIONS.getOrDefault(current, java.util.Set.of()).contains(next)) {
+            throw new ApplicationException(
+                    ApplicationError.INVALID_STATUS_TRANSITION,
+                    "Cannot transition table from " + current + " to " + next);
+        }
+        table.setStatus(next);
+        RestaurantTable saved = tableRepository.save(table);
+        realtimeEventPublisher.publishTableStatus(saved);
+        return tableMapper.toResponse(saved);
     }
 
     // ── Import / Export ──────────────────────────────────────────────────
@@ -197,6 +249,10 @@ public class TableServiceImpl implements TableService {
                         errors.add(new TableImportResult.RowError((int) rowNumber, "Name is required"));
                         continue;
                     }
+                    if (name.length() > 20) {
+                        errors.add(new TableImportResult.RowError((int) rowNumber, "Name must not exceed 20 characters"));
+                        continue;
+                    }
                     int capacity = 0;
                     String capacityRaw = column(record, "capacity");
                     if (StringUtils.hasText(capacityRaw)) {
@@ -223,6 +279,17 @@ public class TableServiceImpl implements TableService {
                     }
                     String area = trimToNull(column(record, "area"));
                     String note = trimToNull(column(record, "note"));
+                    // BE-TBL-06 fix: name length was checked but area(50)/note(255) weren't,
+                    // so an oversized value failed at the deferred UUID-insert flush instead
+                    // of being attributed to its row.
+                    if (area != null && area.length() > 50) {
+                        errors.add(new TableImportResult.RowError((int) rowNumber, "Area must not exceed 50 characters"));
+                        continue;
+                    }
+                    if (note != null && note.length() > 255) {
+                        errors.add(new TableImportResult.RowError((int) rowNumber, "Note must not exceed 255 characters"));
+                        continue;
+                    }
                     boolean active = parseBoolean(column(record, "active"));
 
                     RestaurantTable table = tableRepository.findByNameIgnoreCase(name).orElse(null);
@@ -231,7 +298,7 @@ public class TableServiceImpl implements TableService {
                         table = RestaurantTable.builder()
                                 .name(name)
                                 .status(TableStatus.AVAILABLE)
-                                .qrToken(UUID.randomUUID().toString())
+                                .qrToken("QR-" + name)
                                 .build();
                     }
                     table.setArea(area);
@@ -255,6 +322,9 @@ public class TableServiceImpl implements TableService {
         } catch (IOException e) {
             throw new ConflictException(ApplicationError.TABLE_IMPORT_INVALID);
         }
+
+        audit("TABLE_IMPORT", "Table", null, "{\"created\":" + created + ",\"updated\":" + updated
+                + ",\"errors\":" + errors.size() + "}");
 
         return new TableImportResult(created, updated, errors.size(), errors);
     }
@@ -280,7 +350,9 @@ public class TableServiceImpl implements TableService {
                 .note(trimToNull(request.note()))
                 .displayOrder(request.displayOrder() == null ? 0 : request.displayOrder())
                 .build();
-        return tableMapper.toAreaResponse(areaRepository.save(area));
+        TableArea saved = areaRepository.save(area);
+        audit("AREA_CREATE", "Area", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        return tableMapper.toAreaResponse(saved);
     }
 
     @Override
@@ -291,6 +363,7 @@ public class TableServiceImpl implements TableService {
             throw new ConflictException(ApplicationError.AREA_HAS_TABLES);
         }
         areaRepository.delete(area);
+        audit("AREA_DELETE", "Area", id, "{\"name\":\"" + esc(area.getName()) + "\"}");
     }
 
     // ── TM-04 (not yet implemented) ──────────────────────────────────────
@@ -448,6 +521,14 @@ public class TableServiceImpl implements TableService {
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.TABLE_NOT_FOUND));
     }
 
+    private TableResponse.ReservationSummary findUpcomingReservation(String tableId) {
+        return reservationRepository
+                .findFirstByTableIdAndStatusOrderByDatetimeAsc(tableId, ReservationStatus.CONFIRMED)
+                .map(r -> new TableResponse.ReservationSummary(
+                        r.getId(), r.getGuestName(), r.getPhone(), r.getPartySize(), r.getDatetime()))
+                .orElse(null);
+    }
+
     /** The most recent order on this table that hasn't been closed/cancelled, if any. */
     private String findActiveOrderId(String tableId) {
         return orderRepository.findTopByTableIdAndStatusNotInOrderByCreatedAtDesc(
@@ -475,5 +556,14 @@ public class TableServiceImpl implements TableService {
         if (!StringUtils.hasText(value)) return true;
         String v = value.trim();
         return v.equalsIgnoreCase("true") || v.equals("1") || v.equalsIgnoreCase("yes");
+    }
+
+    private void audit(String action, String targetEntity, String id, String detail) {
+        try { auditService.log(action, targetEntity, id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

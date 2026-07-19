@@ -1,5 +1,6 @@
 package com.rms.restaurant.common.filter;
 
+import com.rms.restaurant.common.security.AppUserDetails;
 import com.rms.restaurant.common.security.JwtService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -40,7 +41,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-                if (jwtService.isTokenValid(token, userDetails)) {
+                int currentTokenVersion = userDetails instanceof AppUserDetails
+                        ? ((AppUserDetails) userDetails).getTokenVersion() : 0;
+                if (jwtService.isAccessTokenValid(token, userDetails, currentTokenVersion)) {
                     UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                             userDetails, null, userDetails.getAuthorities());
                     auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

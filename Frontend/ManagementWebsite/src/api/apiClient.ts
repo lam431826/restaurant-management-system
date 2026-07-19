@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { refreshAccessToken, handleAuthFailure } from '../services/authRefresh'
 
 const apiClient = axios.create({ baseURL: '/api' })
 
@@ -8,35 +9,22 @@ apiClient.interceptors.request.use(config => {
   return config
 })
 
-let isRefreshing = false
-
 apiClient.interceptors.response.use(
   res => res,
   async error => {
     const original = error.config
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true
-      if (isRefreshing) {
-        window.location.hash = '/login'
-        return Promise.reject(error)
-      }
-      isRefreshing = true
       try {
-        const refreshToken = localStorage.getItem('refresh_token')
-        if (!refreshToken) throw new Error('no refresh token')
-        const { data } = await axios.post('/api/auth/refresh', { refreshToken })
-        localStorage.setItem('access_token', data.accessToken)
-        localStorage.setItem('refresh_token', data.refreshToken)
-        original.headers.Authorization = `Bearer ${data.accessToken}`
+        // FE-MGMT-02 fix: concurrent 401s now await the same in-flight refresh instead of
+        // each independently bailing to /login (which could log a user out from a request
+        // that arrived a moment before a refresh that would have succeeded).
+        const newAccessToken = await refreshAccessToken()
+        original.headers.Authorization = `Bearer ${newAccessToken}`
         return apiClient(original)
       } catch {
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        localStorage.removeItem('user')
-        window.location.hash = '/login'
+        handleAuthFailure()
         return Promise.reject(error)
-      } finally {
-        isRefreshing = false
       }
     }
     return Promise.reject(error)

@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface ReservationRepository extends JpaRepository<Reservation, String> {
 
@@ -17,12 +18,26 @@ public interface ReservationRepository extends JpaRepository<Reservation, String
 
     List<Reservation> findByTableIdAndStatus(String tableId, ReservationStatus status);
 
+    Optional<Reservation> findFirstByTableIdAndStatusOrderByDatetimeAsc(String tableId, ReservationStatus status);
+
+    // BE-TBL-05: guard deleteTable() with a clean error instead of a raw FK-constraint 500
+    boolean existsByTableId(String tableId);
+
     @Query("SELECT r FROM Reservation r WHERE r.status = com.rms.restaurant.common.utils.enums.ReservationStatus.CONFIRMED " +
            "AND r.datetime BETWEEN :from AND :to AND r.reminderSent = false")
     List<Reservation> findConfirmedBetweenAndReminderNotSent(
             @Param("from") LocalDateTime from,
             @Param("to")   LocalDateTime to
     );
+
+    /**
+     * BR-04: CONFIRMED reservations whose grace period (reserved time + 15 min) has elapsed
+     * and the guest hasn't checked in. Self-guarding — markNoShow() flips status away from
+     * CONFIRMED, which removes the row from the next cron tick without needing a flag column.
+     */
+    @Query("SELECT r FROM Reservation r WHERE r.status = com.rms.restaurant.common.utils.enums.ReservationStatus.CONFIRMED " +
+           "AND r.datetime <= :cutoff")
+    List<Reservation> findConfirmedPastCutoff(@Param("cutoff") LocalDateTime cutoff);
 
     /**
      * Pessimistic write lock to serialize concurrent table-assignment requests.
@@ -89,5 +104,26 @@ public interface ReservationRepository extends JpaRepository<Reservation, String
             @Param("windowStart") LocalDateTime windowStart,
             @Param("windowEnd")   LocalDateTime windowEnd,
             @Param("tableIds")    List<String> tableIds
+    );
+
+    /**
+     * Count active reservations in the time window whose party size falls in a given tier
+     * range, regardless of whether a table has been assigned yet. BE-RES-03 fix:
+     * countActiveInWindowForTables (above) only counts reservations that already HAVE a
+     * tableId, but online-created reservations never get one at creation time — so the
+     * tier-overbooking guard needs to count by demand (party-size tier), not by already-
+     * consumed supply (assigned tableId), or it never triggers for the normal online flow.
+     */
+    @Query("SELECT COUNT(r) FROM Reservation r " +
+           "WHERE r.status IN :statuses " +
+           "AND r.datetime > :windowStart " +
+           "AND r.datetime < :windowEnd " +
+           "AND r.partySize BETWEEN :minPartySize AND :maxPartySize")
+    long countActiveInWindowByPartySizeRange(
+            @Param("statuses")     List<ReservationStatus> statuses,
+            @Param("windowStart")  LocalDateTime windowStart,
+            @Param("windowEnd")    LocalDateTime windowEnd,
+            @Param("minPartySize") int minPartySize,
+            @Param("maxPartySize") int maxPartySize
     );
 }

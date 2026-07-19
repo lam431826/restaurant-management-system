@@ -1,15 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useRealtime } from "../../hooks/useRealtime";
 import { useAuth } from "../../context/AuthContext";
 import { logout } from "../../api/auth";
 import { ApiError } from "../../services/api";
 import { ApiClientError } from "../../services/apiClient";
-import { getMyShift } from "../../services/shiftService";
-import type { ShiftSummary } from "../../services/shiftService";
+import {
+  getMyShift,
+  getOpenNormalShifts,
+  mergeFloatingShift,
+} from "../../services/shiftService";
+import type { ShiftSummary, OpenShiftBrief } from "../../services/shiftService";
 import { OpenShiftModal } from "./orders/OpenShiftModal";
 import { CloseShiftModal } from "./orders/CloseShiftModal";
 import { CashMovementModal } from "./orders/CashMovementModal";
 import { listTables } from "../../services/tableService";
+import {
+  checkInReservation,
+  markNoShowReservation,
+  cancelStaffReservation,
+} from "../../services/reservationApi";
 import ChangePasswordModal from "../auth/ChangePasswordModal";
 import {
   applyInvoiceDiscount,
@@ -39,9 +49,11 @@ import {
   getOrder,
   listOrders,
   listPendingAssistance,
+  acceptOrder,
   removeOrderItem,
   respondAssistance,
   updateOrderItemStatus,
+  updateOrderItemNote,
 } from "../../services/orderApi";
 import type { AssistanceRequest, Order } from "../../services/orderApi";
 
@@ -64,11 +76,13 @@ import { Header } from "./orders/Header";
 import { BottomNav } from "./orders/BottomNav";
 import { MenuView } from "./orders/MenuView";
 import { TableView } from "./orders/TableView";
+import { ReservationPanel } from "./orders/ReservationPanel";
 import { AddNoteModal } from "./orders/AddNoteModal";
 import { PaymentModal } from "./orders/PaymentModal";
 import { OrderPanel } from "./orders/OrderPanel";
 import { SuccessToast } from "./orders/SuccessToast";
 import { SearchIcon } from "./orders/icons";
+import { QROrderConfirmationModal } from "./orders/QROrderConfirmationModal";
 
 /* ─── Main page ──────────────────────────────────────────────────────────── */
 const TABLE_FILTERS = [
@@ -89,10 +103,8 @@ const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
   INVOICE_NOT_FOUND: "Không thể đóng đơn vì đơn chưa có hóa đơn.",
   ORDER_NOT_CLOSEABLE:
     "Không thể đóng đơn khi hóa đơn chưa được thanh toán hoặc đơn không còn hợp lệ để đóng.",
-  CANNOT_CANCEL_INVOICED_ORDER:
-    "Không thể hủy đơn vì đơn đã có hóa đơn.",
-  CANNOT_CANCEL_PAID_ORDER:
-    "Không thể hủy đơn vì hóa đơn đã được thanh toán.",
+  CANNOT_CANCEL_INVOICED_ORDER: "Không thể hủy đơn vì đơn đã có hóa đơn.",
+  CANNOT_CANCEL_PAID_ORDER: "Không thể hủy đơn vì hóa đơn đã được thanh toán.",
   CANNOT_CANCEL_ORDER_ITEMS_NOT_PENDING:
     "Không thể hủy đơn vì có món đã được bếp xử lý hoặc phục vụ.",
   ORDER_ITEM_STATUS_TRANSITION_NOT_ALLOWED:
@@ -112,31 +124,27 @@ const ORDER_ACTION_FALLBACK_ERROR =
 
 const getOrderActionErrorMessage = (error: unknown): string => {
   if (error instanceof ApiError && error.code) {
-    return ORDER_ACTION_ERROR_MESSAGES[error.code] ?? ORDER_ACTION_FALLBACK_ERROR;
+    return (
+      ORDER_ACTION_ERROR_MESSAGES[error.code] ?? ORDER_ACTION_FALLBACK_ERROR
+    );
   }
 
   return ORDER_ACTION_FALLBACK_ERROR;
 };
 
 const INVOICE_GENERATION_ERROR_MESSAGES: Record<string, string> = {
-  ORDER_NOT_INVOICEABLE:
-    "Đơn hàng chưa đủ điều kiện tạo hóa đơn.",
-  ORDER_NOT_READY_FOR_INVOICE:
-    "Đơn hàng chưa đủ điều kiện tạo hóa đơn.",
-  INVALID_ORDER_ITEMS:
-    "Đơn hàng không có món hợp lệ để tạo hóa đơn.",
-  INVALID_INVOICE_ITEMS:
-    "Đơn hàng không có món hợp lệ để tạo hóa đơn.",
-  INVALID_INVOICE_TOTAL:
-    "Hóa đơn có tổng tiền không hợp lệ.",
+  ORDER_NOT_INVOICEABLE: "Đơn hàng chưa đủ điều kiện tạo hóa đơn.",
+  ORDER_NOT_READY_FOR_INVOICE: "Đơn hàng chưa đủ điều kiện tạo hóa đơn.",
+  INVALID_ORDER_ITEMS: "Đơn hàng không có món hợp lệ để tạo hóa đơn.",
+  INVALID_INVOICE_ITEMS: "Đơn hàng không có món hợp lệ để tạo hóa đơn.",
+  INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
   INVOICE_ALREADY_EXISTS: "Đơn hàng này đã có hóa đơn.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
   PROMOTION_NOT_FOUND: "Không tìm thấy mã khuyến mãi.",
   PROMOTION_INACTIVE: "Mã khuyến mãi không còn hoạt động.",
   PROMOTION_EXPIRED: "Mã khuyến mãi đã hết hạn.",
   PROMOTION_NOT_STARTED: "Mã khuyến mãi chưa đến thời gian áp dụng.",
-  PROMOTION_USAGE_LIMIT_REACHED:
-    "Mã khuyến mãi đã đạt giới hạn sử dụng.",
+  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã đạt giới hạn sử dụng.",
   INVALID_STATUS_TRANSITION: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
   VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
   BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
@@ -159,10 +167,8 @@ const INVOICE_GENERATION_MESSAGE_FALLBACKS: Record<string, string> = {
     INVOICE_GENERATION_ERROR_MESSAGES.INVOICE_ALREADY_EXISTS,
   "Order not found": INVOICE_GENERATION_ERROR_MESSAGES.ORDER_NOT_FOUND,
   "Promotion not found": INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_NOT_FOUND,
-  "Promotion is inactive":
-    INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_INACTIVE,
-  "Promotion has expired":
-    INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_EXPIRED,
+  "Promotion is inactive": INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_INACTIVE,
+  "Promotion has expired": INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_EXPIRED,
   "Promotion has not started":
     INVOICE_GENERATION_ERROR_MESSAGES.PROMOTION_NOT_STARTED,
   "Promotion usage limit has been reached":
@@ -199,13 +205,11 @@ const PROMOTION_DISCOUNT_ERROR_MESSAGES: Record<string, string> = {
   PROMOTION_INACTIVE: "Mã khuyến mãi không còn hoạt động.",
   PROMOTION_EXPIRED: "Mã khuyến mãi đã hết hạn.",
   PROMOTION_NOT_STARTED: "Mã khuyến mãi chưa đến thời gian áp dụng.",
-  PROMOTION_USAGE_LIMIT_REACHED:
-    "Mã khuyến mãi đã đạt giới hạn sử dụng.",
+  PROMOTION_USAGE_LIMIT_REACHED: "Mã khuyến mãi đã đạt giới hạn sử dụng.",
   INVALID_STATUS_TRANSITION: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
   INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
-  INVOICE_ALREADY_PAID:
-    "Hóa đơn này đã được thanh toán.",
+  INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
   INVOICE_PROMOTION_ALREADY_APPLIED:
     "Hóa đơn này đã được áp dụng mã khuyến mãi này rồi.",
   PROMOTION_CHANGE_NOT_ALLOWED:
@@ -218,10 +222,8 @@ const PROMOTION_DISCOUNT_ERROR_MESSAGES: Record<string, string> = {
 
 const PROMOTION_DISCOUNT_MESSAGE_FALLBACKS: Record<string, string> = {
   "Promotion not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_NOT_FOUND,
-  "Promotion is inactive":
-    PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_INACTIVE,
-  "Promotion has expired":
-    PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_EXPIRED,
+  "Promotion is inactive": PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_INACTIVE,
+  "Promotion has expired": PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_EXPIRED,
   "Promotion has not started":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.PROMOTION_NOT_STARTED,
   "Promotion usage limit has been reached":
@@ -230,7 +232,8 @@ const PROMOTION_DISCOUNT_MESSAGE_FALLBACKS: Record<string, string> = {
     PROMOTION_DISCOUNT_ERROR_MESSAGES.INVALID_STATUS_TRANSITION,
   "Invoice not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_NOT_FOUND,
   "Order not found": PROMOTION_DISCOUNT_ERROR_MESSAGES.ORDER_NOT_FOUND,
-  "Invoice already paid": PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
+  "Invoice already paid":
+    PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
   "Invoice has already been paid":
     PROMOTION_DISCOUNT_ERROR_MESSAGES.INVOICE_ALREADY_PAID,
   "Cannot apply a promotion to a paid invoice":
@@ -274,8 +277,7 @@ const getPromotionDiscountErrorMessage = (error: unknown): string => {
 
 const PAYMENT_PROCESS_ERROR_MESSAGES: Record<string, string> = {
   ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
-  INVALID_INVOICE_TOTAL:
-    "Hóa đơn có tổng tiền không hợp lệ.",
+  INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
   INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
   INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
@@ -322,8 +324,7 @@ const getPaymentProcessErrorMessage = (error: unknown): string => {
 const INVOICE_UI_ERROR_MESSAGES: Record<string, string> = {
   INVOICE_NOT_FOUND: "Không tìm thấy hóa đơn.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
-  ORDER_ALREADY_INVOICED:
-    "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.",
+  ORDER_ALREADY_INVOICED: "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.",
   INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
   ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
   INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
@@ -344,16 +345,12 @@ const INVOICE_UI_MESSAGE_FALLBACKS: Record<string, string> = {
     INVOICE_UI_ERROR_MESSAGES.INVALID_INVOICE_TOTAL,
   "Validation failed": INVOICE_UI_ERROR_MESSAGES.VALIDATION_ERROR,
   "Invalid enum value": INVOICE_UI_ERROR_MESSAGES.BAD_REQUEST,
-  "Malformed or unreadable request body":
-    INVOICE_UI_ERROR_MESSAGES.BAD_REQUEST,
+  "Malformed or unreadable request body": INVOICE_UI_ERROR_MESSAGES.BAD_REQUEST,
 };
 
-const INVOICE_DETAIL_LOAD_FALLBACK_ERROR =
-  "Không thể tải chi tiết hóa đơn.";
-const SEND_INVOICE_SUCCESS_MESSAGE =
-  "Đã ghi nhận gửi hóa đơn mô phỏng.";
-const SEND_INVOICE_FALLBACK_ERROR =
-  "Không thể gửi hóa đơn. Vui lòng thử lại.";
+const INVOICE_DETAIL_LOAD_FALLBACK_ERROR = "Không thể tải chi tiết hóa đơn.";
+const SEND_INVOICE_SUCCESS_MESSAGE = "Đã ghi nhận gửi hóa đơn mô phỏng.";
+const SEND_INVOICE_FALLBACK_ERROR = "Không thể gửi hóa đơn. Vui lòng thử lại.";
 
 const getInvoiceUiErrorMessage = (
   error: unknown,
@@ -496,6 +493,11 @@ const CashierOrders = () => {
     itemId: string | null;
     text: string;
   }>({ open: false, orderId: null, itemId: null, text: "" });
+  const [removeConfirmModal, setRemoveConfirmModal] = useState<{
+    open: boolean;
+    orderId: string | null;
+    orderItemId: string | null;
+  }>({ open: false, orderId: null, orderItemId: null });
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [successTotal, setSuccessTotal] = useState<number | null>(null);
   const [showChangePw, setShowChangePw] = useState(false);
@@ -533,12 +535,30 @@ const CashierOrders = () => {
     text: string;
   } | null>(null);
 
+  // ── Reservation panel state ───────────────────────────────────────────────
+  const [reservationLoading, setReservationLoading] = useState(false);
+  const [reservationError, setReservationError] = useState<string | null>(null);
+
   // ── Cash shift state ──────────────────────────────────────────────────────
   const [shift, setShift] = useState<ShiftSummary | null>(null);
   const [shiftLoading, setShiftLoading] = useState(true);
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [showCashMovement, setShowCashMovement] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+
+  // BR-CS-19: merge a floating shift into a main shift.
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeTargets, setMergeTargets] = useState<OpenShiftBrief[]>([]);
+  const [mergeTargetId, setMergeTargetId] = useState<string>("");
+  const [mergeCash, setMergeCash] = useState<string>("");
+  const [mergeNote, setMergeNote] = useState<string>("");
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [shiftMergeError, setShiftMergeError] = useState<string>("");
+
+  // BR-AUTH-01/04: warn before logout while an OPEN shift is still owned.
+  const [logoutWarn, setLogoutWarn] = useState(false);
+  const [logoutAfterClose, setLogoutAfterClose] = useState(false);
 
   useEffect(() => {
     getMyShift()
@@ -553,7 +573,7 @@ const CashierOrders = () => {
       .finally(() => setShiftLoading(false));
   }, []);
 
-  const handleLogout = async () => {
+  const doLogout = async () => {
     try {
       await logout();
     } catch {
@@ -614,6 +634,80 @@ const CashierOrders = () => {
     });
   }, []);
 
+  // BR-CS-19: open the merge dialog and load candidate main shifts.
+  const openMergeDialog = async () => {
+    setShiftMergeError("");
+    setMergeTargetId("");
+    setMergeCash("");
+    setMergeNote("");
+    setMergeOpen(true);
+    try {
+      const targets = await getOpenNormalShifts();
+      setMergeTargets(targets);
+    } catch {
+      setMergeTargets([]);
+    }
+  };
+
+  const submitMerge = async () => {
+    if (!shift) return;
+    if (!mergeTargetId) {
+      setShiftMergeError("Vui lòng chọn ca chính để gộp.");
+      return;
+    }
+    const cash = parseInt(mergeCash.replace(/\D/g, "") || "0", 10);
+    setMergeLoading(true);
+    setShiftMergeError("");
+    try {
+      await mergeFloatingShift(
+        shift.id,
+        mergeTargetId,
+        cash,
+        mergeNote.trim() || undefined,
+      );
+      // The floating shift is now MERGED; the helper no longer owns an open shift.
+      setMergeOpen(false);
+      setShift(null);
+      setShiftModalOpen(true);
+    } catch (err) {
+      setShiftMergeError(
+        err instanceof Error ? err.message : "Không thể gộp ca tạm.",
+      );
+    } finally {
+      setMergeLoading(false);
+    }
+  };
+
+  // BR-AUTH-01/04: logout is never blocked, but if the cashier still owns an OPEN cash
+  // shift we warn first and offer a "close shift, then log out" shortcut.
+  const handleLogout = () => {
+    if (shift && shift.status === "OPEN") {
+      setLogoutWarn(true);
+    } else {
+      void doLogout();
+    }
+  };
+
+  // Re-fetches table list from backend and merges selection state.
+  // Called after reservation actions and order close/cancel so statuses
+  // (RESERVED→OCCUPIED, OCCUPIED→AVAILABLE, etc.) reflect backend truth.
+  const refreshTables = () => {
+    listTables()
+      .then((res) => {
+        const updated = res
+          .filter((t) => t.active)
+          .sort((a, b) => a.order - b.order)
+          .map(toTableItem);
+        setTables((prev) =>
+          updated.map((t) => ({
+            ...t,
+            selected: prev.find((p) => p.id === t.id)?.selected ?? false,
+          })),
+        );
+      })
+      .catch(() => {});
+  };
+
   const loadMenu = () => {
     Promise.all([listCategories(), searchItems({ available: true, size: 200 })])
       .then(([cats, page]) => {
@@ -639,11 +733,18 @@ const CashierOrders = () => {
       }
     };
     void fetchAssistance();
-    const intv = setInterval(fetchAssistance, 10000);
+    const intv = setInterval(fetchAssistance, 3000);
     return () => clearInterval(intv);
   }, []);
 
-  // Live orders and authoritative table ownership are polled together.
+  // Real-time push races the poll above — an assistance request created/resolved
+  // anywhere shows up near-instantly; the poll stays as a backstop if the WS drops.
+  useRealtime("/topic/assistance", () => {
+    listPendingAssistance().then(setAssistanceRequests).catch(() => {});
+  });
+
+  // Live orders and authoritative table ownership are polled together, kept in sync
+  // with the kitchen; real-time push (below) is the primary path and this poll is a backstop.
   useEffect(() => {
     const refresh = async () => {
       try {
@@ -659,7 +760,30 @@ const CashierOrders = () => {
     return () => clearInterval(interval);
   }, [loadCashierState, refreshTrigger]);
 
+  // Order/item status changes pushed over WS bump refreshTrigger, reusing the same
+  // refetch path the mutation handlers below already use — one source of truth.
+  useRealtime("/topic/orders", () => {
+    setRefreshTrigger((t) => t + 1);
+  });
+
+  // Table status changes (from any terminal, including the BR-04 no-show cron) — refetch
+  // the floor view immediately instead of waiting on refreshTables() to be called manually.
+  useRealtime("/topic/tables", () => {
+    refreshTables();
+  });
+
+  // Reservation edits (guest info, party size, time, table assignment/transfer, status
+  // changes) from the waiter/manager reservation screen — the table grid's upcomingReservation
+  // panel comes from listTables(), so any reservation change also needs a table refetch even
+  // when it doesn't itself flip a table's status (e.g. editing guest name on an already-RESERVED table).
+  useRealtime("/topic/reservations", () => {
+    refreshTables();
+  });
+
   // Overlay live order totals onto the table grid (amount/guests/item count, orderId link).
+  // Status is NOT overridden here — backend-provided statuses (RESERVED, CLEANING, etc.)
+  // are preserved. Only tables with active orders are marked OCCUPIED; refreshTables()
+  // is responsible for resetting OCCUPIED→AVAILABLE after orders close.
   useEffect(() => {
     setTables((prevTables) =>
       prevTables.map((t) => {
@@ -670,7 +794,14 @@ const CashierOrders = () => {
             (!t.orderId || order.id === t.orderId),
         );
         if (tableOrders.length === 0) {
-          return t;
+          return {
+            ...t,
+            orderId: null,
+            occupied: false,
+            amount: 0,
+            items: 0,
+            // status intentionally not touched — keeps RESERVED/CLEANING/AVAILABLE from API
+          };
         }
         const itemsCount = tableOrders.reduce(
           (total, order) =>
@@ -684,7 +815,11 @@ const CashierOrders = () => {
         return {
           ...t,
           occupied: true,
-          status: "OCCUPIED",
+          // BE-MGMT-03 fix: this previously forced OCCUPIED unconditionally, clobbering a
+          // cashier-set BILLING status back to OCCUPIED on the next poll/WS tick while the
+          // order itself is still ACTIVE (e.g. SERVED) during payment. Preserve BILLING the
+          // same way the empty-orders branch above already preserves RESERVED/CLEANING.
+          status: t.status === "BILLING" ? "BILLING" : "OCCUPIED",
           amount: totalAmount,
           items: itemsCount,
           orderId: tableOrders[0].id,
@@ -759,6 +894,15 @@ const CashierOrders = () => {
     currentOrderInvoices.find(
       (candidate) => candidate.id === selectedInvoiceId,
     ) ?? null;
+
+  const pendingOrders = activeOrders.filter(
+    (o) =>
+      o.status === "PENDING" ||
+      (o.status !== "CANCELLED" &&
+        o.status !== "CLOSED" &&
+        o.items.some((i) => i.cookingStatus === "PENDING")),
+  );
+  const pendingOrdersCount = pendingOrders.length;
   const currentOrderInvoiceDetail =
     selectedInvoice &&
     selectedInvoiceDetail?.id === selectedInvoice.id &&
@@ -1168,26 +1312,40 @@ const CashierOrders = () => {
     if (delta > 0) {
       const menuItem = menuItems.find((m) => m.id === id);
       if (menuItem) {
-        setCart((prev) => [
-          ...prev,
-          {
-            cartItemId: Math.random().toString(36).substring(2, 11),
-            menuItemId: menuItem.id,
-            name: menuItem.name,
-            price: menuItem.price,
-            qty: 1,
-            note: "",
-          },
-        ]);
+        setCart((prev) => {
+          const existing = prev.find((c) => c.menuItemId === id);
+          if (existing) {
+            // Increment qty on existing entry
+            return prev.map((c) =>
+              c.menuItemId === id ? { ...c, qty: c.qty + 1 } : c,
+            );
+          }
+          // Add new grouped entry
+          return [
+            ...prev,
+            {
+              cartItemId: Math.random().toString(36).substring(2, 11),
+              menuItemId: menuItem.id,
+              name: menuItem.name,
+              price: menuItem.price,
+              qty: 1,
+              note: "",
+            },
+          ];
+        });
       }
     } else {
       setCart((prev) => {
-        const index = [...prev].reverse().findIndex((c) => c.menuItemId === id);
-        if (index !== -1) {
-          const realIndex = prev.length - 1 - index;
-          return prev.filter((_, i) => i !== realIndex);
+        const existing = prev.find((c) => c.menuItemId === id);
+        if (!existing) return prev;
+        if (existing.qty <= 1) {
+          // Remove entry entirely
+          return prev.filter((c) => c.menuItemId !== id);
         }
-        return prev;
+        // Decrement qty
+        return prev.map((c) =>
+          c.menuItemId === id ? { ...c, qty: c.qty - 1 } : c,
+        );
       });
     }
     setMenuItems((items) =>
@@ -1197,7 +1355,7 @@ const CashierOrders = () => {
     );
   };
 
-  const handleTableSelect = (id: string) => {
+  const handleTableSelect = (id: string | null) => {
     const previousTableId = tables.find((table) => table.selected)?.id;
     if (previousTableId && previousTableId !== id) {
       setCart([]);
@@ -1206,7 +1364,78 @@ const CashierOrders = () => {
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
     setOrderActionMessage(null);
     resetInvoiceLink();
+    if (id) {
+      const selected = tables.find((t) => t.id === id);
+      if (selected) {
+        setActiveArea(selected.area);
+      }
+    }
   };
+
+  // ── Reservation action handlers ───────────────────────────────────────────
+
+  const handleReservationCheckIn = async () => {
+    const res = selectedTable?.upcomingReservation;
+    if (!res) return;
+    setReservationLoading(true);
+    setReservationError(null);
+    try {
+      await checkInReservation(res.id);
+      // Backend set table→OCCUPIED; refresh so the panel switches to OrderPanel
+      refreshTables();
+    } catch (e) {
+      setReservationError(
+        e instanceof Error ? e.message : "Check-in thất bại, vui lòng thử lại",
+      );
+    } finally {
+      setReservationLoading(false);
+    }
+  };
+
+  const handleReservationNoShow = async () => {
+    const res = selectedTable?.upcomingReservation;
+    if (!res) return;
+    if (!window.confirm(`Xác nhận khách "${res.guestName}" không đến?`)) return;
+    setReservationLoading(true);
+    setReservationError(null);
+    try {
+      await markNoShowReservation(res.id);
+      // Deselect table, then refresh to pick up AVAILABLE status
+      setTables((ts) => ts.map((t) => ({ ...t, selected: false })));
+      refreshTables();
+    } catch (e) {
+      setReservationError(
+        e instanceof Error ? e.message : "Thao tác thất bại, vui lòng thử lại",
+      );
+    } finally {
+      setReservationLoading(false);
+    }
+  };
+
+  const handleReservationCancel = async () => {
+    const res = selectedTable?.upcomingReservation;
+    if (!res) return;
+    if (!window.confirm(`Xác nhận hủy đặt bàn của khách "${res.guestName}"?`))
+      return;
+    setReservationLoading(true);
+    setReservationError(null);
+    try {
+      await cancelStaffReservation(res.id);
+      // Deselect table, then refresh to pick up AVAILABLE status
+      setTables((ts) => ts.map((t) => ({ ...t, selected: false })));
+      refreshTables();
+    } catch (e) {
+      setReservationError(
+        e instanceof Error
+          ? e.message
+          : "Hủy đặt bàn thất bại, vui lòng thử lại",
+      );
+    } finally {
+      setReservationLoading(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     resetInvoiceLink();
@@ -1226,6 +1455,12 @@ const CashierOrders = () => {
     }
     const status = COOKING_STATUS_FROM_LABEL[statusLabel];
     if (!status) return;
+
+    if (status === "REJECTED") {
+      setRejectModal({ open: true, orderId, itemId: orderItemId, text: "" });
+      return;
+    }
+
     setOrderActionMessage(null);
     try {
       await updateOrderItemStatus(orderId, orderItemId, status);
@@ -1238,10 +1473,14 @@ const CashierOrders = () => {
       });
     }
   };
+  const handleRemoveItem = (orderId: string, orderItemId: string) => {
+    setRemoveConfirmModal({ open: true, orderId, orderItemId });
+  };
 
-  const handleRemoveItem = async (orderId: string, orderItemId: string) => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa món này khỏi đơn hàng?"))
-      return;
+  const executeRemoveItem = async () => {
+    const { orderId, orderItemId } = removeConfirmModal;
+    setRemoveConfirmModal({ open: false, orderId: null, orderItemId: null });
+    if (!orderId || !orderItemId) return;
     if (orderId === "cart") {
       const itemToRemove = cart.find((c) => c.cartItemId === orderItemId);
       if (itemToRemove) {
@@ -1274,6 +1513,7 @@ const CashierOrders = () => {
   };
 
   const handleCancelOrder = async (orderIds: string[]) => {
+    if (orderIds.length === 0) return;
     if (!window.confirm("Bạn có chắc chắn muốn hủy đơn hàng này?")) return;
     setOrderActionMessage(null);
     try {
@@ -1282,6 +1522,8 @@ const CashierOrders = () => {
       );
       setOrderActionMessage(null);
       setRefreshTrigger((t) => t + 1);
+      setCart([]);
+      handleTableSelect(null);
     } catch (e) {
       console.error(e);
       setOrderActionMessage({
@@ -1293,42 +1535,50 @@ const CashierOrders = () => {
 
   const handleOpenNote = (itemId: string, currentText: string) =>
     setNoteModal({ open: true, itemId, text: currentText });
-  const handleConfirmNote = (itemId: string, text: string) => {
-    let updatedCart = false;
-    setCart((prevCart) => {
-      const newCart = prevCart.map((i) =>
-        i.cartItemId === itemId ? { ...i, note: text } : i,
-      );
-      if (newCart !== prevCart) updatedCart = true;
-      return newCart;
-    });
+  const handleConfirmNote = async (itemId: string, text: string) => {
+    const isDraft = cart.some((i) => i.cartItemId === itemId);
 
-    if (!updatedCart) {
-      setOrderItems((items) =>
-        items.map((i) => (i.id === itemId ? { ...i, notes: text } : i)),
+    if (isDraft) {
+      setCart((prevCart) =>
+        prevCart.map((i) =>
+          i.cartItemId === itemId ? { ...i, note: text } : i,
+        ),
       );
+    } else {
+      // Find the item in orderItems to get the orderId
+      const item = orderItems.find((i) => i.id === itemId);
+      if (item && item.orderId) {
+        if (disableItemMutation) {
+          showItemMutationBlockedMessage();
+          return;
+        }
+        try {
+          await updateOrderItemNote(item.orderId, itemId, text);
+          setOrderItems((items) =>
+            items.map((i) => (i.id === itemId ? { ...i, notes: text } : i)),
+          );
+          setRefreshTrigger((t) => t + 1);
+        } catch (e) {
+          console.error(e);
+          setOrderActionMessage({
+            type: "error",
+            text: getOrderActionErrorMessage(e),
+          });
+        }
+      }
     }
     setNoteModal({ open: false, itemId: null, text: "" });
   };
   const handleCancelNote = () =>
     setNoteModal({ open: false, itemId: null, text: "" });
 
-  const handleOpenReject = async (orderId: string, itemId: string) => {
+  const handleOpenReject = (orderId: string, itemId: string) => {
     if (disableItemMutation) {
       showItemMutationBlockedMessage();
       return;
     }
     setOrderActionMessage(null);
-    try {
-      await updateOrderItemStatus(orderId, itemId, "REJECTED");
-      setRefreshTrigger((t) => t + 1);
-    } catch (e) {
-      console.error(e);
-      setOrderActionMessage({
-        type: "error",
-        text: getOrderActionErrorMessage(e),
-      });
-    }
+    setRejectModal({ open: true, orderId, itemId, text: "" });
   };
 
   const handleConfirmReject = async (
@@ -1404,16 +1654,18 @@ const CashierOrders = () => {
     if (!selectedTable) return;
 
     const expectedTableId = selectedTable.id;
-    const draftItems = cart.map((item) => ({
-      menuItemId: item.menuItemId,
-      quantity: 1,
-      note: item.note,
-    }));
     createOrderSubmissionRef.current = true;
     setCreateOrderSubmitting(true);
     setOrderActionMessage(null);
     try {
-      const createdOrder = await createOrder(expectedTableId, draftItems);
+      const createdOrder = await createOrder(
+        expectedTableId,
+        cart.map((item) => ({
+          menuItemId: item.menuItemId,
+          quantity: item.qty,
+          note: item.note,
+        })),
+      );
       setActiveOrders((orders) => [
         ...orders.filter((order) => order.id !== createdOrder.id),
         createdOrder,
@@ -1466,7 +1718,7 @@ const CashierOrders = () => {
         selectedTable.orderId,
         cart.map((c) => ({
           menuItemId: c.menuItemId,
-          quantity: 1,
+          quantity: c.qty,
           note: c.note,
         })),
       );
@@ -1492,6 +1744,30 @@ const CashierOrders = () => {
     }
   };
 
+  const handleAcceptPendingOrder = async (order: Order) => {
+    try {
+      await acceptOrder(order.id);
+      setRefreshTrigger((t) => t + 1);
+      setShowQRModal(false);
+      handleTableSelect(order.tableId);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRejectPendingOrder = async (order: Order) => {
+    try {
+      await cancelOrder(order.id, "Thu ngân hủy (QR)");
+      setRefreshTrigger((t) => t + 1);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRemoveItemFromPending = (orderId: string, orderItemId: string) => {
+    setRejectModal({ open: true, orderId, itemId: orderItemId, text: "" });
+  };
+
   const filteredMenu = menuItems.filter((i) => {
     const matchesCategory =
       activeMenuCategory === "all" || i.categoryId === activeMenuCategory;
@@ -1507,10 +1783,13 @@ const CashierOrders = () => {
       count: c.itemCount,
     })),
   ];
+  const BUSY_TABLE_STATUSES = ["OCCUPIED", "BILLING", "RESERVED"];
   const tableCounts: Record<string, number> = {
     all: tablesInArea.length,
-    used: tablesInArea.filter((t) => t.occupied).length,
-    empty: tablesInArea.filter((t) => !t.occupied).length,
+    used: tablesInArea.filter((t) => BUSY_TABLE_STATUSES.includes(t.status))
+      .length,
+    empty: tablesInArea.filter((t) => !BUSY_TABLE_STATUSES.includes(t.status))
+      .length,
   };
   const checkoutDisabled =
     invoiceAction !== null ||
@@ -1540,6 +1819,7 @@ const CashierOrders = () => {
     <div className="flex flex-col h-screen bg-[#f5f5f5] overflow-hidden font-sans">
       {!shift && shiftModalOpen && (
         <OpenShiftModal
+          employeeName={user?.fullName ?? user?.username ?? "Nhân viên"}
           onOpened={(s) => {
             setShift(s);
             setShiftModalOpen(false);
@@ -1561,6 +1841,34 @@ const CashierOrders = () => {
         onCloseShift={() => setShowCloseShift(true)}
         onCashMovement={() => setShowCashMovement(true)}
       />
+
+      {shift?.shiftType === "FLOATING" && shift.status === "OPEN" && (
+        <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-[#025cca] text-[14px]">
+            <svg
+              className="w-4 h-4 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M13 10V3L4 14h7v7l9-11h-7z"
+              />
+            </svg>
+            Đây là ca tạm (hỗ trợ). Tiền thu được giữ riêng; khi xong hãy gộp
+            vào ca chính.
+          </div>
+          <button
+            className="kv-btn kv-btn-primary h-9 shrink-0"
+            onClick={() => void openMergeDialog()}
+          >
+            Gộp vào ca chính
+          </button>
+        </div>
+      )}
 
       {!shift && !shiftModalOpen && (
         <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 shrink-0">
@@ -1647,14 +1955,34 @@ const CashierOrders = () => {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-3 bg-white rounded-[12px] px-4 h-[44px] w-[160px] md:w-[220px] lg:w-[340px]">
-              <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={tab === "menu" ? "Tìm món" : "Tìm bàn"}
-                className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none"
-              />
+            <div className="flex flex-col items-end shrink-0">
+              <div className="flex items-center gap-3 bg-white rounded-[12px] px-4 h-[44px] w-[160px] md:w-[220px] lg:w-[340px]">
+                <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={tab === "menu" ? "Tìm món" : "Tìm bàn"}
+                  className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none"
+                />
+              </div>
+              {tab === "table" && (
+                <div className="mt-2">
+                  <button
+                    onClick={() => setShowQRModal(true)}
+                    className="bg-white shadow-sm border border-[#e8e8e8] px-3 py-1.5 rounded-full flex items-center gap-2 text-sm font-semibold text-[#202325] hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="w-4 h-4 shrink-0 text-[#202325]"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
+                    </svg>
+                    <span>{pendingOrdersCount} lượt gọi món qua QR</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1688,58 +2016,124 @@ const CashierOrders = () => {
           </div>
         </div>
 
-        <OrderPanel
-          items={[
-            ...orderItems,
-            ...cart.map((c) => ({
-              id: c.cartItemId,
-              name: c.name,
-              qty: c.qty,
-              notes: c.note,
-              status: "MỚI",
-              price: c.price,
-              orderId: "cart",
-            })),
-          ]}
-          hasSelectedMenu={hasSelectedMenu}
-          onStatusChange={handleStatusChange}
-          onCheckout={() => {
-            setOrderActionMessage(null);
-            setPaymentError("");
-            setSplitError("");
-            if (orderHasInvoice) {
-              setPaymentOpen(true);
-            } else {
-              void handleGenerateInvoice();
+        {selectedTable?.upcomingReservation && !selectedOrder ? (
+          <ReservationPanel
+            table={selectedTable}
+            onCheckIn={() => void handleReservationCheckIn()}
+            onNoShow={() => void handleReservationNoShow()}
+            onCancel={() => void handleReservationCancel()}
+            loading={reservationLoading}
+            error={reservationError}
+          />
+        ) : (
+          <OrderPanel
+            items={[
+              ...orderItems,
+              ...cart.map((c) => ({
+                id: c.cartItemId,
+                name: c.name,
+                qty: c.qty,
+                notes: c.note,
+                status: "MỚI",
+                price: c.price,
+                orderId: "cart",
+              })),
+            ]}
+            hasSelectedMenu={hasSelectedMenu}
+            onStatusChange={handleStatusChange}
+            onCheckout={() => {
+              setOrderActionMessage(null);
+              setPaymentError("");
+              setSplitError("");
+              if (orderHasInvoice) {
+                setPaymentOpen(true);
+              } else {
+                void handleGenerateInvoice();
+              }
+            }}
+            onCreateOrder={handleCreateOrder}
+            onAddItems={handleAddItems}
+            onNote={handleOpenNote}
+            onRemoveItem={handleRemoveItem}
+            onRejectItem={handleOpenReject}
+            onCancelOrder={handleCancelOrder}
+            selectedTable={selectedTable}
+            checkoutDisabled={checkoutDisabled}
+            checkoutLabel={checkoutLabel}
+            shiftOpen={!!shift}
+            invoicePaid={canCloseSelectedOrder}
+            itemMutationDisabled={disableItemMutation}
+            itemMutationDisabledMessage={itemMutationDisabledMessage}
+            orderActionMessage={orderActionMessage}
+            createOrderSubmitting={createOrderSubmitting}
+            emptyOrderMessage={
+              emptyOrderWithoutInvoice ? EMPTY_ORDER_MESSAGE : undefined
             }
-          }}
-          onCreateOrder={handleCreateOrder}
-          onAddItems={handleAddItems}
-          onNote={handleOpenNote}
-          onRemoveItem={handleRemoveItem}
-          onRejectItem={handleOpenReject}
-          onCancelOrder={handleCancelOrder}
-          selectedTable={selectedTable}
-          checkoutDisabled={checkoutDisabled}
-          checkoutLabel={checkoutLabel}
-          shiftOpen={!!shift}
-          invoicePaid={canCloseSelectedOrder}
-          itemMutationDisabled={disableItemMutation}
-          itemMutationDisabledMessage={itemMutationDisabledMessage}
-          orderActionMessage={orderActionMessage}
-          createOrderSubmitting={createOrderSubmitting}
-          emptyOrderMessage={
-            emptyOrderWithoutInvoice ? EMPTY_ORDER_MESSAGE : undefined
-          }
-          cancelOrderIds={
-            emptyOrderWithoutInvoice && selectedOrderId
-              ? [selectedOrderId]
-              : undefined
-          }
-          onCloseOrder={handleCloseOrder}
-          invoiceTools={null}
-        />
+            cancelOrderIds={
+              emptyOrderWithoutInvoice && selectedOrderId
+                ? [selectedOrderId]
+                : undefined
+            }
+            onCloseOrder={handleCloseOrder}
+            invoiceTools={null}
+          />
+        )}
       </div>
+
+      {showQRModal && (
+        <QROrderConfirmationModal
+          orders={activeOrders}
+          tables={tables}
+          onClose={() => setShowQRModal(false)}
+          onAccept={handleAcceptPendingOrder}
+          onReject={handleRejectPendingOrder}
+          onRemoveItem={handleRemoveItemFromPending}
+        />
+      )}
+
+      {removeConfirmModal.open && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center mb-4">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Xác nhận xóa</h3>
+            <p className="text-sm text-gray-600 mb-6">Bạn có chắc chắn muốn xóa món này khỏi đơn hàng?</p>
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setRemoveConfirmModal({ open: false, orderId: null, orderItemId: null })}
+                className="flex-1 border border-gray-300 text-gray-700 font-bold py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => void executeRemoveItem()}
+                className="flex-1 bg-[#dc2f02] text-white font-bold py-2.5 rounded-xl hover:bg-[#9d0208] transition-colors"
+              >
+                Xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {orderActionMessage && orderActionMessage.type === "error" && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-500 flex items-center justify-center mb-4">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Thông báo</h3>
+            <p className="text-sm text-gray-600 mb-6">{orderActionMessage.text}</p>
+            <button 
+              onClick={() => setOrderActionMessage(null)} 
+              className="w-full bg-gray-900 text-white font-bold py-2.5 rounded-xl hover:bg-gray-800 transition-colors"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
 
       <BottomNav active="orders" />
 
@@ -1810,12 +2204,166 @@ const CashierOrders = () => {
       {showCloseShift && shift && (
         <CloseShiftModal
           shift={shift}
+          cashierName={user?.username ?? user?.fullName ?? "—"}
           onClosed={() => {
             setShift(null);
             setShowCloseShift(false);
+            if (logoutAfterClose) {
+              setLogoutAfterClose(false);
+              void doLogout(); // BR-AUTH-04: "close shift, then log out" shortcut
+            }
           }}
-          onCancel={() => setShowCloseShift(false)}
+          onCancel={() => {
+            setShowCloseShift(false);
+            setLogoutAfterClose(false);
+          }}
         />
+      )}
+      {mergeOpen && shift && (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setMergeOpen(false);
+          }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[460px] mx-4 overflow-hidden">
+            <div className="px-6 py-5 border-b border-[#eceef0]">
+              <h2 className="text-[18px] font-bold text-[#202325]">
+                Gộp ca tạm vào ca chính
+              </h2>
+              <p className="text-[13px] text-[#636566] mt-1">
+                Đếm tiền mặt đã thu trong ca tạm và chọn ca chính để gộp. Giao
+                dịch sẽ được chuyển vào ca chính (giữ nguyên người thu).
+              </p>
+            </div>
+            <div className="p-6 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[14px] font-medium text-[#202325]">
+                  Ca chính
+                </label>
+                {mergeTargets.length === 0 ? (
+                  <p className="text-[13px] text-[#636566]">
+                    Không có ca chính nào đang mở để gộp.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {mergeTargets.map((t) => (
+                      <label
+                        key={t.shiftId}
+                        className="flex items-center gap-2 text-[14px] text-[#202325] cursor-pointer"
+                      >
+                        <input
+                          type="radio"
+                          name="merge-target"
+                          checked={mergeTargetId === t.shiftId}
+                          onChange={() => setMergeTargetId(t.shiftId)}
+                        />
+                        {t.cashierName}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[14px] font-medium text-[#202325]">
+                  Tiền mặt đã đếm (VNĐ)
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="0"
+                  value={mergeCash}
+                  onChange={(e) =>
+                    setMergeCash(
+                      parseInt(
+                        e.target.value.replace(/\D/g, "") || "0",
+                        10,
+                      ).toLocaleString("vi-VN"),
+                    )
+                  }
+                  className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[15px] text-[#202325] outline-none focus:border-[#025cca]"
+                />
+              </div>
+              <input
+                type="text"
+                value={mergeNote}
+                onChange={(e) => setMergeNote(e.target.value)}
+                placeholder="Ghi chú (nếu lệch tiền)"
+                className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[14px] text-[#202325] outline-none focus:border-[#025cca]"
+              />
+              {shiftMergeError && (
+                <div className="px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-600">
+                  {shiftMergeError}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-[#eceef0] flex justify-end gap-2">
+              <button
+                className="kv-btn kv-btn-outline-neutral h-10"
+                onClick={() => setMergeOpen(false)}
+              >
+                Hủy
+              </button>
+              <button
+                className="kv-btn kv-btn-primary h-10"
+                disabled={mergeLoading || mergeTargets.length === 0}
+                onClick={() => void submitMerge()}
+              >
+                {mergeLoading ? "Đang gộp..." : "Gộp ca"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {logoutWarn && (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setLogoutWarn(false);
+          }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[420px] mx-4 overflow-hidden">
+            <div className="px-6 py-5 border-b border-[#eceef0]">
+              <h2 className="text-[18px] font-bold text-[#202325]">
+                Đăng xuất
+              </h2>
+              <p className="text-[13px] text-[#636566] mt-1">
+                Đăng xuất sẽ không đóng ca thu ngân của bạn. Ca vẫn mở trên hệ
+                thống và sẽ được khôi phục khi bạn đăng nhập lại.
+              </p>
+            </div>
+            <div className="p-6 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setLogoutWarn(false);
+                  setLogoutAfterClose(true);
+                  setShowCloseShift(true);
+                }}
+                className="h-11 rounded-lg bg-[#025cca] text-white font-semibold text-[15px] hover:bg-[#0251b3] transition-colors"
+              >
+                Đóng ca rồi đăng xuất
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLogoutWarn(false);
+                  void doLogout();
+                }}
+                className="h-11 rounded-lg border border-[#d1d5db] text-[14px] text-[#636566] hover:bg-[#f5f5f5] transition-colors"
+              >
+                Chỉ đăng xuất
+              </button>
+              <button
+                type="button"
+                onClick={() => setLogoutWarn(false)}
+                className="h-10 text-[13px] text-[#636566] hover:text-[#202325] transition-colors"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {showCashMovement && shift && (
         <CashMovementModal

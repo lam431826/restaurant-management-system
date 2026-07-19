@@ -61,7 +61,7 @@ const Navbar = () => {
 
   return (
     <nav className="flex items-center overflow-visible">
-      <ul className="inline-flex items-center gap-0.5 p-[0.5rem] rounded-[2.4rem] bg-[linear-gradient(90deg,#5B8DFE_0%,#4A7CFB_50%,#2F6EF7_100%)] shadow-[0_0.4rem_1.2rem_rgba(47,110,247,0.25)]">
+      <ul className="inline-flex flex-wrap items-center gap-0.5 p-[0.5rem] rounded-[2.4rem] bg-[linear-gradient(90deg,#5B8DFE_0%,#4A7CFB_50%,#2F6EF7_100%)] shadow-[0_0.4rem_1.2rem_rgba(47,110,247,0.25)]">
         {visibleItems.map(item => {
           const active = isActive(item)
           const isGroup2 = item.id === 12

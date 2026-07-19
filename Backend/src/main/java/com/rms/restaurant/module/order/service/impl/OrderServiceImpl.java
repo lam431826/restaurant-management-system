@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.order.service.impl;
 
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.order.dto.*;
 import com.rms.restaurant.module.order.service.OrderService;
@@ -64,14 +65,15 @@ public class OrderServiceImpl implements OrderService {
     private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
     private final PaymentRepository paymentRepository;
     private final ReservationRepository reservationRepository;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
-    @Override 
-    public PageResponse<OrderResponse> list(Pageable pageable) { 
+    @Override
+    public PageResponse<OrderResponse> list(Pageable pageable) {
         Page<OrderResponse> page = orderRepository.findAll(pageable).map(orderMapper::toResponse);
         return PageResponse.of(page);
     }
-    @Override 
-    public OrderResponse getById(String id) { 
+    @Override
+    public OrderResponse getById(String id) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         return orderMapper.toResponse(order);
@@ -177,16 +179,50 @@ public class OrderServiceImpl implements OrderService {
             if (activeOrder == null || activeOrder.getId().equals(order.getId())) {
                 table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.AVAILABLE);
                 tableRepository.save(table);
+                realtimeEventPublisher.publishTableStatus(table);
             }
         }
+        // Auto-cancel any remaining PENDING orders for this table (BR-QR-09)
+        List<Order> pendingOrdersForTable = orderRepository.findByTableIdAndStatus(order.getTableId(), OrderStatus.PENDING);
+        for (Order po : pendingOrdersForTable) {
+            po.setStatus(OrderStatus.CANCELLED);
+            if (po.getItems() != null) {
+                for (OrderItem item : po.getItems()) {
+                    if (item.getCookingStatus() == CookingStatus.PENDING) {
+                        item.setCookingStatus(CookingStatus.REJECTED);
+                        item.setRejectionNote("Hệ thống tự động hủy do bàn thanh toán");
+                    }
+                }
+            }
+            orderRepository.save(po);
+        }
 
-        return orderMapper.toResponse(orderRepository.save(order));
+        OrderResponse response = orderMapper.toResponse(orderRepository.save(order));
+        realtimeEventPublisher.publishOrderEvent("ORDER_CLOSED", response);
+        realtimeEventPublisher.publishGuestOrderStatus(response);
+        return response;
     }
 
-    @Override public OrderResponse accept(String id) { 
-        return updateStatus(id, OrderStatus.ACCEPTED);
+    @Override
+    public OrderResponse accept(String id) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        if (order.getStatus() == OrderStatus.PENDING) {
+            order.setStatus(OrderStatus.ACCEPTED);
+        }
+        if (order.getItems() != null) {
+            for (OrderItem item : order.getItems()) {
+                if (item.getCookingStatus() == CookingStatus.PENDING) {
+                    item.setCookingStatus(CookingStatus.COOKING);
+                }
+            }
+        }
+        OrderResponse response = orderMapper.toResponse(orderRepository.save(order));
+        realtimeEventPublisher.publishOrderEvent("ORDER_ACCEPTED", response);
+        realtimeEventPublisher.publishGuestOrderStatus(response);
+        return response;
     }
-    
+
     @Override public OrderResponse addItem(String id, com.rms.restaurant.module.order.dto.AddOrderItemRequest request) { return null; }
 
     @Override
@@ -199,7 +235,11 @@ public class OrderServiceImpl implements OrderService {
         OrderItem itemToRemove = findOwnedOrderItemForUpdate(order, itemId);
         if (itemToRemove != null) {
             validateItemCanBeRemoved(itemToRemove);
-            order.getItems().remove(itemToRemove);
+            if (itemToRemove.getQuantity() > 1) {
+                itemToRemove.setQuantity(itemToRemove.getQuantity() - 1);
+            } else {
+                order.getItems().remove(itemToRemove);
+            }
         }
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -261,7 +301,7 @@ public class OrderServiceImpl implements OrderService {
             request.items().forEach(itemRequest -> {
                 MenuItem menuItem = menuItemRepository.findById(itemRequest.menuItemId())
                         .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND));
-                
+
                 OrderItem orderItem = new OrderItem();
                 orderItem.setOrder(order);
                 orderItem.setMenuItemId(menuItem.getId());
@@ -269,16 +309,19 @@ public class OrderServiceImpl implements OrderService {
                 orderItem.setQuantity(itemRequest.quantity());
                 orderItem.setUnitPrice(menuItem.getPrice());
                 orderItem.setNote(itemRequest.note());
-                
+
                 order.getItems().add(orderItem);
             });
         }
 
         table.setStatus(TableStatus.OCCUPIED);
         tableRepository.save(table);
+        realtimeEventPublisher.publishTableStatus(table);
 
         Order savedOrder = orderRepository.save(order);
-        return orderMapper.toResponse(savedOrder);
+        OrderResponse response = orderMapper.toResponse(savedOrder);
+        realtimeEventPublisher.publishOrderEvent("ORDER_CREATED", response);
+        return response;
     }
 
     @Override
@@ -292,7 +335,7 @@ public class OrderServiceImpl implements OrderService {
             request.items().forEach(itemRequest -> {
                 MenuItem menuItem = menuItemRepository.findById(itemRequest.menuItemId())
                         .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND));
-                
+
                 OrderItem orderItem = new OrderItem();
                 orderItem.setOrder(order);
                 orderItem.setMenuItemId(menuItem.getId());
@@ -300,10 +343,26 @@ public class OrderServiceImpl implements OrderService {
                 orderItem.setQuantity(itemRequest.quantity());
                 orderItem.setUnitPrice(menuItem.getPrice());
                 orderItem.setNote(itemRequest.note());
-                
+
                 order.getItems().add(orderItem);
             });
         }
+
+        Order savedOrder = orderRepository.save(order);
+        return orderMapper.toResponse(savedOrder);
+    }
+
+    @Override
+    public OrderResponse updateItemNote(String orderId, String itemId, com.rms.restaurant.module.order.dto.UpdateOrderItemNoteRequest request) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        ensureOrderItemsCanBeModified(order);
+
+        OrderItem item = findOrderItem(order, itemId);
+        if (item.getCookingStatus() != com.rms.restaurant.common.utils.enums.CookingStatus.PENDING) {
+            throw new com.rms.restaurant.common.utils.exception.ApplicationException(ApplicationError.ORDER_ITEM_NOTE_NOT_ALLOWED);
+        }
+        item.setNote(request.note());
 
         Order savedOrder = orderRepository.save(order);
         return orderMapper.toResponse(savedOrder);
@@ -325,10 +384,13 @@ public class OrderServiceImpl implements OrderService {
         if (request.status() == CookingStatus.REJECTED) {
             item.setRejectionNote(request.rejectionNote());
         }
-        
+
         // Optional: auto-update order status based on items? We'll keep it simple for now or implement if needed.
         Order savedOrder = orderRepository.save(order);
-        return orderMapper.toResponse(savedOrder);
+        OrderResponse response = orderMapper.toResponse(savedOrder);
+        realtimeEventPublisher.publishOrderEvent("ITEM_STATUS_CHANGED", response);
+        realtimeEventPublisher.publishGuestOrderStatus(response);
+        return response;
     }
 
     private OrderItem findOwnedOrderItemForUpdate(Order order, String itemId) {
@@ -339,6 +401,17 @@ public class OrderServiceImpl implements OrderService {
             return null;
         }
         return item;
+    }
+
+    private OrderItem findOrderItem(Order order, String itemId) {
+        if (order.getItems() != null) {
+            for (OrderItem item : order.getItems()) {
+                if (item.getId().equals(itemId)) {
+                    return item;
+                }
+            }
+        }
+        throw new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND); // Reusing existing project error
     }
 
     private void validateItemCanBeRemoved(OrderItem item) {
@@ -366,7 +439,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private boolean isAllowedItemStatusTransition(CookingStatus current, CookingStatus next) {
-        return (current == CookingStatus.PENDING && next == CookingStatus.COOKING)
+        return (current == CookingStatus.PENDING && (next == CookingStatus.COOKING || next == CookingStatus.REJECTED))
                 || (current == CookingStatus.COOKING && (next == CookingStatus.READY || next == CookingStatus.REJECTED))
                 || (current == CookingStatus.READY && next == CookingStatus.SERVED);
     }
@@ -384,7 +457,7 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    @Override 
+    @Override
     public OrderResponse cancel(String id, CancelOrderRequest request) {
         String orderId = normalizeOrderId(id);
         Order order = orderRepository.findByIdForUpdate(orderId)
@@ -407,8 +480,16 @@ public class OrderServiceImpl implements OrderService {
         if (hasNonCancellableItem) {
             throw new ApplicationException(ApplicationError.CANNOT_CANCEL_ORDER_ITEMS_NOT_PENDING);
         }
-        
+
         order.setStatus(OrderStatus.CANCELLED);
+        if (order.getItems() != null) {
+            for (OrderItem item : order.getItems()) {
+                if (item.getCookingStatus() == CookingStatus.PENDING) {
+                    item.setCookingStatus(CookingStatus.REJECTED);
+                    item.setRejectionNote("Thu ngân hủy đơn");
+                }
+            }
+        }
         RestaurantTable table = tableRepository.findById(order.getTableId()).orElse(null);
         if (table != null) {
             Order activeOrder = orderRepository.findTopByTableIdOrderByCreatedAtDesc(table.getId())
@@ -417,10 +498,14 @@ public class OrderServiceImpl implements OrderService {
             if (activeOrder == null || activeOrder.getId().equals(order.getId())) {
                 table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.AVAILABLE);
                 tableRepository.save(table);
+                realtimeEventPublisher.publishTableStatus(table);
             }
         }
 
-        return orderMapper.toResponse(orderRepository.save(order));
+        OrderResponse response = orderMapper.toResponse(orderRepository.save(order));
+        realtimeEventPublisher.publishOrderEvent("ORDER_CANCELLED", response);
+        realtimeEventPublisher.publishGuestOrderStatus(response);
+        return response;
     }
 
     private void validateOrderHasNoInvoiceOrPayment(Order order) {
@@ -563,10 +648,11 @@ public class OrderServiceImpl implements OrderService {
         if (entity != null) {
             entity.setResolved(true);
             assistanceRequestRepository.save(entity);
+            realtimeEventPublisher.publishAssistanceEvent("RESOLVED", entity);
         }
     }
-    
-    @Override 
+
+    @Override
     public java.util.List<com.rms.restaurant.module.order.model.AssistanceRequest> getPendingAssistanceRequests() {
         return assistanceRequestRepository.findByResolvedFalse();
     }

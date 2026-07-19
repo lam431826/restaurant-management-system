@@ -1,7 +1,9 @@
 package com.rms.restaurant.module.online_reservation.service.impl;
 
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.common.utils.enums.NotificationType;
 import com.rms.restaurant.common.utils.enums.ReservationStatus;
+import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
@@ -20,7 +22,9 @@ import com.rms.restaurant.module.reservation.dto.ReservationResponse;
 import com.rms.restaurant.module.reservation.mapper.ReservationMapper;
 import com.rms.restaurant.module.reservation.model.Reservation;
 import com.rms.restaurant.module.reservation.repository.ReservationRepository;
+import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
@@ -41,6 +46,16 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
 
     private static final int WINDOW_MINUTES = 180;
 
+    // Restaurant opening hours (see PublicWebsite ContactSection.jsx "Opening Hours" card) — applies every day of the week.
+    private static final LocalTime OPENING_TIME = LocalTime.of(16, 0);
+    private static final LocalTime CLOSING_TIME = LocalTime.of(22, 30);
+
+    // BR: a booking must leave the guest a full dining window before closing — after CLOSING_TIME the
+    // restaurant is only doing wrap-up/cleanup, not seating guests. So the latest a reservation can start
+    // is CLOSING_TIME minus the max dining duration.
+    private static final int MAX_DINING_MINUTES = 90;
+    private static final LocalTime LAST_RESERVATION_TIME = CLOSING_TIME.minusMinutes(MAX_DINING_MINUTES);
+
     private static final EnumSet<ReservationStatus> CANCELLABLE =
             EnumSet.of(ReservationStatus.PENDING, ReservationStatus.CONFIRMED);
 
@@ -52,6 +67,8 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
     private final ReservationMapper reservationMapper;
     private final NotificationService notificationService;
     private final GmailService gmailService;
+    private final AuditService auditService;
+    private final RealtimeEventPublisher realtimeEventPublisher;
     private final SecureRandom secureRandom = new SecureRandom();
 
     // ── ORM-01: Kiểm tra slot bàn trống ──────────────────────────────────────
@@ -71,6 +88,10 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         if (request.datetime().isBefore(LocalDateTime.now().plusMinutes(30))) {
             throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
         }
+        LocalTime requestedTime = request.datetime().toLocalTime();
+        if (requestedTime.isBefore(OPENING_TIME) || requestedTime.isAfter(LAST_RESERVATION_TIME)) {
+            throw new ApplicationException(ApplicationError.RESERVATION_OUTSIDE_HOURS);
+        }
 
         // Tier-based overbooking guard.
         // Each party size maps to a tier: only tables within that tier's capacity range are eligible.
@@ -82,8 +103,12 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         }
         LocalDateTime windowStart = request.datetime().minusMinutes(WINDOW_MINUTES);
         LocalDateTime windowEnd   = request.datetime().plusMinutes(WINDOW_MINUTES);
-        long bookedInTier = reservationRepository.countActiveInWindowForTables(
-                ACTIVE_STATUSES, windowStart, windowEnd, tierTableIds);
+        // BE-RES-03 fix: online reservations are created without a tableId (staff assign
+        // tables later), so counting by already-assigned tableId (countActiveInWindowForTables)
+        // never counted them — the guard was effectively inert. Count demand by party-size
+        // tier instead, regardless of whether a table has been assigned yet.
+        long bookedInTier = reservationRepository.countActiveInWindowByPartySizeRange(
+                ACTIVE_STATUSES, windowStart, windowEnd, tier[0], tier[1]);
         if (bookedInTier >= tierTableIds.size()) {
             throw new ApplicationException(ApplicationError.TABLE_FULLY_BOOKED);
         }
@@ -109,7 +134,12 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
             log.warn("NM-01 PENDING trigger failed for reservation {}: {}", saved.getId(), e.getMessage());
         }
 
-        return reservationMapper.toResponse(saved);
+        audit("RESERVATION_CREATE", saved.getId(),
+                "{\"channel\":\"ONLINE\",\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
+
+        ReservationResponse response = reservationMapper.toResponse(saved);
+        realtimeEventPublisher.publishReservationEvent("CREATED", response);
+        return response;
     }
 
     // ── ORM-03 Bước 1: Yêu cầu huỷ — verify SĐT, gửi OTP về email ───────────
@@ -186,6 +216,18 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         reservation.setStatus(ReservationStatus.CANCELLED);
         reservationRepository.save(reservation);
 
+        // BE-RES-04 fix: BR-05 (cancel frees the table) was never applied on this path —
+        // every staff-side cancel/no-show path frees the table, this one silently didn't.
+        if (reservation.getTableId() != null) {
+            tableRepository.findById(reservation.getTableId()).ifPresent(table -> {
+                if (table.getStatus() == TableStatus.RESERVED) {
+                    table.setStatus(TableStatus.AVAILABLE);
+                    RestaurantTable saved = tableRepository.save(table);
+                    realtimeEventPublisher.publishTableStatus(saved);
+                }
+            });
+        }
+
         // NM-01: gửi email xác nhận đã huỷ (async)
         try {
             notificationService.sendReservationNotification(
@@ -193,6 +235,9 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         } catch (Exception e) {
             log.warn("NM-01 CANCELLATION trigger failed for reservation {}: {}", reservationId, e.getMessage());
         }
+
+        audit("RESERVATION_CANCEL", reservationId, "{\"channel\":\"ONLINE\"}");
+        realtimeEventPublisher.publishReservationEvent("UPDATED", reservationMapper.toResponse(reservation));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -230,5 +275,14 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         if (partySize <= 10) return new int[]{9,  10};
         if (partySize <= 12) return new int[]{11, 12};
         return                      new int[]{13, 20};
+    }
+
+    private void audit(String action, String id, String detail) {
+        try { auditService.log(action, "Reservation", id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

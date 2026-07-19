@@ -12,7 +12,9 @@ import com.rms.restaurant.module.menu.repository.MenuCategoryRepository;
 import com.rms.restaurant.module.menu.repository.MenuItemRepository;
 import com.rms.restaurant.module.menu.service.MenuService;
 import com.rms.restaurant.module.order.repository.OrderItemRepository;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVPrinter;
@@ -37,6 +39,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -53,6 +56,7 @@ public class MenuServiceImpl implements MenuService {
     private final MenuItemRepository itemRepository;
     private final MenuMapper menuMapper;
     private final OrderItemRepository orderItemRepository;
+    private final AuditService auditService;
 
     // ── Items (MM-01 / MM-03) ────────────────────────────────────────────
 
@@ -89,7 +93,9 @@ public class MenuServiceImpl implements MenuService {
                 .trackStock(request.trackStock() != null && request.trackStock())
                 .available(request.available() == null || request.available())
                 .build();
-        return menuMapper.toResponse(itemRepository.save(item));
+        MenuItem saved = itemRepository.save(item);
+        audit("MENU_ITEM_CREATE", "MenuItem", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        return menuMapper.toResponse(saved);
     }
 
     @Override
@@ -132,7 +138,9 @@ public class MenuServiceImpl implements MenuService {
         if (request.available() != null) {
             item.setAvailable(request.available());
         }
-        return menuMapper.toResponse(itemRepository.save(item));
+        MenuItem saved = itemRepository.save(item);
+        audit("MENU_ITEM_UPDATE", "MenuItem", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        return menuMapper.toResponse(saved);
     }
 
     @Override
@@ -140,6 +148,7 @@ public class MenuServiceImpl implements MenuService {
         MenuItem item = findItem(id);
         item.setAvailable(available);
         itemRepository.save(item);
+        audit("MENU_ITEM_UPDATE", "MenuItem", id, "{\"name\":\"" + esc(item.getName()) + "\",\"available\":" + available + "}");
     }
 
     @Override
@@ -150,6 +159,7 @@ public class MenuServiceImpl implements MenuService {
                     "Món \"" + item.getName() + "\" đã có trong đơn hàng và không thể xóa. Hãy ngừng bán thay vì xóa.");
         }
         itemRepository.delete(item);
+        audit("MENU_ITEM_DELETE", "MenuItem", id, "{\"name\":\"" + esc(item.getName()) + "\"}");
     }
 
     @Override
@@ -157,6 +167,7 @@ public class MenuServiceImpl implements MenuService {
         List<MenuItem> items = itemRepository.findAllById(ids);
         items.forEach(item -> item.setAvailable(available));
         itemRepository.saveAll(items);
+        audit("MENU_ITEM_UPDATE", "MenuItem", null, "{\"bulk\":true,\"count\":" + items.size() + ",\"available\":" + available + "}");
     }
 
     @Override
@@ -172,6 +183,7 @@ public class MenuServiceImpl implements MenuService {
                             + ". Hãy ngừng bán thay vì xóa.");
         }
         itemRepository.deleteAll(items);
+        audit("MENU_ITEM_DELETE", "MenuItem", null, "{\"bulk\":true,\"count\":" + items.size() + "}");
     }
 
     // ── Categories (MM-02) ───────────────────────────────────────────────
@@ -195,6 +207,7 @@ public class MenuServiceImpl implements MenuService {
                 .icon(request.icon())
                 .build();
         category = categoryRepository.save(category);
+        audit("MENU_CATEGORY_CREATE", "MenuCategory", category.getId(), "{\"name\":\"" + esc(category.getName()) + "\"}");
         return menuMapper.toCategoryResponse(category, 0);
     }
 
@@ -209,6 +222,7 @@ public class MenuServiceImpl implements MenuService {
         category.setDisplayOrder(request.displayOrder());
         category.setIcon(request.icon());
         categoryRepository.save(category);
+        audit("MENU_CATEGORY_UPDATE", "MenuCategory", category.getId(), "{\"name\":\"" + esc(category.getName()) + "\"}");
         return menuMapper.toCategoryResponse(category, itemRepository.countByCategoryId(id));
     }
 
@@ -219,6 +233,7 @@ public class MenuServiceImpl implements MenuService {
             category.setDisplayOrder(i);
             categoryRepository.save(category);
         }
+        audit("MENU_CATEGORY_REORDER", "MenuCategory", null, "{\"count\":" + orderedCategoryIds.size() + "}");
     }
 
     @Override
@@ -228,6 +243,7 @@ public class MenuServiceImpl implements MenuService {
             throw new ConflictException(ApplicationError.CATEGORY_HAS_ITEMS);
         }
         categoryRepository.delete(category);
+        audit("MENU_CATEGORY_DELETE", "MenuCategory", id, "{\"name\":\"" + esc(category.getName()) + "\"}");
     }
 
     // ── Import / Export (MM-04) ──────────────────────────────────────────
@@ -276,6 +292,14 @@ public class MenuServiceImpl implements MenuService {
 
         Map<String, MenuCategory> categoriesByName = categoryRepository.findAll().stream()
                 .collect(Collectors.toMap(c -> c.getName().toLowerCase(), Function.identity(), (a, b) -> a));
+
+        // Auto product code (SP000026, …): continue from the highest existing numeric code
+        // so rows imported without a code still get one.
+        long maxCodeNumber = itemRepository.findAll().stream()
+                .map(MenuItem::getCode)
+                .filter(StringUtils::hasText)
+                .mapToLong(MenuServiceImpl::numericCode)
+                .max().orElse(0);
 
         int created = 0;
         int updated = 0;
@@ -344,7 +368,15 @@ public class MenuServiceImpl implements MenuService {
                     if (isNew) {
                         item = MenuItem.builder().categoryId(category.getId()).name(name).build();
                     }
-                    item.setCode(trimToNull(column(record, "code")));
+                    String code = trimToNull(column(record, "code"));
+                    if (code != null) {
+                        item.setCode(code);
+                    } else if (!StringUtils.hasText(item.getCode())) {
+                        // File has no code and the item doesn't have one yet → assign the next auto code.
+                        maxCodeNumber++;
+                        item.setCode(String.format("SP%06d", maxCodeNumber));
+                    }
+                    // Existing items keep their current code when the file omits it.
                     item.setPrice(price);
                     item.setCostPrice(costPrice);
                     item.setDescription(trimToNull(column(record, "description")));
@@ -364,6 +396,9 @@ public class MenuServiceImpl implements MenuService {
         } catch (IOException e) {
             throw new ConflictException(ApplicationError.MENU_IMPORT_INVALID);
         }
+
+        audit("MENU_IMPORT", "MenuItem", null, "{\"created\":" + created + ",\"updated\":" + updated
+                + ",\"errors\":" + errors.size() + "}");
 
         return new ImportResultResponse(created, updated, errors.size(), errors);
     }
@@ -411,6 +446,17 @@ public class MenuServiceImpl implements MenuService {
         return StringUtils.hasText(value) ? value.trim() : null;
     }
 
+    /** Numeric part of a product code ("SP000026" → 26); 0 when absent or too large. */
+    private static long numericCode(String code) {
+        String digits = code.replaceAll("\\D", "");
+        if (digits.isEmpty()) return 0;
+        try {
+            return Long.parseLong(digits);
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
     private String nullSafe(String value) {
         return value == null ? "" : value;
     }
@@ -428,5 +474,14 @@ public class MenuServiceImpl implements MenuService {
         if (normalized.equalsIgnoreCase(STATUS_AVAILABLE)) return Boolean.TRUE;
         if (normalized.equalsIgnoreCase(STATUS_OUT_OF_STOCK)) return Boolean.FALSE;
         return null;
+    }
+
+    private void audit(String action, String targetEntity, String id, String detail) {
+        try { auditService.log(action, targetEntity, id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

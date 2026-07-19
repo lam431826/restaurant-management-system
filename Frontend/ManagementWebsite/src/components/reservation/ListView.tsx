@@ -12,6 +12,7 @@ interface Props {
   onNoShow: (id: string) => Promise<void>
   onCancel: (id: string) => Promise<void>
   onAssignTable?: (reservationId: string, tableId: string) => void
+  onEdit?: (id: string) => void
 }
 
 /* ── Icons ────────────────────────────────────────────────────────────────── */
@@ -174,14 +175,22 @@ const AssignTableDropdown = ({
   )
 }
 
+const EditIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+  </svg>
+)
+
 /* ── Inline action buttons per row ───────────────────────────────────────── */
-const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onNoShow, onCancel }: {
+const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onNoShow, onCancel, onEdit }: {
   r: Reservation
   busy: boolean
   onConfirm: () => void
   onCheckIn: () => void
   onNoShow: () => void
   onCancel: () => void
+  onEdit?: () => void
 }) => {
   if (r.status === 'PENDING') return (
     <div className="flex items-center gap-1.5">
@@ -192,6 +201,10 @@ const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onNoShow, onCancel }: {
       <button disabled={busy} onClick={onCancel}
         className="h-7 px-2 text-[12px] font-semibold rounded-md border border-danger text-danger hover:bg-red-50 disabled:opacity-50 cursor-pointer whitespace-nowrap">
         Hủy
+      </button>
+      <button disabled={busy} onClick={onEdit} title="Chỉnh sửa"
+        className="h-7 w-7 flex items-center justify-center rounded-md border border-line-default text-ink-muted hover:text-primary hover:border-primary disabled:opacity-50 cursor-pointer">
+        <EditIcon />
       </button>
     </div>
   )
@@ -210,6 +223,10 @@ const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onNoShow, onCancel }: {
         className="h-7 px-2 text-[12px] font-semibold rounded-md border border-danger text-danger hover:bg-red-50 disabled:opacity-50 cursor-pointer whitespace-nowrap">
         Hủy
       </button>
+      <button disabled={busy} onClick={onEdit} title="Chỉnh sửa"
+        className="h-7 w-7 flex items-center justify-center rounded-md border border-line-default text-ink-muted hover:text-primary hover:border-primary disabled:opacity-50 cursor-pointer">
+        <EditIcon />
+      </button>
     </div>
   )
 
@@ -217,7 +234,7 @@ const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onNoShow, onCancel }: {
 }
 
 /* ── Main component ───────────────────────────────────────────────────────── */
-const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onNoShow, onCancel, onAssignTable }: Props) => {
+const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onNoShow, onCancel, onAssignTable, onEdit }: Props) => {
   const [code, setCode] = useState('')
   const [timeMode, setTimeMode] = useState<'all' | 'other'>('all')
   const [statuses, setStatuses] = useState<Set<ReservationStatus>>(new Set(['PENDING', 'CONFIRMED']))
@@ -364,7 +381,8 @@ const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onNoShow, o
                         onConfirm={() => act(() => onConfirm(r.id), r.id)}
                         onCheckIn={() => act(() => onCheckIn(r.id), r.id)}
                         onNoShow={() => act(() => onNoShow(r.id), r.id)}
-                        onCancel={() => act(() => onCancel(r.id), r.id)} />
+                        onCancel={() => act(() => onCancel(r.id), r.id)}
+                        onEdit={() => onEdit?.(r.id)} />
                     </td>
                   </tr>
                 )
@@ -474,6 +492,10 @@ const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onNoShow, o
 
                 {canAct && (
                   <div className="flex flex-col gap-2 shrink-0">
+                    <button disabled={busy} onClick={() => { onEdit?.(r.id); closeDetail() }}
+                      className="kv-btn kv-btn-outline-neutral h-9 text-sm min-w-[7rem] disabled:opacity-50">
+                      Chỉnh sửa
+                    </button>
                     {s === 'PENDING' && (
                       <button disabled={busy} onClick={() => actDetail(onConfirm)}
                         className="kv-btn kv-btn-primary h-9 text-sm min-w-[7rem] disabled:opacity-50">

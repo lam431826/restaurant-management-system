@@ -82,7 +82,7 @@ public class DataSeeder implements ApplicationRunner {
      *  Tầng 1 (12 bàn) — khu vực ăn chính, cạnh cửa sổ & trung tâm
      *    T1-01..T1-04 : 2 người  (bàn đôi — góc cửa sổ)
      *    T1-05..T1-09 : 4 người  (bàn gia đình nhỏ — khu trung tâm)
-     *    T1-10..T1-12 : 6 người  (bàn nhóm — phía trong)
+     *    T1-10..T1-12 : 6 người  (bàn nhóm — phía trong cung)
      *
      *  Tầng 2 (10 bàn) — khu vực yên tĩnh hơn
      *    T2-01..T2-04 : 4 người

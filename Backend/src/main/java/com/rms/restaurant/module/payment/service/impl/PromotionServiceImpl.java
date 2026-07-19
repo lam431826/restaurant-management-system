@@ -11,7 +11,9 @@ import com.rms.restaurant.module.payment.mapper.PromotionMapper;
 import com.rms.restaurant.module.payment.model.Promotion;
 import com.rms.restaurant.module.payment.repository.PromotionRepository;
 import com.rms.restaurant.module.payment.service.PromotionService;
+import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -28,6 +31,7 @@ public class PromotionServiceImpl implements PromotionService {
 
     private final PromotionRepository promotionRepository;
     private final PromotionMapper promotionMapper;
+    private final AuditService auditService;
 
     @Override
     @Transactional(readOnly = true)
@@ -63,7 +67,10 @@ public class PromotionServiceImpl implements PromotionService {
                 .usedCount(0)
                 .build();
 
-        return promotionMapper.toResponse(promotionRepository.save(promotion));
+        Promotion saved = promotionRepository.save(promotion);
+        audit("PROMOTION_CREATE", saved.getId(),
+                "{\"code\":\"" + esc(saved.getCode()) + "\"}");
+        return promotionMapper.toResponse(saved);
     }
 
     @Override
@@ -83,14 +90,19 @@ public class PromotionServiceImpl implements PromotionService {
         promotion.setUsageLimit(request.usageLimit());
         promotion.setActive(request.active() == null ? promotion.isActive() : request.active());
 
-        return promotionMapper.toResponse(promotionRepository.save(promotion));
+        Promotion saved = promotionRepository.save(promotion);
+        audit("PROMOTION_UPDATE", saved.getId(),
+                "{\"code\":\"" + esc(saved.getCode()) + "\",\"active\":" + saved.isActive() + "}");
+        return promotionMapper.toResponse(saved);
     }
 
     @Override
     public void delete(String id) {
         Promotion promotion = findPromotion(id);
         promotion.setActive(false);
-        promotionRepository.save(promotion);
+        Promotion saved = promotionRepository.save(promotion);
+        audit("PROMOTION_DELETE", saved.getId(),
+                "{\"code\":\"" + esc(saved.getCode()) + "\"}");
     }
 
     private Promotion findPromotion(String id) {
@@ -160,5 +172,14 @@ public class PromotionServiceImpl implements PromotionService {
 
     private String normalizeDescription(String description) {
         return description == null ? "" : description.trim();
+    }
+
+    private void audit(String action, String id, String detail) {
+        try { auditService.log(action, "Promotion", id, detail); }
+        catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
+    }
+
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

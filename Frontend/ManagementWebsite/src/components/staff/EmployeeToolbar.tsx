@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Employee } from '../../data/mockData'
+import type { EmployeeColumn } from './EmployeeTable'
 
 interface Props {
   search: string
   onSearch: (v: string) => void
   onAdd: () => void
   employees: Employee[]
-  onApprovalsClick: () => void
-  pendingApprovals: number
+  columns: EmployeeColumn[]
+  visibleColumns: Record<string, boolean>
+  onToggleColumn: (key: string) => void
 }
 
 const exportCsv = (employees: Employee[]) => {
-  const header = ['Mã nhân viên', 'Mã chấm công', 'Tên nhân viên', 'Số điện thoại', 'Số CMND/CCCD', 'Nợ và tạm ứng', 'Phòng ban', 'Chức danh']
-  const rows = employees.map(e => [e.code, e.timekeepCode, e.name, e.phone, e.idNumber, e.debt, e.department, e.position])
+  const header = ['Mã nhân viên', 'Mã chấm công', 'Tên nhân viên', 'Số điện thoại', 'Số CMND/CCCD']
+  const rows = employees.map(e => [e.code, e.timekeepCode, e.name, e.phone, e.idNumber])
   const csv = [header, ...rows]
     .map(line => line.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\n')
@@ -25,13 +27,18 @@ const exportCsv = (employees: Employee[]) => {
   URL.revokeObjectURL(url)
 }
 
-const EmployeeToolbar = ({ search, onSearch, onAdd, employees, onApprovalsClick, pendingApprovals }: Props) => {
+const EmployeeToolbar = ({ search, onSearch, onAdd, employees, columns, visibleColumns, onToggleColumn }: Props) => {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [colsOpen, setColsOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const colsRef = useRef<HTMLDivElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setMenuOpen(false) }
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setMenuOpen(false)
+      if (colsRef.current && !colsRef.current.contains(e.target as Node)) setColsOpen(false)
+    }
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [])
@@ -60,18 +67,6 @@ const EmployeeToolbar = ({ search, onSearch, onAdd, employees, onApprovalsClick,
           Nhân viên
         </button>
 
-        <button className="kv-btn kv-btn-outline-neutral h-10 bg-card relative" onClick={onApprovalsClick}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="9" y="2" width="6" height="4" rx="1" /><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3" /><path d="M9 14l2 2 4-4" />
-          </svg>
-          Duyệt yêu cầu
-          {pendingApprovals > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 min-w-[1.2rem] h-[1.2rem] px-1 rounded-full bg-danger text-white text-[0.65rem] font-bold flex items-center justify-center">
-              {pendingApprovals}
-            </span>
-          )}
-        </button>
-
         <input
           ref={importRef}
           type="file"
@@ -95,16 +90,36 @@ const EmployeeToolbar = ({ search, onSearch, onAdd, employees, onApprovalsClick,
           )}
         </div>
 
-        <button
-          className="w-10 h-10 flex items-center justify-center border border-line-default rounded-md bg-card text-ink-subtle cursor-pointer shrink-0 transition-colors hover:border-primary hover:text-primary"
-          aria-label="Tùy chọn cột"
-          title="Tùy chọn hiển thị cột"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
-            <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
-          </svg>
-        </button>
+        <div ref={colsRef} className="relative">
+          <button
+            className="w-10 h-10 flex items-center justify-center border border-line-default rounded-md bg-card text-ink-subtle cursor-pointer shrink-0 transition-colors hover:border-primary hover:text-primary"
+            aria-label="Tùy chọn cột"
+            title="Tùy chọn hiển thị cột"
+            onClick={() => setColsOpen(o => !o)}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+              <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+            </svg>
+          </button>
+          {colsOpen && (
+            <div className="absolute right-0 top-[calc(100%+0.6rem)] w-[18rem] bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] p-4">
+              <div className="flex flex-col gap-2.5">
+                {columns.map(c => (
+                  <label key={c.key} className="flex items-center gap-2.5 cursor-pointer text-md text-ink">
+                    <input
+                      type="checkbox"
+                      checked={!!visibleColumns[c.key]}
+                      onChange={() => onToggleColumn(c.key)}
+                      className="accent-primary w-4 h-4"
+                    />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
