@@ -69,6 +69,16 @@ export interface SplitInvoiceResponse {
   children: SplitInvoiceChildResponse[]
 }
 
+export interface MergeInvoiceRequest {
+  invoiceIds: string[]
+}
+
+export interface MergeInvoiceResponse {
+  orderId: string
+  sourceInvoiceIds: string[]
+  targetInvoice: InvoiceSummary
+}
+
 export interface InvoiceFilters {
   paid?: boolean
   orderId?: string
@@ -119,6 +129,12 @@ export const sendInvoice = (invoiceId: string) =>
 
 export const splitInvoice = (invoiceId: string, request: SplitInvoiceRequest) =>
   apiData<SplitInvoiceResponse>(`/api/invoices/${invoiceId}/split`, {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+
+export const mergeInvoices = (request: MergeInvoiceRequest) =>
+  apiData<MergeInvoiceResponse>('/api/invoices/merge', {
     method: 'POST',
     body: JSON.stringify(request),
   })

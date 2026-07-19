@@ -12,6 +12,11 @@ import java.util.List;
 import java.util.Optional;
 
 public interface InvoiceRepository extends JpaRepository<Invoice, String> {
+    interface InvoiceOrderProjection {
+        String getId();
+        String getOrderId();
+    }
+
     boolean existsByOrderId(String orderId);
     List<Invoice> findAllByOrderByCreatedAtDesc();
     List<Invoice> findByPaidOrderByCreatedAtDesc(boolean paid);
@@ -26,7 +31,15 @@ public interface InvoiceRepository extends JpaRepository<Invoice, String> {
     @Query("SELECT i.orderId FROM Invoice i WHERE i.id = :id")
     Optional<String> findOrderIdById(@Param("id") String id);
 
+    @Query("SELECT i.id AS id, i.orderId AS orderId FROM Invoice i "
+            + "WHERE i.id IN :ids ORDER BY i.id ASC")
+    List<InvoiceOrderProjection> findOrderIdsByIds(@Param("ids") List<String> ids);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT i FROM Invoice i WHERE i.id = :id")
     Optional<Invoice> findByIdForUpdate(@Param("id") String id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT i FROM Invoice i WHERE i.id IN :ids ORDER BY i.id ASC")
+    List<Invoice> findAllByIdsForUpdate(@Param("ids") List<String> ids);
 }

@@ -6,6 +6,8 @@ import com.rms.restaurant.module.payment.dto.GenerateInvoiceRequest;
 import com.rms.restaurant.module.payment.dto.InvoiceDetailResponse;
 import com.rms.restaurant.module.payment.dto.InvoiceResponse;
 import com.rms.restaurant.module.payment.dto.InvoiceSummaryResponse;
+import com.rms.restaurant.module.payment.dto.MergeInvoiceRequest;
+import com.rms.restaurant.module.payment.dto.MergeInvoiceResponse;
 import com.rms.restaurant.module.payment.dto.SendInvoiceResponse;
 import com.rms.restaurant.module.payment.dto.SplitInvoiceRequest;
 import com.rms.restaurant.module.payment.dto.SplitInvoiceResponse;
@@ -52,6 +54,13 @@ public class InvoiceController {
             @PathVariable String invoiceId,
             @Valid @RequestBody SplitInvoiceRequest request) {
         return ResponseEntity.ok(ApiResponse.success(invoiceService.split(invoiceId, request)));
+    }
+
+    @PostMapping("/merge")
+    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<MergeInvoiceResponse>> merge(
+            @Valid @RequestBody MergeInvoiceRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(invoiceService.merge(request)));
     }
 
     @PostMapping

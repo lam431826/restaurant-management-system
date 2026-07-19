@@ -23,13 +23,18 @@ import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.payment.repository.PaymentRepository;
 import com.rms.restaurant.module.payment.repository.PromotionRepository;
 import com.rms.restaurant.module.payment.service.InvoiceService;
+import com.rms.restaurant.module.payment.service.internal.InvoiceMergePersistenceService;
+import com.rms.restaurant.module.payment.service.internal.InvoiceMergeValidator;
 import com.rms.restaurant.module.payment.service.internal.InvoiceSplitPersistenceService;
+import com.rms.restaurant.module.payment.service.internal.PersistedInvoiceMergeResult;
 import com.rms.restaurant.module.payment.service.internal.PersistedInvoiceSplitResult;
+import com.rms.restaurant.module.payment.service.internal.ValidatedInvoiceMergePlan;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -64,6 +69,8 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final UserRepository userRepository;
     private final InvoiceMapper invoiceMapper;
     private final InvoiceSplitPersistenceService invoiceSplitPersistenceService;
+    private final InvoiceMergeValidator invoiceMergeValidator;
+    private final InvoiceMergePersistenceService invoiceMergePersistenceService;
 
     @Override
     @Transactional(readOnly = true)
@@ -272,6 +279,31 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     @Override
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public MergeInvoiceResponse merge(MergeInvoiceRequest request) {
+        ValidatedInvoiceMergePlan plan = invoiceMergeValidator.validate(request);
+        PersistedInvoiceMergeResult result = invoiceMergePersistenceService.mergeAtomically(plan);
+        InvoiceSummaryResponse targetInvoice = new InvoiceSummaryResponse(
+                result.targetInvoiceId(),
+                result.orderId(),
+                result.targetSubtotal(),
+                result.targetDiscountAmount(),
+                result.targetTotalAmount(),
+                result.targetPaid(),
+                result.targetPromotionId(),
+                result.targetCreatedAt(),
+                result.targetStatus(),
+                result.targetMergedIntoInvoiceId(),
+                result.targetSplitFromInvoiceId()
+        );
+        return new MergeInvoiceResponse(
+                result.orderId(),
+                result.sourceInvoiceIds(),
+                targetInvoice
+        );
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public SendInvoiceResponse sendInvoice(String invoiceId) {
         Invoice invoice = invoiceRepository.findById(invoiceId)
@@ -289,7 +321,6 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     @Override public InvoiceResponse getByOrderId(String orderId) { return null; }
-    @Override public InvoiceResponse merge(MergeBillRequest request) { return null; }
 
     // ── PM-07: invoice / payment history list ────────────────────────────
 

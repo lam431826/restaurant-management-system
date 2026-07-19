@@ -25,12 +25,16 @@ import com.rms.restaurant.module.menu.model.MenuItem;
 import com.rms.restaurant.common.utils.enums.CookingStatus;
 import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
+import com.rms.restaurant.common.utils.enums.ReservationStatus;
+import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
+import com.rms.restaurant.module.reservation.repository.ReservationRepository;
 import org.springframework.data.domain.Page;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -43,6 +47,13 @@ import java.util.Set;
 @Transactional
 public class OrderServiceImpl implements OrderService {
 
+    private static final List<OrderStatus> TERMINAL_ORDER_STATUSES =
+            List.of(OrderStatus.CLOSED, OrderStatus.CANCELLED);
+    private static final List<ReservationStatus> SCHEDULED_BLOCKING_RESERVATION_STATUSES =
+            List.of(ReservationStatus.PENDING, ReservationStatus.CONFIRMED);
+    private static final int RESERVATION_WINDOW_BEFORE_MINUTES = 60;
+    private static final int RESERVATION_WINDOW_AFTER_MINUTES = 120;
+
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final OrderMapper orderMapper;
@@ -52,6 +63,7 @@ public class OrderServiceImpl implements OrderService {
     private final InvoiceRepository invoiceRepository;
     private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
     private final PaymentRepository paymentRepository;
+    private final ReservationRepository reservationRepository;
 
     @Override 
     public PageResponse<OrderResponse> list(Pageable pageable) { 
@@ -194,8 +206,50 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse create(CreateOrderRequest request) {
-        RestaurantTable table = tableRepository.findById(request.tableId())
+        String tableId = request.tableId().trim();
+        List<String> tableIds = List.of(tableId);
+
+        List<Order> lockedOrders = orderRepository.findActiveByTableIdsForUpdate(
+                tableIds,
+                TERMINAL_ORDER_STATUSES
+        );
+        List<RestaurantTable> lockedTables = tableRepository.findAllByIdInForUpdate(tableIds);
+        RestaurantTable table = lockedTables.stream()
+                .filter(candidate -> candidate.getId().equals(tableId))
+                .findFirst()
                 .orElseThrow(() -> new ApplicationException(ApplicationError.TABLE_NOT_FOUND));
+
+        List<String> revalidatedOrderIds = orderRepository.findActiveIdsByTableIds(
+                tableIds,
+                TERMINAL_ORDER_STATUSES
+        );
+        List<String> lockedOrderIds = lockedOrders.stream().map(Order::getId).sorted().toList();
+        List<String> currentOrderIds = revalidatedOrderIds.stream().distinct().sorted().toList();
+
+        if (!lockedOrderIds.equals(currentOrderIds)
+                || !lockedOrders.isEmpty()
+                || !table.isActive()
+                || table.getStatus() != TableStatus.AVAILABLE) {
+            throw new ApplicationException(
+                    ApplicationError.TABLE_NOT_AVAILABLE,
+                    "Table already has an active order or is no longer available"
+            );
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        boolean hasBlockingReservation = !reservationRepository.findBlockingForTablesForUpdate(
+                tableIds,
+                ReservationStatus.CHECKED_IN,
+                SCHEDULED_BLOCKING_RESERVATION_STATUSES,
+                now.minusMinutes(RESERVATION_WINDOW_BEFORE_MINUTES),
+                now.plusMinutes(RESERVATION_WINDOW_AFTER_MINUTES)
+        ).isEmpty();
+        if (hasBlockingReservation) {
+            throw new ApplicationException(
+                    ApplicationError.TABLE_NOT_AVAILABLE,
+                    "Table has a blocking reservation for the current service time"
+            );
+        }
 
         Order order = new Order();
         order.setTableId(table.getId());
@@ -220,7 +274,7 @@ public class OrderServiceImpl implements OrderService {
             });
         }
 
-        table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.OCCUPIED);
+        table.setStatus(TableStatus.OCCUPIED);
         tableRepository.save(table);
 
         Order savedOrder = orderRepository.save(order);

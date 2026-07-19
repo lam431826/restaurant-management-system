@@ -53,19 +53,23 @@ export interface CartItem {
 
 export const OCCUPIED_STATUSES = ["OCCUPIED", "BILLING"];
 
-export const toTableItem = (dto: TableServiceItem): TableItem => ({
-  id: dto.id,
-  name: dto.name,
-  area: dto.area,
-  capacity: dto.seats,
-  status: dto.status,
-  occupied: OCCUPIED_STATUSES.includes(dto.status),
-  selected: false,
-  amount: 0,
-  guests: 0,
-  items: 0,
-  orderId: dto.activeOrderId,
-});
+export const toTableItem = (dto: TableServiceItem): TableItem => {
+  const hasActiveOrder = Boolean(dto.activeOrderId);
+  return {
+    id: dto.id,
+    name: dto.name,
+    area: dto.area,
+    capacity: dto.seats,
+    status:
+      hasActiveOrder && dto.status === "AVAILABLE" ? "OCCUPIED" : dto.status,
+    occupied: hasActiveOrder || OCCUPIED_STATUSES.includes(dto.status),
+    selected: false,
+    amount: 0,
+    guests: 0,
+    items: 0,
+    orderId: dto.activeOrderId,
+  };
+};
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   CASH: "Tiền mặt",

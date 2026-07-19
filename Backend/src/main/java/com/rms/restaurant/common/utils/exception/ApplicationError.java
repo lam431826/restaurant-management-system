@@ -95,6 +95,9 @@ public enum ApplicationError {
     INVOICE_ALLOCATION_DATA_INVALID("Invoice allocation data is inconsistent", HttpStatus.INTERNAL_SERVER_ERROR),
     INVOICE_NOT_SPLITTABLE("Invoice cannot be split in its current state", HttpStatus.UNPROCESSABLE_ENTITY),
     INVALID_INVOICE_SPLIT("Invoice split groups are invalid", HttpStatus.UNPROCESSABLE_ENTITY),
+    INVALID_INVOICE_MERGE("Invoice merge sources are invalid", HttpStatus.UNPROCESSABLE_ENTITY),
+    INVOICE_MERGE_ORDER_MISMATCH("Invoice merge sources must belong to the same order", HttpStatus.UNPROCESSABLE_ENTITY),
+    INVOICE_NOT_MERGEABLE("Invoice cannot be merged in its current state", HttpStatus.UNPROCESSABLE_ENTITY),
     FORBIDDEN("You do not have permission to perform this action", HttpStatus.FORBIDDEN),
 
     // Roster (Work Shift) — WS-01..09, BR-WS-*

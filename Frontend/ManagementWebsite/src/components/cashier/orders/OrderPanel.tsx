@@ -25,6 +25,7 @@ export const OrderPanel = ({
   itemMutationDisabled,
   itemMutationDisabledMessage,
   orderActionMessage,
+  createOrderSubmitting,
   emptyOrderMessage,
   cancelOrderIds,
   onCloseOrder,
@@ -52,6 +53,7 @@ export const OrderPanel = ({
   itemMutationDisabled?: boolean;
   itemMutationDisabledMessage?: string;
   orderActionMessage?: { type: "error"; text: string } | null;
+  createOrderSubmitting?: boolean;
   emptyOrderMessage?: string;
   cancelOrderIds?: string[];
   onCloseOrder?: () => void;
@@ -159,15 +161,34 @@ export const OrderPanel = ({
           </span>
         </div>
         {isTableEmpty ? (
-          <button
-            onClick={onCreateOrder}
-            disabled={!shiftOpen}
-            className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span className="text-[16px] font-medium text-white">
-              {hasSelectedMenu ? "Xác nhận Tạo Order" : "Tạo Order"}
-            </span>
-          </button>
+          <div className="flex flex-col gap-2 mt-1">
+            {visibleActionMessage && (
+              <div
+                className="px-3 py-2 rounded-[10px] bg-[#fff0f0] text-[#d92d20] text-[12px] leading-5"
+                role="alert"
+              >
+                {visibleActionMessage}
+              </div>
+            )}
+            <button
+              onClick={onCreateOrder}
+              disabled={
+                !shiftOpen ||
+                createOrderSubmitting ||
+                selectedTable.status !== "AVAILABLE" ||
+                Boolean(selectedTable.orderId)
+              }
+              className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="text-[16px] font-medium text-white">
+                {createOrderSubmitting
+                  ? "Đang tạo Order..."
+                  : hasSelectedMenu
+                    ? "Xác nhận Tạo Order"
+                    : "Tạo Order"}
+              </span>
+            </button>
+          </div>
         ) : hasSelectedMenu ? (
           <div className="flex flex-col gap-2 mt-1">
             {visibleActionMessage && (

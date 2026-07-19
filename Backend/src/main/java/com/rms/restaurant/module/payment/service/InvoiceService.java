@@ -10,9 +10,9 @@ public interface InvoiceService {
     InvoiceResponse applyDiscount(String invoiceId, ApplyDiscountRequest request);
     InvoiceDetailResponse getById(String invoiceId);
     SplitInvoiceResponse split(String invoiceId, SplitInvoiceRequest request);
+    MergeInvoiceResponse merge(MergeInvoiceRequest request);
     SendInvoiceResponse sendInvoice(String invoiceId);
     InvoiceResponse getByOrderId(String orderId);
-    InvoiceResponse merge(MergeBillRequest request);
 
     // PM-06 / PM-07 — manager read-only views
     List<InvoiceListItem> listInvoices();

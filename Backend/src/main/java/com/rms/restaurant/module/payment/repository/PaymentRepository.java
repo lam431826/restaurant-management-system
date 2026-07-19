@@ -12,6 +12,7 @@ import java.util.List;
 public interface PaymentRepository extends JpaRepository<Payment, String> {
     List<Payment> findByInvoiceId(String invoiceId);
     boolean existsByInvoiceId(String invoiceId);
+    boolean existsByInvoiceIdIn(Collection<String> invoiceIds);
     boolean existsByInvoiceIdAndStatus(String invoiceId, String status);
     boolean existsByInvoiceIdInAndStatus(Collection<String> invoiceIds, String status);
     List<Payment> findAllByOrderByCreatedAtDesc();

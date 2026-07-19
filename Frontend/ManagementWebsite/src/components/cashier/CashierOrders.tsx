@@ -16,12 +16,14 @@ import {
   generateInvoice,
   getInvoiceById,
   getInvoices,
+  mergeInvoices,
   sendInvoice,
   splitInvoice,
 } from "../../services/invoiceApi";
 import type {
   InvoiceDetail,
   InvoiceSummary,
+  MergeInvoiceRequest,
   SplitInvoiceRequest,
 } from "../../services/invoiceApi";
 import { processPayment } from "../../services/paymentApi";
@@ -34,6 +36,7 @@ import {
   cancelOrder,
   createOrder,
   closeOrder,
+  getOrder,
   listOrders,
   listPendingAssistance,
   removeOrderItem,
@@ -96,6 +99,9 @@ const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
     "Không thể hủy món ở trạng thái hiện tại.",
   ORDER_ITEM_REMOVE_NOT_ALLOWED:
     "Chỉ có thể xóa món khi món đang chờ duyệt.",
+  TABLE_NOT_AVAILABLE:
+    "Bàn đã có đơn đang hoạt động, đang được sử dụng hoặc có lịch đặt. Danh sách bàn đã được làm mới.",
+  TABLE_NOT_FOUND: "Không tìm thấy bàn. Vui lòng làm mới danh sách bàn.",
   INVALID_STATUS_TRANSITION:
     "Thao tác đổi trạng thái không hợp lệ. Vui lòng dùng đúng luồng xử lý.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
@@ -401,6 +407,45 @@ const getSplitInvoiceErrorMessage = (error: unknown): string => {
   return "Không thể chia hóa đơn. Vui lòng thử lại.";
 };
 
+const MERGE_INVOICE_ERROR_MESSAGES: Record<string, string> = {
+  VALIDATION_ERROR: "Vui lòng chọn ít nhất hai hóa đơn hợp lệ để gộp.",
+  INVALID_INVOICE_MERGE: "Danh sách hóa đơn cần gộp không hợp lệ.",
+  INVOICE_NOT_FOUND: "Một hóa đơn không còn tồn tại. Danh sách đã được làm mới.",
+  ORDER_NOT_FOUND: "Đơn hàng không còn tồn tại. Dữ liệu đã được làm mới.",
+  INVOICE_MERGE_ORDER_MISMATCH: "Các hóa đơn không thuộc cùng một đơn hàng.",
+  INVOICE_NOT_MERGEABLE:
+    "Trạng thái hóa đơn đã thay đổi và không còn có thể gộp.",
+  INVOICE_ALREADY_PAID:
+    "Một hóa đơn đã được thanh toán bởi thao tác khác.",
+  INVALID_INVOICE_TOTAL:
+    "Tổng tiền hóa đơn đã thay đổi hoặc không hợp lệ để gộp.",
+  INVOICE_ALLOCATION_DATA_INVALID:
+    "Dữ liệu phân bổ món không nhất quán. Danh sách đã được làm mới.",
+  INVOICE_NOT_PAYABLE:
+    "Một hóa đơn không còn ở trạng thái có thể thanh toán hoặc gộp.",
+};
+
+const STALE_MERGE_ERROR_CODES = new Set([
+  "INVOICE_NOT_FOUND",
+  "ORDER_NOT_FOUND",
+  "INVOICE_MERGE_ORDER_MISMATCH",
+  "INVOICE_NOT_MERGEABLE",
+  "INVOICE_ALREADY_PAID",
+  "INVALID_INVOICE_TOTAL",
+  "INVOICE_ALLOCATION_DATA_INVALID",
+  "INVOICE_NOT_PAYABLE",
+]);
+
+const getMergeInvoiceErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return (
+      MERGE_INVOICE_ERROR_MESSAGES[error.code] ??
+      "Không thể gộp hóa đơn. Vui lòng thử lại."
+    );
+  }
+  return "Không thể gộp hóa đơn. Vui lòng thử lại.";
+};
+
 const chooseInvoiceId = (
   invoiceList: InvoiceSummary[],
   preferredInvoiceId: string | null,
@@ -431,7 +476,7 @@ const CashierOrders = () => {
   const [menuCategories, setMenuCategories] = useState<MenuCategory[]>([]);
   const [activeMenuCategory, setActiveMenuCategory] = useState("all");
   const [tables, setTables] = useState<TableItem[]>([]);
-  const [tablesLoading, setTablesLoading] = useState(false);
+  const [tablesLoading, setTablesLoading] = useState(true);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -468,6 +513,7 @@ const CashierOrders = () => {
   const [invoiceDetailError, setInvoiceDetailError] = useState("");
   const [invoiceAction, setInvoiceAction] = useState<string | null>(null);
   const [splitError, setSplitError] = useState("");
+  const [mergeError, setMergeError] = useState("");
   const [invoiceMessage, setInvoiceMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -477,6 +523,11 @@ const CashierOrders = () => {
   const invoiceListRequestRef = useRef(0);
   const invoiceDetailRequestRef = useRef(0);
   const splitSubmissionRef = useRef(false);
+  const mergeSubmissionRef = useRef(false);
+  const createOrderSubmissionRef = useRef(false);
+  const selectedOrderIdRef = useRef("");
+  const selectedTableIdRef = useRef("");
+  const [createOrderSubmitting, setCreateOrderSubmitting] = useState(false);
   const [orderActionMessage, setOrderActionMessage] = useState<{
     type: "error";
     text: string;
@@ -512,23 +563,55 @@ const CashierOrders = () => {
     navigate("/login", { replace: true });
   };
 
-  useEffect(() => {
-    setTablesLoading(true);
-    listTables()
-      .then((res) => {
-        const items = res
-          .filter((t) => t.active)
-          .sort((a, b) => a.order - b.order)
-          .map(toTableItem);
-        setTables(items);
-        // default to first area
-        const firstArea = items[0]?.area;
-        if (firstArea) setActiveArea(firstArea);
-      })
-      .catch(() => {
-        /* silently keep empty */
-      })
-      .finally(() => setTablesLoading(false));
+  const loadCashierState = useCallback(async () => {
+    const [tableRows, orderPage] = await Promise.all([
+      listTables(),
+      listOrders(0, 100),
+    ]);
+    const mappedTables = tableRows
+      .filter((table) => table.active)
+      .sort((a, b) => a.order - b.order)
+      .map(toTableItem);
+    const orderById = new Map(orderPage.data.map((order) => [order.id, order]));
+    const missingActiveOrderIds = Array.from(
+      new Set(
+        mappedTables
+          .map((table) => table.orderId)
+          .filter(
+            (orderId): orderId is string =>
+              Boolean(orderId) && !orderById.has(orderId as string),
+          ),
+      ),
+    );
+    const missingOrders = await Promise.allSettled(
+      missingActiveOrderIds.map((orderId) => getOrder(orderId)),
+    );
+    missingOrders.forEach((result) => {
+      if (
+        result.status === "fulfilled" &&
+        ACTIVE_ORDER_STATUSES.includes(result.value.status)
+      ) {
+        orderById.set(result.value.id, result.value);
+      }
+    });
+
+    setActiveOrders(Array.from(orderById.values()));
+    setTables((currentTables) => {
+      const selectedId = currentTables.find((table) => table.selected)?.id;
+      return mappedTables.map((table) => ({
+        ...table,
+        selected: table.id === selectedId,
+      }));
+    });
+    setActiveArea((currentArea) => {
+      if (
+        currentArea === "all" ||
+        mappedTables.some((table) => table.area === currentArea)
+      ) {
+        return currentArea;
+      }
+      return mappedTables[0]?.area ?? "all";
+    });
   }, []);
 
   const loadMenu = () => {
@@ -560,37 +643,34 @@ const CashierOrders = () => {
     return () => clearInterval(intv);
   }, []);
 
-  // Live orders, polled to keep table occupancy and the order panel in sync with the kitchen.
+  // Live orders and authoritative table ownership are polled together.
   useEffect(() => {
-    const fetchOrders = async () => {
+    const refresh = async () => {
       try {
-        const res = await listOrders(0, 100);
-        setActiveOrders(res.data);
+        await loadCashierState();
       } catch (err) {
         console.error(err);
+      } finally {
+        setTablesLoading(false);
       }
     };
-    void fetchOrders();
-    const interval = setInterval(fetchOrders, 10000);
+    void refresh();
+    const interval = setInterval(() => void refresh(), 10000);
     return () => clearInterval(interval);
-  }, [refreshTrigger]);
+  }, [loadCashierState, refreshTrigger]);
 
   // Overlay live order totals onto the table grid (amount/guests/item count, orderId link).
   useEffect(() => {
     setTables((prevTables) =>
       prevTables.map((t) => {
         const tableOrders = activeOrders.filter(
-          (o) => o.tableId === t.id && ACTIVE_ORDER_STATUSES.includes(o.status),
+          (order) =>
+            order.tableId === t.id &&
+            ACTIVE_ORDER_STATUSES.includes(order.status) &&
+            (!t.orderId || order.id === t.orderId),
         );
         if (tableOrders.length === 0) {
-          return {
-            ...t,
-            orderId: null,
-            occupied: false,
-            amount: 0,
-            items: 0,
-            status: "AVAILABLE",
-          };
+          return t;
         }
         const itemsCount = tableOrders.reduce(
           (total, order) =>
@@ -634,6 +714,7 @@ const CashierOrders = () => {
     const tableOrders = activeOrders.filter(
       (o) =>
         o.tableId === selectedTable.id &&
+        (!selectedTable.orderId || o.id === selectedTable.orderId) &&
         ACTIVE_ORDER_STATUSES.includes(o.status),
     );
     if (tableOrders.length === 0) {
@@ -657,6 +738,8 @@ const CashierOrders = () => {
 
   const hasSelectedMenu = cart.length > 0;
   const selectedOrderId = selectedTable?.orderId ?? "";
+  selectedTableIdRef.current = selectedTable?.id ?? "";
+  selectedOrderIdRef.current = selectedOrderId;
   const selectedOrder = activeOrders.find((order) => order.id === selectedOrderId);
   const selectedOrderItemCount =
     selectedOrder?.items.reduce((total, item) => total + item.quantity, 0) ?? 0;
@@ -727,7 +810,9 @@ const CashierOrders = () => {
     setInvoiceDetailError("");
     setInvoiceAction(null);
     setSplitError("");
+    setMergeError("");
     splitSubmissionRef.current = false;
+    mergeSubmissionRef.current = false;
     setInvoiceMessage(null);
     setPaymentOpen(false);
     setPaymentError("");
@@ -1021,6 +1106,64 @@ const CashierOrders = () => {
     }
   };
 
+  const handleMergeInvoices = async (
+    request: MergeInvoiceRequest,
+  ): Promise<boolean> => {
+    const expectedOrderId = selectedOrderId.trim();
+    const uniqueInvoiceIds = [...new Set(request.invoiceIds)];
+    if (
+      mergeSubmissionRef.current ||
+      !expectedOrderId ||
+      uniqueInvoiceIds.length < 2
+    ) {
+      return false;
+    }
+
+    mergeSubmissionRef.current = true;
+    setInvoiceAction("merge");
+    setMergeError("");
+    setInvoiceMessage(null);
+    try {
+      const result = await mergeInvoices({ invoiceIds: uniqueInvoiceIds });
+      if (selectedOrderIdRef.current !== expectedOrderId) return true;
+
+      const targetInvoiceId = result.targetInvoice?.id?.trim();
+      if (result.orderId !== expectedOrderId || !targetInvoiceId) {
+        setMergeError(
+          "Máy chủ trả về hóa đơn đích không hợp lệ. Danh sách đã được làm mới.",
+        );
+        await refreshInvoices(expectedOrderId, selectedInvoiceId);
+        return false;
+      }
+
+      await refreshInvoices(expectedOrderId, targetInvoiceId);
+      if (selectedOrderIdRef.current !== expectedOrderId) return true;
+      setInvoiceMessage({
+        type: "success",
+        text: "Gộp hóa đơn thành công. Hóa đơn đích đã được chọn.",
+      });
+      setPaymentOpen(true);
+      return true;
+    } catch (mergeFailure) {
+      if (selectedOrderIdRef.current !== expectedOrderId) return false;
+      setMergeError(getMergeInvoiceErrorMessage(mergeFailure));
+      if (
+        mergeFailure instanceof ApiClientError &&
+        mergeFailure.code &&
+        STALE_MERGE_ERROR_CODES.has(mergeFailure.code)
+      ) {
+        await refreshInvoices(expectedOrderId, selectedInvoiceId);
+        if (mergeFailure.code === "ORDER_NOT_FOUND") {
+          setRefreshTrigger((value) => value + 1);
+        }
+      }
+      return false;
+    } finally {
+      mergeSubmissionRef.current = false;
+      setInvoiceAction(null);
+    }
+  };
+
   const handleQtyChange = (id: string, delta: number) => {
     if (delta > 0) {
       const menuItem = menuItems.find((m) => m.id === id);
@@ -1055,7 +1198,13 @@ const CashierOrders = () => {
   };
 
   const handleTableSelect = (id: string) => {
+    const previousTableId = tables.find((table) => table.selected)?.id;
+    if (previousTableId && previousTableId !== id) {
+      setCart([]);
+      setMenuItems((items) => items.map((item) => ({ ...item, qty: 0 })));
+    }
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
+    setOrderActionMessage(null);
     resetInvoiceLink();
   };
 
@@ -1247,26 +1396,61 @@ const CashierOrders = () => {
   };
 
   const handleCreateOrder = async () => {
+    if (createOrderSubmissionRef.current) return;
     if (cart.length === 0) {
       setTab("menu");
       return;
     }
     if (!selectedTable) return;
+
+    const expectedTableId = selectedTable.id;
+    const draftItems = cart.map((item) => ({
+      menuItemId: item.menuItemId,
+      quantity: 1,
+      note: item.note,
+    }));
+    createOrderSubmissionRef.current = true;
+    setCreateOrderSubmitting(true);
+    setOrderActionMessage(null);
     try {
-      await createOrder(
-        selectedTable.id,
-        cart.map((c) => ({
-          menuItemId: c.menuItemId,
-          quantity: 1,
-          note: c.note,
-        })),
+      const createdOrder = await createOrder(expectedTableId, draftItems);
+      setActiveOrders((orders) => [
+        ...orders.filter((order) => order.id !== createdOrder.id),
+        createdOrder,
+      ]);
+      setTables((currentTables) =>
+        currentTables.map((table) =>
+          table.id === expectedTableId
+            ? {
+                ...table,
+                occupied: true,
+                status: "OCCUPIED",
+                orderId: createdOrder.id,
+                amount: createdOrder.totalAmount,
+                items: createdOrder.items.reduce(
+                  (total, item) => total + item.quantity,
+                  0,
+                ),
+              }
+            : table,
+        ),
       );
-      setCart([]);
-      setMenuItems((items) => items.map((i) => ({ ...i, qty: 0 })));
-      setTab("table");
+      if (selectedTableIdRef.current === expectedTableId) {
+        setCart([]);
+        setMenuItems((items) => items.map((item) => ({ ...item, qty: 0 })));
+        setTab("table");
+      }
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
+      setRefreshTrigger((trigger) => trigger + 1);
+    } finally {
+      createOrderSubmissionRef.current = false;
+      setCreateOrderSubmitting(false);
     }
   };
 
@@ -1543,6 +1727,7 @@ const CashierOrders = () => {
           itemMutationDisabled={disableItemMutation}
           itemMutationDisabledMessage={itemMutationDisabledMessage}
           orderActionMessage={orderActionMessage}
+          createOrderSubmitting={createOrderSubmitting}
           emptyOrderMessage={
             emptyOrderWithoutInvoice ? EMPTY_ORDER_MESSAGE : undefined
           }
@@ -1573,6 +1758,7 @@ const CashierOrders = () => {
           promotionCode={promotionCode}
           action={invoiceAction}
           splitError={splitError}
+          mergeError={mergeError}
           role={user?.role}
           invoiceMessage={invoiceMessage}
           nonPayableItems={nonPayableRejectedItems}
@@ -1587,6 +1773,8 @@ const CashierOrders = () => {
           onPrint={handlePrintInvoice}
           onSend={() => void handleSendInvoice()}
           onSplit={handleSplitInvoice}
+          onMerge={handleMergeInvoices}
+          onResetMergeError={() => setMergeError("")}
         />
       )}
       {successTotal !== null && (

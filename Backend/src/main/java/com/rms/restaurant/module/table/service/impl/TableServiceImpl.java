@@ -450,8 +450,10 @@ public class TableServiceImpl implements TableService {
 
     /** The most recent order on this table that hasn't been closed/cancelled, if any. */
     private String findActiveOrderId(String tableId) {
-        return orderRepository.findTopByTableIdOrderByCreatedAtDesc(tableId)
-                .filter(o -> o.getStatus() != OrderStatus.CLOSED && o.getStatus() != OrderStatus.CANCELLED)
+        return orderRepository.findTopByTableIdAndStatusNotInOrderByCreatedAtDesc(
+                        tableId,
+                        TERMINAL_ORDER_STATUSES
+                )
                 .map(Order::getId)
                 .orElse(null);
     }

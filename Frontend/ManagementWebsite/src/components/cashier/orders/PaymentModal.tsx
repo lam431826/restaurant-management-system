@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type {
   InvoiceDetail,
   InvoiceSummary,
+  MergeInvoiceRequest,
   SplitInvoiceRequest,
 } from "../../../services/invoiceApi";
 import type { PaymentMethod } from "../../../services/paymentApi";
@@ -10,6 +11,10 @@ import type { UserRole } from "../../../context/AuthContext";
 import type { TableItem } from "./types";
 import { PAYMENT_METHOD_LABELS } from "./types";
 import { SplitInvoiceModal } from "./SplitInvoiceModal";
+import {
+  isInvoiceMergeEligible,
+  MergeInvoiceModal,
+} from "./MergeInvoiceModal";
 import {
   ChevronDownIcon,
   CashMethodIcon,
@@ -48,6 +53,7 @@ export const PaymentModal = ({
   promotionCode,
   action,
   splitError,
+  mergeError,
   role,
   invoiceMessage,
   nonPayableItems = [],
@@ -60,6 +66,8 @@ export const PaymentModal = ({
   onPrint,
   onSend,
   onSplit,
+  onMerge,
+  onResetMergeError,
 }: {
   invoices: InvoiceSummary[];
   selectedInvoiceId: string | null;
@@ -74,6 +82,7 @@ export const PaymentModal = ({
   promotionCode: string;
   action: string | null;
   splitError: string;
+  mergeError: string;
   role?: UserRole;
   invoiceMessage: { type: "success" | "error"; text: string } | null;
   nonPayableItems?: NonPayableReceiptItem[];
@@ -86,14 +95,18 @@ export const PaymentModal = ({
   onPrint: () => void;
   onSend: () => void;
   onSplit: (request: SplitInvoiceRequest) => Promise<boolean>;
+  onMerge: (request: MergeInvoiceRequest) => Promise<boolean>;
+  onResetMergeError: () => void;
 }) => {
   const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [cashInput, setCashInput] = useState("");
   const [splitOpen, setSplitOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
 
   useEffect(() => {
     setSplitOpen(false);
+    setMergeOpen(false);
     setDropdownOpen(false);
     setCashInput("");
   }, [selectedInvoiceId]);
@@ -133,6 +146,9 @@ export const PaymentModal = ({
     : "0đ";
   const actionBusy = action !== null;
   const isActiveInvoice = selectedInvoice?.status === "ACTIVE";
+  const eligibleMergeCount = invoices.filter(isInvoiceMergeEligible).length;
+  const mergeVisible =
+    (role === "CASHIER" || role === "ADMIN") && eligibleMergeCount >= 2;
   const splitVisible =
     (role === "CASHIER" || role === "ADMIN") &&
     isActiveInvoice &&
@@ -436,6 +452,24 @@ export const PaymentModal = ({
                     )}
                   </div>
                 )}
+                {mergeVisible && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onResetMergeError();
+                        setMergeOpen(true);
+                      }}
+                      disabled={actionBusy || processing || invoiceListLoading}
+                      className="h-[36px] w-full rounded-[10px] border border-[#025cca] bg-[#025cca] text-[12px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Gộp hóa đơn
+                    </button>
+                    <p className="mt-1 text-[11px] text-[#797b7c]">
+                      {eligibleMergeCount} hóa đơn đang đủ điều kiện sơ bộ.
+                    </p>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={onPrint}
@@ -641,6 +675,24 @@ export const PaymentModal = ({
               if (succeeded) setSplitOpen(false);
             });
           }}
+        />
+      )}
+      {mergeOpen && (
+        <MergeInvoiceModal
+          open={mergeOpen}
+          orderId={invoice?.orderId ?? selectedInvoice?.orderId ?? ""}
+          invoices={invoices}
+          submitting={action === "merge"}
+          error={mergeError}
+          onClose={() => {
+            if (action !== "merge") setMergeOpen(false);
+          }}
+          onSubmit={(request) =>
+            onMerge(request).then((succeeded) => {
+              if (succeeded) setMergeOpen(false);
+              return succeeded;
+            })
+          }
         />
       )}
     </div>
