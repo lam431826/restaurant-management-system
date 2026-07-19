@@ -1,4 +1,4 @@
--- V22: Add card_batch_total to shifts (BR-CS-12)
+-- V33: Add card_batch_total to shifts (BR-CS-12)
 -- Optional card POS batch total entered at close as an informational cross-check.
 -- Never produces a discrepancy and never blocks closing.
 IF NOT EXISTS (SELECT 1 FROM sys.columns
