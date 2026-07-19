@@ -237,6 +237,7 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         }
 
         audit("RESERVATION_CANCEL", reservationId, "{\"channel\":\"ONLINE\"}");
+        realtimeEventPublisher.publishReservationEvent("UPDATED", reservationMapper.toResponse(reservation));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

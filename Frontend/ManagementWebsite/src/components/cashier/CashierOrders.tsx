@@ -542,6 +542,14 @@ const CashierOrders = () => {
     refreshTables();
   });
 
+  // Reservation edits (guest info, party size, time, table assignment/transfer, status
+  // changes) from the waiter/manager reservation screen — the table grid's upcomingReservation
+  // panel comes from listTables(), so any reservation change also needs a table refetch even
+  // when it doesn't itself flip a table's status (e.g. editing guest name on an already-RESERVED table).
+  useRealtime("/topic/reservations", () => {
+    refreshTables();
+  });
+
   // Overlay live order totals onto the table grid (amount/guests/item count, orderId link).
   // Status is NOT overridden here — backend-provided statuses (RESERVED, CLEANING, etc.)
   // are preserved. Only tables with active orders are marked OCCUPIED; refreshTables()

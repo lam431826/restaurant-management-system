@@ -135,7 +135,9 @@ public class ReservationServiceImpl implements ReservationService {
 
         audit("RESERVATION_CONFIRM", saved.getId(),
                 "{\"from\":\"PENDING\",\"to\":\"CONFIRMED\",\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
-        return enrich(saved);
+        ReservationResponse response = enrich(saved);
+        realtimeEventPublisher.publishReservationEvent("UPDATED", response);
+        return response;
     }
 
     @Override
@@ -223,7 +225,9 @@ public class ReservationServiceImpl implements ReservationService {
             auditDetail = "{\"guestName\":\"" + esc(saved.getGuestName()) + "\"}";
         }
         audit(auditAction, saved.getId(), auditDetail);
-        return enrich(saved);
+        ReservationResponse response = enrich(saved);
+        realtimeEventPublisher.publishReservationEvent("UPDATED", response);
+        return response;
     }
 
     @Override
@@ -251,6 +255,7 @@ public class ReservationServiceImpl implements ReservationService {
 
         audit("RESERVATION_CANCEL", id,
                 "{\"from\":\"" + prevStatus + "\",\"guestName\":\"" + esc(reservation.getGuestName()) + "\"}");
+        realtimeEventPublisher.publishReservationEvent("UPDATED", enrich(reservation));
     }
 
     @Override
@@ -268,7 +273,9 @@ public class ReservationServiceImpl implements ReservationService {
 
         audit("RESERVATION_CHECK_IN", saved.getId(),
                 "{\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
-        return enrich(saved);
+        ReservationResponse response = enrich(saved);
+        realtimeEventPublisher.publishReservationEvent("UPDATED", response);
+        return response;
     }
 
     @Override
@@ -296,6 +303,7 @@ public class ReservationServiceImpl implements ReservationService {
 
         audit("RESERVATION_NO_SHOW", id,
                 "{\"guestName\":\"" + esc(reservation.getGuestName()) + "\"}");
+        realtimeEventPublisher.publishReservationEvent("UPDATED", enrich(reservation));
     }
 
     /**
@@ -358,7 +366,9 @@ public class ReservationServiceImpl implements ReservationService {
         audit("RESERVATION_TRANSFER_TABLE", saved.getId(),
                 "{\"from\":\"" + esc(oldTableId) + "\",\"to\":\"" + esc(tableId)
                         + "\",\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
-        return enrich(saved);
+        ReservationResponse response = enrich(saved);
+        realtimeEventPublisher.publishReservationEvent("UPDATED", response);
+        return response;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
