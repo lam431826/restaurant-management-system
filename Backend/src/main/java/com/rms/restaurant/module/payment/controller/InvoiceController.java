@@ -1,5 +1,8 @@
 package com.rms.restaurant.module.payment.controller;
 
+import com.rms.restaurant.common.utils.enums.InvoiceStatus;
+import com.rms.restaurant.common.utils.exception.ApplicationError;
+import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.wrapper.ApiResponse;
 import com.rms.restaurant.module.payment.dto.ApplyDiscountRequest;
 import com.rms.restaurant.module.payment.dto.GenerateInvoiceRequest;
@@ -26,7 +29,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 
 @RestController
 @RequestMapping("/api/invoices")
@@ -38,8 +43,42 @@ public class InvoiceController {
     @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<InvoiceSummaryResponse>>> getAll(
             @RequestParam(required = false) Boolean paid,
-            @RequestParam(required = false) String orderId) {
-        return ResponseEntity.ok(ApiResponse.success(invoiceService.getAll(paid, orderId)));
+            @RequestParam(required = false) String orderId,
+            @RequestParam(required = false) List<String> status) {
+        return ResponseEntity.ok(ApiResponse.success(
+                invoiceService.getAll(paid, orderId, parseStatusFilter(status))
+        ));
+    }
+
+    /**
+     * Parses the optional lifecycle filter. Values are accepted as repeated or
+     * comma-separated parameters. Binding to the enum directly would surface an invalid
+     * value as HTTP 500 through the generic handler, so it is parsed here to return a
+     * clean business error instead.
+     */
+    private List<InvoiceStatus> parseStatusFilter(List<String> status) {
+        if (status == null || status.isEmpty()) {
+            return List.of();
+        }
+
+        LinkedHashSet<InvoiceStatus> parsed = new LinkedHashSet<>();
+        for (String rawValue : status) {
+            if (rawValue == null || rawValue.isBlank()) {
+                throw new ApplicationException(ApplicationError.INVALID_INVOICE_STATUS_FILTER);
+            }
+            for (String candidate : rawValue.split(",")) {
+                String normalized = candidate.trim();
+                if (normalized.isEmpty()) {
+                    throw new ApplicationException(ApplicationError.INVALID_INVOICE_STATUS_FILTER);
+                }
+                try {
+                    parsed.add(InvoiceStatus.valueOf(normalized.toUpperCase(Locale.ROOT)));
+                } catch (IllegalArgumentException invalidStatus) {
+                    throw new ApplicationException(ApplicationError.INVALID_INVOICE_STATUS_FILTER);
+                }
+            }
+        }
+        return List.copyOf(parsed);
     }
 
     @GetMapping("/{id}")

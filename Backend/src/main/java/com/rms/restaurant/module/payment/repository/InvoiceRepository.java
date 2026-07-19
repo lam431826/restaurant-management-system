@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -27,6 +28,31 @@ public interface InvoiceRepository extends JpaRepository<Invoice, String> {
     List<Invoice> findByOrderIdOrderByCreatedAtDescIdDesc(String orderId);
     List<Invoice> findByOrderIdAndPaidOrderByCreatedAtDescIdDesc(String orderId, boolean paid);
     List<Invoice> findByOrderIdAndStatusOrderByCreatedAtAscIdAsc(String orderId, InvoiceStatus status);
+
+    // Manager lifecycle-scoped list queries. Filtering happens in the database so the
+    // Manager Invoice screen never receives rows outside the requested lifecycle set.
+    List<Invoice> findByStatusInOrderByCreatedAtDescIdDesc(Collection<InvoiceStatus> statuses);
+
+    List<Invoice> findByPaidAndStatusInOrderByCreatedAtDescIdDesc(
+            boolean paid,
+            Collection<InvoiceStatus> statuses
+    );
+
+    List<Invoice> findByOrderIdAndStatusInOrderByCreatedAtDescIdDesc(
+            String orderId,
+            Collection<InvoiceStatus> statuses
+    );
+
+    List<Invoice> findByOrderIdAndPaidAndStatusInOrderByCreatedAtDescIdDesc(
+            String orderId,
+            boolean paid,
+            Collection<InvoiceStatus> statuses
+    );
+
+    // Reverse lineage lookups, used only when a single invoice detail is opened.
+    List<Invoice> findBySplitFromInvoiceIdOrderByCreatedAtAscIdAsc(String splitFromInvoiceId);
+
+    List<Invoice> findByMergedIntoInvoiceIdOrderByCreatedAtAscIdAsc(String mergedIntoInvoiceId);
 
     @Query("SELECT i.orderId FROM Invoice i WHERE i.id = :id")
     Optional<String> findOrderIdById(@Param("id") String id);

@@ -19,5 +19,9 @@ public record InvoiceDetailResponse(
         List<InvoiceItemResponse> items,
         InvoiceStatus status,
         String mergedIntoInvoiceId,
-        String splitFromInvoiceId
+        String splitFromInvoiceId,
+        // Reverse lineage. Children of a SPLIT source, and the sources that were merged
+        // into this invoice. Empty when not applicable.
+        List<String> splitChildInvoiceIds,
+        List<String> mergedSourceInvoiceIds
 ) {}

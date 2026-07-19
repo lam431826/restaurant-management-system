@@ -1,20 +1,31 @@
 import type { InvoiceSummary } from "../../services/invoiceApi";
+import { getLifecycleLabel, getPaymentLabel } from "./invoiceLifecycle";
+import type { InvoiceViewTab } from "./invoiceLifecycle";
 
 interface Props {
   invoices: InvoiceSummary[];
   loading: boolean;
+  tab: InvoiceViewTab;
   onRefresh: () => void;
 }
 
-const exportCsv = (invoices: InvoiceSummary[]) => {
+/**
+ * Exports exactly the rows currently returned for the selected tab and filters.
+ * Lifecycle and lineage columns are included so an analyst can tell a superseded
+ * historical record apart from a live one and never sum the two together.
+ */
+const exportCsv = (invoices: InvoiceSummary[], tab: InvoiceViewTab) => {
   const header = [
     "Mã hóa đơn",
     "Mã đơn hàng",
     "Thời gian",
     "Tạm tính",
     "Giảm giá",
-    "Tổng thanh toán",
-    "Trạng thái",
+    "Giá trị hóa đơn",
+    "Vòng đời",
+    "Thanh toán",
+    "Tách từ hóa đơn",
+    "Đã gộp vào hóa đơn",
   ];
   const rows = invoices.map((invoice) => [
     invoice.id,
@@ -23,7 +34,10 @@ const exportCsv = (invoices: InvoiceSummary[]) => {
     invoice.subtotal,
     invoice.discountAmount,
     invoice.totalAmount,
-    invoice.paid ? "Đã thanh toán" : "Chưa thanh toán",
+    getLifecycleLabel(invoice.status),
+    getPaymentLabel(invoice),
+    invoice.splitFromInvoiceId ?? "",
+    invoice.mergedIntoInvoiceId ?? "",
   ]);
   const csv = [header, ...rows]
     .map((line) =>
@@ -34,7 +48,8 @@ const exportCsv = (invoices: InvoiceSummary[]) => {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `hoa-don-${new Date().toISOString().slice(0, 10)}.csv`;
+  const scope = tab === "history" ? "lich-su" : "dang-hieu-luc";
+  anchor.download = `hoa-don-${scope}-${new Date().toISOString().slice(0, 10)}.csv`;
   anchor.click();
   URL.revokeObjectURL(url);
 };
@@ -42,13 +57,16 @@ const exportCsv = (invoices: InvoiceSummary[]) => {
 const InvoiceToolbar = ({
   invoices,
   loading,
+  tab,
   onRefresh,
 }: Props) => (
   <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
     <div>
       <h1 className="text-h3 font-bold text-ink">Hóa đơn</h1>
       <p className="text-md text-ink-subtle mt-1">
-        Theo dõi hóa đơn, trạng thái thanh toán và lịch sử giao dịch
+        {tab === "history"
+          ? "Hóa đơn đã tách hoặc đã gộp, lưu lại để tra cứu và đối chiếu"
+          : "Theo dõi hóa đơn đang hiệu lực và trạng thái thanh toán"}
       </p>
     </div>
 
@@ -64,7 +82,7 @@ const InvoiceToolbar = ({
       <button
         type="button"
         className="kv-btn kv-btn-outline-primary h-10 bg-card"
-        onClick={() => exportCsv(invoices)}
+        onClick={() => exportCsv(invoices, tab)}
         disabled={invoices.length === 0}
       >
         <svg

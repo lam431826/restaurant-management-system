@@ -5,6 +5,12 @@ import { getPayments } from "../../services/paymentApi";
 import type { Payment, PaymentMethod } from "../../services/paymentApi";
 import { getStoredUser } from "../../services/tokenStorage";
 import { ApiClientError } from "../../services/apiClient";
+import {
+  getLifecycleBadgeClass,
+  getLifecycleLabel,
+  getPaymentBadgeClass,
+  getPaymentLabel,
+} from "./invoiceLifecycle";
 
 interface Props {
   invoice: InvoiceDetailData;
@@ -264,11 +270,17 @@ const InvoiceDetail = ({
           </div>
         </div>
         <div>
-          <div className="text-sm text-ink-muted">Trạng thái</div>
+          <div className="text-sm text-ink-muted">Vòng đời</div>
           <span
-            className={`kv-badge mt-1 ${invoice.paid ? "kv-badge-success" : "kv-badge-warning"}`}
+            className={`kv-badge mt-1 ${getLifecycleBadgeClass(invoice.status)}`}
           >
-            {invoice.paid ? "Đã thanh toán" : "Chưa thanh toán"}
+            {getLifecycleLabel(invoice.status)}
+          </span>
+        </div>
+        <div>
+          <div className="text-sm text-ink-muted">Thanh toán</div>
+          <span className={`kv-badge mt-1 ${getPaymentBadgeClass(invoice)}`}>
+            {getPaymentLabel(invoice)}
           </span>
         </div>
         <div>
@@ -282,6 +294,57 @@ const InvoiceDetail = ({
           <div className="text-md text-ink mt-1">{totalQuantity}</div>
         </div>
       </div>
+
+      {(invoice.status !== "ACTIVE" ||
+        invoice.splitFromInvoiceId ||
+        invoice.mergedIntoInvoiceId ||
+        invoice.splitChildInvoiceIds.length > 0 ||
+        invoice.mergedSourceInvoiceIds.length > 0) && (
+        <div className="mt-4 px-4 py-3 rounded-md bg-primary-25 border border-line text-md">
+          <div className="font-semibold text-ink">Liên kết vòng đời</div>
+          <ul className="mt-2 flex flex-col gap-1 text-ink-subtle">
+            {invoice.status !== "ACTIVE" && (
+              <li>
+                Hóa đơn này là bản ghi lịch sử và không thể thanh toán trực
+                tiếp.
+              </li>
+            )}
+            {invoice.splitFromInvoiceId && (
+              <li className="break-all">
+                Được tách từ hóa đơn:{" "}
+                <span className="text-ink font-medium">
+                  {invoice.splitFromInvoiceId}
+                </span>
+              </li>
+            )}
+            {invoice.mergedIntoInvoiceId && (
+              <li className="break-all">
+                Đã chuyển tiếp sang hóa đơn:{" "}
+                <span className="text-ink font-medium">
+                  {invoice.mergedIntoInvoiceId}
+                </span>
+              </li>
+            )}
+            {invoice.splitChildInvoiceIds.length > 0 && (
+              <li className="break-all">
+                Đã tách thành {invoice.splitChildInvoiceIds.length} hóa đơn con:{" "}
+                <span className="text-ink font-medium">
+                  {invoice.splitChildInvoiceIds.join(", ")}
+                </span>
+              </li>
+            )}
+            {invoice.mergedSourceInvoiceIds.length > 0 && (
+              <li className="break-all">
+                Được gộp từ {invoice.mergedSourceInvoiceIds.length} hóa đơn
+                nguồn:{" "}
+                <span className="text-ink font-medium">
+                  {invoice.mergedSourceInvoiceIds.join(", ")}
+                </span>
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
 
       <div className="mt-4 overflow-x-auto border border-line rounded-md">
         <table className="w-full min-w-[70rem] border-collapse">

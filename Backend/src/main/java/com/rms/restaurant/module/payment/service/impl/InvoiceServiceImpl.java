@@ -61,6 +61,7 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private static final String PAYMENT_STATUS_PAID = "PAID";
+    private static final List<InvoiceStatus> ALL_INVOICE_STATUSES = List.of(InvoiceStatus.values());
 
     private final InvoiceRepository invoiceRepository;
     private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
@@ -78,18 +79,26 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<InvoiceSummaryResponse> getAll(Boolean paid, String orderId) {
+    public List<InvoiceSummaryResponse> getAll(Boolean paid, String orderId, List<InvoiceStatus> statuses) {
         boolean hasOrderId = orderId != null && !orderId.isBlank();
+        // No lifecycle filter means "every status", preserving the existing contract for
+        // the Cashier order view, which resolves ACTIVE/SPLIT/MERGED state itself.
+        List<InvoiceStatus> effectiveStatuses = (statuses == null || statuses.isEmpty())
+                ? ALL_INVOICE_STATUSES
+                : statuses;
         List<Invoice> invoices;
 
         if (hasOrderId && paid != null) {
-            invoices = invoiceRepository.findByOrderIdAndPaidOrderByCreatedAtDescIdDesc(orderId.trim(), paid);
+            invoices = invoiceRepository.findByOrderIdAndPaidAndStatusInOrderByCreatedAtDescIdDesc(
+                    orderId.trim(), paid, effectiveStatuses);
         } else if (hasOrderId) {
-            invoices = invoiceRepository.findByOrderIdOrderByCreatedAtDescIdDesc(orderId.trim());
+            invoices = invoiceRepository.findByOrderIdAndStatusInOrderByCreatedAtDescIdDesc(
+                    orderId.trim(), effectiveStatuses);
         } else if (paid != null) {
-            invoices = invoiceRepository.findByPaidOrderByCreatedAtDescIdDesc(paid);
+            invoices = invoiceRepository.findByPaidAndStatusInOrderByCreatedAtDescIdDesc(
+                    paid, effectiveStatuses);
         } else {
-            invoices = invoiceRepository.findAllByOrderByCreatedAtDescIdDesc();
+            invoices = invoiceRepository.findByStatusInOrderByCreatedAtDescIdDesc(effectiveStatuses);
         }
 
         resolveAllocationLines(invoices);
@@ -264,8 +273,32 @@ public class InvoiceServiceImpl implements InvoiceService {
                 items,
                 invoice.getStatus(),
                 invoice.getMergedIntoInvoiceId(),
-                invoice.getSplitFromInvoiceId()
+                invoice.getSplitFromInvoiceId(),
+                resolveSplitChildInvoiceIds(invoice),
+                resolveMergedSourceInvoiceIds(invoice)
         );
+    }
+
+    /** Children created when this invoice was split. Only queried for a SPLIT source. */
+    private List<String> resolveSplitChildInvoiceIds(Invoice invoice) {
+        if (invoice.getStatus() != InvoiceStatus.SPLIT) {
+            return List.of();
+        }
+        return invoiceRepository.findBySplitFromInvoiceIdOrderByCreatedAtAscIdAsc(invoice.getId())
+                .stream()
+                .map(Invoice::getId)
+                .toList();
+    }
+
+    /** Sources merged into this invoice. Only queried for an ACTIVE merge target. */
+    private List<String> resolveMergedSourceInvoiceIds(Invoice invoice) {
+        if (invoice.getStatus() != InvoiceStatus.ACTIVE) {
+            return List.of();
+        }
+        return invoiceRepository.findByMergedIntoInvoiceIdOrderByCreatedAtAscIdAsc(invoice.getId())
+                .stream()
+                .map(Invoice::getId)
+                .toList();
     }
 
     @Override

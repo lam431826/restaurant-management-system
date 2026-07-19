@@ -30,6 +30,8 @@ export interface InvoiceItem {
 export interface InvoiceDetail extends InvoiceSummary {
   promotionCode: string | null
   items: InvoiceItem[]
+  splitChildInvoiceIds: string[]
+  mergedSourceInvoiceIds: string[]
 }
 
 export interface InvoiceMutationResponse {
@@ -82,6 +84,8 @@ export interface MergeInvoiceResponse {
 export interface InvoiceFilters {
   paid?: boolean
   orderId?: string
+  /** Lifecycle scope. Omitted means every status, which the Cashier view relies on. */
+  status?: InvoiceStatus[]
 }
 
 export interface GenerateInvoiceRequest {
@@ -103,6 +107,7 @@ export const getInvoices = (filters: InvoiceFilters = {}) => {
   const params = new URLSearchParams()
   if (typeof filters.paid === 'boolean') params.set('paid', String(filters.paid))
   if (filters.orderId) params.set('orderId', filters.orderId)
+  if (filters.status?.length) params.set('status', filters.status.join(','))
   const query = params.toString()
   return apiData<InvoiceSummary[]>(`/api/invoices${query ? `?${query}` : ''}`)
 }
