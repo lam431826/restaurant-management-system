@@ -88,6 +88,21 @@ const paymentMethodLabels: Record<PaymentMethod, string> = {
   E_WALLET: "Ví điện tử",
 };
 
+// PENDING/CANCELLED only occur for QR (simulated external payment); CASH is
+// always created as PAID immediately.
+const paymentStatusLabels: Record<string, string> = {
+  PENDING: "Chờ thanh toán",
+  PAID: "Đã thanh toán",
+  CANCELLED: "Đã hủy",
+};
+
+const paymentStatusBadgeClass = (status: string): string => {
+  if (status === "PAID") return "kv-badge-success";
+  if (status === "PENDING") return "kv-badge-warning";
+  if (status === "CANCELLED") return "kv-badge-neutral";
+  return "kv-badge-neutral";
+};
+
 const escapeHtml = (value: string | number) =>
   String(value)
     .replace(/&/g, "&amp;")
@@ -478,9 +493,9 @@ const InvoiceDetail = ({
                     </td>
                     <td className={td}>
                       <span
-                        className={`kv-badge ${payment.status === "PAID" ? "kv-badge-success" : "kv-badge-neutral"}`}
+                        className={`kv-badge ${paymentStatusBadgeClass(payment.status)}`}
                       >
-                        {payment.status}
+                        {paymentStatusLabels[payment.status] ?? payment.status}
                       </span>
                     </td>
                     <td className={`${td} text-ink-muted break-all`}>

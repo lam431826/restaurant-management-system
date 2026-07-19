@@ -14,6 +14,10 @@ public class PaymentMapper {
                 payment.getAmount(),
                 payment.getStatus(),
                 payment.getGatewayRef(),
+                payment.getReceivedAmount(),
+                payment.getChangeAmount(),
+                payment.getExpiresAt(),
+                payment.getPaidAt(),
                 payment.getCreatedAt()
         );
     }

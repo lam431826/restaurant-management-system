@@ -116,6 +116,11 @@ public enum ApplicationError {
     INVOICE_NOT_MERGEABLE("Invoice cannot be merged in its current state", HttpStatus.UNPROCESSABLE_ENTITY),
     FORBIDDEN("You do not have permission to perform this action", HttpStatus.FORBIDDEN),
     PAYMENT_NO_OPEN_SHIFT("Shift is not opening", HttpStatus.FORBIDDEN),
+    PAYMENT_METHOD_NOT_SUPPORTED("This payment method is not supported", HttpStatus.UNPROCESSABLE_ENTITY),
+    PAYMENT_RECEIVED_AMOUNT_INVALID("Received amount must be provided and cannot be less than the payable amount", HttpStatus.UNPROCESSABLE_ENTITY),
+    PAYMENT_NOT_FOUND("Payment not found", HttpStatus.NOT_FOUND),
+    PAYMENT_NOT_PENDING("Payment is not pending and cannot be confirmed or cancelled", HttpStatus.CONFLICT),
+    PAYMENT_METHOD_MISMATCH("Payment method does not match the requested operation", HttpStatus.UNPROCESSABLE_ENTITY),
 
     // Roster (Work Shift) — WS-01..09, BR-WS-*
     TEMPLATE_NOT_FOUND("Shift template not found", HttpStatus.NOT_FOUND),

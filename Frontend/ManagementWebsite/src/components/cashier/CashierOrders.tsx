@@ -36,8 +36,13 @@ import type {
   MergeInvoiceRequest,
   SplitInvoiceRequest,
 } from "../../services/invoiceApi";
-import { processPayment } from "../../services/paymentApi";
-import type { PaymentMethod } from "../../services/paymentApi";
+import {
+  processCashPayment,
+  initiateQrPayment as initiateQrPaymentApi,
+  simulateQrPaymentSuccess,
+  cancelQrPayment as cancelQrPaymentApi,
+} from "../../services/paymentApi";
+import type { Payment } from "../../services/paymentApi";
 import { getStoredUser } from "../../services/tokenStorage";
 import { listCategories, searchItems } from "../../services/menuService";
 import type { MenuCategory } from "../../services/menuService";
@@ -283,6 +288,14 @@ const PAYMENT_PROCESS_ERROR_MESSAGES: Record<string, string> = {
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
   VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
   BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  PAYMENT_NO_OPEN_SHIFT: "Bạn cần mở ca thu ngân trước khi thanh toán.",
+  PAYMENT_METHOD_NOT_SUPPORTED: "Phương thức thanh toán này không được hỗ trợ.",
+  PAYMENT_RECEIVED_AMOUNT_INVALID:
+    "Số tiền khách đưa phải lớn hơn hoặc bằng số tiền cần thanh toán.",
+  PAYMENT_NOT_FOUND: "Không tìm thấy giao dịch thanh toán.",
+  PAYMENT_NOT_PENDING:
+    "Giao dịch QR này không còn ở trạng thái chờ xử lý.",
+  PAYMENT_METHOD_MISMATCH: "Thao tác không phù hợp với phương thức thanh toán này.",
 };
 
 const PAYMENT_PROCESS_MESSAGE_FALLBACKS: Record<string, string> = {
@@ -300,6 +313,8 @@ const PAYMENT_PROCESS_MESSAGE_FALLBACKS: Record<string, string> = {
   "Invalid enum value": PAYMENT_PROCESS_ERROR_MESSAGES.BAD_REQUEST,
   "Malformed or unreadable request body":
     PAYMENT_PROCESS_ERROR_MESSAGES.BAD_REQUEST,
+  "Shift is not opening": PAYMENT_PROCESS_ERROR_MESSAGES.PAYMENT_NO_OPEN_SHIFT,
+  "Payment not found": PAYMENT_PROCESS_ERROR_MESSAGES.PAYMENT_NOT_FOUND,
 };
 
 const PAYMENT_PROCESS_FALLBACK_ERROR =
@@ -522,6 +537,9 @@ const CashierOrders = () => {
   } | null>(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [qrPayment, setQrPayment] = useState<Payment | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState("");
   const invoiceListRequestRef = useRef(0);
   const invoiceDetailRequestRef = useRef(0);
   const splitSubmissionRef = useRef(false);
@@ -1160,7 +1178,7 @@ const CashierOrders = () => {
     }
   };
 
-  const handleProcessPayment = async (method: PaymentMethod) => {
+  const handleConfirmCash = async (receivedAmount: number) => {
     if (!selectedInvoice) {
       setPaymentError("Không xác định được hóa đơn cần thanh toán");
       return;
@@ -1169,7 +1187,10 @@ const CashierOrders = () => {
     setPaymentProcessing(true);
     setPaymentError("");
     try {
-      const createdPayment = await processPayment(selectedInvoice.id, method);
+      const createdPayment = await processCashPayment(
+        selectedInvoice.id,
+        receivedAmount,
+      );
       setPaymentOpen(false);
       setSuccessTotal(createdPayment.amount);
       await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
@@ -1188,6 +1209,67 @@ const CashierOrders = () => {
     }
   };
 
+  const handleResetQrState = () => {
+    setQrPayment(null);
+    setQrError("");
+  };
+
+  const handleInitiateQr = async () => {
+    if (!selectedInvoice) {
+      setQrError("Không xác định được hóa đơn cần thanh toán");
+      return;
+    }
+    setQrLoading(true);
+    setQrError("");
+    try {
+      const payment = await initiateQrPaymentApi(selectedInvoice.id);
+      setQrPayment(payment);
+    } catch (initiateError) {
+      setQrError(getPaymentProcessErrorMessage(initiateError));
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  const handleSimulateQrSuccess = async () => {
+    if (!qrPayment || !selectedInvoice) return;
+    setPaymentProcessing(true);
+    setQrError("");
+    try {
+      const confirmedPayment = await simulateQrPaymentSuccess(qrPayment.id);
+      setQrPayment(confirmedPayment);
+      setPaymentOpen(false);
+      setSuccessTotal(confirmedPayment.amount);
+      await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
+      setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
+    } catch (confirmError) {
+      setQrError(getPaymentProcessErrorMessage(confirmError));
+      if (
+        confirmError instanceof ApiClientError &&
+        confirmError.code &&
+        STALE_INVOICE_ERROR_CODES.has(confirmError.code)
+      ) {
+        await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
+      }
+    } finally {
+      setPaymentProcessing(false);
+    }
+  };
+
+  const handleCancelQr = async () => {
+    if (!qrPayment) return;
+    setPaymentProcessing(true);
+    setQrError("");
+    try {
+      await cancelQrPaymentApi(qrPayment.id);
+      setQrPayment(null);
+    } catch (cancelError) {
+      setQrError(getPaymentProcessErrorMessage(cancelError));
+    } finally {
+      setPaymentProcessing(false);
+    }
+  };
+
   const handleSelectInvoice = (invoiceId: string) => {
     if (!selectedOrderId || invoiceId === selectedInvoiceId) return;
     setSelectedInvoiceId(invoiceId);
@@ -1197,6 +1279,7 @@ const CashierOrders = () => {
     setPaymentError("");
     setSplitError("");
     setPromotionCode("");
+    handleResetQrState();
     void loadInvoiceDetail(invoiceId, selectedOrderId);
   };
 
@@ -2156,12 +2239,21 @@ const CashierOrders = () => {
           role={user?.role}
           invoiceMessage={invoiceMessage}
           nonPayableItems={nonPayableRejectedItems}
+          qrPayment={qrPayment}
+          qrLoading={qrLoading}
+          qrError={qrError}
           onClose={() => setPaymentOpen(false)}
           onSelectInvoice={handleSelectInvoice}
           onRefreshInvoices={() => {
             void refreshInvoices(selectedOrderId, selectedInvoiceId);
           }}
-          onConfirm={(method) => void handleProcessPayment(method)}
+          onConfirmCash={(receivedAmount) =>
+            void handleConfirmCash(receivedAmount)
+          }
+          onInitiateQr={() => void handleInitiateQr()}
+          onSimulateQrSuccess={() => void handleSimulateQrSuccess()}
+          onCancelQr={() => void handleCancelQr()}
+          onResetQrState={handleResetQrState}
           onPromotionCodeChange={setPromotionCode}
           onApplyDiscount={() => void handleApplyDiscount()}
           onPrint={handlePrintInvoice}

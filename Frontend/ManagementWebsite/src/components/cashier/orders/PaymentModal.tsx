@@ -6,10 +6,9 @@ import type {
   MergeInvoiceRequest,
   SplitInvoiceRequest,
 } from "../../../services/invoiceApi";
-import type { PaymentMethod } from "../../../services/paymentApi";
+import type { Payment, SelectablePaymentMethod } from "../../../services/paymentApi";
 import type { UserRole } from "../../../context/AuthContext";
 import type { TableItem } from "./types";
-import { PAYMENT_METHOD_LABELS } from "./types";
 import { SplitInvoiceModal } from "./SplitInvoiceModal";
 import {
   isInvoiceMergeEligible,
@@ -19,7 +18,6 @@ import {
   ChevronDownIcon,
   CashMethodIcon,
   QRMethodIcon,
-  DebitMethodIcon,
   XIcon,
   DeleteDigitIcon,
 } from "./icons";
@@ -32,11 +30,10 @@ interface NonPayableReceiptItem {
   note?: string | null;
 }
 
+// Only CASH and QR are supported; CARD/E_WALLET are intentionally not offered.
 const PAYMENT_METHODS = [
   { id: "CASH" as const, label: "Tiền mặt" },
-  { id: "CARD" as const, label: "Thẻ" },
   { id: "QR" as const, label: "Mã QR" },
-  { id: "E_WALLET" as const, label: "Ví điện tử" },
 ];
 
 export const PaymentModal = ({
@@ -57,10 +54,17 @@ export const PaymentModal = ({
   role,
   invoiceMessage,
   nonPayableItems = [],
+  qrPayment,
+  qrLoading,
+  qrError,
   onClose,
   onSelectInvoice,
   onRefreshInvoices,
-  onConfirm,
+  onConfirmCash,
+  onInitiateQr,
+  onSimulateQrSuccess,
+  onCancelQr,
+  onResetQrState,
   onPromotionCodeChange,
   onApplyDiscount,
   onPrint,
@@ -86,10 +90,18 @@ export const PaymentModal = ({
   role?: UserRole;
   invoiceMessage: { type: "success" | "error"; text: string } | null;
   nonPayableItems?: NonPayableReceiptItem[];
+  // Current simulated QR transaction for the selected invoice, if any.
+  qrPayment: Payment | null;
+  qrLoading: boolean;
+  qrError: string;
   onClose: () => void;
   onSelectInvoice: (invoiceId: string) => void;
   onRefreshInvoices: () => void;
-  onConfirm: (method: PaymentMethod) => void;
+  onConfirmCash: (receivedAmount: number) => void;
+  onInitiateQr: () => void;
+  onSimulateQrSuccess: () => void;
+  onCancelQr: () => void;
+  onResetQrState: () => void;
   onPromotionCodeChange: (value: string) => void;
   onApplyDiscount: () => void;
   onPrint: () => void;
@@ -98,7 +110,7 @@ export const PaymentModal = ({
   onMerge: (request: MergeInvoiceRequest) => Promise<boolean>;
   onResetMergeError: () => void;
 }) => {
-  const [method, setMethod] = useState<PaymentMethod>("CASH");
+  const [method, setMethod] = useState<SelectablePaymentMethod>("CASH");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [cashInput, setCashInput] = useState("");
   const [splitOpen, setSplitOpen] = useState(false);
@@ -109,6 +121,11 @@ export const PaymentModal = ({
     setMergeOpen(false);
     setDropdownOpen(false);
     setCashInput("");
+    setMethod("CASH");
+    onResetQrState();
+    // onResetQrState is stable from the parent (useState setter); omitting it from
+    // deps avoids re-running this reset whenever the parent re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedInvoiceId]);
 
   const selectedInvoice =
@@ -130,19 +147,20 @@ export const PaymentModal = ({
     hour12: true,
   });
 
-  const methodIcons: Record<PaymentMethod, ReactNode> = {
+  const methodIcons: Record<SelectablePaymentMethod, ReactNode> = {
     CASH: <CashMethodIcon />,
-    CARD: <DebitMethodIcon />,
     QR: <QRMethodIcon />,
-    E_WALLET: <QRMethodIcon />,
   };
 
   const handleDigit = (key: string) => {
     if (key === "del") setCashInput((v) => v.slice(0, -1));
     else setCashInput((v) => (v.length < 12 ? v + key : v));
   };
+  const receivedAmount = cashInput ? parseInt(cashInput, 10) : 0;
+  const changeAmount = Math.max(0, receivedAmount - total);
+  const receivedAmountSufficient = cashInput !== "" && receivedAmount >= total;
   const displayAmount = cashInput
-    ? parseInt(cashInput, 10).toLocaleString("vi-VN") + "đ"
+    ? receivedAmount.toLocaleString("vi-VN") + "đ"
     : "0đ";
   const actionBusy = action !== null;
   const isActiveInvoice = selectedInvoice?.status === "ACTIVE";
@@ -175,14 +193,10 @@ export const PaymentModal = ({
   })();
   const nonPayableFallbackNote = "Nhà hàng không thể phục vụ món này.";
   const confirmLabel = processing
-    ? method === "QR"
-      ? "Đang xác nhận..."
-      : "Đang thanh toán..."
+    ? "Đang thanh toán..."
     : invoice?.paid
       ? "Đã thanh toán"
-      : method === "QR"
-        ? "Xác nhận đã thanh toán"
-        : "Xác nhận thanh toán";
+      : "Xác nhận thanh toán";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -195,7 +209,7 @@ export const PaymentModal = ({
         role="dialog"
         aria-modal="true"
         aria-label="Thanh toán hóa đơn"
-        className="relative bg-white rounded-[16px] p-6 flex flex-col gap-2.5 overflow-hidden w-[95vw] max-w-[711px] max-h-[95vh]"
+        className="relative bg-white rounded-[16px] p-6 flex flex-col gap-2.5 overflow-hidden w-[95vw] max-w-[711px] max-h-[calc(100vh-32px)]"
       >
         <div
           className="flex items-center justify-between shrink-0"
@@ -265,10 +279,10 @@ export const PaymentModal = ({
         )}
 
         {invoice && !detailLoading && !detailError && (
-        <div className="flex gap-6 lg:gap-10 items-start flex-1 min-h-0 overflow-hidden">
+        <div className="flex gap-6 lg:gap-10 items-stretch flex-1 min-h-0 overflow-hidden">
           {/* Receipt */}
           <div
-            className="hidden lg:flex w-[300px] h-full bg-[#fcf7ef] overflow-y-auto flex-col gap-3 px-4 py-8 shrink-0"
+            className="hidden lg:flex w-[300px] min-h-0 bg-[#fcf7ef] overflow-y-auto flex-col gap-3 px-4 py-8 shrink-0"
             style={{ fontFamily: "monospace" }}
           >
             <div className="flex flex-col items-center gap-3">
@@ -392,7 +406,7 @@ export const PaymentModal = ({
           </div>
 
           {/* Payment panel */}
-          <div className="flex-1 h-full min-h-0 flex flex-col overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <div className="relative flex flex-col gap-3 shrink-0">
               <div className="rounded-[12px] border border-[#e8e8e8] bg-[#f5f5f5] p-3 flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-3">
@@ -525,6 +539,7 @@ export const PaymentModal = ({
                       onClick={() => {
                         setMethod(pm.id);
                         setDropdownOpen(false);
+                        if (pm.id === "QR" && !qrPayment) onInitiateQr();
                       }}
                       className={`flex items-center gap-2 px-3 py-2.5 rounded-[12px] w-full text-left transition-colors ${method === pm.id ? "bg-[#f0f8ff]" : "bg-white hover:bg-[#f5f5f5]"}`}
                     >
@@ -551,6 +566,11 @@ export const PaymentModal = ({
                     <p className="text-[12px] text-[#797b7c]">
                       Cần thanh toán: {total.toLocaleString("vi-VN")} đ
                     </p>
+                    <p
+                      className={`text-[13px] font-medium ${receivedAmountSufficient ? "text-[#286b4a]" : "text-[#797b7c]"}`}
+                    >
+                      Tiền thối lại: {changeAmount.toLocaleString("vi-VN")} đ
+                    </p>
                   </div>
                   <div className="grid grid-cols-3 w-full gap-y-2">
                     {[
@@ -571,13 +591,13 @@ export const PaymentModal = ({
                         key={key}
                         onClick={() => key !== "." && handleDigit(key)}
                         disabled={key === "."}
-                        className={`h-[50px] flex items-center justify-center rounded-[8px] active:scale-95 transition-all ${key === "." ? "opacity-30 cursor-default" : "hover:bg-[#f5f5f5]"}`}
+                        className={`h-11 flex items-center justify-center rounded-[8px] active:scale-95 transition-all ${key === "." ? "opacity-30 cursor-default" : "hover:bg-[#f5f5f5]"}`}
                       >
                         {key === "del" ? (
                           <DeleteDigitIcon />
                         ) : (
                           <span
-                            className={`text-[28px] text-[#202325] ${key === "." ? "font-normal" : "font-medium"}`}
+                            className={`text-[24px] text-[#202325] ${key === "." ? "font-normal" : "font-medium"}`}
                           >
                             {key}
                           </span>
@@ -590,52 +610,63 @@ export const PaymentModal = ({
 
               {method === "QR" && (
                 <div className="flex flex-col items-center gap-4 pb-2">
-                  <div className="w-[220px] h-[220px] bg-white overflow-hidden flex items-center justify-center shrink-0">
+                  <div className="w-[160px] h-[160px] bg-white overflow-hidden flex items-center justify-center shrink-0 border border-dashed border-[#d9d9d9] rounded-[12px]">
                     <img
                       src="/images/qr-code.png"
-                      alt="QR Code"
-                      className="w-full h-full object-contain"
+                      alt="QR mô phỏng"
+                      className="w-full h-full object-contain p-4"
                     />
                   </div>
-                  <div className="w-full border-t border-[#e8e8e8] px-3 pt-4 flex flex-col gap-2 items-center">
-                    <p className="text-[20px] font-medium text-[#202325]">
-                      MB Bank
-                    </p>
-                    <p className="text-[14px] text-[#636566]">
-                      <span className="text-[#a2a4a4]">STK</span>:{" "}
-                      <span className="text-[#202325]">7777777777</span>
-                    </p>
-                    <p className="text-[14px] text-[#636566]">
-                      <span className="text-[#a2a4a4]">Chủ tài khoản:</span>{" "}
-                      <span className="text-[#202325]">Wasabi Sushi</span>
-                    </p>
-                    <p className="text-[14px] text-[#636566]">
-                      <span className="text-[#a2a4a4]">Số tiền:</span>{" "}
-                      <span className="text-[#202325] font-medium">
-                        {total.toLocaleString("vi-VN")} đ
-                      </span>
-                    </p>
-                    <p className="text-[14px] text-[#636566]">
-                      <span className="text-[#a2a4a4]">Nội dung:</span>{" "}
-                      <span className="text-[#202325]">#200 QR Code</span>
-                    </p>
-                  </div>
-                </div>
-              )}
+                  <p className="text-[11px] text-center text-[#a2a4a4] px-4 -mt-2">
+                    Đây là cổng thanh toán QR mô phỏng (không kết nối ngân hàng
+                    thật). Dùng để giả lập callback từ hệ thống thanh toán bên
+                    ngoài.
+                  </p>
 
-              {(method === "CARD" || method === "E_WALLET") && (
-                <div className="flex flex-col items-center justify-center gap-6 py-10 text-[#636566]">
-                  <div className="w-16 h-16 rounded-full bg-[#f5f5f5] flex items-center justify-center">
-                    {methodIcons[method]}
-                  </div>
-                  <div className="flex flex-col items-center gap-2">
-                    <p className="text-[18px] font-semibold text-[#202325]">
-                      {PAYMENT_METHOD_LABELS[method]}
+                  {qrLoading && (
+                    <p className="text-[13px] text-[#636566]">
+                      Đang tạo giao dịch QR...
                     </p>
-                    <p className="text-[14px] text-[#636566]">
-                      Tổng thanh toán: {total.toLocaleString("vi-VN")} đ
-                    </p>
-                  </div>
+                  )}
+
+                  {!qrLoading && qrError && (
+                    <div className="w-full flex flex-col items-center gap-2">
+                      <p className="text-[13px] text-[#d92d20] text-center">
+                        {qrError}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={onInitiateQr}
+                        className="h-9 px-4 rounded-[8px] border border-[#025cca] text-[13px] font-medium text-[#025cca]"
+                      >
+                        Thử tạo lại giao dịch QR
+                      </button>
+                    </div>
+                  )}
+
+                  {!qrLoading && !qrError && qrPayment && (
+                    <div className="w-full border-t border-[#e8e8e8] px-3 pt-4 flex flex-col gap-2 items-center">
+                      <p className="text-[14px] text-[#636566]">
+                        <span className="text-[#a2a4a4]">Số tiền:</span>{" "}
+                        <span className="text-[#202325] font-medium">
+                          {qrPayment.amount.toLocaleString("vi-VN")} đ
+                        </span>
+                      </p>
+                      <p className="text-[14px] text-[#636566] break-all text-center">
+                        <span className="text-[#a2a4a4]">Mã giao dịch:</span>{" "}
+                        <span className="text-[#202325] font-medium">
+                          {qrPayment.gatewayRef ?? "—"}
+                        </span>
+                      </p>
+                      <span
+                        className={`kv-badge ${qrPayment.status === "PAID" ? "kv-badge-success" : "kv-badge-warning"}`}
+                      >
+                        {qrPayment.status === "PAID"
+                          ? "Đã thanh toán"
+                          : "Đang chờ thanh toán"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -646,15 +677,47 @@ export const PaymentModal = ({
                   {error}
                 </p>
               )}
-              <button
-                onClick={() => onConfirm(method)}
-                disabled={
-                  processing || invoice.paid || !isActiveInvoice || actionBusy
-                }
-                className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60"
-              >
-                {confirmLabel}
-              </button>
+              {method === "CASH" && (
+                <button
+                  onClick={() => onConfirmCash(receivedAmount)}
+                  disabled={
+                    processing ||
+                    invoice.paid ||
+                    !isActiveInvoice ||
+                    actionBusy ||
+                    !receivedAmountSufficient
+                  }
+                  className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60"
+                >
+                  {confirmLabel}
+                </button>
+              )}
+              {method === "QR" &&
+                !qrLoading &&
+                !qrError &&
+                qrPayment &&
+                qrPayment.status === "PENDING" && (
+                  <div className="w-full flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={onSimulateQrSuccess}
+                      disabled={processing || actionBusy}
+                      className="w-full h-[44px] bg-[#025cca] rounded-[10px] text-[14px] font-semibold text-white disabled:opacity-60"
+                    >
+                      {processing
+                        ? "Đang xác nhận..."
+                        : "Giả lập thanh toán thành công"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onCancelQr}
+                      disabled={processing || actionBusy}
+                      className="w-full h-[38px] rounded-[10px] border border-[#d1d5db] text-[13px] text-[#636566] disabled:opacity-60"
+                    >
+                      Hủy giao dịch QR
+                    </button>
+                  </div>
+                )}
             </div>
           </div>
         </div>

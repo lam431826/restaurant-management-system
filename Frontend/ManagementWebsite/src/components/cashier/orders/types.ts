@@ -1,5 +1,4 @@
 import type { TableItem as TableServiceItem } from "../../../services/tableService";
-import type { PaymentMethod } from "../../../services/paymentApi";
 import type { CookingStatus, OrderStatus } from "../../../services/orderApi";
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -77,13 +76,6 @@ export const toTableItem = (dto: TableServiceItem): TableItem => {
     orderId: dto.activeOrderId,
     upcomingReservation: dto.upcomingReservation ?? null,
   };
-};
-
-export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  CASH: "Tiền mặt",
-  CARD: "Thẻ",
-  QR: "Mã QR",
-  E_WALLET: "Ví điện tử",
 };
 
 export const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
