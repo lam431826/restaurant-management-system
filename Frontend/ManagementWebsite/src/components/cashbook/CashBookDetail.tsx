@@ -37,18 +37,7 @@ const CashBookDetail = ({ voucher, categoryName, onVoid }: Props) => {
   const partnerRoleLabel = isReceipt ? 'Người nộp' : 'Người nhận'
 
   return (
-    <div className="border-t border-b border-primary-150 bg-surface">
-      <div className={`grid grid-cols-[14rem_13rem_18rem_13rem_16rem_1fr] gap-0 px-3 py-3 bg-primary-50 border-b border-primary-150 text-md font-medium text-ink`}>
-        <span className="text-primary">{voucher.code}</span>
-        <span>{formatDateTime(voucher.createdAt)}</span>
-        <span className="truncate pr-2">{categoryName}</span>
-        <span>{METHOD_LABEL[voucher.method]}</span>
-        <span className="truncate pr-2">{voucher.partnerName || '—'}</span>
-        <span className={`text-right font-semibold ${isReceipt ? 'text-primary' : 'text-ink'}`}>
-          {isReceipt ? '' : '-'}{money(voucher.amount)}
-        </span>
-      </div>
-
+    <div className="border-t border-b border-line bg-card">
       <div className="p-5 flex flex-col gap-5">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
