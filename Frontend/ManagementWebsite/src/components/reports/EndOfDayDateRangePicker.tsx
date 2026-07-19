@@ -41,14 +41,14 @@ const MonthGrid = ({ monthDate, from, to, onPick, onNav }: {
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d))
 
   return (
-    <div className="flex flex-col gap-2 w-[16rem]">
-      <div className="flex items-center justify-between px-1">
-        <button type="button" className="w-7 h-7 flex items-center justify-center rounded-md text-ink-subtle hover:bg-fill hover:text-primary cursor-pointer" onClick={() => onNav(-1)}><ChevLeft /></button>
-        <span className="text-md font-semibold text-ink">Tháng {month + 1} {year}</span>
-        <button type="button" className="w-7 h-7 flex items-center justify-center rounded-md text-ink-subtle hover:bg-fill hover:text-primary cursor-pointer" onClick={() => onNav(1)}><ChevRight /></button>
+    <div className="flex flex-col gap-3 w-[17rem]">
+      <div className="flex items-center justify-between pb-3 border-b border-line">
+        <button type="button" className="w-8 h-8 flex items-center justify-center rounded-full border border-line-default text-ink-subtle hover:bg-fill hover:border-line-strong hover:text-primary cursor-pointer" onClick={() => onNav(-1)}><ChevLeft /></button>
+        <span className="text-lg font-bold text-ink">Tháng {month + 1} {year}</span>
+        <button type="button" className="w-8 h-8 flex items-center justify-center rounded-full border border-line-default text-ink-subtle hover:bg-fill hover:border-line-strong hover:text-primary cursor-pointer" onClick={() => onNav(1)}><ChevRight /></button>
       </div>
       <div className="grid grid-cols-7 text-center">
-        {WEEKDAYS_VI.map(w => <span key={w} className="text-sm font-medium text-ink-subtle py-1">{w}</span>)}
+        {WEEKDAYS_VI.map(w => <span key={w} className="text-sm font-medium text-ink-subtle">{w}</span>)}
       </div>
       <div className="grid grid-cols-7 gap-y-1">
         {cells.map((date, i) => {
@@ -61,12 +61,12 @@ const MonthGrid = ({ monthDate, from, to, onPick, onNav }: {
           const roundedL = isFrom || col === 0
           const roundedR = isTo || col === 6
           return (
-            <div key={i} className={`h-8 flex items-center justify-center ${inBand ? 'bg-primary-50' : ''} ${roundedL ? 'rounded-l-md' : ''} ${roundedR ? 'rounded-r-md' : ''}`}>
+            <div key={i} className={`h-9 flex items-center justify-center ${inBand ? 'bg-primary-50' : ''} ${roundedL ? 'rounded-l-full' : ''} ${roundedR ? 'rounded-r-full' : ''}`}>
               <button
                 type="button"
                 onClick={() => onPick(date)}
-                className={`w-8 h-8 rounded-full text-md transition-colors cursor-pointer ${
-                  isFrom || isTo ? 'bg-primary text-white font-semibold' : 'text-ink hover:bg-fill'
+                className={`w-9 h-9 rounded-full text-md transition-colors cursor-pointer ${
+                  isFrom || isTo ? 'bg-primary text-white font-bold' : 'text-ink hover:bg-fill'
                 }`}
               >
                 {date.getDate()}
@@ -79,7 +79,7 @@ const MonthGrid = ({ monthDate, from, to, onPick, onNav }: {
   )
 }
 
-const POP_WIDTH = 620
+const POP_WIDTH = 700
 
 /** "Từ ngày ... Đến ngày ..." dual-month range picker, cloned from a saved KiotViet reference. */
 const EndOfDayDateRangePicker = ({ from, to, onChange }: Props) => {
@@ -97,7 +97,7 @@ const EndOfDayDateRangePicker = ({ from, to, onChange }: Props) => {
       const r = btnRef.current?.getBoundingClientRect()
       if (!r) return
       const left = Math.min(r.right + 8, window.innerWidth - POP_WIDTH - 8)
-      const top = Math.min(r.top, window.innerHeight - 460)
+      const top = Math.min(r.top, window.innerHeight - 520)
       setPos({ top: Math.max(8, top), left: Math.max(8, left) })
     }
     update()
@@ -158,11 +158,11 @@ const EndOfDayDateRangePicker = ({ from, to, onChange }: Props) => {
         <div
           ref={popRef}
           style={{ position: 'fixed', top: pos.top, left: pos.left, width: POP_WIDTH }}
-          className="bg-card border border-line-default rounded-xl shadow-lg p-5 z-[var(--kv-z-dropdown)]"
+          className="bg-card border border-line-default rounded-2xl shadow-xl p-6 z-[var(--kv-z-dropdown)]"
         >
-          <div className="flex items-center gap-2 text-md font-bold text-ink mb-4">
+          <div className="flex items-center gap-2.5 text-xl font-bold text-ink mb-5">
             <span>Từ <span className="text-primary">{fmtDMY(draftFrom)}</span></span>
-            <span className="text-ink-subtle font-normal">·</span>
+            <span className="text-ink-muted font-normal">·</span>
             <span>Đến <span className="text-primary">{fmtDMY(draftTo)}</span></span>
           </div>
           <div className="grid grid-cols-2 gap-x-8 divide-x divide-line">
@@ -173,11 +173,11 @@ const EndOfDayDateRangePicker = ({ from, to, onChange }: Props) => {
               <MonthGrid monthDate={rightMonth} from={draftFrom} to={draftTo} onPick={pick} onNav={navMonths} />
             </div>
           </div>
-          <div className="flex items-center justify-between mt-4">
+          <div className="flex items-center justify-between mt-5 pt-1">
             <button type="button" className="text-md font-medium text-primary hover:underline cursor-pointer" onClick={pickToday}>Hôm nay</button>
-            <div className="flex items-center gap-2">
-              <button type="button" className="kv-btn kv-btn-outline-neutral h-10" onClick={() => setOpen(false)}>Bỏ qua</button>
-              <button type="button" className="kv-btn kv-btn-primary h-10" onClick={apply}>Áp dụng</button>
+            <div className="flex items-center gap-2.5">
+              <button type="button" className="kv-btn kv-btn-outline-neutral h-11 px-6 text-md" onClick={() => setOpen(false)}>Bỏ qua</button>
+              <button type="button" className="kv-btn kv-btn-primary h-11 px-6 text-md" onClick={apply}>Áp dụng</button>
             </div>
           </div>
         </div>
