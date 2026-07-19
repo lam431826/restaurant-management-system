@@ -1,10 +1,39 @@
 import { useEffect, useRef, useState } from 'react'
-import { createReservation } from '../../api/reservations'
+import { createReservation, type ReservationDto } from '../../api/reservations'
 import { listTables, type TableDto } from '../../api/tables'
 
 interface Props {
+  reservations: ReservationDto[]
   onClose: () => void
   onSaved: () => void
+}
+
+// No explicit duration is modeled on a reservation — reuse the same 1.5h assumption
+// Reservation.tsx's toDisplay()/CalendarView already use for rendering time blocks,
+// so this stays visually consistent with the rest of the reservation screen.
+const ASSUMED_DURATION_MIN = 90
+const OCCUPYING_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN']
+
+const sameLocalDate = (iso: string, ymd: string) => {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` === ymd
+}
+
+const fmtTime = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+
+// OCCUPIED covers both a checked-in reservation and a walk-in seated with no reservation at all
+// (see the "seat via empty order" flow on the Cashier screen) — upcomingReservation (populated
+// for OCCUPIED tables too, not just RESERVED ones) is what tells the two apart here.
+const tableStatusLabel = (t: TableDto): string => {
+  switch (t.status) {
+    case 'AVAILABLE': return 'Trống'
+    case 'RESERVED': return 'Đã đặt trước'
+    case 'BILLING': return 'Đang thanh toán'
+    case 'CLEANING': return 'Đang dọn bàn'
+    case 'OCCUPIED': return t.upcomingReservation ? 'Đã check-in' : 'Khách vãng lai'
+    default: return t.status
+  }
 }
 
 const CloseIcon = () => (
@@ -33,7 +62,7 @@ const defaultDate = () => {
   return d.toISOString().slice(0, 10)
 }
 
-const ReservationModal = ({ onClose, onSaved }: Props) => {
+const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
   const [customer, setCustomer] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
@@ -57,9 +86,38 @@ const ReservationModal = ({ onClose, onSaved }: Props) => {
     return () => { document.body.style.overflow = prev; document.removeEventListener('keydown', onKey) }
   }, [onClose])
 
-  // Group available tables by area for the dropdown
-  const availableTables = tables.filter(t => t.status === 'AVAILABLE')
-  const areas = [...new Set(availableTables.map(t => t.area))]
+  // List every table (not just AVAILABLE ones) grouped by area, so the waiter can see the whole
+  // floor — including which busy tables are walk-ins vs. checked-in reservations — while picking.
+  // Non-AVAILABLE tables are shown but disabled; they simply can't be assigned right now.
+  const areas = [...new Set(tables.map(t => t.area))]
+
+  const selectedTable = tableId ? (tables.find(t => t.id === tableId) ?? null) : null
+  const isToday = sameLocalDate(new Date().toISOString(), date)
+
+  // Existing bookings on the selected table for the selected day, so the waiter can see at a
+  // glance whether the requested time overlaps something already on the books before saving.
+  const reservationBlocks: { key: string; start: Date; end: Date | null; label: string }[] = tableId
+    ? reservations
+        .filter(r => r.tableId === tableId && OCCUPYING_STATUSES.includes(r.status) && sameLocalDate(r.datetime, date))
+        .map(r => {
+          const start = new Date(r.datetime)
+          return { key: r.id, start, end: new Date(start.getTime() + ASSUMED_DURATION_MIN * 60000), label: `${r.guestName} (${r.partySize} người)` }
+        })
+    : []
+
+  // A walk-in seated with no reservation at all has no row in `reservations`, so it's invisible
+  // to the block above — surface it separately. Only meaningful when the picked day is today:
+  // "currently occupied" says nothing about a future date, and there's no stored start/end time
+  // for a walk-in to show for any day other than right now.
+  const liveWalkInBlock = isToday && selectedTable
+    && (selectedTable.status === 'OCCUPIED' || selectedTable.status === 'BILLING')
+    && !selectedTable.upcomingReservation
+    ? [{ key: 'walk-in-now', start: new Date(), end: null as Date | null, label: 'Khách vãng lai đang ngồi (không qua đặt trước)' }]
+    : []
+
+  // Only the busy blocks are drawn; every gap between/around them is implicitly the open,
+  // assignable time the waiter is looking for.
+  const tableSchedule = [...reservationBlocks, ...liveWalkInBlock].sort((a, b) => a.start.getTime() - b.start.getTime())
 
   const handleSave = async () => {
     if (!customer.trim()) { setError('Vui lòng nhập tên khách hàng'); customerRef.current?.focus(); return }
@@ -130,9 +188,9 @@ const ReservationModal = ({ onClose, onSaved }: Props) => {
                 <option value="">— Chưa xếp bàn —</option>
                 {areas.map(area => (
                   <optgroup key={area} label={area}>
-                    {availableTables.filter(t => t.area === area).map(t => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} ({t.capacity} chỗ)
+                    {tables.filter(t => t.area === area).map(t => (
+                      <option key={t.id} value={t.id} disabled={t.status !== 'AVAILABLE'}>
+                        {t.name} ({t.capacity} chỗ) — {tableStatusLabel(t)}
                       </option>
                     ))}
                   </optgroup>
@@ -140,6 +198,22 @@ const ReservationModal = ({ onClose, onSaved }: Props) => {
               </select>
             </Row>
           </div>
+          {tableId && (
+            <div className="ml-[calc(10rem+0.75rem)] -mt-2 text-[12px]">
+              {tableSchedule.length === 0 ? (
+                <span className="text-ink-muted">Bàn chưa có lịch đặt nào trong ngày {date}</span>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <span className="font-medium text-ink">Lịch bàn trong ngày {date}:</span>
+                  {tableSchedule.map(b => (
+                    <span key={b.key} className="text-ink-subtle">
+                      {b.end ? `${fmtTime(b.start)}–${fmtTime(b.end)}` : `Từ ${fmtTime(b.start)}`} · {b.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <Row label="Giờ đến" required>
             <div className="flex gap-2">
               <input type="date" className={inputCls} value={date} onChange={e => setDate(e.target.value)} />

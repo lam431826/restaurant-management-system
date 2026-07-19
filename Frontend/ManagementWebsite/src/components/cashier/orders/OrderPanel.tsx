@@ -56,8 +56,12 @@ export const OrderPanel = ({
   cancelOrderIds?: string[];
   onCloseOrder?: () => void;
 }) => {
-  const isTableEmpty = !!selectedTable && !selectedTable.occupied;
+  // Driven by whether an Order row actually exists — not selectedTable.occupied, which flips to
+  // true the moment a reservation is checked in (table.status → OCCUPIED) even though no Order
+  // has been created yet. Keying off orderId keeps the "Tạo Order" button reachable in that gap.
+  const isTableEmpty = !!selectedTable && !selectedTable.orderId;
   const hasItems = items.length > 0;
+  const reservationInfo = selectedTable?.upcomingReservation ?? null;
   const billableOrderItems = items.filter(
     (item) => item.status !== COOKING_STATUS_LABEL.REJECTED,
   );
@@ -78,10 +82,15 @@ export const OrderPanel = ({
       <div className="flex items-start justify-between shrink-0 mb-6">
         <div className="flex flex-col gap-1">
           <span className="text-[16px] font-medium text-[#202325]">
-            {isTableEmpty ? "Customer Name" : "Nguyen Van A"}
+            {reservationInfo
+              ? reservationInfo.guestName
+              : isTableEmpty
+                ? "Customer Name"
+                : "Walk-in Customer"}
           </span>
           <span className="text-[14px] text-[#636566]">
             {selectedTable ? selectedTable.name : "–"}
+            {reservationInfo ? ` · ${reservationInfo.partySize} người` : ""}
           </span>
         </div>
         <div className="flex flex-col items-end gap-1">

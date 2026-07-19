@@ -73,8 +73,7 @@ public class TableServiceImpl implements TableService {
         Page<TableResponse> page = tableRepository.search(term, termAsCapacity, areaFilter, active, pageable)
                 .map(table -> {
                     String orderId = findActiveOrderId(table.getId());
-                    TableResponse.ReservationSummary res = table.getStatus() == TableStatus.RESERVED
-                            ? findUpcomingReservation(table.getId()) : null;
+                    TableResponse.ReservationSummary res = findReservationSummary(table);
                     return tableMapper.toResponse(table, orderId, res);
                 });
         return PageResponse.of(page);
@@ -84,8 +83,7 @@ public class TableServiceImpl implements TableService {
     @Transactional(readOnly = true)
     public TableResponse getById(String id) {
         RestaurantTable table = findTable(id);
-        TableResponse.ReservationSummary res = table.getStatus() == TableStatus.RESERVED
-                ? findUpcomingReservation(table.getId()) : null;
+        TableResponse.ReservationSummary res = findReservationSummary(table);
         return tableMapper.toResponse(table, findActiveOrderId(table.getId()), res);
     }
 
@@ -370,9 +368,24 @@ public class TableServiceImpl implements TableService {
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.TABLE_NOT_FOUND));
     }
 
-    private TableResponse.ReservationSummary findUpcomingReservation(String tableId) {
-        return reservationRepository
-                .findFirstByTableIdAndStatusOrderByDatetimeAsc(tableId, ReservationStatus.CONFIRMED)
+    /**
+     * RESERVED → the still-upcoming (not yet checked-in) booking; OCCUPIED/BILLING → the most
+     * recent checked-in booking, so the order screen can attribute a seated table back to the
+     * guest who reserved it instead of falling back to a generic walk-in placeholder.
+     */
+    private TableResponse.ReservationSummary findReservationSummary(RestaurantTable table) {
+        return switch (table.getStatus()) {
+            case RESERVED -> findReservationByStatus(table.getId(), ReservationStatus.CONFIRMED, true);
+            case OCCUPIED, BILLING -> findReservationByStatus(table.getId(), ReservationStatus.CHECKED_IN, false);
+            default -> null;
+        };
+    }
+
+    private TableResponse.ReservationSummary findReservationByStatus(String tableId, ReservationStatus status, boolean earliest) {
+        var reservation = earliest
+                ? reservationRepository.findFirstByTableIdAndStatusOrderByDatetimeAsc(tableId, status)
+                : reservationRepository.findFirstByTableIdAndStatusOrderByDatetimeDesc(tableId, status);
+        return reservation
                 .map(r -> new TableResponse.ReservationSummary(
                         r.getId(), r.getGuestName(), r.getPhone(), r.getPartySize(), r.getDatetime()))
                 .orElse(null);

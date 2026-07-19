@@ -322,7 +322,7 @@ const Reservation = () => {
         </div>
       )}
 
-      {showModal && <ReservationModal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load() }} />}
+      {showModal && <ReservationModal reservations={dtos} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load() }} />}
       {editingDto && (
         <EditReservationModal
           dto={editingDto}

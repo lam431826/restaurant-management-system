@@ -1628,55 +1628,68 @@ const CashierOrders = () => {
           </div>
         </div>
 
-        <OrderPanel
-          items={[
-            ...orderItems,
-            ...cart.map((c) => ({
-              id: c.cartItemId,
-              name: c.name,
-              qty: c.qty,
-              notes: c.note,
-              status: "MỚI",
-              price: c.price,
-              orderId: "cart",
-            })),
-          ]}
-          hasSelectedMenu={hasSelectedMenu}
-          onStatusChange={handleStatusChange}
-          onCheckout={() => {
-            setOrderActionMessage(null);
-            setPaymentError("");
-            if (currentOrderInvoice) {
-              setPaymentOpen(true);
-            } else {
-              void handleGenerateInvoice();
+        {selectedTable &&
+        selectedTable.status === "RESERVED" &&
+        !selectedTable.occupied ? (
+          <ReservationPanel
+            table={selectedTable}
+            onCheckIn={handleReservationCheckIn}
+            onNoShow={handleReservationNoShow}
+            onCancel={handleReservationCancel}
+            loading={reservationLoading}
+            error={reservationError}
+          />
+        ) : (
+          <OrderPanel
+            items={[
+              ...orderItems,
+              ...cart.map((c) => ({
+                id: c.cartItemId,
+                name: c.name,
+                qty: c.qty,
+                notes: c.note,
+                status: "MỚI",
+                price: c.price,
+                orderId: "cart",
+              })),
+            ]}
+            hasSelectedMenu={hasSelectedMenu}
+            onStatusChange={handleStatusChange}
+            onCheckout={() => {
+              setOrderActionMessage(null);
+              setPaymentError("");
+              if (currentOrderInvoice) {
+                setPaymentOpen(true);
+              } else {
+                void handleGenerateInvoice();
+              }
+            }}
+            onCreateOrder={handleCreateOrder}
+            onAddItems={handleAddItems}
+            onNote={handleOpenNote}
+            onRemoveItem={handleRemoveItem}
+            onRejectItem={handleOpenReject}
+            onCancelOrder={handleCancelOrder}
+            selectedTable={selectedTable}
+            checkoutDisabled={checkoutDisabled}
+            checkoutLabel={checkoutLabel}
+            shiftOpen={!!shift}
+            invoicePaid={canCloseSelectedOrder}
+            itemMutationDisabled={disableItemMutation}
+            itemMutationDisabledMessage={itemMutationDisabledMessage}
+            actionMessage={null}
+            emptyOrderMessage={
+              emptyOrderWithoutInvoice ? EMPTY_ORDER_MESSAGE : undefined
             }
-          }}
-          onCreateOrder={handleCreateOrder}
-          onAddItems={handleAddItems}
-          onNote={handleOpenNote}
-          onRemoveItem={handleRemoveItem}
-          onRejectItem={handleOpenReject}
-          onCancelOrder={handleCancelOrder}
-          selectedTable={selectedTable}
-          checkoutDisabled={checkoutDisabled}
-          checkoutLabel={checkoutLabel}
-          shiftOpen={!!shift}
-          invoicePaid={canCloseSelectedOrder}
-          itemMutationDisabled={disableItemMutation}
-          itemMutationDisabledMessage={itemMutationDisabledMessage}
-          actionMessage={null}
-          emptyOrderMessage={
-            emptyOrderWithoutInvoice ? EMPTY_ORDER_MESSAGE : undefined
-          }
-          cancelOrderIds={
-            emptyOrderWithoutInvoice && selectedOrderId
-              ? [selectedOrderId]
-              : undefined
-          }
-          onCloseOrder={handleCloseOrder}
-          invoiceTools={null}
-        />
+            cancelOrderIds={
+              emptyOrderWithoutInvoice && selectedOrderId
+                ? [selectedOrderId]
+                : undefined
+            }
+            onCloseOrder={handleCloseOrder}
+            invoiceTools={null}
+          />
+        )}
       </div>
 
       {showQRModal && (
