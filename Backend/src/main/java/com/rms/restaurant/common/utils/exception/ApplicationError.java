@@ -137,6 +137,8 @@ public enum ApplicationError {
     SALARY_PAYMENT_EXCEEDS_REMAINING("Tiền trả nhân viên vượt quá số còn cần trả", HttpStatus.UNPROCESSABLE_ENTITY),
     PAYSLIP_ALREADY_PAID("Phiếu lương đã có thanh toán, không thể hủy", HttpStatus.UNPROCESSABLE_ENTITY),
     PAYSLIP_CANCELLED("Phiếu lương đã bị hủy", HttpStatus.UNPROCESSABLE_ENTITY),
+    SALARY_TEMPLATE_NOT_FOUND("Không tìm thấy mẫu lương", HttpStatus.NOT_FOUND),
+    SALARY_TEMPLATE_NAME_DUPLICATE("Tên mẫu lương đã tồn tại", HttpStatus.CONFLICT),
 
     // Attendance & Shift (SRS_AT) — UC-AT-01..07, BR-AT-*
     AT_SHIFT_NOT_FOUND("Không tìm thấy ca làm việc", HttpStatus.NOT_FOUND),

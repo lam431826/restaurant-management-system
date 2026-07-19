@@ -6,6 +6,7 @@ import com.rms.restaurant.module.payroll.dto.*;
 import com.rms.restaurant.module.payroll.model.PayrollSheet;
 import com.rms.restaurant.module.payroll.model.Payslip;
 import com.rms.restaurant.module.payroll.model.PayslipPayment;
+import com.rms.restaurant.module.payroll.model.SalaryTemplate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -61,6 +62,13 @@ public class PayrollMapper {
                 sheet.getId(), sheet.getCode(), sheet.getName(),
                 sheet.getPeriodStart(), sheet.getPeriodEnd(), sheet.getStatus(),
                 parseSnapshot(p.getAttendanceSnapshot()), payments);
+    }
+
+    public SalaryTemplateResponse toResponse(SalaryTemplate t) {
+        return new SalaryTemplateResponse(
+                t.getId(), t.getName(), t.getMainSalaryType(), t.getMainBaseWage(),
+                t.getMainAdvancedRates(), t.isOvertimeEnabled(), t.getOvertimeRates(),
+                t.getCreatedAt(), t.getUpdatedAt());
     }
 
     public List<AttendanceDetailRow> parseSnapshot(String json) {
