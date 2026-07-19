@@ -4,6 +4,8 @@ import { getSalarySetting, putSalarySetting } from '../../api/employees'
 import type { EmployeeDto, EmployeeFormPayload, SalaryType } from '../../api/employees'
 import { listUsers, createUser } from '../../api/users'
 import type { UserDto } from '../../api/users'
+import { listSalaryTemplates, createSalaryTemplate } from '../../api/salaryTemplates'
+import type { SalaryTemplateDto } from '../../api/salaryTemplates'
 
 type TabKey = 'info' | 'salary'
 
@@ -40,13 +42,13 @@ const SearchIcon = () => (
     <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
   </svg>
 )
-const inputCls =
+export const inputCls =
   'w-full h-11 px-3 bg-field border border-line-default rounded-md text-md text-ink transition-colors ' +
   'placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary ' +
   'focus:shadow-[0_0_0_0.3rem_rgba(var(--kv-primary-rgb),0.12)]'
 
 // ── Field: label stacked above the control ──────────────────────────────
-const Field = ({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) => (
+export const Field = ({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) => (
   <div className={`flex flex-col gap-1.5 ${className}`}>
     <label className="text-md text-ink-subtle">{label}</label>
     {children}
@@ -54,7 +56,7 @@ const Field = ({ label, children, className = '' }: { label: string; children: R
 )
 
 // ── Dropdown picker ─────────────────────────────────────────────────────
-const Picker = ({
+export const Picker = ({
   value, options, placeholder, onChange, openUp,
 }: { value: string; options: string[]; placeholder: string; onChange: (v: string) => void; openUp?: boolean }) => {
   const [open, setOpen] = useState(false)
@@ -182,7 +184,7 @@ const Toggle = ({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 )
 
 // ── White card section, optionally collapsible ──────────────────────────
-const SectionCard = ({
+export const SectionCard = ({
   title, collapsible, children, extra,
 }: { title?: string; collapsible?: boolean; children: React.ReactNode; extra?: React.ReactNode }) => {
   const [open, setOpen] = useState(true)
@@ -329,7 +331,7 @@ export const defaultSalaryConfig = (): SalaryConfig => ({
   ot: { normal: pct('150'), sat: pct('200'), sun: pct('200'), off: pct('200'), holiday: pct('300') },
 })
 
-const ShiftSalaryBody = ({ value, onChange, suffix = '/ ca', firstCol = 'Ca', wageCol = 'Lương/ca', showOvertime = true, noAdvanced = false }: { value: SalaryConfig; onChange: (v: SalaryConfig) => void; suffix?: string; firstCol?: string; wageCol?: string; showOvertime?: boolean; noAdvanced?: boolean }) => {
+export const ShiftSalaryBody = ({ value, onChange, suffix = '/ ca', firstCol = 'Ca', wageCol = 'Lương/ca', showOvertime = true, noAdvanced = false }: { value: SalaryConfig; onChange: (v: SalaryConfig) => void; suffix?: string; firstCol?: string; wageCol?: string; showOvertime?: boolean; noAdvanced?: boolean }) => {
   // Auto-expand when an already-saved setting has weekend rates, so loaded data is visible
   // without the manager having to know to flip the toggle themselves. Never for noAdvanced
   // (Cố định) — otherwise leftover def.sat/sun from a previously-selected salary type would
@@ -454,13 +456,13 @@ const ShiftSalaryBody = ({ value, onChange, suffix = '/ ca', firstCol = 'Ca', wa
 }
 
 // Salary-type labels ↔ backend enum values.
-const salaryTypes = ['Theo ca làm việc', 'Theo giờ làm việc', 'Cố định']
-const LABEL_TO_SALARY_TYPE: Record<string, SalaryType> = {
+export const salaryTypes = ['Theo ca làm việc', 'Theo giờ làm việc', 'Cố định']
+export const LABEL_TO_SALARY_TYPE: Record<string, SalaryType> = {
   'Theo ca làm việc': 'SHIFT',
   'Theo giờ làm việc': 'HOURLY',
   'Cố định': 'FIXED',
 }
-const SALARY_TYPE_TO_LABEL: Record<SalaryType, string> = {
+export const SALARY_TYPE_TO_LABEL: Record<SalaryType, string> = {
   SHIFT: 'Theo ca làm việc',
   HOURLY: 'Theo giờ làm việc',
   FIXED: 'Cố định',
@@ -473,7 +475,6 @@ export const parseRates = (json: string | null): DayRates | null => {
     return null
   }
 }
-const salaryTemplates: string[] = []
 // Manager may create accounts, but never with role ADMIN (enforced server-side too) — so
 // "Quản trị viên" is intentionally not offered here at all.
 const ROLE_LABELS: Record<string, string> = { 'Phục vụ': 'WAITER', 'Thu ngân': 'CASHIER', 'Quản lý': 'MANAGER' }
@@ -482,7 +483,6 @@ const roleOptions = Object.keys(ROLE_LABELS)
 // ── Popup: Tạo tài khoản người dùng ──────────────────────────────────────
 const CreateAccountModal = ({ onClose, onCreate }: { onClose: () => void; onCreate: (user: UserDto, tempPassword: string) => void }) => {
   const [displayName, setDisplayName] = useState('')
-  const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [username, setUsername] = useState('')
   const [role, setRole] = useState('')
@@ -500,7 +500,6 @@ const CreateAccountModal = ({ onClose, onCreate }: { onClose: () => void; onCrea
         username: username.trim(),
         fullName: displayName.trim(),
         email: email.trim() || undefined,
-        phone: phone.trim() || undefined,
         role: ROLE_LABELS[role],
       })
       onCreate(res.data.data.user, res.data.data.tempPassword)
@@ -532,9 +531,6 @@ const CreateAccountModal = ({ onClose, onCreate }: { onClose: () => void; onCrea
             <Field label="Tên hiển thị">
               <input className={inputCls} placeholder="Bắt buộc" value={displayName}
                 onChange={e => { setDisplayName(e.target.value); if (error) setError('') }} />
-            </Field>
-            <Field label="Số điện thoại">
-              <input className={inputCls} inputMode="tel" placeholder="0912 345 678" value={phone} onChange={e => setPhone(e.target.value)} />
             </Field>
             <Field label="Email">
               <input className={inputCls} inputMode="email" placeholder="email@gmail.com" value={email} onChange={e => setEmail(e.target.value)} />
@@ -624,6 +620,7 @@ const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props
   const [salaryType, setSalaryType] = useState('')
   const [salaryTemplate, setSalaryTemplate] = useState('')
   const [salaryConfig, setSalaryConfig] = useState<SalaryConfig>(defaultSalaryConfig)
+  const [salaryTemplates, setSalaryTemplates] = useState<SalaryTemplateDto[]>([])
 
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -646,6 +643,25 @@ const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props
   useEffect(() => {
     listUsers(0, 100).then(res => setAccounts(res.data.data)).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    listSalaryTemplates().then(res => setSalaryTemplates(res.data.data)).catch(() => {})
+  }, [])
+
+  // BR-PAY-01: applying a template is copy-on-apply — prefills salaryType/salaryConfig,
+  // still freely editable after; editing/deleting the template later never reaches back here.
+  const applyTemplate = (name: string) => {
+    setSalaryTemplate(name)
+    const t = salaryTemplates.find(x => x.name === name)
+    if (!t) return
+    setSalaryType(SALARY_TYPE_TO_LABEL[t.mainSalaryType] ?? '')
+    setSalaryConfig(cfg => ({
+      base: String(t.mainBaseWage ?? 0),
+      def: parseRates(t.mainAdvancedRatesJson) ?? cfg.def,
+      overtimeEnabled: t.overtimeEnabled,
+      ot: (parseRates(t.overtimeRatesJson) as OtRates | null) ?? cfg.ot,
+    }))
+  }
 
   // Load the existing salary setting when editing (id === null ⇒ never configured).
   useEffect(() => {
@@ -676,7 +692,17 @@ const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props
     return anyErr.response?.data?.message || 'Có lỗi xảy ra, vui lòng thử lại'
   }
 
-  const handleSave = async () => {
+  // Shared with "Lưu và tạo mẫu lương mới" — same rate fields the setting and a template store.
+  const buildRateFields = () => ({
+    mainSalaryType: LABEL_TO_SALARY_TYPE[salaryType],
+    mainBaseWage: parseInt(salaryConfig.base.replace(/\D/g, '') || '0', 10),
+    mainAdvancedRatesJson: JSON.stringify(salaryConfig.def),
+    // BR-PAY-05: overtime only applies to shift-based main salary
+    overtimeEnabled: salaryType === 'Theo ca làm việc' && salaryConfig.overtimeEnabled,
+    overtimeRatesJson: JSON.stringify(salaryConfig.ot),
+  })
+
+  const handleSave = async (createTemplateAfter = false) => {
     if (!name.trim()) {
       setError('Vui lòng nhập tên nhân viên')
       setTab('info')
@@ -691,6 +717,16 @@ const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props
     if (!/^0\d{9,10}$/.test(phone.trim())) {
       setError('Số điện thoại không hợp lệ (bắt đầu bằng 0, 10-11 chữ số)')
       setTab('info')
+      return
+    }
+    if (createTemplateAfter && !salaryType) {
+      setError('Vui lòng chọn loại lương trước khi tạo mẫu')
+      setTab('salary')
+      return
+    }
+    if (createTemplateAfter && !salaryTemplate.trim()) {
+      setError('Vui lòng đặt tên mẫu lương')
+      setTab('salary')
       return
     }
     const payload: EmployeeFormPayload = {
@@ -710,18 +746,18 @@ const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props
       const employeeId = saved?.id ?? employee?.id
       if (employeeId && salaryType && LABEL_TO_SALARY_TYPE[salaryType]) {
         await putSalarySetting(employeeId, {
-          mainSalaryType: LABEL_TO_SALARY_TYPE[salaryType],
-          mainBaseWage: parseInt(salaryConfig.base.replace(/\D/g, '') || '0', 10),
-          mainAdvancedRatesJson: JSON.stringify(salaryConfig.def),
-          // BR-PAY-05: overtime only applies to shift-based main salary
-          overtimeEnabled: salaryType === 'Theo ca làm việc' && salaryConfig.overtimeEnabled,
-          overtimeRatesJson: JSON.stringify(salaryConfig.ot),
+          ...buildRateFields(),
           salaryTemplate: salaryTemplate || null,
         })
       }
+      if (createTemplateAfter) {
+        await createSalaryTemplate({ name: salaryTemplate.trim(), ...buildRateFields() })
+      }
       onClose()
     } catch (err) {
-      setError(extractMessage(err))
+      const anyErr = err as { response?: { status?: number } }
+      if (createTemplateAfter && anyErr.response?.status === 409) setError('Tên mẫu lương đã tồn tại')
+      else setError(extractMessage(err))
     } finally {
       setSaving(false)
     }
@@ -872,7 +908,7 @@ const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props
                 <div className="flex items-center gap-4">
                   <label className="text-md font-bold text-ink w-[8rem] shrink-0 flex items-center gap-1.5">Mẫu lương <InfoIcon /></label>
                   <div className="w-full sm:w-[40rem]">
-                    <Picker value={salaryTemplate} options={salaryTemplates} placeholder="Chọn mẫu lương có sẵn" onChange={setSalaryTemplate} />
+                    <Picker value={salaryTemplate} options={salaryTemplates.map(t => t.name)} placeholder="Chọn mẫu lương có sẵn" onChange={applyTemplate} />
                   </div>
                 </div>
               </SectionCard>
@@ -886,9 +922,9 @@ const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props
           <div className="flex items-center gap-2">
             <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose} disabled={saving}>Bỏ qua</button>
             {tab === 'salary' && (
-              <button className="kv-btn kv-btn-outline-neutral h-10" onClick={handleSave} disabled={saving}>Lưu và tạo mẫu lương mới</button>
+              <button className="kv-btn kv-btn-outline-neutral h-10" onClick={() => void handleSave(true)} disabled={saving}>Lưu và tạo mẫu lương mới</button>
             )}
-            <button className="kv-btn kv-btn-primary h-10" onClick={handleSave} disabled={saving}>{saving ? 'Đang lưu...' : 'Lưu'}</button>
+            <button className="kv-btn kv-btn-primary h-10" onClick={() => void handleSave()} disabled={saving}>{saving ? 'Đang lưu...' : 'Lưu'}</button>
           </div>
         </div>
       </div>

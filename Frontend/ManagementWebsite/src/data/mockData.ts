@@ -583,7 +583,7 @@ export const navItems = [
   {
     id: 6,
     label: 'Sổ quỹ',
-    href: '#',
+    href: '#/manager/cash-book',
     children: [],
   },
   {

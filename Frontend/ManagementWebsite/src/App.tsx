@@ -24,6 +24,7 @@ import EmployeeLoginPage from "./components/auth/EmployeeLoginPage";
 import ForgotPasswordPage from "./components/auth/ForgotPasswordPage";
 import NewPasswordPage from "./components/auth/NewPasswordPage";
 import PromotionManagement from "./components/promotions/PromotionManagement";
+import CashBook from "./components/cashbook/CashBook";
 
 //import { ProtectedRoute } from './contexts/AuthContext'
 
@@ -98,6 +99,7 @@ function App() {
           <Route path="employee-settings" element={<EmployeeSettings />} />
           <Route path="payroll" element={<Payroll />} />
           <Route path="payroll/update" element={<PayrollUpdate />} />
+          <Route path="cash-book" element={<CashBook />} />
           <Route path="reports/attendance" element={<AttendanceReport />} />
           <Route path="reports/daily-summary" element={<DailySummary />} />
           <Route path="audit-logs" element={<AuditLogPage />} />

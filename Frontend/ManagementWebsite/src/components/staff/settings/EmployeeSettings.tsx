@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AttendanceSettingsDto, ManualTimeMode, ShiftDto } from '../../../api/attendance'
 import { deleteShift, formatTime, getSettings, listShifts, updateSettings, updateShift } from '../../../api/attendance'
+import type { SalaryTemplateDto } from '../../../api/salaryTemplates'
+import { listSalaryTemplates } from '../../../api/salaryTemplates'
 import { ApiError } from '../../../services/api'
 import ShiftTemplateModal from '../schedule/ShiftTemplateModal'
+import SalaryTemplateList from './SalaryTemplateList'
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Thiết lập nhân viên — faithful re-creation of the KiotViet employee-settings
@@ -130,6 +133,8 @@ const EmployeeSettings = () => {
   const [tab, setTab] = useState<Tab>('attendance')
   const [shiftListOpen, setShiftListOpen] = useState(false)
   const [shifts, setShifts] = useState<ShiftDto[]>([])
+  const [salaryTemplateListOpen, setSalaryTemplateListOpen] = useState(false)
+  const [salaryTemplates, setSalaryTemplates] = useState<SalaryTemplateDto[]>([])
 
   const [settings, setSettings] = useState<AttendanceSettingsDto | null>(null)
   const [loadError, setLoadError] = useState('')
@@ -144,9 +149,13 @@ const EmployeeSettings = () => {
   const loadShifts = () => {
     listShifts().then(res => setShifts(res.data.data)).catch(() => {})
   }
+  const loadSalaryTemplates = () => {
+    listSalaryTemplates().then(res => setSalaryTemplates(res.data.data)).catch(() => {})
+  }
 
   useEffect(() => {
     loadShifts()
+    loadSalaryTemplates()
     getSettings()
       .then(res => setSettings(res.data.data))
       .catch(err => setLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập chấm công.'))
@@ -177,7 +186,7 @@ const EmployeeSettings = () => {
           <div className="text-sm font-semibold text-ink-subtle px-3 mb-2">Thiết lập</div>
           <div className="flex flex-col gap-1">
             {NAV.map(n => (
-              <button key={n.id} onClick={() => { setTab(n.id); setShiftListOpen(false) }}
+              <button key={n.id} onClick={() => { setTab(n.id); setShiftListOpen(false); setSalaryTemplateListOpen(false) }}
                 className={`flex items-center gap-3 h-10 px-3 rounded-md text-md cursor-pointer transition-colors ${tab === n.id ? 'bg-primary-25 text-primary font-semibold' : 'text-ink hover:bg-[var(--kv-state-hover-bg)]'}`}>
                 {n.icon}{n.label}
               </button>
@@ -201,8 +210,19 @@ const EmployeeSettings = () => {
             {tab === 'attendance' && shiftListOpen && (
               <ShiftList shifts={shifts} onBack={() => setShiftListOpen(false)} onChanged={loadShifts} />
             )}
-            {tab === 'payroll' && (
-              <PayrollSettings state={{ autoCreate, setAutoCreate, autoUpdate, setAutoUpdate, pit, setPit, insurance, setInsurance }} />
+            {tab === 'payroll' && !salaryTemplateListOpen && (
+              <PayrollSettings
+                state={{ autoCreate, setAutoCreate, autoUpdate, setAutoUpdate, pit, setPit, insurance, setInsurance }}
+                salaryTemplateCount={salaryTemplates.length}
+                onOpenSalaryTemplateList={() => setSalaryTemplateListOpen(true)}
+              />
+            )}
+            {tab === 'payroll' && salaryTemplateListOpen && (
+              <SalaryTemplateList
+                templates={salaryTemplates}
+                onBack={() => setSalaryTemplateListOpen(false)}
+                onChanged={loadSalaryTemplates}
+              />
             )}
           </main>
         </div>
@@ -412,7 +432,11 @@ interface PayrollState {
   pit: boolean; setPit: (v: boolean) => void
   insurance: boolean; setInsurance: (v: boolean) => void
 }
-const PayrollSettings = ({ state }: { state: PayrollState }) => (
+const PayrollSettings = ({ state, salaryTemplateCount, onOpenSalaryTemplateList }: {
+  state: PayrollState
+  salaryTemplateCount: number
+  onOpenSalaryTemplateList: () => void
+}) => (
   <div>
     <h2 className="text-lg font-bold text-ink mb-2">Thiết lập tính lương</h2>
 
@@ -436,7 +460,7 @@ const PayrollSettings = ({ state }: { state: PayrollState }) => (
       right={<Toggle on={state.autoUpdate} onChange={state.setAutoUpdate} />} />
 
     <Block title="Thiết lập Mẫu lương" desc="Thưởng, Hoa hồng, Phụ cấp, Giảm trừ"
-      right={<button className="flex items-center gap-1 text-md text-ink hover:text-primary cursor-pointer">0 mẫu lương <ChevronRight /></button>} />
+      right={<button onClick={onOpenSalaryTemplateList} className="flex items-center gap-1 text-md text-ink hover:text-primary cursor-pointer">{salaryTemplateCount} mẫu lương <ChevronRight /></button>} />
 
     <Block title="Danh mục phụ cấp" desc="Danh sách phụ cấp khoán tiền hỗ trợ nhân viên như ăn trưa, đi lại, điện thoại,..."
       right={<button className="kv-btn kv-btn-outline-primary h-9">Thêm phụ cấp</button>} />
