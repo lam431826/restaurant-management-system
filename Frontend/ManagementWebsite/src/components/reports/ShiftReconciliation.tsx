@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getDailySummary, forceCloseShift, PAYMENT_METHOD_LABELS } from '../../services/shiftService'
-import type { DailySummary as DailySummaryData, DailyCashierShiftRow } from '../../services/shiftService'
+import type { DailySummary as ShiftReconciliationData, DailyCashierShiftRow } from '../../services/shiftService'
 import { ApiError } from '../../services/api'
 
 const fmt = (n: number) =>
@@ -30,9 +30,9 @@ const STATUS_CLASS: Record<DailyCashierShiftRow['status'], string> = {
 const timeOf = (iso: string | null) =>
   iso ? new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—'
 
-const DailySummary = () => {
+const ShiftReconciliation = () => {
   const [date, setDate] = useState(todayYMD)
-  const [data, setData] = useState<DailySummaryData | null>(null)
+  const [data, setData] = useState<ShiftReconciliationData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   // BR-CS-15: manager force-close modal
@@ -79,7 +79,7 @@ const DailySummary = () => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-var(--kv-header-height))] bg-surface overflow-y-auto p-5 gap-4">
-      <h1 className="text-h3 font-extrabold text-ink">Báo cáo cuối ngày</h1>
+      <h1 className="text-h3 font-extrabold text-ink">Đối soát ca thu ngân</h1>
 
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
@@ -275,4 +275,4 @@ const DailySummary = () => {
   )
 }
 
-export default DailySummary
+export default ShiftReconciliation

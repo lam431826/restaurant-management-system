@@ -591,6 +591,7 @@ export const navItems = [
     label: 'Báo cáo',
     children: [
       { label: 'Cuối ngày', href: '#/manager/reports/daily-summary' },
+      { label: 'Đối soát ca thu ngân', href: '#/manager/reports/shift-reconciliation' },
       { label: 'Bán hàng', href: '#' },
       { label: 'Hàng hóa', href: '#' },
       { label: 'Khách hàng', href: '#' },
