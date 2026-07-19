@@ -122,10 +122,16 @@ public class UserServiceImpl implements UserService {
             log.info("Admin changed role of user '{}' to {}", user.getUsername(), request.role());
         }
         if (request.status() != null) {
+            boolean leavingActive = user.getStatus() == UserStatus.ACTIVE && request.status() != UserStatus.ACTIVE;
             user.setStatus(request.status());
             if (request.status() == UserStatus.ACTIVE) {
                 user.setFailedLoginAttempts(0);
                 user.setLockedAt(null);
+            }
+            if (leavingActive) {
+                // BE-AUTH-02: an already-issued access token must stop working the instant
+                // an admin locks/deactivates the account, not just at its natural 8h expiry.
+                user.setTokenVersion(user.getTokenVersion() + 1);
             }
             log.info("Admin changed status of user '{}' to {}", user.getUsername(), request.status());
         }
@@ -142,6 +148,8 @@ public class UserServiceImpl implements UserService {
     public void deleteUser(String id) {
         User user = findUserById(id);
         user.setStatus(UserStatus.INACTIVE);
+        // BE-AUTH-02: invalidate any already-issued access token immediately on soft-delete.
+        user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
         log.info("Soft-deleted user '{}'", user.getUsername());
         try {

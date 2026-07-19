@@ -574,7 +574,11 @@ const CashierOrders = () => {
         return {
           ...t,
           occupied: true,
-          status: "OCCUPIED",
+          // BE-MGMT-03 fix: this previously forced OCCUPIED unconditionally, clobbering a
+          // cashier-set BILLING status back to OCCUPIED on the next poll/WS tick while the
+          // order itself is still ACTIVE (e.g. SERVED) during payment. Preserve BILLING the
+          // same way the empty-orders branch above already preserves RESERVED/CLEANING.
+          status: t.status === "BILLING" ? "BILLING" : "OCCUPIED",
           amount: totalAmount,
           items: itemsCount,
           orderId: tableOrders[0].id,

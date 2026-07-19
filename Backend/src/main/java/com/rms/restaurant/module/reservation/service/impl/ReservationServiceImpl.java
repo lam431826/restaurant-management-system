@@ -37,8 +37,8 @@ import java.util.stream.Collectors;
 @Transactional
 public class ReservationServiceImpl implements ReservationService {
 
-    // Each booking occupies [T-60min, T+120min) on a table (1h setup + 1.5h dining + 0.5h cleanup).
-    // Two bookings on the same table conflict when |T1-T2| < 180 min.
+    // Two bookings on the same table conflict when |T1-T2| < 180 min (each booking is treated
+    // as occupying a symmetric 180-minute footprint around its own time for conflict purposes).
     private static final int WINDOW_MINUTES = 180;
 
     private static final List<ReservationStatus> ACTIVE_STATUSES =
@@ -155,6 +155,17 @@ public class ReservationServiceImpl implements ReservationService {
                     request.datetime() != null ? request.datetime() : reservation.getDatetime(),
                     id);
             reservation.setTableId(request.tableId());
+        } else if (reservation.getTableId() != null
+                && (request.partySize() != null || request.datetime() != null)) {
+            // BE-RES-02 fix: a party-size or datetime-only edit (no tableId in the request)
+            // previously skipped capacity/conflict re-validation entirely, even though the
+            // reservation still has a table assigned — allowing capacity overflow and
+            // double-booking via reschedule. Re-run both checks against the existing table.
+            int effectivePartySize = request.partySize() != null ? request.partySize() : reservation.getPartySize();
+            validateTableCapacity(reservation.getTableId(), effectivePartySize);
+            checkTableAvailability(reservation.getTableId(),
+                    request.datetime() != null ? request.datetime() : reservation.getDatetime(),
+                    id);
         }
 
         // Edit guest info
@@ -393,8 +404,13 @@ public class ReservationServiceImpl implements ReservationService {
      */
     private void checkTableAvailabilityForStatuses(String tableId, LocalDateTime datetime,
                                                     String excludeId, List<ReservationStatus> statuses) {
-        LocalDateTime windowStart = datetime.minusMinutes(60);
-        LocalDateTime windowEnd   = datetime.plusMinutes(120);
+        // BE-RES-01 fix: was hardcoded to an asymmetric [-60,+120) window, which doesn't
+        // implement this class's own documented "conflict when |T1-T2| < 180" rule — a
+        // double-booking ~121-180 min apart in one direction slipped through. Use the real
+        // symmetric occupancy-overlap window instead (still strict inequality at the DB
+        // query level, so exactly 180 min apart still does not conflict).
+        LocalDateTime windowStart = datetime.minusMinutes(WINDOW_MINUTES);
+        LocalDateTime windowEnd   = datetime.plusMinutes(WINDOW_MINUTES);
         List<Reservation> conflicts = reservationRepository.findConflictingForUpdate(
                 tableId, statuses, windowStart, windowEnd,
                 excludeId != null ? excludeId : "");

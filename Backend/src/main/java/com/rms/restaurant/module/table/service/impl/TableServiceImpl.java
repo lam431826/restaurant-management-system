@@ -3,6 +3,7 @@ package com.rms.restaurant.module.table.service.impl;
 import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
+import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
@@ -133,6 +134,12 @@ public class TableServiceImpl implements TableService {
     @Override
     public void deleteTable(String id) {
         RestaurantTable table = findTable(id);
+        // BE-TBL-05 fix: orders/reservations/assistance_requests all have a real FK to this
+        // table, so deleting one with history previously surfaced as a raw SQL 500 instead of
+        // a clean error — and the dedicated TABLE_IN_USE error existed but was never thrown.
+        if (orderRepository.existsByTableId(id) || reservationRepository.existsByTableId(id)) {
+            throw new ConflictException(ApplicationError.TABLE_IN_USE);
+        }
         tableRepository.delete(table);
         audit("TABLE_DELETE", "Table", id, "{\"name\":\"" + esc(table.getName()) + "\"}");
     }
@@ -145,10 +152,29 @@ public class TableServiceImpl implements TableService {
         audit("TABLE_UPDATE", "Table", id, "{\"name\":\"" + esc(table.getName()) + "\",\"active\":" + active + "}");
     }
 
+    // BE-TBL-03 fix: updateStatus() previously applied any requested status with zero
+    // validation, allowing e.g. RESERVED -> CLEANING or CLEANING -> OCCUPIED directly.
+    private static final java.util.Map<TableStatus, java.util.Set<TableStatus>> ALLOWED_STATUS_TRANSITIONS =
+            java.util.Map.of(
+                    TableStatus.AVAILABLE, java.util.Set.of(TableStatus.RESERVED, TableStatus.OCCUPIED),
+                    TableStatus.OCCUPIED,  java.util.Set.of(TableStatus.BILLING, TableStatus.CLEANING, TableStatus.AVAILABLE),
+                    TableStatus.BILLING,   java.util.Set.of(TableStatus.AVAILABLE, TableStatus.CLEANING),
+                    TableStatus.CLEANING,  java.util.Set.of(TableStatus.AVAILABLE),
+                    TableStatus.RESERVED,  java.util.Set.of(TableStatus.OCCUPIED, TableStatus.AVAILABLE)
+            );
+
     @Override
     public TableResponse updateStatus(String id, TableStatusUpdateRequest request) {
         RestaurantTable table = findTable(id);
-        table.setStatus(request.status());
+        TableStatus current = table.getStatus();
+        TableStatus next = request.status();
+        if (current != next
+                && !ALLOWED_STATUS_TRANSITIONS.getOrDefault(current, java.util.Set.of()).contains(next)) {
+            throw new ApplicationException(
+                    ApplicationError.INVALID_STATUS_TRANSITION,
+                    "Cannot transition table from " + current + " to " + next);
+        }
+        table.setStatus(next);
         RestaurantTable saved = tableRepository.save(table);
         realtimeEventPublisher.publishTableStatus(saved);
         return tableMapper.toResponse(saved);
@@ -242,6 +268,17 @@ public class TableServiceImpl implements TableService {
                     }
                     String area = trimToNull(column(record, "area"));
                     String note = trimToNull(column(record, "note"));
+                    // BE-TBL-06 fix: name length was checked but area(50)/note(255) weren't,
+                    // so an oversized value failed at the deferred UUID-insert flush instead
+                    // of being attributed to its row.
+                    if (area != null && area.length() > 50) {
+                        errors.add(new TableImportResult.RowError((int) rowNumber, "Area must not exceed 50 characters"));
+                        continue;
+                    }
+                    if (note != null && note.length() > 255) {
+                        errors.add(new TableImportResult.RowError((int) rowNumber, "Note must not exceed 255 characters"));
+                        continue;
+                    }
                     boolean active = parseBoolean(column(record, "active"));
 
                     RestaurantTable table = tableRepository.findByNameIgnoreCase(name).orElse(null);

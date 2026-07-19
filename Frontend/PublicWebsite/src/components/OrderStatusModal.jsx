@@ -18,7 +18,7 @@ const ClockIcon = () => (
   </svg>
 )
 
-export default function OrderStatusModal({ orderId, onClose, onEditOrder, onOrderFinished, subscribeRealtime }) {
+export default function OrderStatusModal({ orderId, tableToken, onClose, onEditOrder, onOrderFinished, subscribeRealtime }) {
   const [statusData, setStatusData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -27,7 +27,10 @@ export default function OrderStatusModal({ orderId, onClose, onEditOrder, onOrde
 
     const fetchStatus = async () => {
       try {
-        const res = await fetch(`/api/guest/orders/${orderId}/status`)
+        // X-Table-Token required (BE-TBL-02) — proves this guest holds the table the order belongs to.
+        const res = await fetch(`/api/guest/orders/${orderId}/status`, {
+          headers: { 'X-Table-Token': tableToken },
+        })
         if (res.ok) {
           const data = await res.json()
           setStatusData(data)

@@ -2,6 +2,8 @@
 // Reads the base URL from VITE_API_URL (default http://localhost:8080),
 // injects the stored JWT, and normalises error responses.
 
+import { refreshAccessToken, handleAuthFailure } from './authRefresh'
+
 const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:8080').replace(/\/+$/, '')
 
 const TOKEN_KEY = 'access_token'
@@ -89,7 +91,22 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     init.body = JSON.stringify(body)
   }
 
-  const res = await fetch(buildUrl(path, query), init)
+  let res = await fetch(buildUrl(path, query), init)
+
+  // FE-MGMT-01 fix: this client previously had no 401 handling at all — a request made
+  // after the 8h access token expired just failed outright instead of silently refreshing
+  // and retrying like src/api/apiClient.ts already does for auth/users/audit-logs calls.
+  if (res.status === 401) {
+    try {
+      const newToken = await refreshAccessToken()
+      ;(init.headers as Headers).set('Authorization', `Bearer ${newToken}`)
+      res = await fetch(buildUrl(path, query), init)
+    } catch {
+      handleAuthFailure()
+      throw await toApiError(res)
+    }
+  }
+
   if (!res.ok) throw await toApiError(res)
 
   if (res.status === 204) return undefined as T
@@ -107,7 +124,18 @@ export const api = {
 
   /** Fetch a binary response (e.g. CSV export) as a Blob. */
   async getBlob(path: string, query?: Query): Promise<Blob> {
-    const res = await fetch(buildUrl(path, query), { headers: authHeaders() })
+    let res = await fetch(buildUrl(path, query), { headers: authHeaders() })
+    if (res.status === 401) {
+      try {
+        await refreshAccessToken()
+        // authHeaders() re-reads access_token from localStorage, so it already picks up
+        // the token refreshAccessToken() just wrote there.
+        res = await fetch(buildUrl(path, query), { headers: authHeaders() })
+      } catch {
+        handleAuthFailure()
+        throw await toApiError(res)
+      }
+    }
     if (!res.ok) throw await toApiError(res)
     return res.blob()
   },

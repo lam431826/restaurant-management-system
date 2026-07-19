@@ -31,6 +31,12 @@ public class OtpRecord {
     @Column(name = "attempt_count", nullable = false)
     private int attemptCount = 0;
 
+    // How many times POST /verify/info has regenerated an OTP for this record — shares
+    // resendOtp()'s MAX_RESEND_RECORDS cap so verify/info can't be used to bypass it (BE-AUTH-03).
+    @Builder.Default
+    @Column(name = "info_request_count", nullable = false)
+    private int infoRequestCount = 0;
+
     @Builder.Default
     @Column(nullable = false)
     private boolean used = false;

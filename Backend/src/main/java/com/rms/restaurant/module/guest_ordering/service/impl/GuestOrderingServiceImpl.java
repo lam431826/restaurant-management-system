@@ -49,6 +49,12 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     public OrderStatusResponse placeOrder(GuestOrderRequest request) {
         RestaurantTable table = resolveTable(request.tableToken());
 
+        // BE-TBL-01 fix: BR-07 (a table cannot have two PENDING orders simultaneously) was
+        // never checked on the guest-facing create path.
+        if (!orderRepository.findByTableIdAndStatus(table.getId(), OrderStatus.PENDING).isEmpty()) {
+            throw new ApplicationException(ApplicationError.TABLE_HAS_PENDING_ORDER);
+        }
+
         Order order = new Order();
         order.setTableId(table.getId());
         order.setStatus(OrderStatus.PENDING);
@@ -86,9 +92,10 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     // ── GO-02: Khách cập nhật items (chỉ khi order còn PENDING) ─────────────
 
     @Override
-    public OrderStatusResponse updateOrderItems(String orderId, UpdateOrderItemsRequest request) {
+    public OrderStatusResponse updateOrderItems(String orderId, String tableToken, UpdateOrderItemsRequest request) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        verifyOrderBelongsToTable(order, tableToken);
         ensureOrderItemsCanBeModified(order);
 
         if (order.getStatus() != OrderStatus.PENDING) {
@@ -109,9 +116,10 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     // ── Khách gọi thêm món vào đơn đã có ─────────────────────────────────────
 
     @Override
-    public OrderStatusResponse addOrderItems(String orderId, UpdateOrderItemsRequest request) {
+    public OrderStatusResponse addOrderItems(String orderId, String tableToken, UpdateOrderItemsRequest request) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        verifyOrderBelongsToTable(order, tableToken);
         ensureOrderItemsCanBeModified(order);
 
         appendItems(order, request);
@@ -124,9 +132,10 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     }
 
     @Override
-    public OrderStatusResponse getOrderStatus(String orderId) {
+    public OrderStatusResponse getOrderStatus(String orderId, String tableToken) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        verifyOrderBelongsToTable(order, tableToken);
         return toStatusResponse(order, "15 minutes");
     }
 
@@ -165,8 +174,26 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     // ── Helper ────────────────────────────────────────────────────────────────
 
     private RestaurantTable resolveTable(String tableToken) {
-        return tableRepository.findByQrToken(tableToken)
+        RestaurantTable table = tableRepository.findByQrToken(tableToken)
                 .orElseThrow(() -> new ApplicationException(ApplicationError.INVALID_TABLE_TOKEN));
+        // BE-TBL-04 fix: a deactivated table's QR token still resolved successfully, letting
+        // guests order/request assistance on a table that's out of service.
+        if (!table.isActive()) {
+            throw new ApplicationException(ApplicationError.INVALID_TABLE_TOKEN);
+        }
+        return table;
+    }
+
+    /**
+     * BE-TBL-02 fix: confirms the presented table token actually resolves to the table that
+     * owns this order, before returning/modifying it — previously orderId alone was trusted
+     * with no proof of table ownership (IDOR: any guest could act on any other table's order).
+     */
+    private void verifyOrderBelongsToTable(Order order, String tableToken) {
+        RestaurantTable table = resolveTable(tableToken);
+        if (!table.getId().equals(order.getTableId())) {
+            throw new ApplicationException(ApplicationError.INVALID_TABLE_TOKEN);
+        }
     }
 
     private void appendItems(Order order, UpdateOrderItemsRequest request) {

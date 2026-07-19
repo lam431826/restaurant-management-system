@@ -11,8 +11,11 @@ const GUEST_ORDER_ALREADY_INVOICED_MESSAGE =
 
 export default function GuestOrderPage() {
   const [searchParams] = useSearchParams()
-  const tableToken = searchParams.get('token') || 'token-ban-01'
-  
+  // FE-PUB-02 fix: this silently fell back to a hardcoded, non-existent table token when
+  // ?token= was missing from the URL, routing an unrecognized guest onto a real table
+  // without any warning. No fallback now — a missing token renders an explicit error state.
+  const tableToken = searchParams.get('token')
+
   const [tableInfo, setTableInfo] = useState({ id: '', name: 'Đang tải...' })
   const [menuData, setMenuData] = useState([])
   const [loading, setLoading] = useState(true)
@@ -28,12 +31,15 @@ export default function GuestOrderPage() {
   // Kept in a ref so OrderStatusModal can subscribe without triggering re-renders here.
   const realtimeRef = useRef(null)
   useEffect(() => {
+    if (!tableToken) return
     const rt = createGuestClient(tableToken)
     realtimeRef.current = rt
     return () => rt.disconnect()
   }, [tableToken])
 
   useEffect(() => {
+    if (!tableToken) return
+
     // Fetch Table Info
     fetch(`/api/guest/orders/table-info?token=${tableToken}`)
       .then(res => res.json())
@@ -148,7 +154,9 @@ export default function GuestOrderPage() {
       
       const res = await fetch(url, {
         method: method,
-        headers: { 'Content-Type': 'application/json' },
+        // X-Table-Token required on /items endpoints (BE-TBL-02) — proves this guest
+        // actually holds the table the order belongs to, not just a guessed orderId.
+        headers: { 'Content-Type': 'application/json', 'X-Table-Token': tableToken },
         body: JSON.stringify(payload)
       })
       
@@ -207,6 +215,19 @@ export default function GuestOrderPage() {
 
   function scrollToCategory(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  if (!tableToken) {
+    return (
+      <div className="bg-[#f5f5f5] min-h-screen font-sans flex items-center justify-center px-6">
+        <div className="text-center max-w-sm">
+          <p className="text-lg font-semibold text-gray-800 mb-2">Liên kết không hợp lệ</p>
+          <p className="text-sm text-gray-500">
+            Không tìm thấy mã bàn. Vui lòng quét lại mã QR trên bàn để đặt món.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -393,6 +414,7 @@ export default function GuestOrderPage() {
       {isStatusOpen && (
         <OrderStatusModal
           orderId={currentOrderId}
+          tableToken={tableToken}
           onClose={() => setIsStatusOpen(false)}
           onEditOrder={handleEditOrder}
           onOrderFinished={() => setCurrentOrderId(null)}

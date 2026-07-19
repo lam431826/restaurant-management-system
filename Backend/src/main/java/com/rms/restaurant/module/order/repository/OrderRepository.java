@@ -16,6 +16,9 @@ public interface OrderRepository extends JpaRepository<Order, String> {
     Optional<Order> findTopByTableIdAndStatusOrderByCreatedAtDesc(String tableId, OrderStatus status);
     Page<Order> findByStatus(OrderStatus status, Pageable pageable);
 
+    // BE-TBL-05: guard deleteTable() with a clean error instead of a raw FK-constraint 500
+    boolean existsByTableId(String tableId);
+
     // BR-CLOSE-06: shift cannot close when active orders exist
     boolean existsByStatusIn(Collection<OrderStatus> statuses);
 }

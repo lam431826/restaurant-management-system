@@ -25,20 +25,24 @@ public class GuestOrderingController {
     @PutMapping("/{id}/items")
     public ResponseEntity<OrderStatusResponse> updateOrderItems(
             @PathVariable String id,
+            @RequestHeader("X-Table-Token") String tableToken,
             @jakarta.validation.Valid @RequestBody UpdateOrderItemsRequest request) {
-        return ResponseEntity.ok(guestOrderingService.updateOrderItems(id, request));
+        return ResponseEntity.ok(guestOrderingService.updateOrderItems(id, tableToken, request));
     }
 
     @PostMapping("/{id}/items")
     public ResponseEntity<OrderStatusResponse> addOrderItems(
             @PathVariable String id,
+            @RequestHeader("X-Table-Token") String tableToken,
             @jakarta.validation.Valid @RequestBody UpdateOrderItemsRequest request) {
-        return ResponseEntity.ok(guestOrderingService.addOrderItems(id, request));
+        return ResponseEntity.ok(guestOrderingService.addOrderItems(id, tableToken, request));
     }
 
     @GetMapping("/{id}/status")
-    public ResponseEntity<OrderStatusResponse> getOrderStatus(@PathVariable String id) {
-        return ResponseEntity.ok(guestOrderingService.getOrderStatus(id));
+    public ResponseEntity<OrderStatusResponse> getOrderStatus(
+            @PathVariable String id,
+            @RequestHeader("X-Table-Token") String tableToken) {
+        return ResponseEntity.ok(guestOrderingService.getOrderStatus(id, tableToken));
     }
 
     @GetMapping("/table-info")
