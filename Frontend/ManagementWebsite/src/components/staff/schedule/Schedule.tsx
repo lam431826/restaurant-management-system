@@ -3,15 +3,22 @@ import ScheduleToolbar from './ScheduleToolbar'
 import ScheduleGrid from './ScheduleGrid'
 import ScheduleModal from './ScheduleModal'
 import type { ScheduleSavePayload } from './ScheduleModal'
+import DeleteScheduleModal from './DeleteScheduleModal'
+import type { DeleteScope } from './DeleteScheduleModal'
 import ShiftTemplateModal from './ShiftTemplateModal'
-import { startOfWeek, weekDays as buildWeekDays, entriesOn, toYMD } from './scheduleUtils'
+import { startOfWeek, weekDays as buildWeekDays, entriesOn, toYMD, computeExpectedSalary } from './scheduleUtils'
 import { listShifts, listSchedules, createSchedules, deleteSchedule, cancelScheduleRule, formatTime } from '../../../api/attendance'
 import type { ShiftDto, ScheduleDto } from '../../../api/attendance'
-import { listEmployees } from '../../../api/employees'
-import { ApiError } from '../../../services/api'
+import { listEmployees, getSalarySetting } from '../../../api/employees'
+import type { SalarySettingDto } from '../../../api/employees'
 
 /** UI-local employee summary shared by the schedule sub-components. */
 export interface StaffSummary { id: string; fullName: string; code: string }
+
+/** apiClient (axios) rejects with an AxiosError, not services/api's fetch-based ApiError —
+ * pull the backend's message straight off the response body, same as the rest of the app. */
+const errMsg = (err: unknown, fallback: string): string =>
+  (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
 
 interface ModalState {
   mode: 'add' | 'edit'
@@ -26,6 +33,7 @@ const Schedule = () => {
   const [employees, setEmployees] = useState<StaffSummary[]>([])
   const [shiftTypes, setShiftTypes] = useState<ShiftDto[]>([])
   const [entries, setEntries] = useState<ScheduleDto[]>([])
+  const [salarySettings, setSalarySettings] = useState<Map<string, SalarySettingDto>>(new Map())
   const [error, setError] = useState('')
 
   const [search, setSearch] = useState('')
@@ -34,6 +42,10 @@ const Schedule = () => {
   const [modal, setModal] = useState<ModalState | null>(null)
   const [modalError, setModalError] = useState('')
   const [addShiftOpen, setAddShiftOpen] = useState(false)
+  // "x" quick-delete on a card — recurring entries go through a scope picker first.
+  const [quickDeleteEntry, setQuickDeleteEntry] = useState<ScheduleDto | null>(null)
+  const [quickDeleteError, setQuickDeleteError] = useState('')
+  const [quickDeleteBusy, setQuickDeleteBusy] = useState(false)
 
   const weekDaysList = useMemo(() => buildWeekDays(weekStart), [weekStart])
   const weekStartKey = toYMD(weekStart)
@@ -49,8 +61,14 @@ const Schedule = () => {
       setEmployees(empRes.data.data.map(e => ({ id: e.id, fullName: e.name, code: e.code })))
       setShiftTypes(shiftRes.data.data)
       setEntries(scheduleRes.data.data)
+
+      const empList = empRes.data.data
+      const salaryResults = await Promise.allSettled(empList.map(e => getSalarySetting(e.id)))
+      const salaryMap = new Map<string, SalarySettingDto>()
+      salaryResults.forEach((r, i) => { if (r.status === 'fulfilled') salaryMap.set(empList[i].id, r.value.data.data) })
+      setSalarySettings(salaryMap)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Không tải được dữ liệu lịch làm việc.')
+      setError(errMsg(err, 'Không tải được dữ liệu lịch làm việc.'))
     }
   }, [weekStartKey, weekEndKey])
 
@@ -92,7 +110,7 @@ const Schedule = () => {
       await loadStaticData()
       closeModal()
     } catch (err) {
-      setModalError(err instanceof ApiError ? err.message : 'Không thể lưu lịch làm việc.')
+      setModalError(errMsg(err, 'Không thể lưu lịch làm việc.'))
     }
   }
 
@@ -103,7 +121,40 @@ const Schedule = () => {
       await loadStaticData()
       closeModal()
     } catch (err) {
-      setModalError(err instanceof ApiError ? err.message : 'Không thể xóa lịch làm việc.')
+      setModalError(errMsg(err, 'Không thể xóa lịch làm việc.'))
+    }
+  }
+
+  // "x" on a schedule card — a one-off entry deletes immediately; a recurring one asks
+  // which occurrences to apply the change to first (Google Calendar-style scope picker).
+  const handleQuickDeleteClick = (entry: ScheduleDto) => {
+    setError('')
+    if (entry.ruleId) {
+      setQuickDeleteEntry(entry)
+      setQuickDeleteError('')
+    } else {
+      void runQuickDelete(entry, 'single')
+    }
+  }
+
+  const runQuickDelete = async (entry: ScheduleDto, scope: DeleteScope) => {
+    setQuickDeleteBusy(true)
+    setQuickDeleteError('')
+    try {
+      if (scope === 'single') {
+        await deleteSchedule(entry.id)
+      } else if (scope === 'from') {
+        await cancelScheduleRule(entry.ruleId!, entry.workDate)
+      } else {
+        await cancelScheduleRule(entry.ruleId!, entry.ruleStartDate ?? entry.workDate)
+      }
+      await loadStaticData()
+      setQuickDeleteEntry(null)
+    } catch (err) {
+      const message = errMsg(err, 'Không thể xóa lịch làm việc.')
+      if (entry.ruleId) setQuickDeleteError(message); else setError(message)
+    } finally {
+      setQuickDeleteBusy(false)
     }
   }
 
@@ -114,7 +165,7 @@ const Schedule = () => {
       await loadStaticData()
       closeModal()
     } catch (err) {
-      setModalError(err instanceof ApiError ? err.message : 'Không thể ngừng lặp lịch làm việc.')
+      setModalError(errMsg(err, 'Không thể ngừng lặp lịch làm việc.'))
     }
   }
 
@@ -140,6 +191,16 @@ const Schedule = () => {
     URL.revokeObjectURL(url)
   }
 
+  const expectedSalaryByEmployee = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof computeExpectedSalary>>()
+    filteredEmployees.forEach(emp => map.set(emp.id, computeExpectedSalary(entries, emp.id, salarySettings.get(emp.id))))
+    return map
+  }, [filteredEmployees, entries, salarySettings])
+
+  // Any other click the manager makes elsewhere on the screen dismisses a stale top banner —
+  // it described the last action, not this new one.
+  const openModal = (m: ModalState) => { setError(''); setModal(m) }
+
   const dayEntriesForModal = modal?.employee ? entriesOn(entries, modal.employee.id, modal.date) : []
   const availableShiftTypes = shiftTypes.filter(st => !dayEntriesForModal.some(e => e.shiftId === st.id))
   // Shift-first add: only offer staff not already on this shift that day.
@@ -152,11 +213,11 @@ const Schedule = () => {
       <ScheduleToolbar
         employees={employees}
         search={search}
-        onSearch={setSearch}
+        onSearch={v => { setError(''); setSearch(v) }}
         weekStart={weekStart}
-        onWeekChange={setWeekStart}
+        onWeekChange={v => { setError(''); setWeekStart(v) }}
         viewMode={viewMode}
-        onViewMode={setViewMode}
+        onViewMode={v => { setError(''); setViewMode(v) }}
         onImport={() => window.alert('Import lịch làm việc đang được phát triển')}
         onExport={handleExport}
       />
@@ -171,9 +232,11 @@ const Schedule = () => {
         entries={entries}
         shiftTypes={shiftTypes}
         viewMode={viewMode}
-        onAddClick={(employee, date) => setModal({ mode: 'add', employee, date })}
-        onAddStaff={(date, shift) => setModal({ mode: 'add', date, lockedShift: shift })}
-        onEditClick={(employee, date, entry) => setModal({ mode: 'edit', employee, date, entry })}
+        expectedSalaryByEmployee={expectedSalaryByEmployee}
+        onQuickDelete={handleQuickDeleteClick}
+        onAddClick={(employee, date) => openModal({ mode: 'add', employee, date })}
+        onAddStaff={(date, shift) => openModal({ mode: 'add', date, lockedShift: shift })}
+        onEditClick={(employee, date, entry) => openModal({ mode: 'edit', employee, date, entry })}
       />
 
       {modal && (
@@ -192,7 +255,7 @@ const Schedule = () => {
           onSave={handleSave}
           onDeleteOccurrence={modal.mode === 'edit' ? handleDeleteOccurrence : undefined}
           onCancelRule={modal.mode === 'edit' ? handleCancelRule : undefined}
-          onAddShift={() => setAddShiftOpen(true)}
+          onAddShift={() => { setError(''); setAddShiftOpen(true) }}
         />
       )}
 
@@ -201,6 +264,16 @@ const Schedule = () => {
           shift={null}
           onClose={() => setAddShiftOpen(false)}
           onSaved={() => { setAddShiftOpen(false); void loadStaticData() }}
+        />
+      )}
+
+      {quickDeleteEntry && (
+        <DeleteScheduleModal
+          entry={quickDeleteEntry}
+          error={quickDeleteError}
+          busy={quickDeleteBusy}
+          onClose={() => setQuickDeleteEntry(null)}
+          onConfirm={scope => void runQuickDelete(quickDeleteEntry, scope)}
         />
       )}
     </div>

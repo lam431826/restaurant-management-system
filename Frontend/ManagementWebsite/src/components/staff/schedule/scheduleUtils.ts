@@ -1,4 +1,5 @@
 import type { ScheduleDto } from '../../../api/attendance'
+import type { SalarySettingDto, SalaryType } from '../../../api/employees'
 
 export const WEEKDAY_LABELS = ['Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy', 'Chủ nhật']
 export const MONTHS = ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12']
@@ -27,6 +28,12 @@ export const parseYMD = (s: string) => {
   return new Date(y, m - 1, d)
 }
 
+/** 'YYYY-MM-DD' -> 'dd/mm/yyyy' for display. */
+export const fmtDMY = (ymd: string) => {
+  const [y, m, d] = ymd.split('-')
+  return `${d}/${m}/${y}`
+}
+
 /** ISO-8601 weekday (1=Mon..7=Sun), matching java.time.DayOfWeek#getValue() on the backend. */
 export const isoWeekday = (d: Date) => (d.getDay() === 0 ? 7 : d.getDay())
 
@@ -51,3 +58,32 @@ export const formatTime = (t: string | null | undefined) => (t ? t.slice(0, 5) :
  */
 export const entriesOn = (schedules: ScheduleDto[], employeeId: string, date: Date) =>
   schedules.filter(s => s.employeeId === employeeId && s.workDate === toYMD(date))
+
+export interface ExpectedSalary { total: number; shiftCount: number; salaryType: SalaryType }
+
+const timeToMinutes = (t: string) => { const [h, m] = t.slice(0, 5).split(':').map(Number); return h * 60 + m }
+
+/**
+ * Rough preview only — mirrors the employee's base rate against the scheduled week, ignoring
+ * Sat/Sun/holiday advanced rates and overtime. Authoritative totals come from the payslip
+ * generated on the Bảng lương screen; null means the employee has no salary setting yet.
+ */
+export const computeExpectedSalary = (
+  entries: ScheduleDto[], employeeId: string, setting: SalarySettingDto | undefined,
+): ExpectedSalary | null => {
+  if (!setting || setting.id === null) return null
+  const empEntries = entries.filter(e => e.employeeId === employeeId)
+  const shiftCount = empEntries.length
+  if (setting.mainSalaryType === 'FIXED') return { total: setting.mainBaseWage, shiftCount, salaryType: 'FIXED' }
+  if (setting.mainSalaryType === 'HOURLY') {
+    const hours = empEntries.reduce((sum, e) => {
+      if (!e.shiftStartTime || !e.shiftEndTime) return sum
+      const start = timeToMinutes(e.shiftStartTime)
+      let end = timeToMinutes(e.shiftEndTime)
+      if (end <= start) end += 24 * 60 // overnight shift
+      return sum + (end - start) / 60
+    }, 0)
+    return { total: Math.round(setting.mainBaseWage * hours), shiftCount, salaryType: 'HOURLY' }
+  }
+  return { total: setting.mainBaseWage * shiftCount, shiftCount, salaryType: 'SHIFT' } // SHIFT
+}

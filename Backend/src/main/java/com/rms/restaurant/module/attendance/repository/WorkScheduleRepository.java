@@ -23,7 +23,7 @@ public interface WorkScheduleRepository extends JpaRepository<WorkSchedule, Stri
 
     List<WorkSchedule> findByRuleId(String ruleId);
 
-    /** Future occurrences of a rule that have no attendance yet — deletable on rule cancel. */
+    /** Occurrences of a rule after a cutoff date that have no attendance yet — deletable on rule cancel. */
     @Query("""
             SELECT s FROM WorkSchedule s
             WHERE s.ruleId = :ruleId AND s.workDate > :after

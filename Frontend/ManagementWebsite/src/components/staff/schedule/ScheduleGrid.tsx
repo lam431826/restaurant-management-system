@@ -1,7 +1,8 @@
 import type { ScheduleDto, ShiftDto } from '../../../api/attendance'
 import { formatTime } from '../../../api/attendance'
+import { money } from '../../../api/payroll'
 import type { StaffSummary } from './Schedule'
-import { WEEKDAY_LABELS, entriesOn, sameDay } from './scheduleUtils'
+import { WEEKDAY_LABELS, entriesOn, sameDay, type ExpectedSalary } from './scheduleUtils'
 
 interface Props {
   employees: StaffSummary[]
@@ -9,10 +10,52 @@ interface Props {
   entries: ScheduleDto[]
   shiftTypes: ShiftDto[]
   viewMode: 'employee' | 'shift'
+  expectedSalaryByEmployee: Map<string, ExpectedSalary | null>
+  onQuickDelete: (entry: ScheduleDto) => void
   onAddClick: (employee: StaffSummary, date: Date) => void
   onAddStaff: (date: Date, shift: ShiftDto) => void
   onEditClick: (employee: StaffSummary, date: Date, entry: ScheduleDto) => void
 }
+
+const InfoIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted shrink-0">
+    <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+  </svg>
+)
+const XIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+)
+
+/**
+ * Hover tooltip + inline "x" delete shown on a scheduled shift pill (both employee and shift
+ * views). `label` is the pill's own text (shift name, or the employee's name in "Xem theo ca");
+ * `shiftName`/times always describe the underlying shift, which the tooltip surfaces regardless
+ * of which one the pill itself is showing.
+ */
+const ShiftPill = ({ label, shiftName, startTime, endTime, colorCls, onOpen, onDelete }: {
+  label: string; shiftName: string; startTime: string | null | undefined; endTime: string | null | undefined
+  colorCls: string; onOpen: () => void; onDelete: () => void
+}) => (
+  <div
+    onClick={onOpen}
+    className={`group/pill relative flex items-center justify-between gap-2 h-9 px-3 rounded-md text-md font-medium cursor-pointer transition-opacity hover:opacity-80 ${colorCls}`}
+  >
+    <span className="truncate">{label}</span>
+    <button
+      type="button"
+      aria-label="Xóa lịch"
+      onClick={e => { e.stopPropagation(); onDelete() }}
+      className="shrink-0 opacity-0 group-hover/pill:opacity-100 transition-opacity cursor-pointer text-current"
+    >
+      <XIcon />
+    </button>
+    {startTime && endTime && (
+      <div className="pointer-events-none absolute left-1/2 bottom-[calc(100%+0.4rem)] -translate-x-1/2 z-20 whitespace-nowrap rounded-lg border border-line bg-card px-4 py-2 text-md font-normal text-ink shadow-lg opacity-0 transition-opacity group-hover/pill:opacity-100">
+        {shiftName} ({formatTime(startTime)} - {formatTime(endTime)})
+      </div>
+    )}
+  </div>
+)
 
 const SHIFT_PILL_PALETTE = [
   'bg-warning-50 text-warning-700',
@@ -25,8 +68,9 @@ const shiftPillCls = (shiftTypes: ShiftDto[], shiftId: string) => {
   return SHIFT_PILL_PALETTE[index % SHIFT_PILL_PALETTE.length] ?? 'bg-fill text-ink'
 }
 
-const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, onAddClick, onAddStaff, onEditClick }: Props) => {
+const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, expectedSalaryByEmployee, onQuickDelete, onAddClick, onAddStaff, onEditClick }: Props) => {
   const today = new Date()
+  const totalExpectedSalary = employees.reduce((sum, emp) => sum + (expectedSalaryByEmployee.get(emp.id)?.total ?? 0), 0)
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-card border border-line rounded-t-lg overflow-auto">
@@ -44,11 +88,26 @@ const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, onAd
                 </span>
               </th>
             ))}
+            {viewMode === 'employee' && (
+              <th className="sticky top-0 z-2 bg-primary-25 text-right text-md font-semibold text-ink-strong px-3 py-3 whitespace-nowrap">
+                <span
+                  className="inline-flex items-center justify-end gap-1"
+                  title="Ước tính từ mức lương đã thiết lập và lịch làm việc, chưa gồm phụ cấp/khấu trừ. Số liệu chính thức xem tại Bảng lương."
+                >
+                  Lương dự kiến <InfoIcon />
+                </span>
+              </th>
+            )}
           </tr>
         </thead>
 
         {viewMode === 'employee' ? (
           <tbody>
+            <tr className="border-b border-line bg-fill/40">
+              <td className="px-3 py-3" />
+              {weekDays.map(d => <td key={d.toISOString()} className="px-3 py-3 border-l border-line" />)}
+              <td className="px-3 py-3 border-l border-line text-right text-md font-bold text-ink">{money(totalExpectedSalary)}</td>
+            </tr>
             {employees.map(emp => (
               <tr key={emp.id} className="border-b border-line align-top">
                 <td className="px-3 py-3">
@@ -65,13 +124,16 @@ const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, onAd
                         {dayEntries.map(entry => {
                           const st = shiftTypes.find(s => s.id === entry.shiftId)
                           return (
-                            <button
+                            <ShiftPill
                               key={entry.id}
-                              onClick={() => onEditClick(emp, d, entry)}
-                              className={`h-9 px-3 rounded-md text-md font-medium text-left cursor-pointer transition-opacity hover:opacity-80 ${shiftPillCls(shiftTypes, entry.shiftId)}`}
-                            >
-                              {st?.name ?? entry.shiftName}
-                            </button>
+                              label={st?.name ?? entry.shiftName ?? ''}
+                              shiftName={st?.name ?? entry.shiftName ?? ''}
+                              startTime={st?.startTime ?? entry.shiftStartTime}
+                              endTime={st?.endTime ?? entry.shiftEndTime}
+                              colorCls={shiftPillCls(shiftTypes, entry.shiftId)}
+                              onOpen={() => onEditClick(emp, d, entry)}
+                              onDelete={() => onQuickDelete(entry)}
+                            />
                           )
                         })}
                         {hasRoom && (
@@ -87,6 +149,18 @@ const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, onAd
                     </td>
                   )
                 })}
+                <td className="px-3 py-3 border-l border-line align-top text-right">
+                  {(() => {
+                    const exp = expectedSalaryByEmployee.get(emp.id)
+                    if (!exp) return <span className="text-sm text-ink-muted">Chưa thiết lập lương</span>
+                    return (
+                      <>
+                        <div className="text-md text-ink">{money(exp.total)}</div>
+                        {exp.salaryType === 'SHIFT' && <div className="text-sm text-ink-subtle">{exp.shiftCount} ca</div>}
+                      </>
+                    )
+                  })()}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -106,13 +180,16 @@ const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, onAd
                         {staff.map(emp => {
                           const entry = entriesOn(entries, emp.id, d).find(e => e.shiftId === st.id)!
                           return (
-                            <button
+                            <ShiftPill
                               key={emp.id}
-                              onClick={() => onEditClick(emp, d, entry)}
-                              className="h-9 px-3 rounded-md text-md font-medium text-left text-primary-700 bg-primary-50 cursor-pointer transition-opacity hover:opacity-80"
-                            >
-                              {emp.fullName}
-                            </button>
+                              label={emp.fullName}
+                              shiftName={st.name}
+                              startTime={st.startTime}
+                              endTime={st.endTime}
+                              colorCls="text-primary-700 bg-primary-50"
+                              onOpen={() => onEditClick(emp, d, entry)}
+                              onDelete={() => onQuickDelete(entry)}
+                            />
                           )
                         })}
                         <button

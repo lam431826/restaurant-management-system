@@ -15,6 +15,8 @@ public record ScheduleResponse(
         LocalTime shiftEndTime,
         LocalDate workDate,
         String ruleId,
+        LocalDate ruleStartDate,
+        LocalDate ruleEndDate,
         String substituteEmployeeId,
         String substituteEmployeeName) {
 }

@@ -44,8 +44,14 @@ public class WorkScheduleController {
     }
 
     @DeleteMapping("/rules/{ruleId}")
-    public ResponseEntity<ApiResponse<Void>> cancelRule(@PathVariable String ruleId) {
-        workScheduleService.cancelRule(ruleId);
+    public ResponseEntity<ApiResponse<Void>> cancelRule(
+            @PathVariable String ruleId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from) {
+        if (from != null) {
+            workScheduleService.cancelRuleFrom(ruleId, from);
+        } else {
+            workScheduleService.cancelRule(ruleId);
+        }
         return ResponseEntity.ok(ApiResponse.ok("Đã ngừng lặp lịch"));
     }
 }

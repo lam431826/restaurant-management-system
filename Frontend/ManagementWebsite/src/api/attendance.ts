@@ -45,6 +45,8 @@ export interface ScheduleDto {
   shiftEndTime: string | null
   workDate: string // 'YYYY-MM-DD'
   ruleId: string | null
+  ruleStartDate: string | null
+  ruleEndDate: string | null
   substituteEmployeeId: string | null
   substituteEmployeeName: string | null
 }
@@ -201,8 +203,8 @@ export const createSchedules = (req: ScheduleCreatePayload) =>
 export const deleteSchedule = (scheduleId: string) =>
   apiClient.delete(`/attendance/schedules/${scheduleId}`)
 
-export const cancelScheduleRule = (ruleId: string) =>
-  apiClient.delete(`/attendance/schedules/rules/${ruleId}`)
+export const cancelScheduleRule = (ruleId: string, from?: string) =>
+  apiClient.delete(`/attendance/schedules/rules/${ruleId}`, { params: from ? { from } : undefined })
 
 export const getTimesheet = (start: string, end: string) =>
   apiClient.get<{ data: TimesheetCellDto[] }>('/attendance/timesheet', { params: { start, end } })

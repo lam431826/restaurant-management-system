@@ -11,6 +11,7 @@ import com.rms.restaurant.module.attendance.model.AttendanceSetting;
 import com.rms.restaurant.module.attendance.model.Violation;
 import com.rms.restaurant.module.attendance.model.ViolationType;
 import com.rms.restaurant.module.attendance.model.WorkSchedule;
+import com.rms.restaurant.module.attendance.model.WorkScheduleRule;
 import com.rms.restaurant.module.attendance.model.WorkShift;
 import com.rms.restaurant.module.employee.model.Employee;
 import org.springframework.stereotype.Component;
@@ -40,11 +41,13 @@ public class AttendanceMapper {
 
     public ScheduleResponse toScheduleResponse(WorkSchedule schedule,
                                                Map<String, Employee> employeesById,
-                                               Map<String, WorkShift> shiftsById) {
+                                               Map<String, WorkShift> shiftsById,
+                                               Map<String, WorkScheduleRule> rulesById) {
         Employee employee = employeesById.get(schedule.getEmployeeId());
         Employee substitute = schedule.getSubstituteEmployeeId() == null
                 ? null : employeesById.get(schedule.getSubstituteEmployeeId());
         WorkShift shift = shiftsById.get(schedule.getShiftId());
+        WorkScheduleRule rule = schedule.getRuleId() == null ? null : rulesById.get(schedule.getRuleId());
         return new ScheduleResponse(
                 schedule.getId(),
                 schedule.getEmployeeId(),
@@ -56,6 +59,8 @@ public class AttendanceMapper {
                 shift != null ? shift.getEndTime() : null,
                 schedule.getWorkDate(),
                 schedule.getRuleId(),
+                rule != null ? rule.getStartDate() : null,
+                rule != null ? rule.getEndDate() : null,
                 schedule.getSubstituteEmployeeId(),
                 substitute != null ? substitute.getName() : null);
     }

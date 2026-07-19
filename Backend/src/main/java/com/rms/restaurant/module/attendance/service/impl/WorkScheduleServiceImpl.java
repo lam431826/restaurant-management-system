@@ -108,13 +108,18 @@ public class WorkScheduleServiceImpl implements WorkScheduleService {
 
     @Override
     public void cancelRule(String ruleId) {
+        cancelRuleFrom(ruleId, LocalDate.now());
+    }
+
+    @Override
+    public void cancelRuleFrom(String ruleId, LocalDate fromDate) {
         WorkScheduleRule rule = workScheduleRuleRepository.findById(ruleId)
                 .orElseThrow(() -> new ApplicationException(ApplicationError.AT_SCHEDULE_RULE_NOT_FOUND));
-        LocalDate yesterday = LocalDate.now().minusDays(1);
-        List<WorkSchedule> removable = workScheduleRepository.findUnattendedByRuleAfter(ruleId, yesterday);
+        LocalDate cutoff = fromDate.minusDays(1);
+        List<WorkSchedule> removable = workScheduleRepository.findUnattendedByRuleAfter(ruleId, cutoff);
         workScheduleRepository.deleteAll(removable);
-        rule.setEndDate(yesterday);
-        rule.setGeneratedUntil(yesterday);
+        rule.setEndDate(cutoff);
+        rule.setGeneratedUntil(cutoff);
         workScheduleRuleRepository.save(rule);
     }
 
@@ -263,9 +268,13 @@ public class WorkScheduleServiceImpl implements WorkScheduleService {
                 .collect(Collectors.toSet());
         Map<String, Employee> employeesById = employeeRepository.findByIdIn(new ArrayList<>(employeeIds))
                 .stream().collect(Collectors.toMap(Employee::getId, Function.identity()));
+        Set<String> ruleIds = nonNull.stream().map(WorkSchedule::getRuleId).filter(id -> id != null)
+                .collect(Collectors.toSet());
+        Map<String, WorkScheduleRule> rulesById = workScheduleRuleRepository.findAllById(ruleIds)
+                .stream().collect(Collectors.toMap(WorkScheduleRule::getId, Function.identity()));
         return nonNull.stream()
                 .sorted((a, b) -> a.getWorkDate().compareTo(b.getWorkDate()))
-                .map(s -> mapper.toScheduleResponse(s, employeesById, shiftsById))
+                .map(s -> mapper.toScheduleResponse(s, employeesById, shiftsById, rulesById))
                 .toList();
     }
 
