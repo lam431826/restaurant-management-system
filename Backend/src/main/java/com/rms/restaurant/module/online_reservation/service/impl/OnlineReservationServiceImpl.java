@@ -137,7 +137,9 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         audit("RESERVATION_CREATE", saved.getId(),
                 "{\"channel\":\"ONLINE\",\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
 
-        return reservationMapper.toResponse(saved);
+        ReservationResponse response = reservationMapper.toResponse(saved);
+        realtimeEventPublisher.publishReservationEvent("CREATED", response);
+        return response;
     }
 
     // ── ORM-03 Bước 1: Yêu cầu huỷ — verify SĐT, gửi OTP về email ───────────

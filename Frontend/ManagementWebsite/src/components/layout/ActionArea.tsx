@@ -16,6 +16,7 @@ import {
   getNotificationLogs,
   type NotificationLogDto,
 } from "../../api/notifications";
+import { useRealtime } from "../../hooks/useRealtime";
 
 const TEMPLATE_LABELS: Record<string, string> = {
   RESERVATION_CONFIRMATION: "Xác nhận đặt bàn",
@@ -59,14 +60,27 @@ const ActionArea = () => {
   const [notifLogs, setNotifLogs] = useState<NotificationLogDto[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifTab, setNotifTab] = useState<"all" | "failed">("all");
+  const [unseenCount, setUnseenCount] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
 
   const failedCount = notifLogs.filter((n) => n.status === "FAILED").length;
+  const badgeCount = unseenCount > 0 ? unseenCount : failedCount;
+
+  // Load once on mount so the list (and any FAILED badge) is ready even before the bell is
+  // ever opened — the dropdown-open effect below still refreshes it for freshness each time.
+  useEffect(() => {
+    getNotificationLogs({ size: 30 })
+      .then((r) => setNotifLogs(r.data.data))
+      .catch(() => {
+        /* silent */
+      });
+  }, []);
 
   useEffect(() => {
     if (open !== "notifications") return;
+    setUnseenCount(0);
     setNotifLoading(true);
     getNotificationLogs({ size: 30 })
       .then((r) => setNotifLogs(r.data.data))
@@ -75,6 +89,17 @@ const ActionArea = () => {
       })
       .finally(() => setNotifLoading(false));
   }, [open]);
+
+  // Live push — fires regardless of which page is mounted under this shared header, so a new
+  // notification (payment, reservation confirm/cancel, etc.) surfaces on the bell right away.
+  useRealtime("/topic/notifications", (body) => {
+    const log = body as NotificationLogDto | null;
+    if (!log?.id) return;
+    setNotifLogs((prev) =>
+      prev.some((l) => l.id === log.id) ? prev : [log, ...prev].slice(0, 50),
+    );
+    setUnseenCount((c) => c + 1);
+  });
 
   // const handleLogout = async () => {
   //   setOpen(null);
@@ -175,14 +200,16 @@ const ActionArea = () => {
             <button
               className="kv-btn kv-btn-icon-only kv-btn-outline-primary"
               onClick={() => toggle("notifications")}
-              aria-label="Thông báo email"
+              aria-label="Thông báo"
               aria-expanded={open === "notifications"}
             >
               <IconBell size={16} />
             </button>
-            {failedCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[1rem] h-4 bg-danger rounded-full text-white text-[10px] font-bold flex items-center justify-center px-0.5 pointer-events-none">
-                {failedCount > 9 ? "9+" : failedCount}
+            {badgeCount > 0 && (
+              <span
+                className={`absolute -top-1 -right-1 min-w-[1rem] h-4 rounded-full text-white text-[10px] font-bold flex items-center justify-center px-0.5 pointer-events-none ${unseenCount > 0 ? "bg-[#025cca]" : "bg-danger"}`}
+              >
+                {badgeCount > 9 ? "9+" : badgeCount}
               </span>
             )}
           </div>

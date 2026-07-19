@@ -2,8 +2,10 @@ package com.rms.restaurant.common.realtime;
 
 import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.module.guest_ordering.dto.OrderStatusResponse;
+import com.rms.restaurant.module.notification.dto.NotificationLogResponse;
 import com.rms.restaurant.module.order.dto.OrderResponse;
 import com.rms.restaurant.module.order.model.AssistanceRequest;
+import com.rms.restaurant.module.reservation.dto.ReservationResponse;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.user.dto.AuditLogResponse;
 import lombok.RequiredArgsConstructor;
@@ -76,9 +78,28 @@ public class RealtimeEventPublisher {
         }
     }
 
+    public void publishReservationEvent(String eventType, ReservationResponse reservation) {
+        try {
+            messagingTemplate.convertAndSend("/topic/reservations", new ReservationEvent(eventType, reservation));
+        } catch (Exception e) {
+            log.warn("Failed to publish reservation event {} for reservation {}: {}",
+                    eventType, reservation.id(), e.getMessage());
+        }
+    }
+
+    public void publishNotificationEvent(NotificationLogResponse notification) {
+        try {
+            messagingTemplate.convertAndSend("/topic/notifications", notification);
+        } catch (Exception e) {
+            log.warn("Failed to publish notification event {}: {}", notification.id(), e.getMessage());
+        }
+    }
+
     public record TableStatusEvent(String tableId, String name, String area, TableStatus status) {}
 
     public record OrderEvent(String eventType, OrderResponse order) {}
 
     public record AssistanceEvent(String eventType, AssistanceRequest request) {}
+
+    public record ReservationEvent(String eventType, ReservationResponse reservation) {}
 }

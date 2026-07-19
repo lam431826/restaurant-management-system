@@ -108,7 +108,9 @@ public class ReservationServiceImpl implements ReservationService {
 
         audit("RESERVATION_CREATE", saved.getId(),
                 "{\"guestName\":\"" + esc(saved.getGuestName()) + "\",\"tableId\":\"" + esc(saved.getTableId()) + "\"}");
-        return enrich(saved);
+        ReservationResponse response = enrich(saved);
+        realtimeEventPublisher.publishReservationEvent("CREATED", response);
+        return response;
     }
 
     @Override
