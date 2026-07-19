@@ -53,6 +53,7 @@ public class ShiftMapper {
                 shift.getCashierId(),
                 shift.getClosedBy(),
                 shift.getStatus(),
+                shift.getShiftType(),
                 shift.getOpenedAt(),
                 shift.getClosedAt(),
                 shift.getOpeningCash(),

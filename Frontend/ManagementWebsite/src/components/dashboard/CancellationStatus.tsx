@@ -23,7 +23,7 @@ const CancellationStatus = () => {
     <Card className="w-full h-full">
       <CardHeader title="Tình trạng hủy món" actions={<PeriodSelect />} />
       <CardBody>
-        <div className="flex gap-12 mb-5">
+        <div className="flex flex-wrap gap-x-12 gap-y-3 mb-5">
           <div className="flex flex-col gap-1">
             <span className="text-sm text-ink-subtle">Món bị hủy</span>
             <span className="text-[2.4rem] font-extrabold text-ink leading-[1.1]">{cancellation.cancelledItems}</span>

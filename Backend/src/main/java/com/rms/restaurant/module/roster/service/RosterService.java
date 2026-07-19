@@ -38,5 +38,9 @@ public interface RosterService {
     // WS-09, BR-WS-10
     List<AttendanceReportRow> getAttendanceReport(LocalDate from, LocalDate to);
 
+    // BR-WS-14: manager lists and resolves MISSING_CLOCKOUT records
+    List<AttendanceResponse> listMissingClockouts(LocalDate from, LocalDate to);
+    AttendanceResponse resolveMissingClockout(String attendanceId, ResolveClockoutRequest request);
+
     List<StaffSummaryResponse> listStaff();
 }

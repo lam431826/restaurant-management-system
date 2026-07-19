@@ -8,6 +8,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,8 +36,9 @@ public class PaymentController {
     @PostMapping
     @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PaymentResponse>> process(
-            @Valid @RequestBody ProcessPaymentRequest request) {
-        PaymentResponse created = paymentService.process(request);
+            @Valid @RequestBody ProcessPaymentRequest request,
+            @AuthenticationPrincipal UserDetails principal) {
+        PaymentResponse created = paymentService.process(request, principal.getUsername());
         return ResponseEntity
                 .created(URI.create("/api/payments/" + created.id()))
                 .body(ApiResponse.success(created));

@@ -1,0 +1,183 @@
+import { useEffect, useRef, useState } from 'react'
+import { Picker } from '../staff/EmployeeModal'
+import { roomAreas, rooms } from '../../data/mockData'
+import { PAYMENT_METHODS } from '../../data/endOfDayReportMockData'
+import type { EndOfDayFilterState } from '../../data/endOfDayReportMockData'
+import EndOfDayDateRangePicker from './EndOfDayDateRangePicker'
+
+interface Props {
+  value: EndOfDayFilterState
+  onChange: (next: EndOfDayFilterState) => void
+  staffOptions: string[]
+}
+
+const ChevronDown = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 12 15 18 9" />
+  </svg>
+)
+const CalendarIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted">
+    <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+  </svg>
+)
+const ClockIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted">
+    <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+  </svg>
+)
+const SearchIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted">
+    <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+)
+
+const Section = ({ title, required, children }: { title: string; required?: boolean; children: React.ReactNode }) => (
+  <div className="flex flex-col gap-3 border-b border-line pb-5">
+    <span className="text-md font-semibold text-ink flex items-center gap-1">
+      {title}{required && <span className="w-1.5 h-1.5 rounded-full bg-primary" />}
+    </span>
+    {children}
+  </div>
+)
+
+const RadioRow = ({ checked, onSelect, label }: { checked: boolean; onSelect: () => void; label: string }) => (
+  <label className="flex items-center gap-2 cursor-pointer">
+    <input type="radio" checked={checked} onChange={onSelect} className="w-4 h-4 accent-[var(--kv-primary)] cursor-pointer" />
+    <span className="text-md text-ink">{label}</span>
+  </label>
+)
+
+const fieldCls =
+  'w-full h-10 px-3 bg-field border border-line-default rounded-md text-md text-ink transition-colors ' +
+  'placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary'
+
+/** Chip multi-select — selected values show as removable pills, dropdown adds more. */
+const ChipMultiSelect = ({ options, selected, onChange, placeholder }: {
+  options: string[]; selected: string[]; onChange: (next: string[]) => void; placeholder: string
+}) => {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+  const toggle = (v: string) => onChange(selected.includes(v) ? selected.filter(s => s !== v) : [...selected, v])
+
+  return (
+    <div ref={ref} className="relative">
+      <div
+        onClick={() => setOpen(o => !o)}
+        className={`flex flex-wrap items-center gap-1.5 min-h-10 px-2 py-1.5 bg-field border rounded-md cursor-pointer transition-colors ${open ? 'border-primary' : 'border-line-default hover:border-line-strong'}`}
+      >
+        {selected.length === 0 && <span className="px-1 text-md text-ink-muted">{placeholder}</span>}
+        {selected.map(v => (
+          <span key={v} className="flex items-center gap-1.5 h-7 pl-2 pr-1.5 rounded bg-primary-25 text-primary text-sm">
+            {v}
+            <button type="button" onClick={e => { e.stopPropagation(); toggle(v) }} className="hover:opacity-70 cursor-pointer" aria-label="Bỏ chọn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </span>
+        ))}
+        <ChevronDown />
+      </div>
+      {open && (
+        <div className="absolute top-[calc(100%+0.4rem)] left-0 right-0 bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] max-h-[16rem] overflow-y-auto py-1">
+          {options.length === 0
+            ? <div className="px-3 py-2 text-md text-ink-muted">Không có dữ liệu</div>
+            : options.map(o => (
+              <label key={o} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-[var(--kv-state-hover-bg)]">
+                <input type="checkbox" checked={selected.includes(o)} onChange={() => toggle(o)} className="w-4 h-4 accent-[var(--kv-primary)] cursor-pointer" />
+                <span className="text-md text-ink truncate">{o}</span>
+              </label>
+            ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const EndOfDayFilters = ({ value: f, onChange, staffOptions }: Props) => {
+  const set = <K extends keyof EndOfDayFilterState>(key: K, val: EndOfDayFilterState[K]) => onChange({ ...f, [key]: val })
+  const tableOptions = (f.areaName ? rooms.filter(r => r.area === f.areaName) : rooms).map(r => r.name)
+
+  return (
+    <div className="flex flex-col gap-5">
+      <Section title="Thời gian">
+        <RadioRow checked={!f.useCustomRange} onSelect={() => set('useCustomRange', false)} label="" />
+        {!f.useCustomRange && (
+          <div className="flex flex-col gap-2 -mt-1 ml-6">
+            <div className="relative">
+              <input
+                type="date" value={f.date} onChange={e => set('date', e.target.value)}
+                className={`${fieldCls} pr-9 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer`}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"><CalendarIcon /></span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input type="time" value={f.timeFrom} onChange={e => set('timeFrom', e.target.value)}
+                  className={`${fieldCls} pr-9 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer`} />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"><ClockIcon /></span>
+              </div>
+              <span className="text-md text-ink-subtle shrink-0">Đến</span>
+              <div className="relative flex-1">
+                <input type="time" value={f.timeTo} onChange={e => set('timeTo', e.target.value)}
+                  className={`${fieldCls} pr-9 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer`} />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"><ClockIcon /></span>
+              </div>
+            </div>
+          </div>
+        )}
+        <RadioRow checked={f.useCustomRange} onSelect={() => set('useCustomRange', true)} label="Lựa chọn khác" />
+        {f.useCustomRange && (
+          <div className="-mt-1 ml-6">
+            <EndOfDayDateRangePicker
+              from={f.customFrom} to={f.customTo}
+              onChange={(from, to) => onChange({ ...f, customFrom: from, customTo: to })}
+            />
+          </div>
+        )}
+      </Section>
+
+      <Section title="Khách hàng">
+        <div className="relative">
+          <input
+            className={`${fieldCls} pl-9`}
+            placeholder="Theo mã, tên, điện thoại"
+            value={f.customerQuery}
+            onChange={e => set('customerQuery', e.target.value)}
+          />
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"><SearchIcon /></span>
+        </div>
+      </Section>
+
+      <Section title="Người nhận đơn" required>
+        <ChipMultiSelect options={staffOptions} selected={f.staffNames} onChange={v => set('staffNames', v)} placeholder="Chọn người nhận đơn" />
+      </Section>
+
+      <Section title="Người tạo">
+        <Picker value={f.createdBy} options={staffOptions} placeholder="Chọn người tạo" onChange={v => set('createdBy', v === f.createdBy ? '' : v)} />
+      </Section>
+
+      <Section title="Phương thức thanh toán">
+        <Picker value={f.paymentMethod} options={PAYMENT_METHODS} placeholder="Chọn phương thức" onChange={v => set('paymentMethod', v === f.paymentMethod ? '' : v)} />
+      </Section>
+
+      <div className="flex flex-col gap-3">
+        <span className="text-md font-semibold text-ink">Phòng/Bàn</span>
+        <Picker
+          value={f.areaName} options={roomAreas.map(a => a.name)} placeholder="Chọn khu vực"
+          onChange={v => onChange({ ...f, areaName: v === f.areaName ? '' : v, tableName: '' })}
+        />
+        <Picker
+          value={f.tableName} options={tableOptions} placeholder="Chọn phòng/bàn"
+          onChange={v => set('tableName', v === f.tableName ? '' : v)}
+        />
+      </div>
+    </div>
+  )
+}
+
+export default EndOfDayFilters

@@ -36,12 +36,21 @@ public enum ApplicationError {
     DUPLICATE_EMAIL("Email already in use", HttpStatus.CONFLICT),
     DUPLICATE_PHONE("Phone number already in use", HttpStatus.CONFLICT),
     USER_NOT_UNLOCKABLE("Only locked accounts can be unlocked", HttpStatus.UNPROCESSABLE_ENTITY),
+    MANAGER_CANNOT_ASSIGN_ADMIN_ROLE("Only an administrator can create an ADMIN account", HttpStatus.FORBIDDEN),
 
     // Menu Management
     DUPLICATE_CATEGORY_NAME("A category with this name already exists", HttpStatus.CONFLICT),
     CATEGORY_HAS_ITEMS("Category still has items; reassign or remove them first", HttpStatus.CONFLICT),
     MENU_ITEM_HAS_ORDERS("Item has existing orders and cannot be deleted; deactivate it instead", HttpStatus.CONFLICT),
     MENU_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
+
+    // Employee Management
+    EMPLOYEE_NOT_FOUND("Employee not found", HttpStatus.NOT_FOUND),
+    DUPLICATE_EMPLOYEE_CODE("Employee code already in use", HttpStatus.CONFLICT),
+    DUPLICATE_EMPLOYEE_PHONE("Phone number already in use", HttpStatus.CONFLICT),
+    EMPLOYEE_USER_ALREADY_LINKED("This user account is already linked to another employee", HttpStatus.CONFLICT),
+    EMPLOYEE_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
+    EMPLOYEE_IMPORT_TOO_MANY_ROWS("Import file exceeds the 500-row limit", HttpStatus.BAD_REQUEST),
 
     // Table Management
     DUPLICATE_TABLE_NAME("A table with this name already exists", HttpStatus.CONFLICT),
@@ -62,6 +71,9 @@ public enum ApplicationError {
     SHIFT_CLOSED("Shift is already closed", HttpStatus.UNPROCESSABLE_ENTITY),
     SHIFT_VARIANCE_NOTE_REQUIRED("A closing note is required when variance exceeds tolerance", HttpStatus.UNPROCESSABLE_ENTITY),
     SHIFT_HANDOVER_EXCEEDS_CASH("Handover amount cannot exceed actual cash counted", HttpStatus.UNPROCESSABLE_ENTITY),
+    FLOATING_REQUIRES_MAIN_SHIFT("Không có ca chính nào đang mở để mở ca tạm.", HttpStatus.CONFLICT),
+    SHIFT_NOT_FLOATING("Ca này không phải ca tạm.", HttpStatus.UNPROCESSABLE_ENTITY),
+    MERGE_TARGET_INVALID("Ca chính để gộp không hợp lệ hoặc đã đóng.", HttpStatus.UNPROCESSABLE_ENTITY),
     CASHIER_NOT_CHECKED_IN("You must be clocked in on a work shift before opening a cash shift", HttpStatus.CONFLICT),
     CLOCK_OUT_OPEN_SHIFT("Bạn còn ca thu ngân đang mở. Vui lòng đóng ca thu ngân trước khi chấm công ra.", HttpStatus.CONFLICT),
     CASH_OUT_EXCEEDS_BALANCE("Cash-out amount exceeds current drawer balance", HttpStatus.UNPROCESSABLE_ENTITY),
@@ -94,6 +106,7 @@ public enum ApplicationError {
     INVALID_INVOICE_ITEMS("Order contains invalid invoice items", HttpStatus.UNPROCESSABLE_ENTITY),
     INVALID_INVOICE_TOTAL("Invoice subtotal must be greater than zero and total amount cannot be negative", HttpStatus.UNPROCESSABLE_ENTITY),
     FORBIDDEN("You do not have permission to perform this action", HttpStatus.FORBIDDEN),
+    PAYMENT_NO_OPEN_SHIFT("Shift is not opening", HttpStatus.FORBIDDEN),
 
     // Roster (Work Shift) — WS-01..09, BR-WS-*
     TEMPLATE_NOT_FOUND("Shift template not found", HttpStatus.NOT_FOUND),
@@ -106,10 +119,49 @@ public enum ApplicationError {
     MIN_REST_VIOLATION("Minimum rest period between shifts is violated", HttpStatus.CONFLICT),
     CLOCK_ACTION_OUT_OF_WINDOW("Clock-in/out is only allowed within the configured time window", HttpStatus.UNPROCESSABLE_ENTITY),
     ATTENDANCE_NOT_CHECKED_IN("Not clocked in for this shift", HttpStatus.CONFLICT),
+    ATTENDANCE_NOT_FOUND("Attendance record not found", HttpStatus.NOT_FOUND),
+    ATTENDANCE_NOT_MISSING_CLOCKOUT("Chỉ có thể xử lý bản ghi thiếu chấm công ra", HttpStatus.UNPROCESSABLE_ENTITY),
+    RESOLVE_CLOCKOUT_TIME_INVALID("Giờ ra phải sau giờ vào", HttpStatus.UNPROCESSABLE_ENTITY),
+    EARLY_LEAVE_REASON_REQUIRED("A reason is required to clock out before the scheduled shift end", HttpStatus.UNPROCESSABLE_ENTITY),
     ROSTER_REQUEST_FREEZE_WINDOW("Cannot submit a request this close to shift start", HttpStatus.UNPROCESSABLE_ENTITY),
     ROSTER_REQUEST_DUPLICATE_PENDING("A pending request already exists for this shift", HttpStatus.CONFLICT),
     ROSTER_REQUEST_NOT_FOUND("Shift request not found", HttpStatus.NOT_FOUND),
     ROSTER_REQUEST_NOT_PENDING("This request has already been decided", HttpStatus.CONFLICT),
+
+    // Payroll (SRS_PAY) — UC-PAY-03..08, BR-PAY-11..18
+    PAYROLL_SHEET_NOT_FOUND("Payroll sheet not found", HttpStatus.NOT_FOUND),
+    PAYSLIP_NOT_FOUND("Payslip not found", HttpStatus.NOT_FOUND),
+    PAYROLL_SHEET_NOT_DRAFT("Chỉ bảng lương ở trạng thái Tạm tính mới được thực hiện thao tác này", HttpStatus.UNPROCESSABLE_ENTITY),
+    PAYROLL_SHEET_NOT_FINALIZED("Chỉ bảng lương Đã chốt lương mới được thanh toán", HttpStatus.UNPROCESSABLE_ENTITY),
+    PAYROLL_PERIOD_INVALID("Kỳ làm việc không hợp lệ", HttpStatus.BAD_REQUEST),
+    PAYROLL_SCOPE_EMPLOYEES_REQUIRED("Phạm vi Tùy chọn cần ít nhất một nhân viên", HttpStatus.BAD_REQUEST),
+    SALARY_PAYMENT_AMOUNT_INVALID("Tiền trả nhân viên phải lớn hơn 0", HttpStatus.UNPROCESSABLE_ENTITY),
+    SALARY_PAYMENT_EXCEEDS_REMAINING("Tiền trả nhân viên vượt quá số còn cần trả", HttpStatus.UNPROCESSABLE_ENTITY),
+    PAYSLIP_ALREADY_PAID("Phiếu lương đã có thanh toán, không thể hủy", HttpStatus.UNPROCESSABLE_ENTITY),
+    PAYSLIP_CANCELLED("Phiếu lương đã bị hủy", HttpStatus.UNPROCESSABLE_ENTITY),
+    SALARY_TEMPLATE_NOT_FOUND("Không tìm thấy mẫu lương", HttpStatus.NOT_FOUND),
+    SALARY_TEMPLATE_NAME_DUPLICATE("Tên mẫu lương đã tồn tại", HttpStatus.CONFLICT),
+
+    // Attendance & Shift (SRS_AT) — UC-AT-01..07, BR-AT-*
+    AT_SHIFT_NOT_FOUND("Không tìm thấy ca làm việc", HttpStatus.NOT_FOUND),
+    AT_SHIFT_NAME_DUPLICATE("Tên ca làm việc đã tồn tại", HttpStatus.CONFLICT),
+    AT_SHIFT_TIME_INVALID("Giờ làm việc của ca không hợp lệ", HttpStatus.BAD_REQUEST),
+    AT_SHIFT_INACTIVE("Ca làm việc đã ngừng hoạt động, không thể chọn khi xếp lịch", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_SHIFT_HAS_ATTENDANCE("Ca đã có dữ liệu chấm công, chỉ có thể ngừng hoạt động", HttpStatus.CONFLICT),
+    AT_SCHEDULE_NOT_FOUND("Không tìm thấy lịch làm việc", HttpStatus.NOT_FOUND),
+    AT_SCHEDULE_DUPLICATE("Nhân viên đã được xếp ca này trong ngày", HttpStatus.CONFLICT),
+    AT_SCHEDULE_OVERLAP_LIMIT("Tổng thời gian trùng giữa các ca trong ngày vượt quá 12 giờ", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_SCHEDULE_HAS_ATTENDANCE("Lịch đã có dữ liệu chấm công, không thể xóa", HttpStatus.CONFLICT),
+    AT_SCHEDULE_RULE_NOT_FOUND("Không tìm thấy quy tắc lặp lịch", HttpStatus.NOT_FOUND),
+    AT_EMPLOYEE_INACTIVE("Nhân viên đã ngừng làm việc, không thể xếp lịch mới", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_RECORD_NOT_FOUND("Không tìm thấy bản ghi chấm công", HttpStatus.NOT_FOUND),
+    AT_RECORD_TIME_INVALID("Giờ ra phải sau giờ vào", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_SUBSTITUTE_SINGLE_ONLY("Chỉ có thể chỉ định người làm thay khi chọn đúng một lịch làm việc", HttpStatus.BAD_REQUEST),
+    AT_SUBSTITUTE_SELF("Người làm thay phải khác nhân viên được xếp ca", HttpStatus.BAD_REQUEST),
+    AT_MERGE_LIMIT_EXCEEDED("Vượt giới hạn gộp ca liên tục", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_MERGE_DISABLED("Chế độ chấm 1 lượt Vào–Ra cho nhiều ca liên tục chưa được bật", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_VIOLATION_TYPE_NOT_FOUND("Không tìm thấy loại vi phạm", HttpStatus.NOT_FOUND),
+    AT_SETTING_INVALID("Thiết lập chấm công không hợp lệ", HttpStatus.BAD_REQUEST),
 
     // System
     INTERNAL_ERROR("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR);

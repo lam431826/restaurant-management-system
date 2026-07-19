@@ -13,6 +13,9 @@ public interface PaymentRepository extends JpaRepository<Payment, String> {
     List<Payment> findAllByOrderByCreatedAtDesc();
     List<Payment> findByInvoiceIdOrderByCreatedAtDesc(String invoiceId);
 
+    // BR-CS-08: payments attributed to a specific shift (revenue by ownership)
+    List<Payment> findByShiftIdAndStatus(String shiftId, String status);
+
     @Query("SELECT p FROM Payment p WHERE p.status = 'PAID' AND p.createdAt >= :from AND p.createdAt <= :to")
     List<Payment> findPaidPaymentsBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 }

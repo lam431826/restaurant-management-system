@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ShiftTemplate, ShiftTemplateInput } from '../../../services/rosterService'
-import { createTemplate, updateTemplate } from '../../../services/rosterService'
+import type { ShiftDto, ShiftPayload } from '../../../api/attendance'
+import { createShift, formatTime, updateShift } from '../../../api/attendance'
 import { ApiError } from '../../../services/api'
-import { formatTime } from './scheduleUtils'
 
 interface Props {
-  template?: ShiftTemplate | null
+  shift?: ShiftDto | null
   onClose: () => void
   onSaved: () => void
 }
@@ -87,13 +86,13 @@ const TimePicker = ({ value, onChange }: { value: string; onChange: (v: string) 
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center justify-between gap-2 w-[7.5rem] h-11 px-3 bg-field border rounded-md cursor-pointer transition-colors ${open ? 'border-primary' : 'border-line-default hover:border-line-strong'}`}
+        className={`flex items-center justify-between gap-2 w-[11.25rem] h-11 px-3 bg-field border rounded-md cursor-pointer transition-colors ${open ? 'border-primary' : 'border-line-default hover:border-line-strong'}`}
       >
         <span className="text-md text-ink">{value}</span>
         <ClockIcon />
       </button>
       {open && (
-        <div ref={listRef} className="absolute top-[calc(100%+0.4rem)] left-0 w-[7.5rem] max-h-[15rem] overflow-y-auto bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] py-1">
+        <div ref={listRef} className="absolute top-[calc(100%+0.4rem)] left-0 w-[11.25rem] max-h-[15rem] overflow-y-auto bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] py-1">
           {TIME_OPTIONS.map(t => (
             <button
               key={t}
@@ -111,13 +110,12 @@ const TimePicker = ({ value, onChange }: { value: string; onChange: (v: string) 
   )
 }
 
-const ShiftTemplateModal = ({ template, onClose, onSaved }: Props) => {
-  const [name, setName]           = useState(template?.name ?? '')
-  const [workStart, setWorkStart] = useState(template ? formatTime(template.startTime) : '23:00')
-  const [workEnd, setWorkEnd]     = useState(template ? formatTime(template.endTime) : '03:00')
-  // Check-in window is UI-only for now — the backend template has no such field.
-  const [checkStart, setCheckStart] = useState(template ? formatTime(template.startTime) : '20:00')
-  const [checkEnd, setCheckEnd]     = useState(template ? formatTime(template.endTime) : '06:00')
+const ShiftTemplateModal = ({ shift, onClose, onSaved }: Props) => {
+  const [name, setName]           = useState(shift?.name ?? '')
+  const [workStart, setWorkStart] = useState(shift ? formatTime(shift.startTime) : '07:00')
+  const [workEnd, setWorkEnd]     = useState(shift ? formatTime(shift.endTime) : '11:00')
+  const [checkStart, setCheckStart] = useState(shift ? formatTime(shift.checkInWindowStart) || formatTime(shift.startTime) : '04:00')
+  const [checkEnd, setCheckEnd]     = useState(shift ? formatTime(shift.checkInWindowEnd) || formatTime(shift.endTime) : '14:00')
   const [error, setError]         = useState('')
   const [saving, setSaving]       = useState(false)
 
@@ -147,20 +145,18 @@ const ShiftTemplateModal = ({ template, onClose, onSaved }: Props) => {
       nameRef.current?.focus()
       return
     }
-    const payload: ShiftTemplateInput = {
+    const payload: ShiftPayload = {
       name: name.trim(),
       startTime: `${workStart}:00`,
       endTime: `${workEnd}:00`,
-      // Preserve fields not shown in this simplified form.
-      breakMinutes: template?.breakMinutes ?? 0,
-      headcountTarget: template?.headcountTarget ?? 1,
-      wage: template?.wage ?? 0,
+      checkInWindowStart: `${checkStart}:00`,
+      checkInWindowEnd: `${checkEnd}:00`,
     }
     setSaving(true)
     setError('')
     try {
-      if (template) await updateTemplate(template.id, payload)
-      else await createTemplate(payload)
+      if (shift) await updateShift(shift.id, payload)
+      else await createShift(payload)
       onSaved()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Không thể lưu ca làm việc.')
@@ -171,25 +167,25 @@ const ShiftTemplateModal = ({ template, onClose, onSaved }: Props) => {
 
   return (
     <div
-      className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center p-6 overflow-y-auto"
+      className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center p-4 sm:p-6 overflow-y-auto"
       style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }}
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="w-full max-w-[46rem] my-[10vh] bg-card rounded-xl shadow-lg flex flex-col">
-        <div className="flex items-center justify-between px-7 h-16 shrink-0">
-          <h2 className="text-h3 font-bold text-ink">{template ? 'Sửa ca làm việc' : 'Thêm ca làm việc'}</h2>
+      <div className="w-full max-w-[69rem] my-[8vh] bg-card rounded-xl shadow-lg flex flex-col">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4">
+          <h2 className="text-h3 font-bold text-ink">{shift ? 'Sửa ca làm việc' : 'Thêm ca làm việc'}</h2>
           <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">
             <CloseIcon />
           </button>
         </div>
 
-        <div className="px-7 py-4 flex flex-col gap-5">
+        <div className="px-6 pb-2 flex flex-col gap-5">
           {/* Tên */}
           <div className="flex items-center gap-4">
             <label className="w-[13rem] shrink-0 text-md text-ink">Tên</label>
             <input
               ref={nameRef}
-              className={inputCls}
+              className={`${inputCls} min-w-0`}
               value={name}
               onChange={e => { setName(e.target.value); if (error) setError('') }}
             />
@@ -200,27 +196,31 @@ const ShiftTemplateModal = ({ template, onClose, onSaved }: Props) => {
             <label className="w-[13rem] shrink-0 text-md text-ink flex items-center gap-1.5">
               Giờ làm việc <InfoIcon />
             </label>
-            <TimePicker value={workStart} onChange={handleWorkStart} />
-            <span className="text-md text-ink-subtle">Đến</span>
-            <TimePicker value={workEnd} onChange={setWorkEnd} />
-            <span className="text-md text-ink-subtle ml-2 whitespace-nowrap">{durationLabel(workStart, workEnd)}</span>
+            <div className="flex items-center flex-wrap gap-x-3 gap-y-2">
+              <TimePicker value={workStart} onChange={handleWorkStart} />
+              <span className="text-md text-ink-subtle">Đến</span>
+              <TimePicker value={workEnd} onChange={setWorkEnd} />
+              <span className="text-md text-ink-subtle whitespace-nowrap">{durationLabel(workStart, workEnd)}</span>
+            </div>
           </div>
 
-          {/* Giờ cho phép chấm công */}
+          {/* Giờ cho phép chấm công (BR-AT-14) */}
           <div className="flex items-center gap-4">
             <label className="w-[13rem] shrink-0 text-md text-ink flex items-center gap-1.5">
               Giờ cho phép chấm công <InfoIcon />
             </label>
-            <TimePicker value={checkStart} onChange={setCheckStart} />
-            <span className="text-md text-ink-subtle">Đến</span>
-            <TimePicker value={checkEnd} onChange={setCheckEnd} />
+            <div className="flex items-center flex-wrap gap-x-3 gap-y-2">
+              <TimePicker value={checkStart} onChange={setCheckStart} />
+              <span className="text-md text-ink-subtle">Đến</span>
+              <TimePicker value={checkEnd} onChange={setCheckEnd} />
+            </div>
           </div>
 
           {error && <span className="text-md text-danger">{error}</span>}
         </div>
 
-        <div className="flex items-center justify-end gap-3 px-7 py-4 border-t border-line shrink-0">
-          <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose}>Bỏ qua</button>
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-line mt-4">
+          <button className="kv-btn kv-btn-outline-neutral h-10 bg-card" onClick={onClose}>Bỏ qua</button>
           <button className="kv-btn kv-btn-primary h-10" disabled={saving} onClick={() => void handleSave()}>
             {saving ? 'Đang lưu...' : 'Lưu'}
           </button>

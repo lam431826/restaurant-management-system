@@ -60,7 +60,8 @@
   .kv-card-lg { @apply min-h-[18rem] rounded-lg; }
 
   .kv-card-header {
-    @apply flex items-start gap-3 px-6 pt-4 pb-2;
+    /* flex-wrap: on narrow screens the actions drop below the title instead of overflowing */
+    @apply flex flex-wrap items-start gap-3 px-6 pt-4 pb-2;
   }
   .kv-card-header-prefix { @apply shrink-0; }
   .kv-card-header-text { @apply flex-1 min-w-0 flex flex-col gap-0.5; }
@@ -68,7 +69,7 @@
     @apply text-md font-semibold text-ink m-0 truncate;
   }
   .kv-card-subtitle { @apply text-sm text-ink-subtle m-0; }
-  .kv-card-header-actions { @apply shrink-0 flex items-center gap-2; }
+  .kv-card-header-actions { @apply shrink-0 max-w-full flex flex-wrap items-center gap-2; }
 
   .kv-card-body { @apply flex-1 px-6 pt-2 pb-4 flex flex-col; }
   .kv-card-body-no-pad { @apply p-0; }

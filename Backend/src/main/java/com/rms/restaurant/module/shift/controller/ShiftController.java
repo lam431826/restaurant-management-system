@@ -54,6 +54,35 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.close(id, request, principal.getUsername()));
     }
 
+    // CS-07 / BR-CS-18: Open a floating shift – POST /api/shifts/floating
+    @PostMapping("/floating")
+    public ResponseEntity<ShiftSummaryResponse> openFloating(
+            @AuthenticationPrincipal UserDetails principal) {
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(shiftService.openFloating(principal.getUsername()));
+    }
+
+    // CS-07 / BR-CS-19: Merge a floating shift into its main shift – POST /api/shifts/{id}/merge
+    @PostMapping("/{id}/merge")
+    public ResponseEntity<ShiftSummaryResponse> mergeFloating(
+            @PathVariable String id,
+            @Valid @RequestBody MergeFloatingRequest request,
+            @AuthenticationPrincipal UserDetails principal) {
+
+        return ResponseEntity.ok(shiftService.mergeFloating(id, request, principal.getUsername()));
+    }
+
+    // BR-CS-15: Manager force-close a stale/open shift – PUT /api/shifts/{id}/force-close
+    @PutMapping("/{id}/force-close")
+    public ResponseEntity<ShiftSummaryResponse> forceClose(
+            @PathVariable String id,
+            @Valid @RequestBody ForceCloseShiftRequest request,
+            @AuthenticationPrincipal UserDetails principal) {
+
+        return ResponseEntity.ok(shiftService.forceClose(id, request, principal.getUsername()));
+    }
+
     // CS-03: Get summary of a specific shift – GET /api/shifts/{id}/summary
     @GetMapping("/{id}/summary")
     public ResponseEntity<ShiftSummaryResponse> getSummary(
@@ -69,6 +98,22 @@ public class ShiftController {
             @AuthenticationPrincipal UserDetails principal) {
 
         return ResponseEntity.ok(shiftService.getMyOpenShift(principal.getUsername()));
+    }
+
+    // CS-07: open normal shifts a floating shift can merge into – GET /api/shifts/open-normal
+    @GetMapping("/open-normal")
+    public ResponseEntity<java.util.List<OpenShiftBriefResponse>> openNormalShifts(
+            @AuthenticationPrincipal UserDetails principal) {
+
+        return ResponseEntity.ok(shiftService.listOpenNormalShifts(principal.getUsername()));
+    }
+
+    // BR-CS-09/11: suggested opening float (last handover) – GET /api/shifts/suggested-float
+    @GetMapping("/suggested-float")
+    public ResponseEntity<java.math.BigDecimal> suggestedFloat(
+            @AuthenticationPrincipal UserDetails principal) {
+
+        return ResponseEntity.ok(shiftService.getSuggestedOpeningFloat(principal.getUsername()));
     }
 
     // CS-05: Manager daily summary – GET /api/shifts/daily-summary?date=YYYY-MM-DD

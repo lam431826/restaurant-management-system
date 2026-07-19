@@ -144,6 +144,14 @@
             <version>3.0.0</version>
         </dependency>
 
+        <!-- ── DevTools (auto-restart on class changes, dev only) ───── -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+
         <!-- ── Test ──────────────────────────────────────────────── -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

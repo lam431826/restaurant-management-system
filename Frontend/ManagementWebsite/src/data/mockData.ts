@@ -464,69 +464,49 @@ export const reservationAreaOrder = ['Phòng VIP', 'Lầu 2', 'Lầu 3'];
 
 /* ─── Nhân viên (Staff / Employees → Danh sách nhân viên) ────────────────── */
 export interface Employee {
-  id: number;
+  id: string;
   code: string;          // Mã nhân viên (NV000001)
   timekeepCode: string;  // Mã chấm công
   name: string;          // Tên nhân viên
   phone: string;         // Số điện thoại
-  phoneVerified: boolean;// Số điện thoại đã xác thực
   idNumber: string;      // Số CMND/CCCD
-  debt: number;          // Nợ và tạm ứng
   note: string;          // Ghi chú
-  department: string;    // Phòng ban
-  position: string;      // Chức danh
-  active: boolean;       // Đang làm việc / Đã nghỉ
-  branchPay: string;     // Chi nhánh trả lương
-  branchWork: string;    // Chi nhánh làm việc
+  status: 'ACTIVE' | 'INACTIVE'; // Đang làm việc / Đã nghỉ
   birthday: string;      // Ngày sinh
   gender: string;        // Giới tính
   address: string;       // Địa chỉ
   email: string;         // Email
-  facebook: string;      // Facebook
   startDate: string;     // Ngày bắt đầu làm việc
-  account: string;       // Tài khoản hệ thống
-  mobileDevice: string;  // Thiết bị di động
+  userId: string;        // Id tài khoản đăng nhập đã gắn (rỗng = chưa liên kết)
 }
 
-export const departments = ['Quản lý', 'Thu ngân', 'Phục vụ', 'Bếp', 'Kế toán'];
-export const positions = ['Quản lý cửa hàng', 'Nhân viên thu ngân', 'Nhân viên phục vụ', 'Đầu bếp', 'Kế toán'];
-export const employeeBranches = branches.map(b => b.name);
-
-const rawEmployees: [string, string, string, string, number, string, string][] = [
-  // name, phone, idNumber, department, debt, position, timekeepCode
-  ['Lê Thị Bảo Trân',           '0905123456', '079123456789', 'Quản lý', 0,        'Quản lý cửa hàng',   'CC001'],
-  ['Nguyễn Thị Hồng Thảo Vân',  '0905234567', '079234567890', 'Thu ngân', 0,       'Nhân viên thu ngân', 'CC002'],
-  ['Nguyễn Minh Loan',          '0905345678', '079345678901', 'Phục vụ', 500_000,  'Nhân viên phục vụ',  'CC003'],
-  ['Lã Ngọc Anh',               '0905456789', '079456789012', 'Phục vụ', 0,        'Nhân viên phục vụ',  'CC004'],
-  ['Trần Văn Hùng',             '0905567890', '079567890123', 'Bếp', 1_000_000,    'Đầu bếp',            'CC005'],
-  ['Hương - Kế Toán',           '0905678901', '079678901234', 'Kế toán', 0,        'Kế toán',            'CC006'],
-  ['Hoàng - Kinh Doanh',        '0905789012', '079789012345', 'Quản lý', 0,        'Quản lý cửa hàng',   'CC007'],
+const rawEmployees: [string, string, string, string][] = [
+  // name, phone, idNumber, timekeepCode
+  ['Lê Thị Bảo Trân',           '0905123456', '079123456789', 'CC001'],
+  ['Nguyễn Thị Hồng Thảo Vân',  '0905234567', '079234567890', 'CC002'],
+  ['Nguyễn Minh Loan',          '0905345678', '079345678901', 'CC003'],
+  ['Lã Ngọc Anh',               '0905456789', '079456789012', 'CC004'],
+  ['Trần Văn Hùng',             '0905567890', '079567890123', 'CC005'],
+  ['Hương - Kế Toán',           '0905678901', '079678901234', 'CC006'],
+  ['Hoàng - Kinh Doanh',        '0905789012', '079789012345', 'CC007'],
 ];
 
 export const employees: Employee[] = rawEmployees.map(
-  ([name, phone, idNumber, department, debt, position, timekeepCode], i) => ({
-    id: i + 1,
+  ([name, phone, idNumber, timekeepCode], i) => ({
+    id: crypto.randomUUID(),
     code: 'NV' + String(i + 1).padStart(6, '0'),
     timekeepCode,
     name,
     phone,
-    phoneVerified: i !== 0,
     idNumber,
-    debt,
     note: '',
-    department,
-    position,
-    active: true,
-    branchPay: employeeBranches[0],
-    branchWork: employeeBranches[0],
+    status: 'ACTIVE',
     birthday: '',
     gender: '',
     address: '',
     email: '',
-    facebook: '',
     startDate: '',
-    account: '',
-    mobileDevice: '',
+    userId: '',
   })
 );
 
@@ -595,15 +575,15 @@ export const navItems = [
       { label: 'Danh sách nhân viên', href: '#/manager/employees' },
       { label: 'Lịch làm việc', href: '#/manager/schedule' },
       { label: 'Bảng chấm công', href: '#/manager/timesheet' },
-      { label: 'Bảng lương', href: '#' },
+      { label: 'Bảng lương', href: '#/manager/payroll' },
       { label: 'Bảng hoa hồng', href: '#' },
-      { label: 'Thiết lập nhân viên', href: '#' },
+      { label: 'Thiết lập nhân viên', href: '#/manager/employee-settings' },
     ],
   },
   {
     id: 6,
     label: 'Sổ quỹ',
-    href: '#',
+    href: '#/manager/cash-book',
     children: [],
   },
   {
@@ -611,6 +591,7 @@ export const navItems = [
     label: 'Báo cáo',
     children: [
       { label: 'Cuối ngày', href: '#/manager/reports/daily-summary' },
+      { label: 'Đối soát ca thu ngân', href: '#/manager/reports/shift-reconciliation' },
       { label: 'Bán hàng', href: '#' },
       { label: 'Hàng hóa', href: '#' },
       { label: 'Khách hàng', href: '#' },

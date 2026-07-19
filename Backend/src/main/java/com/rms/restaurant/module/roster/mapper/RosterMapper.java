@@ -27,7 +27,8 @@ public class RosterMapper {
 
     public AttendanceResponse toAttendanceResponse(RosterAttendance a) {
         return new AttendanceResponse(a.getId(), a.getEmployeeId(), a.getWorkDate(), a.getShiftTemplateId(),
-                a.getAssignmentId(), a.getStatus(), a.getCheckInAt(), a.getCheckOutAt(), a.getWorkedMinutes(), a.isLate());
+                a.getAssignmentId(), a.getStatus(), a.getCheckInAt(), a.getCheckOutAt(), a.getWorkedMinutes(),
+                a.isLate(), a.getClockOutReason());
     }
 
     public RequestResponse toRequestResponse(RosterRequest r) {
