@@ -25,6 +25,8 @@ import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
+import com.rms.restaurant.module.authentication.model.User;
+import com.rms.restaurant.module.authentication.repository.UserRepository;
 import org.springframework.data.domain.Page;
 
 import java.util.List;
@@ -41,6 +43,7 @@ public class OrderServiceImpl implements OrderService {
     private final TableRepository tableRepository;
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
+    private final UserRepository userRepository;
     private final RealtimeEventPublisher realtimeEventPublisher;
 
     @Override
@@ -179,14 +182,17 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderResponse create(CreateOrderRequest request) {
+    public OrderResponse create(CreateOrderRequest request, String cashierUsername) {
         RestaurantTable table = tableRepository.findById(request.tableId())
                 .orElseThrow(() -> new ApplicationException(ApplicationError.TABLE_NOT_FOUND));
+        User cashier = userRepository.findByUsername(cashierUsername)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.USER_NOT_FOUND));
 
         Order order = new Order();
         order.setTableId(table.getId());
         order.setStatus(OrderStatus.ACCEPTED); // Cashier creates order, it's already accepted
         order.setNote(request.note());
+        order.setCashierId(cashier.getId());
         order.setItems(new java.util.ArrayList<>());
 
         if (request.items() != null) {

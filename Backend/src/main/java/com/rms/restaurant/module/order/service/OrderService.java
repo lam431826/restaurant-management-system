@@ -15,7 +15,8 @@ public interface OrderService {
     OrderResponse updateItemStatus(String orderId, String itemId, com.rms.restaurant.module.order.dto.UpdateOrderItemStatusRequest request);
     OrderResponse updateItemNote(String orderId, String itemId, com.rms.restaurant.module.order.dto.UpdateOrderItemNoteRequest request);
     OrderResponse addItems(String id, AddOrderItemsRequest request);
-    OrderResponse create(CreateOrderRequest request);
+    // BR-CS-08-style attribution: the order is attributed to the creating cashier's User id.
+    OrderResponse create(CreateOrderRequest request, String cashierUsername);
     OrderResponse cancel(String id, CancelOrderRequest request);
     void respondAssistance(AssistanceRespondRequest request);
     java.util.List<com.rms.restaurant.module.order.model.AssistanceRequest> getPendingAssistanceRequests();

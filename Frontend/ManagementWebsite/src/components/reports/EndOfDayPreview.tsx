@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { BRANCHES } from '../../data/endOfDayReportMockData'
-import type { EndOfDayFilterState, EndOfDayInvoiceRow } from '../../data/endOfDayReportMockData'
+import { PAYMENT_METHOD_ABBR } from '../../api/reports'
+import type { EndOfDaySalesRow, ReportPaymentMethod } from '../../api/reports'
+import type { EndOfDayFilterState } from '../../data/endOfDayReportMockData'
 
 const money = (n: number) => n.toLocaleString('vi-VN')
 const fmtDMY = (ymd: string) => { const [y, m, d] = ymd.split('-'); return `${d}/${m}/${y}` }
@@ -14,15 +16,18 @@ const fmtTime = (iso: string) => {
 }
 const escapeHtml = (v: string | number) =>
   String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const abbr = (m: ReportPaymentMethod | null) => (m ? PAYMENT_METHOD_ABBR[m] : '—')
 
 interface Props {
-  rows: EndOfDayInvoiceRow[]
+  rows: EndOfDaySalesRow[]
   filters: EndOfDayFilterState
   generatedAt: Date
+  loading: boolean
+  error: string
   onRefresh: () => void
 }
 
-const sumOf = (rows: EndOfDayInvoiceRow[]) => ({
+const sumOf = (rows: EndOfDaySalesRow[]) => ({
   quantity: rows.reduce((s, r) => s + r.quantity, 0),
   grossAmount: rows.reduce((s, r) => s + r.grossAmount, 0),
   invoiceDiscount: rows.reduce((s, r) => s + r.invoiceDiscount, 0),
@@ -69,22 +74,23 @@ const HEADERS = [
 ] as const
 const COL_COUNT = HEADERS.length
 const TABLE_WIDTH = HEADERS.reduce((s, [, , w]) => s + w, 0)
+const PAGE_SIZE = 20
 
 const timeRangeLabel = (f: EndOfDayFilterState) =>
   f.useCustomRange
     ? `${f.customFrom ? fmtDMY(f.customFrom) : '...'} - ${f.customTo ? fmtDMY(f.customTo) : '...'}`
     : fmtDMY(f.date)
 
-const buildPrintHtml = (rows: EndOfDayInvoiceRow[], filters: EndOfDayFilterState, generatedAt: Date) => {
+const buildPrintHtml = (rows: EndOfDaySalesRow[], filters: EndOfDayFilterState, generatedAt: Date) => {
   const t = sumOf(rows)
 
   const invoiceRows = rows.map(r => `
     <tr>
       <td>${escapeHtml(r.code)}</td>
-      <td>${escapeHtml(r.roomTable ?? '—')}</td>
-      <td>${escapeHtml(r.staffName)}</td>
+      <td>${escapeHtml(r.tableName ?? '—')}</td>
+      <td>${escapeHtml(r.staffName ?? '—')}</td>
       <td>${escapeHtml(fmtTime(r.time))}</td>
-      <td>${escapeHtml(r.paymentMethodAbbr)}</td>
+      <td>${escapeHtml(abbr(r.paymentMethod))}</td>
       <td class="num">${r.quantity}</td>
       <td class="num">${money(r.grossAmount)}</td>
       <td class="num">${money(r.invoiceDiscount)}</td>
@@ -141,10 +147,10 @@ const buildPrintHtml = (rows: EndOfDayInvoiceRow[], filters: EndOfDayFilterState
   `
 }
 
-const exportCsv = (rows: EndOfDayInvoiceRow[], filters: EndOfDayFilterState) => {
+const exportCsv = (rows: EndOfDaySalesRow[], filters: EndOfDayFilterState) => {
   const header = HEADERS.map(([label]) => label)
   const body = rows.map(r => [
-    r.code, r.roomTable ?? '', r.staffName, fmtTime(r.time), r.paymentMethodAbbr,
+    r.code, r.tableName ?? '', r.staffName ?? '', fmtTime(r.time), abbr(r.paymentMethod),
     r.quantity, r.grossAmount, r.invoiceDiscount, r.revenue, r.otherRevenue, r.tax, r.payment,
   ])
   const csv = [header, ...body].map(line => line.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -152,19 +158,21 @@ const exportCsv = (rows: EndOfDayInvoiceRow[], filters: EndOfDayFilterState) => 
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `bao-cao-cuoi-ngay-${filters.date}.csv`
+  const period = filters.useCustomRange ? `${filters.customFrom}_${filters.customTo}` : filters.date
+  a.download = `bao-cao-cuoi-ngay-${period}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }
 
 const td = (align: 'left' | 'right', extra = '') => `px-2 py-2 text-sm text-ink ${align === 'right' ? 'text-right' : 'text-left'} ${extra}`
 
-const EndOfDayPreview = ({ rows, filters, generatedAt, onRefresh }: Props) => {
+const EndOfDayPreview = ({ rows, filters, generatedAt, loading, error, onRefresh }: Props) => {
   const [zoom, setZoom] = useState(100)
   const [fullscreen, setFullscreen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
   const [exportOpen, setExportOpen] = useState(false)
+  const [page, setPage] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
   const exportRef = useRef<HTMLDivElement>(null)
 
@@ -207,6 +215,15 @@ const EndOfDayPreview = ({ rows, filters, generatedAt, onRefresh }: Props) => {
   }
 
   const totals = sumOf(rows)
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages - 1)
+  const pagedRows = rows.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+
+  const jumpToPage = (raw: string) => {
+    const n = parseInt(raw, 10)
+    if (Number.isNaN(n)) return
+    setPage(Math.min(totalPages - 1, Math.max(0, n - 1)))
+  }
 
   return (
     <div ref={containerRef} className="flex-1 min-w-0 flex flex-col bg-fill-strong/40 rounded-lg overflow-hidden">
@@ -215,15 +232,19 @@ const EndOfDayPreview = ({ rows, filters, generatedAt, onRefresh }: Props) => {
         <IconBtn label="Hoàn tác" disabled><UndoIcon /></IconBtn>
         <IconBtn label="Làm lại" disabled><RedoIcon /></IconBtn>
         <IconBtn label="Làm mới" onClick={handleRefresh}>
-          <span className={refreshing ? 'animate-spin inline-flex' : 'inline-flex'}><RefreshIcon /></span>
+          <span className={refreshing || loading ? 'animate-spin inline-flex' : 'inline-flex'}><RefreshIcon /></span>
         </IconBtn>
         <Divider />
-        <IconBtn label="Trang đầu" disabled><FirstIcon /></IconBtn>
-        <IconBtn label="Trang trước" disabled><PrevIcon /></IconBtn>
-        <span className="flex items-center h-9 px-2 rounded-md border border-line-default bg-field text-md text-ink font-medium">1</span>
-        <span className="text-md text-ink-subtle">/1</span>
-        <IconBtn label="Trang sau" disabled><NextIcon /></IconBtn>
-        <IconBtn label="Trang cuối" disabled><LastIcon /></IconBtn>
+        <IconBtn label="Trang đầu" disabled={safePage === 0} onClick={() => setPage(0)}><FirstIcon /></IconBtn>
+        <IconBtn label="Trang trước" disabled={safePage === 0} onClick={() => setPage(p => Math.max(0, p - 1))}><PrevIcon /></IconBtn>
+        <input
+          type="number" min={1} max={totalPages} value={safePage + 1}
+          onChange={e => jumpToPage(e.target.value)}
+          className="w-12 h-9 px-2 rounded-md border border-line-default bg-field text-md text-ink font-medium text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        />
+        <span className="text-md text-ink-subtle">/{totalPages}</span>
+        <IconBtn label="Trang sau" disabled={safePage >= totalPages - 1} onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}><NextIcon /></IconBtn>
+        <IconBtn label="Trang cuối" disabled={safePage >= totalPages - 1} onClick={() => setPage(totalPages - 1)}><LastIcon /></IconBtn>
         <Divider />
         <IconBtn label="Xem dạng tài liệu" disabled><DocIcon /></IconBtn>
         <div ref={exportRef} className="relative">
@@ -241,6 +262,10 @@ const EndOfDayPreview = ({ rows, filters, generatedAt, onRefresh }: Props) => {
         <IconBtn label="Phóng to" onClick={() => setZoom(z => Math.min(200, z + 10))}><ZoomInIcon /></IconBtn>
         <IconBtn label={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'} onClick={toggleFullscreen}><FullscreenIcon active={fullscreen} /></IconBtn>
       </div>
+
+      {error && (
+        <div className="shrink-0 px-4 py-2 bg-danger-50 text-danger text-md border-b border-danger/30">{error}</div>
+      )}
 
       {/* ── Report page — its own horizontal scroller so a wide table never bleeds
            past the pane instead of overflowing it ─────────────────────────────── */}
@@ -269,7 +294,9 @@ const EndOfDayPreview = ({ rows, filters, generatedAt, onRefresh }: Props) => {
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 ? (
+                {loading && rows.length === 0 ? (
+                  <tr><td colSpan={COL_COUNT} className="text-center text-ink-muted py-10">Đang tải dữ liệu...</td></tr>
+                ) : rows.length === 0 ? (
                   <tr><td colSpan={COL_COUNT} className="text-center text-ink-muted py-10">Không có dữ liệu phù hợp</td></tr>
                 ) : (
                   <>
@@ -284,7 +311,7 @@ const EndOfDayPreview = ({ rows, filters, generatedAt, onRefresh }: Props) => {
                       <td className={td('right', 'font-semibold')}>{money(totals.tax)}</td>
                       <td className={td('right', 'font-semibold')}>{money(totals.payment)}</td>
                     </tr>
-                    {rows.map(r => {
+                    {pagedRows.map(r => {
                       const collapsed = collapsedIds.has(r.id)
                       return (
                         <Fragment key={r.id}>
@@ -312,10 +339,10 @@ const EndOfDayPreview = ({ rows, filters, generatedAt, onRefresh }: Props) => {
                           {!collapsed && (
                             <tr className="border-b border-line">
                               <td className={td('left')}><span className="text-primary">{r.code}</span></td>
-                              <td className={td('left')}>{r.roomTable ?? '—'}</td>
-                              <td className={td('left')}>{r.staffName}</td>
+                              <td className={td('left')}>{r.tableName ?? '—'}</td>
+                              <td className={td('left')}>{r.staffName ?? '—'}</td>
                               <td className={td('left')}>{fmtTime(r.time)}</td>
-                              <td className={td('left')}>{r.paymentMethodAbbr}</td>
+                              <td className={td('left')}>{abbr(r.paymentMethod)}</td>
                               <td className={td('right')}>{r.quantity}</td>
                               <td className={td('right')}>{money(r.grossAmount)}</td>
                               <td className={td('right')}>{money(r.invoiceDiscount)}</td>

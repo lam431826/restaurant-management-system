@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Picker } from '../staff/EmployeeModal'
 import { roomAreas, rooms } from '../../data/mockData'
-import { PAYMENT_METHODS } from '../../data/endOfDayReportMockData'
+import { PAYMENT_METHOD_LABEL } from '../../api/reports'
 import type { EndOfDayFilterState } from '../../data/endOfDayReportMockData'
 import EndOfDayDateRangePicker from './EndOfDayDateRangePicker'
+
+const PAYMENT_METHOD_LABELS = Object.values(PAYMENT_METHOD_LABEL)
 
 interface Props {
   value: EndOfDayFilterState
@@ -26,12 +28,6 @@ const ClockIcon = () => (
     <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
   </svg>
 )
-const SearchIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted">
-    <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-  </svg>
-)
-
 const Section = ({ title, required, children }: { title: string; required?: boolean; children: React.ReactNode }) => (
   <div className="flex flex-col gap-3 border-b border-line pb-5">
     <span className="text-md font-semibold text-ink flex items-center gap-1">
@@ -164,6 +160,7 @@ const TimeDropdown = ({ value, onChange, placeholder }: { value: string; onChang
 const EndOfDayFilters = ({ value: f, onChange, staffOptions }: Props) => {
   const set = <K extends keyof EndOfDayFilterState>(key: K, val: EndOfDayFilterState[K]) => onChange({ ...f, [key]: val })
   const tableOptions = (f.areaName ? rooms.filter(r => r.area === f.areaName) : rooms).map(r => r.name)
+  const dateInputRef = useRef<HTMLInputElement>(null)
 
   return (
     <div className="flex flex-col gap-5">
@@ -171,10 +168,20 @@ const EndOfDayFilters = ({ value: f, onChange, staffOptions }: Props) => {
         <RadioField checked={!f.useCustomRange} onSelect={() => set('useCustomRange', false)}>
           <div className="relative">
             <input
+              ref={dateInputRef}
               type="date" value={f.date} onChange={e => set('date', e.target.value)}
-              className={`${fieldCls} pr-9 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer`}
+              className={`${fieldCls} pr-9 [&::-webkit-calendar-picker-indicator]:opacity-0`}
             />
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"><CalendarIcon /></span>
+            {/* Explicit showPicker() call instead of relying on hit-testing an invisible,
+                CSS-stretched ::-webkit-calendar-picker-indicator — that hack is unreliable
+                across Chrome versions and was silently failing to open the picker. */}
+            <button
+              type="button" tabIndex={-1} aria-label="Chọn ngày"
+              onClick={() => dateInputRef.current?.showPicker?.()}
+              className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
+            >
+              <CalendarIcon />
+            </button>
           </div>
         </RadioField>
         <div className="flex items-center gap-2">
@@ -192,18 +199,6 @@ const EndOfDayFilters = ({ value: f, onChange, staffOptions }: Props) => {
         </RadioField>
       </Section>
 
-      <Section title="Khách hàng">
-        <div className="relative">
-          <input
-            className={`${fieldCls} pl-9`}
-            placeholder="Theo mã, tên, điện thoại"
-            value={f.customerQuery}
-            onChange={e => set('customerQuery', e.target.value)}
-          />
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"><SearchIcon /></span>
-        </div>
-      </Section>
-
       <Section title="Người nhận đơn" required>
         <ChipMultiSelect options={staffOptions} selected={f.staffNames} onChange={v => set('staffNames', v)} placeholder="Chọn người nhận đơn" />
       </Section>
@@ -213,7 +208,7 @@ const EndOfDayFilters = ({ value: f, onChange, staffOptions }: Props) => {
       </Section>
 
       <Section title="Phương thức thanh toán">
-        <Picker value={f.paymentMethod} options={PAYMENT_METHODS} placeholder="Chọn phương thức" onChange={v => set('paymentMethod', v === f.paymentMethod ? '' : v)} />
+        <Picker value={f.paymentMethod} options={PAYMENT_METHOD_LABELS} placeholder="Chọn phương thức" onChange={v => set('paymentMethod', v === f.paymentMethod ? '' : v)} />
       </Section>
 
       <div className="flex flex-col gap-3">
