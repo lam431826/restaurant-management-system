@@ -13,6 +13,7 @@ import EmployeeSettings from "./components/staff/settings/EmployeeSettings";
 import Payroll from "./components/staff/payroll/Payroll";
 import PayrollUpdate from "./components/staff/payroll/PayrollUpdate";
 import MySchedule from "./components/staff/schedule/MySchedule";
+import MyProfile from "./components/staff/MyProfile";
 import AttendanceReport from "./components/staff/schedule/AttendanceReport";
 import ShiftReconciliation from "./components/reports/ShiftReconciliation";
 import EndOfDayReport from "./components/reports/EndOfDayReport";
@@ -75,6 +76,16 @@ function App() {
           element={
             <ProtectedRoute roles={["WAITER", "CASHIER", "MANAGER"]}>
               <MySchedule />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Staff: self-service employee profile ── */}
+        <Route
+          path="/my-profile"
+          element={
+            <ProtectedRoute roles={["WAITER", "CASHIER", "MANAGER"]}>
+              <MyProfile />
             </ProtectedRoute>
           }
         />

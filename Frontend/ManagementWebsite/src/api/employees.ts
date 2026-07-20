@@ -56,6 +56,30 @@ export const updateEmployee = (id: string, req: Partial<EmployeeFormPayload> & {
 export const deactivateEmployee = (id: string) =>
   apiClient.post(`/employees/${id}/deactivate`)
 
+/* ── Self-service ("Hồ sơ của tôi") ──────────────────────────────────────── */
+// id/code are null until the employee's first save — everything else is EmployeeDto-shaped.
+export interface MyEmployeeProfileDto {
+  id: string | null
+  code: string | null
+  name: string
+  phone: string
+  status: EmployeeStatus | null
+  startDate: string | null
+  note: string | null
+  idNumber: string | null
+  birthday: string | null
+  gender: string | null
+  address: string | null
+  email: string | null
+  userId: string | null
+}
+
+export const getMyEmployeeProfile = () =>
+  apiClient.get<{ data: MyEmployeeProfileDto }>('/employees/me')
+
+export const saveMyEmployeeProfile = (req: EmployeeFormPayload & { email?: string }) =>
+  apiClient.post<{ data: MyEmployeeProfileDto }>('/employees/me', req)
+
 /* ── Thiết lập lương (UC-EMP-07 / UC-PAY-01) ─────────────────────────────── */
 export type SalaryType = 'SHIFT' | 'HOURLY' | 'FIXED'
 
