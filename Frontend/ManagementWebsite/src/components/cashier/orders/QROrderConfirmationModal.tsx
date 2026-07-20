@@ -67,7 +67,7 @@ export const QROrderConfirmationModal = ({
 
   /* ── Classify orders ───────────────────────────────────────── */
   const pendingOrders = useMemo(
-    () => orders.filter((o) => o.status === "PENDING" || (o.status !== "CANCELLED" && o.status !== "CLOSED" && o.items.some((i) => i.cookingStatus === "PENDING" && i.isQrOrder))),
+    () => orders.filter((o) => o.status === "PENDING" || (o.status !== "CANCELLED" && o.status !== "CLOSED" && o.items.some((i) => i.cookingStatus === "PENDING" && (i.isQrOrder || i.qrOrder)))),
     [orders],
   );
 
@@ -121,20 +121,20 @@ export const QROrderConfirmationModal = ({
 
   /* ── Render an order card ──────────────────────────────────── */
   const renderCard = (order: Order) => {
-    const pendingItems = order.items.filter((i) => i.cookingStatus === "PENDING" && i.isQrOrder);
+    const pendingItems = order.items.filter((i) => i.cookingStatus === "PENDING" && (i.isQrOrder || i.qrOrder));
     const acceptedItems = order.items.filter(
-      (i) => (i.cookingStatus === "COOKING" || i.cookingStatus === "READY" || i.cookingStatus === "SERVED") && i.isQrOrder,
+      (i) => (i.cookingStatus === "COOKING" || i.cookingStatus === "READY" || i.cookingStatus === "SERVED") && (i.isQrOrder || i.qrOrder),
     );
-    const rejectedItems = order.items.filter((i) => i.cookingStatus === "REJECTED" && i.isQrOrder);
+    const rejectedItems = order.items.filter((i) => i.cookingStatus === "REJECTED" && (i.isQrOrder || i.qrOrder));
 
     // Decide which items to show as main list
     let mainItems: OrderItemLine[];
     if (activeTab === "pending") {
-      mainItems = order.status === "PENDING" ? order.items.filter(i => i.isQrOrder) : pendingItems;
+      mainItems = order.status === "PENDING" ? order.items.filter(i => (i.isQrOrder || i.qrOrder)) : pendingItems;
     } else if (activeTab === "confirmed") {
       mainItems = acceptedItems;
     } else {
-      mainItems = order.items.filter(i => i.isQrOrder);
+      mainItems = order.items.filter(i => (i.isQrOrder || i.qrOrder));
     }
 
     if (mainItems.length === 0 && rejectedItems.length === 0) return null;

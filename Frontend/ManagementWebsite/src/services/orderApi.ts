@@ -13,6 +13,8 @@ export interface OrderItemLine {
   note: string | null
   cookingStatus: CookingStatus
   rejectionNote?: string | null
+  isQrOrder?: boolean
+  qrOrder?: boolean
 }
 
 export interface Order {

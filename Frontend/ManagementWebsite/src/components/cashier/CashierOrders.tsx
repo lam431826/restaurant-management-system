@@ -594,7 +594,7 @@ const CashierOrders = () => {
         notes: i.note || "",
         rejectionNote: i.rejectionNote,
         orderId: order.id,
-        isQrOrder: i.isQrOrder,
+        isQrOrder: i.isQrOrder ?? i.qrOrder,
       })),
     );
     setOrderItems(combinedItems);
@@ -615,8 +615,9 @@ const CashierOrders = () => {
         note: item.rejectionNote,
       })) ?? [];
 
+  console.log("ACTIVE ORDERS:", activeOrders);
   const pendingOrders = activeOrders.filter(
-    (o) => o.status === "PENDING" || (o.status !== "CANCELLED" && o.status !== "CLOSED" && o.items.some((i) => i.cookingStatus === "PENDING" && i.isQrOrder))
+    (o) => o.status === "PENDING" || (o.status !== "CANCELLED" && o.status !== "CLOSED" && o.items.some((i) => i.cookingStatus === "PENDING" && (i.isQrOrder || i.qrOrder)))
   );
   const pendingOrdersCount = pendingOrders.length;
   const orderHasInvoice =
