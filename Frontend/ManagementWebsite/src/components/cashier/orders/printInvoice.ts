@@ -15,10 +15,18 @@ const escapeHtml = (value: string | number) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 
+export interface ReceiptCustomer {
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+}
+
 export const printCashierInvoice = (
   invoice: InvoiceDetail,
   tableName: string,
   cashierName: string,
+  shiftLabel: string,
+  customer: ReceiptCustomer,
 ) => {
   const printWindow = window.open("", "_blank", "width=900,height=700");
   if (!printWindow) return false;
@@ -77,9 +85,10 @@ export const printCashierInvoice = (
           <div class="separator"></div>
           <section>
             <div class="info-row"><span>Thu ngân</span><strong>${escapeHtml(cashierName)}</strong></div>
-            <div class="info-row"><span>Ca làm</span><strong>08:00 - 17:00</strong></div>
-            <div class="info-row"><span>Khách hàng</span><strong>Khách</strong></div>
-            <div class="info-row"><span>Mã thành viên</span><strong>-</strong></div>
+            <div class="info-row"><span>Ca làm</span><strong>${escapeHtml(shiftLabel)}</strong></div>
+            <div class="info-row"><span>Khách hàng</span><strong>${escapeHtml(customer.name?.trim() || "Khách lẻ")}</strong></div>
+            ${customer.phone?.trim() ? `<div class="info-row"><span>Điện thoại</span><strong>${escapeHtml(customer.phone.trim())}</strong></div>` : ""}
+            ${customer.email?.trim() ? `<div class="info-row"><span>Email</span><strong>${escapeHtml(customer.email.trim())}</strong></div>` : ""}
             <div class="info-row"><span>Hình thức</span><strong>Tại bàn</strong></div>
             <div class="info-row"><span>Số bàn</span><strong>${escapeHtml(tableName)}</strong></div>
           </section>

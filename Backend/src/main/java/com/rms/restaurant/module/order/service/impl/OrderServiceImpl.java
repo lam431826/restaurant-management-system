@@ -78,6 +78,30 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         return orderMapper.toResponse(order);
     }
+
+    /**
+     * Stores the customer contact a cashier captured for this order. Contact details are
+     * descriptive only — they never affect order status, pricing or payment validation.
+     * A blank value clears the field so a mistyped entry can be removed.
+     */
+    @Override
+    @Transactional
+    public OrderResponse updateCustomer(String id, UpdateOrderCustomerRequest request) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+
+        order.setCustomerName(trimToNull(request.customerName()));
+        order.setCustomerPhone(trimToNull(request.customerPhone()));
+        order.setCustomerEmail(trimToNull(request.customerEmail()));
+
+        return orderMapper.toResponse(orderRepository.save(order));
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
     @Override
     public OrderResponse updateStatus(String id, OrderStatus status) {
         Order order = orderRepository.findByIdForUpdate(id)
@@ -295,6 +319,11 @@ public class OrderServiceImpl implements OrderService {
         order.setTableId(table.getId());
         order.setStatus(OrderStatus.ACCEPTED); // Cashier creates order, it's already accepted
         order.setNote(request.note());
+        // Optional contact the cashier typed before the order existed. Purely descriptive,
+        // so it is applied after every table/reservation check has already passed.
+        order.setCustomerName(trimToNull(request.customerName()));
+        order.setCustomerPhone(trimToNull(request.customerPhone()));
+        order.setCustomerEmail(trimToNull(request.customerEmail()));
         order.setItems(new java.util.ArrayList<>());
 
         if (request.items() != null) {

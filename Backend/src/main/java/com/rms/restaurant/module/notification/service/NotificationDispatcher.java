@@ -60,6 +60,53 @@ public class NotificationDispatcher {
         }
     }
 
+    /**
+     * Synchronous counterpart of {@link #dispatch}, for callers that must report the real
+     * outcome to a user instead of "queued". Returns true only when the mail server
+     * accepted the message.
+     *
+     * <p>It returns a flag rather than rethrowing on purpose: this runs in its own
+     * REQUIRES_NEW transaction, so letting the exception propagate would roll back the
+     * FAILED log row that records what went wrong.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean dispatchNow(String recipient, String template, Map<String, Object> vars,
+                               String referenceId, String referenceType) {
+        NotificationLog notifLog = NotificationLog.builder()
+                .type(referenceType != null ? referenceType : "UNKNOWN")
+                .channel(NotificationChannel.EMAIL)
+                .recipient(recipient)
+                .template(template)
+                .status("PENDING")
+                .referenceId(referenceId)
+                .referenceType(referenceType)
+                .build();
+        notificationLogRepository.save(notifLog);
+
+        boolean sent;
+        try {
+            dispatchEmail(recipient, template, vars);
+            notifLog.setStatus("SENT");
+            sent = true;
+        } catch (Exception e) {
+            notifLog.setStatus("FAILED");
+            notifLog.setErrorMessage(truncate(e.getMessage()));
+            log.warn("Email FAILED [recipient={}, template={}]: {}", recipient, template, e.getMessage());
+            sent = false;
+        }
+
+        notificationLogRepository.save(notifLog);
+        realtimeEventPublisher.publishNotificationEvent(notificationMapper.toResponse(notifLog));
+        return sent;
+    }
+
+    /** error_message is capped at 500 characters in the schema. */
+    private static String truncate(String message) {
+        if (message == null) return null;
+        return message.length() <= 500 ? message : message.substring(0, 500);
+    }
+
+    @SuppressWarnings("unchecked")
     private void dispatchEmail(String recipient, String template, Map<String, Object> vars) {
         switch (template) {
             case "RESERVATION_PENDING" -> gmailService.sendReservationPendingEmail(
@@ -104,6 +151,21 @@ public class NotificationDispatcher {
                     (String) vars.get("guestName"),
                     (BigDecimal) vars.get("totalAmount"),
                     (String) vars.get("invoiceId")
+            );
+            case "INVOICE_DELIVERY" -> gmailService.sendInvoiceEmail(
+                    recipient,
+                    (String) vars.get("guestName"),
+                    (String) vars.get("customerPhone"),
+                    (String) vars.get("invoiceId"),
+                    (String) vars.get("orderId"),
+                    (String) vars.get("tableName"),
+                    (java.util.List<GmailService.InvoiceEmailLine>) vars.get("items"),
+                    (BigDecimal) vars.get("subtotal"),
+                    (BigDecimal) vars.get("discountAmount"),
+                    (BigDecimal) vars.get("totalAmount"),
+                    (boolean) vars.get("paid"),
+                    (String) vars.get("paymentMethodLabel"),
+                    (LocalDateTime) vars.get("sentAt")
             );
             case "MANUAL" -> gmailService.sendManualEmail(recipient, (String) vars.get("message"));
             default -> throw new IllegalArgumentException("Unknown email template: " + template);

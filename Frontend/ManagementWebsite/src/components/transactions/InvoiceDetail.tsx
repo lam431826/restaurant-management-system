@@ -41,6 +41,11 @@ const INVOICE_ACTION_ERROR_MESSAGES: Record<string, string> = {
   ORDER_ALREADY_INVOICED:
     "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.",
   INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  INVOICE_CUSTOMER_EMAIL_REQUIRED:
+    "Đơn hàng chưa có email khách hàng nên không thể gửi hóa đơn.",
+  MAIL_CONFIGURATION_MISSING: "Chưa cấu hình email gửi hóa đơn.",
+  MAIL_DELIVERY_FAILED:
+    "Gửi hóa đơn thất bại. Vui lòng kiểm tra cấu hình email hoặc thử lại.",
   ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
   INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
   VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
@@ -64,8 +69,6 @@ const INVOICE_ACTION_MESSAGE_FALLBACKS: Record<string, string> = {
     INVOICE_ACTION_ERROR_MESSAGES.BAD_REQUEST,
 };
 
-const SEND_INVOICE_SUCCESS_MESSAGE =
-  "Đã ghi nhận gửi hóa đơn mô phỏng";
 const SEND_INVOICE_FALLBACK_ERROR =
   "Không thể gửi hóa đơn. Vui lòng thử lại.";
 const PAYMENT_HISTORY_FALLBACK_ERROR =
@@ -252,9 +255,7 @@ const InvoiceDetail = ({
       const response = await sendInvoice(invoice.id);
       setActionMessage({
         type: "success",
-        text: `${SEND_INVOICE_SUCCESS_MESSAGE} lúc ${formatDateTime(
-          response.sentAt,
-        )}.`,
+        text: `${response.message} lúc ${formatDateTime(response.sentAt)}.`,
       });
     } catch (sendError) {
       setActionMessage({

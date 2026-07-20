@@ -16,6 +16,7 @@ public interface OrderService {
     OrderResponse updateItemNote(String orderId, String itemId, com.rms.restaurant.module.order.dto.UpdateOrderItemNoteRequest request);
     OrderResponse addItems(String id, AddOrderItemsRequest request);
     OrderResponse create(CreateOrderRequest request);
+    OrderResponse updateCustomer(String id, UpdateOrderCustomerRequest request);
     OrderResponse cancel(String id, CancelOrderRequest request);
     void respondAssistance(AssistanceRespondRequest request);
     java.util.List<com.rms.restaurant.module.order.model.AssistanceRequest> getPendingAssistanceRequests();

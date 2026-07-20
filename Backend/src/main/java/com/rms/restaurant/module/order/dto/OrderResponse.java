@@ -13,7 +13,10 @@ public record OrderResponse(
         OrderStatus status,
         List<ItemLine> items,
         BigDecimal totalAmount,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        String customerName,
+        String customerPhone,
+        String customerEmail
 ) {
     public record ItemLine(String orderItemId, String menuItemId, String menuItemName, int quantity, BigDecimal unitPrice, String note, com.rms.restaurant.common.utils.enums.CookingStatus cookingStatus, String rejectionNote) {}
 }

@@ -44,7 +44,10 @@ public class OrderMapper {
                 order.getStatus(),
                 itemLines,
                 totalAmount,
-                order.getCreatedAt()
+                order.getCreatedAt(),
+                order.getCustomerName(),
+                order.getCustomerPhone(),
+                order.getCustomerEmail()
         );
     }
 }

@@ -1,14 +1,19 @@
 package com.rms.restaurant.common.utils.mail;
 
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.mail.MailProperties;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -18,6 +23,12 @@ public class GmailService {
 
     @Value("${app.mail.from:noreply@rms.com}")
     private String fromAddress;
+
+    // Read through MailProperties rather than @Value: MAIL_USERNAME/MAIL_PASSWORD have no
+    // defaults in application.properties, and @Value resolves nested placeholders strictly,
+    // which would break startup when those environment variables are absent. Boot's own
+    // binding leaves the unresolved "${MAIL_USERNAME}" text instead, which we detect below.
+    private final MailProperties mailProperties;
 
     public void sendTempPasswordEmail(String toEmail, String recipientName, String tempPassword) {
         SimpleMailMessage msg = new SimpleMailMessage();
@@ -157,6 +168,200 @@ public class GmailService {
             "Trân trọng,\nWasabi Restaurant"
         );
         mailSender.send(msg);
+    }
+
+    // ── PM: Invoice delivery ──────────────────────────────────────────────────
+
+    /**
+     * True when outgoing mail has enough configuration to attempt a send. Host and
+     * username come from environment variables; when they are absent the caller should
+     * surface MAIL_CONFIGURATION_MISSING instead of pretending the mail was sent.
+     */
+    public boolean isConfigured() {
+        return isResolved(mailProperties.getHost())
+                && isResolved(mailProperties.getUsername())
+                && isResolved(mailProperties.getPassword());
+    }
+
+    /** Blank, or still an unresolved "${VAR}" placeholder, both mean "not configured". */
+    private static boolean isResolved(String value) {
+        return value != null && !value.isBlank() && !value.startsWith("${");
+    }
+
+    /** Short, human-readable code from a UUID: "INV-81101925". Mirrors the UI helper. */
+    private static String shortCode(String prefix, String id) {
+        if (id == null || id.isBlank()) return "-";
+        String hex = id.replace("-", "");
+        return prefix + "-" + hex.substring(0, Math.min(8, hex.length())).toUpperCase();
+    }
+
+    private static final String RESTAURANT_NAME = "Wasabi Sushi";
+
+    /** One printed line of the invoice email — mirrors the receipt's item row. */
+    public record InvoiceEmailLine(
+            String name, int quantity, BigDecimal unitPrice, BigDecimal lineTotal) {}
+
+    private static String money(BigDecimal amount) {
+        return String.format("%,.0f VNĐ", amount == null ? BigDecimal.ZERO : amount);
+    }
+
+    private static String htmlEscape(String value) {
+        if (value == null) return "";
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /**
+     * Sends the invoice to the customer as a full receipt-style email (items, totals,
+     * payment status). Synchronous on purpose: the caller reports success to the cashier
+     * only after JavaMailSender has accepted the message. Every value comes from backend
+     * data the caller already looked up — nothing here is guessed or invented.
+     */
+    public void sendInvoiceEmail(
+            String toEmail,
+            String guestName,
+            String customerPhone,
+            String invoiceId,
+            String orderId,
+            String tableName,
+            List<InvoiceEmailLine> items,
+            BigDecimal subtotal,
+            BigDecimal discountAmount,
+            BigDecimal totalAmount,
+            boolean paid,
+            String paymentMethodLabel,
+            LocalDateTime sentAt
+    ) {
+        String invoiceCode = shortCode("INV", invoiceId);
+        String orderCode = shortCode("ORD", orderId);
+        String displayName = (guestName == null || guestName.isBlank()) ? "Khách lẻ" : guestName;
+        String sentAtText = sentAt.format(DATETIME_FORMATTER);
+        String statusLabel = paid ? "Đã thanh toán" : "Chưa thanh toán";
+
+        try {
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+            helper.setFrom(fromAddress);
+            helper.setTo(toEmail);
+            helper.setSubject(RESTAURANT_NAME + " - Hóa đơn " + invoiceCode);
+            helper.setText(
+                    buildInvoicePlainText(displayName, customerPhone, toEmail, tableName,
+                            invoiceCode, orderCode, sentAtText, items, subtotal,
+                            discountAmount, totalAmount, statusLabel, paymentMethodLabel),
+                    buildInvoiceHtml(displayName, customerPhone, toEmail, tableName,
+                            invoiceCode, orderCode, sentAtText, items, subtotal,
+                            discountAmount, totalAmount, statusLabel, paymentMethodLabel)
+            );
+            mailSender.send(mimeMessage);
+        } catch (MessagingException e) {
+            // Wrapped as unchecked: every other GmailService method is unchecked, and the
+            // caller (NotificationDispatcher) already treats any exception here as a
+            // delivery failure to record in the notification log.
+            throw new IllegalStateException("Failed to build invoice email", e);
+        }
+    }
+
+    private String buildInvoicePlainText(
+            String displayName, String customerPhone, String customerEmail, String tableName,
+            String invoiceCode, String orderCode, String sentAtText,
+            List<InvoiceEmailLine> items, BigDecimal subtotal, BigDecimal discountAmount,
+            BigDecimal totalAmount, String statusLabel, String paymentMethodLabel
+    ) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(RESTAURANT_NAME).append("\nHóa đơn thanh toán\n\n");
+        sb.append("Mã hóa đơn : ").append(invoiceCode).append('\n');
+        sb.append("Mã đơn hàng: ").append(orderCode).append('\n');
+        sb.append("Thời gian  : ").append(sentAtText).append("\n\n");
+
+        sb.append("Khách hàng : ").append(displayName).append('\n');
+        if (customerPhone != null && !customerPhone.isBlank()) {
+            sb.append("Điện thoại : ").append(customerPhone).append('\n');
+        }
+        sb.append("Email      : ").append(customerEmail).append('\n');
+        if (tableName != null && !tableName.isBlank()) {
+            sb.append("Bàn        : ").append(tableName).append('\n');
+        }
+        sb.append("Hình thức  : Tại bàn\n\n");
+
+        sb.append("Chi tiết món:\n");
+        for (InvoiceEmailLine line : items) {
+            sb.append("  - ").append(line.name())
+              .append(" x").append(line.quantity())
+              .append(" (").append(money(line.unitPrice())).append(")")
+              .append(" = ").append(money(line.lineTotal())).append('\n');
+        }
+
+        sb.append("\nTạm tính     : ").append(money(subtotal)).append('\n');
+        sb.append("Giảm giá     : ").append(money(discountAmount)).append('\n');
+        sb.append("Tổng thanh toán: ").append(money(totalAmount)).append("\n\n");
+
+        sb.append("Trạng thái   : ").append(statusLabel).append('\n');
+        if (paymentMethodLabel != null && !paymentMethodLabel.isBlank()) {
+            sb.append("Phương thức  : ").append(paymentMethodLabel).append('\n');
+        }
+
+        sb.append("\nCảm ơn quý khách đã dùng bữa tại ").append(RESTAURANT_NAME)
+          .append(". Hẹn gặp lại!\n\n");
+        sb.append("Đây là email hóa đơn được gửi tự động từ hệ thống, vui lòng không trả lời email này.");
+        return sb.toString();
+    }
+
+    private String buildInvoiceHtml(
+            String displayName, String customerPhone, String customerEmail, String tableName,
+            String invoiceCode, String orderCode, String sentAtText,
+            List<InvoiceEmailLine> items, BigDecimal subtotal, BigDecimal discountAmount,
+            BigDecimal totalAmount, String statusLabel, String paymentMethodLabel
+    ) {
+        StringBuilder rows = new StringBuilder();
+        for (InvoiceEmailLine line : items) {
+            rows.append("<tr>")
+                .append("<td style=\"padding:6px 8px;border-bottom:1px solid #eee;\">").append(htmlEscape(line.name())).append("</td>")
+                .append("<td style=\"padding:6px 8px;border-bottom:1px solid #eee;text-align:center;\">").append(line.quantity()).append("</td>")
+                .append("<td style=\"padding:6px 8px;border-bottom:1px solid #eee;text-align:right;\">").append(money(line.unitPrice())).append("</td>")
+                .append("<td style=\"padding:6px 8px;border-bottom:1px solid #eee;text-align:right;\">").append(money(line.lineTotal())).append("</td>")
+                .append("</tr>");
+        }
+
+        String phoneRow = (customerPhone == null || customerPhone.isBlank())
+                ? "" : "<tr><td style=\"color:#636566;padding:2px 0;\">Điện thoại</td><td style=\"padding:2px 0;\">" + htmlEscape(customerPhone) + "</td></tr>";
+        String tableRow = (tableName == null || tableName.isBlank())
+                ? "" : "<tr><td style=\"color:#636566;padding:2px 0;\">Bàn</td><td style=\"padding:2px 0;\">" + htmlEscape(tableName) + "</td></tr>";
+        String methodRow = (paymentMethodLabel == null || paymentMethodLabel.isBlank())
+                ? "" : "<tr><td style=\"color:#636566;padding:6px 0;\">Phương thức</td><td style=\"padding:6px 0;font-weight:600;\">" + htmlEscape(paymentMethodLabel) + "</td></tr>";
+
+        return "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#202325;max-width:560px;margin:0 auto;\">"
+            + "<h2 style=\"margin:0 0 2px;\">" + RESTAURANT_NAME + "</h2>"
+            + "<p style=\"margin:0 0 16px;color:#636566;\">Hóa đơn thanh toán</p>"
+            + "<table style=\"width:100%;font-size:14px;margin-bottom:16px;\">"
+            + "<tr><td style=\"color:#636566;padding:2px 0;\">Mã hóa đơn</td><td style=\"padding:2px 0;font-weight:600;\">" + invoiceCode + "</td></tr>"
+            + "<tr><td style=\"color:#636566;padding:2px 0;\">Mã đơn hàng</td><td style=\"padding:2px 0;\">" + orderCode + "</td></tr>"
+            + "<tr><td style=\"color:#636566;padding:2px 0;\">Thời gian</td><td style=\"padding:2px 0;\">" + sentAtText + "</td></tr>"
+            + "</table>"
+            + "<table style=\"width:100%;font-size:14px;margin-bottom:16px;\">"
+            + "<tr><td style=\"color:#636566;padding:2px 0;\">Khách hàng</td><td style=\"padding:2px 0;font-weight:600;\">" + htmlEscape(displayName) + "</td></tr>"
+            + phoneRow
+            + "<tr><td style=\"color:#636566;padding:2px 0;\">Email</td><td style=\"padding:2px 0;\">" + htmlEscape(customerEmail) + "</td></tr>"
+            + tableRow
+            + "<tr><td style=\"color:#636566;padding:2px 0;\">Hình thức</td><td style=\"padding:2px 0;\">Tại bàn</td></tr>"
+            + "</table>"
+            + "<table style=\"width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px;\">"
+            + "<thead><tr>"
+            + "<th style=\"text-align:left;padding:6px 8px;border-bottom:2px solid #202325;\">Món</th>"
+            + "<th style=\"text-align:center;padding:6px 8px;border-bottom:2px solid #202325;\">SL</th>"
+            + "<th style=\"text-align:right;padding:6px 8px;border-bottom:2px solid #202325;\">Đơn giá</th>"
+            + "<th style=\"text-align:right;padding:6px 8px;border-bottom:2px solid #202325;\">Thành tiền</th>"
+            + "</tr></thead><tbody>" + rows + "</tbody></table>"
+            + "<table style=\"width:100%;font-size:14px;margin-bottom:16px;\">"
+            + "<tr><td style=\"color:#636566;padding:2px 0;\">Tạm tính</td><td style=\"padding:2px 0;text-align:right;\">" + money(subtotal) + "</td></tr>"
+            + "<tr><td style=\"color:#636566;padding:2px 0;\">Giảm giá</td><td style=\"padding:2px 0;text-align:right;\">" + money(discountAmount) + "</td></tr>"
+            + "<tr><td style=\"padding:8px 0;font-weight:700;border-top:1px solid #202325;\">Tổng thanh toán</td><td style=\"padding:8px 0;text-align:right;font-weight:700;border-top:1px solid #202325;\">" + money(totalAmount) + "</td></tr>"
+            + "</table>"
+            + "<table style=\"width:100%;font-size:14px;margin-bottom:20px;\">"
+            + "<tr><td style=\"color:#636566;padding:6px 0;\">Trạng thái</td><td style=\"padding:6px 0;font-weight:600;\">" + statusLabel + "</td></tr>"
+            + methodRow
+            + "</table>"
+            + "<p style=\"font-size:13px;color:#202325;\">Cảm ơn quý khách đã dùng bữa tại " + RESTAURANT_NAME + ". Hẹn gặp lại!</p>"
+            + "<p style=\"font-size:11px;color:#a2a4a4;margin-top:20px;\">Đây là email hóa đơn được gửi tự động từ hệ thống, vui lòng không trả lời email này.</p>"
+            + "</div>";
     }
 
     // ── ORM-02: Booking received, pending staff confirmation ──────────────────

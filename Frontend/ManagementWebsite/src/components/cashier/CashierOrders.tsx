@@ -43,7 +43,6 @@ import {
   cancelQrPayment as cancelQrPaymentApi,
 } from "../../services/paymentApi";
 import type { Payment } from "../../services/paymentApi";
-import { getStoredUser } from "../../services/tokenStorage";
 import { listCategories, searchItems } from "../../services/menuService";
 import type { MenuCategory } from "../../services/menuService";
 import {
@@ -59,8 +58,13 @@ import {
   respondAssistance,
   updateOrderItemStatus,
   updateOrderItemNote,
+  updateOrderCustomer,
 } from "../../services/orderApi";
-import type { AssistanceRequest, Order } from "../../services/orderApi";
+import type {
+  AssistanceRequest,
+  Order,
+  OrderCustomerInput,
+} from "../../services/orderApi";
 
 import type {
   MenuItem,
@@ -341,6 +345,11 @@ const INVOICE_UI_ERROR_MESSAGES: Record<string, string> = {
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
   ORDER_ALREADY_INVOICED: "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.",
   INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  INVOICE_CUSTOMER_EMAIL_REQUIRED:
+    "Vui lòng nhập email khách hàng trước khi gửi hóa đơn.",
+  MAIL_CONFIGURATION_MISSING: "Chưa cấu hình email gửi hóa đơn.",
+  MAIL_DELIVERY_FAILED:
+    "Gửi hóa đơn thất bại. Vui lòng kiểm tra cấu hình email hoặc thử lại.",
   ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
   INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
   VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
@@ -364,8 +373,9 @@ const INVOICE_UI_MESSAGE_FALLBACKS: Record<string, string> = {
 };
 
 const INVOICE_DETAIL_LOAD_FALLBACK_ERROR = "Không thể tải chi tiết hóa đơn.";
-const SEND_INVOICE_SUCCESS_MESSAGE = "Đã ghi nhận gửi hóa đơn mô phỏng.";
 const SEND_INVOICE_FALLBACK_ERROR = "Không thể gửi hóa đơn. Vui lòng thử lại.";
+const SAVE_CUSTOMER_FALLBACK_ERROR =
+  "Không thể lưu thông tin khách hàng. Vui lòng thử lại.";
 
 const getInvoiceUiErrorMessage = (
   error: unknown,
@@ -529,6 +539,15 @@ const CashierOrders = () => {
   const [invoiceDetailLoading, setInvoiceDetailLoading] = useState(false);
   const [invoiceDetailError, setInvoiceDetailError] = useState("");
   const [invoiceAction, setInvoiceAction] = useState<string | null>(null);
+  const [customerSaving, setCustomerSaving] = useState(false);
+  const [customerError, setCustomerError] = useState("");
+  // Draft contact for the order panel. Before an order exists this is the only copy and
+  // is sent with createOrder; once the order exists it mirrors the saved Order record.
+  const [customerDraft, setCustomerDraft] = useState({
+    customerName: "",
+    customerPhone: "",
+    customerEmail: "",
+  });
   const [splitError, setSplitError] = useState("");
   const [mergeError, setMergeError] = useState("");
   const [invoiceMessage, setInvoiceMessage] = useState<{
@@ -894,6 +913,50 @@ const CashierOrders = () => {
   selectedTableIdRef.current = selectedTable?.id ?? "";
   selectedOrderIdRef.current = selectedOrderId;
   const selectedOrder = activeOrders.find((order) => order.id === selectedOrderId);
+  const selectedOrderCustomerKey = selectedOrder
+    ? `${selectedOrder.id}|${selectedOrder.customerName ?? ""}|${selectedOrder.customerPhone ?? ""}|${selectedOrder.customerEmail ?? ""}`
+    : `none|${selectedTable?.id ?? ""}`;
+
+  // Once an order exists its stored contact is the source of truth; with no order the
+  // draft is kept as typed and only reset when the cashier moves to another table.
+  useEffect(() => {
+    if (selectedOrder) {
+      setCustomerDraft({
+        customerName: selectedOrder.customerName ?? "",
+        customerPhone: selectedOrder.customerPhone ?? "",
+        customerEmail: selectedOrder.customerEmail ?? "",
+      });
+    } else {
+      setCustomerDraft({
+        customerName: "",
+        customerPhone: "",
+        customerEmail: "",
+      });
+    }
+    setCustomerError("");
+    // Keyed on the stored values so a save or a table switch re-seeds, but typing does not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrderCustomerKey]);
+
+  // Receipt identity comes from the signed-in account: prefer the human full name and
+  // only fall back to the login name when no display name is stored.
+  const cashierDisplayName =
+    user?.fullName?.trim() || user?.username?.trim() || "Thu ngân";
+  // Real shift, never a fixed time range. An open shift only knows when it started.
+  const shiftDisplayLabel = (() => {
+    if (!shift) return "Chưa mở ca";
+    const openedAt = new Date(shift.openedAt);
+    const time = (value: Date) =>
+      value.toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    if (shift.closedAt) {
+      return `${time(openedAt)} - ${time(new Date(shift.closedAt))}`;
+    }
+    return `Đang mở từ ${time(openedAt)}`;
+  })();
   const selectedOrderItemCount =
     selectedOrder?.items.reduce((total, item) => total + item.quantity, 0) ?? 0;
   const nonPayableRejectedItems =
@@ -1149,8 +1212,8 @@ const CashierOrders = () => {
     setInvoiceAction("send");
     setInvoiceMessage(null);
     try {
-      await sendInvoice(selectedInvoice.id);
-      setInvoiceMessage({ type: "success", text: SEND_INVOICE_SUCCESS_MESSAGE });
+      const result = await sendInvoice(selectedInvoice.id);
+      setInvoiceMessage({ type: "success", text: result.message });
     } catch (sendError) {
       setInvoiceMessage({
         type: "error",
@@ -1161,14 +1224,41 @@ const CashierOrders = () => {
     }
   };
 
+  // Customer contact lives on the order, so the receipt and the invoice email both read
+  // the same record. Saving is independent of payment and never blocks it.
+  const handleSaveCustomer = async (customer: OrderCustomerInput) => {
+    if (!selectedOrderId) return false;
+    setCustomerSaving(true);
+    setCustomerError("");
+    try {
+      const updated = await updateOrderCustomer(selectedOrderId, customer);
+      setActiveOrders((orders) =>
+        orders.map((order) => (order.id === updated.id ? updated : order)),
+      );
+      return true;
+    } catch (saveError) {
+      setCustomerError(
+        getInvoiceUiErrorMessage(saveError, SAVE_CUSTOMER_FALLBACK_ERROR),
+      );
+      return false;
+    } finally {
+      setCustomerSaving(false);
+    }
+  };
+
   const handlePrintInvoice = () => {
     if (!currentOrderInvoiceDetail) return;
-    const cashierName = getStoredUser()?.fullName || "Duy Tan";
     if (
       !printCashierInvoice(
         currentOrderInvoiceDetail,
         selectedTable?.name || "-",
-        cashierName,
+        cashierDisplayName,
+        shiftDisplayLabel,
+        {
+          name: selectedOrder?.customerName ?? null,
+          phone: selectedOrder?.customerPhone ?? null,
+          email: selectedOrder?.customerEmail ?? null,
+        },
       )
     ) {
       setInvoiceMessage({
@@ -1748,6 +1838,8 @@ const CashierOrders = () => {
           quantity: item.qty,
           note: item.note,
         })),
+        undefined,
+        customerDraft,
       );
       setActiveOrders((orders) => [
         ...orders.filter((order) => order.id !== createdOrder.id),
@@ -2141,6 +2233,12 @@ const CashierOrders = () => {
             onRejectItem={handleOpenReject}
             onCancelOrder={handleCancelOrder}
             selectedTable={selectedTable}
+            customer={customerDraft}
+            onCustomerChange={setCustomerDraft}
+            onSaveCustomer={() => void handleSaveCustomer(customerDraft)}
+            customerSaving={customerSaving}
+            customerError={customerError}
+            orderExists={Boolean(selectedOrderId)}
             checkoutDisabled={checkoutDisabled}
             checkoutLabel={checkoutLabel}
             shiftOpen={!!shift}
@@ -2242,6 +2340,16 @@ const CashierOrders = () => {
           qrPayment={qrPayment}
           qrLoading={qrLoading}
           qrError={qrError}
+          cashierName={cashierDisplayName}
+          shiftLabel={shiftDisplayLabel}
+          customer={{
+            name: selectedOrder?.customerName ?? null,
+            phone: selectedOrder?.customerPhone ?? null,
+            email: selectedOrder?.customerEmail ?? null,
+          }}
+          customerSaving={customerSaving}
+          customerError={customerError}
+          onSaveCustomer={handleSaveCustomer}
           onClose={() => setPaymentOpen(false)}
           onSelectInvoice={handleSelectInvoice}
           onRefreshInvoices={() => {

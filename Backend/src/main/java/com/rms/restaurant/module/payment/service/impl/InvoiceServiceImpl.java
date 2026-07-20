@@ -12,6 +12,8 @@ import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
 import com.rms.restaurant.module.order.repository.OrderItemRepository;
 import com.rms.restaurant.module.order.repository.OrderRepository;
+import com.rms.restaurant.module.notification.service.NotificationDispatcher;
+import com.rms.restaurant.common.utils.mail.GmailService;
 import com.rms.restaurant.module.payment.dto.*;
 import com.rms.restaurant.module.payment.mapper.InvoiceMapper;
 import com.rms.restaurant.module.payment.model.Invoice;
@@ -62,6 +64,13 @@ public class InvoiceServiceImpl implements InvoiceService {
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private static final String PAYMENT_STATUS_PAID = "PAID";
     private static final List<InvoiceStatus> ALL_INVOICE_STATUSES = List.of(InvoiceStatus.values());
+    // Only CASH/QR are selectable payment methods today; any other value on a historical
+    // row is intentionally left unmapped so the invoice email omits it rather than guess.
+    private static final Map<com.rms.restaurant.common.utils.enums.PaymentMethod, String> PAYMENT_METHOD_LABELS =
+            Map.of(
+                    com.rms.restaurant.common.utils.enums.PaymentMethod.CASH, "Tiền mặt",
+                    com.rms.restaurant.common.utils.enums.PaymentMethod.QR, "Mã QR"
+            );
 
     private final InvoiceRepository invoiceRepository;
     private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
@@ -76,6 +85,8 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final InvoiceMergeValidator invoiceMergeValidator;
     private final InvoiceMergePersistenceService invoiceMergePersistenceService;
     private final AuditService auditService;
+    private final NotificationDispatcher notificationDispatcher;
+    private final GmailService gmailService;
 
     @Override
     @Transactional(readOnly = true)
@@ -348,11 +359,72 @@ public class InvoiceServiceImpl implements InvoiceService {
         );
     }
 
+    /**
+     * Emails the invoice to the customer recorded on the order. The send is synchronous so
+     * the cashier is told the real outcome: success is reported only after the mail server
+     * has accepted the message, and a rejection surfaces as an error rather than a
+     * "sent" message. The recipient is never invented.
+     */
     @Override
     @Transactional(readOnly = true)
     public SendInvoiceResponse sendInvoice(String invoiceId) {
         Invoice invoice = invoiceRepository.findById(invoiceId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
+
+        Order order = orderRepository.findById(invoice.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+
+        String recipient = order.getCustomerEmail();
+        if (recipient == null || recipient.isBlank()) {
+            throw new ApplicationException(ApplicationError.INVOICE_CUSTOMER_EMAIL_REQUIRED);
+        }
+        if (!gmailService.isConfigured()) {
+            throw new ApplicationException(ApplicationError.MAIL_CONFIGURATION_MISSING);
+        }
+
+        String tableName = tableRepository.findById(order.getTableId())
+                .map(RestaurantTable::getName)
+                .orElse(null);
+
+        List<GmailService.InvoiceEmailLine> emailLines = resolveAllocationLines(invoice).stream()
+                .map(line -> new GmailService.InvoiceEmailLine(
+                        line.orderItem().getMenuItemName(),
+                        line.allocation().getAllocatedQuantity(),
+                        line.allocation().getUnitPriceSnapshot(),
+                        line.lineTotal()))
+                .toList();
+
+        // Most recent PAID payment on this invoice, if any — used only to show the method
+        // the customer actually paid with. Omitted from the email when none exists rather
+        // than guessed.
+        String paymentMethodLabel = paymentRepository.findByInvoiceIdOrderByCreatedAtDesc(invoice.getId())
+                .stream()
+                .filter(payment -> "PAID".equals(payment.getStatus()))
+                .findFirst()
+                .map(payment -> PAYMENT_METHOD_LABELS.getOrDefault(payment.getMethod(), null))
+                .orElse(null);
+
+        Map<String, Object> vars = new LinkedHashMap<>();
+        vars.put("guestName", order.getCustomerName());
+        vars.put("customerPhone", order.getCustomerPhone());
+        vars.put("invoiceId", invoice.getId());
+        vars.put("orderId", invoice.getOrderId());
+        vars.put("tableName", tableName);
+        vars.put("items", emailLines);
+        vars.put("subtotal", invoice.getSubtotal());
+        vars.put("discountAmount", invoice.getDiscountAmount());
+        vars.put("totalAmount", invoice.getTotalAmount());
+        vars.put("paid", invoice.isPaid());
+        vars.put("paymentMethodLabel", paymentMethodLabel);
+        vars.put("sentAt", LocalDateTime.now());
+
+        boolean sent = notificationDispatcher.dispatchNow(
+                recipient, "INVOICE_DELIVERY", vars, invoice.getId(), "INVOICE");
+        if (!sent) {
+            // The underlying cause is recorded in the notification log; the client only
+            // gets a stable code so SMTP/credential details never leak to the UI.
+            throw new ApplicationException(ApplicationError.MAIL_DELIVERY_FAILED);
+        }
 
         return new SendInvoiceResponse(
                 invoice.getId(),
@@ -360,8 +432,8 @@ public class InvoiceServiceImpl implements InvoiceService {
                 invoice.getTotalAmount(),
                 invoice.isPaid(),
                 LocalDateTime.now(),
-                "SIMULATED",
-                "Invoice sent successfully (simulated)"
+                "EMAIL",
+                "Đã gửi hóa đơn tới " + recipient
         );
     }
 

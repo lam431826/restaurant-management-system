@@ -66,6 +66,12 @@ export const PaymentModal = ({
   qrPayment,
   qrLoading,
   qrError,
+  cashierName,
+  shiftLabel,
+  customer,
+  customerSaving,
+  customerError,
+  onSaveCustomer,
   onClose,
   onSelectInvoice,
   onRefreshInvoices,
@@ -103,6 +109,17 @@ export const PaymentModal = ({
   qrPayment: Payment | null;
   qrLoading: boolean;
   qrError: string;
+  // Real signed-in cashier and real current shift — never a fixed placeholder.
+  cashierName: string;
+  shiftLabel: string;
+  customer: { name: string | null; phone: string | null; email: string | null };
+  customerSaving: boolean;
+  customerError: string;
+  onSaveCustomer: (customer: {
+    customerName: string;
+    customerPhone: string;
+    customerEmail: string;
+  }) => Promise<boolean>;
   onClose: () => void;
   onSelectInvoice: (invoiceId: string) => void;
   onRefreshInvoices: () => void;
@@ -124,6 +141,21 @@ export const PaymentModal = ({
   const [cashInput, setCashInput] = useState("");
   const [splitOpen, setSplitOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [customerOpen, setCustomerOpen] = useState(false);
+  const [customerDraft, setCustomerDraft] = useState({
+    customerName: "",
+    customerPhone: "",
+    customerEmail: "",
+  });
+
+  // Re-seed the editor whenever the stored customer changes so it never shows stale text.
+  useEffect(() => {
+    setCustomerDraft({
+      customerName: customer.name ?? "",
+      customerPhone: customer.phone ?? "",
+      customerEmail: customer.email ?? "",
+    });
+  }, [customer.name, customer.phone, customer.email]);
 
   useEffect(() => {
     setSplitOpen(false);
@@ -200,6 +232,10 @@ export const PaymentModal = ({
     if (actionBusy || processing) return "Đang xử lý thao tác hóa đơn khác.";
     return "";
   })();
+  // "Gửi hóa đơn" needs a real recipient — the backend refuses to send without one, so
+  // the button stays disabled rather than pretending the email went out.
+  const customerEmail = (customer.email ?? "").trim();
+  const hasCustomerEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail);
   const nonPayableFallbackNote = "Nhà hàng không thể phục vụ món này.";
   const confirmLabel = processing
     ? "Đang thanh toán..."
@@ -317,25 +353,39 @@ export const PaymentModal = ({
               </p>
             </div>
             <div className="flex flex-col gap-3 text-[10px]">
-              <div className="flex justify-between">
-                <span className="text-[#6d7278]">Thu ngân</span>
-                <span className="text-black">Duy Tan</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-[#6d7278] shrink-0">Thu ngân</span>
+                <span className="text-black text-right">{cashierName}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[#6d7278]">Ca làm</span>
-                <span className="text-black">09.00 - 12.00 AM</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-[#6d7278] shrink-0">Ca làm</span>
+                <span className="text-black text-right">{shiftLabel}</span>
               </div>
             </div>
             <div className="border-t border-dashed border-[#b0a080]" />
             <div className="flex flex-col gap-3 text-[10px]">
               <div className="flex justify-between gap-2">
                 <span className="text-[#6d7278] shrink-0">Khách hàng</span>
-                <span className="text-black">Nguyen Van A</span>
+                <span className="text-black text-right break-all">
+                  {customer.name?.trim() || "Khách lẻ"}
+                </span>
               </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-[#6d7278] shrink-0">Mã thành viên</span>
-                <span className="text-black">-</span>
-              </div>
+              {customer.phone?.trim() && (
+                <div className="flex justify-between gap-2">
+                  <span className="text-[#6d7278] shrink-0">Điện thoại</span>
+                  <span className="text-black text-right break-all">
+                    {customer.phone.trim()}
+                  </span>
+                </div>
+              )}
+              {customer.email?.trim() && (
+                <div className="flex justify-between gap-2">
+                  <span className="text-[#6d7278] shrink-0">Email</span>
+                  <span className="text-black text-right break-all">
+                    {customer.email.trim()}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between gap-2">
                 <span className="text-[#6d7278] shrink-0">Hình thức</span>
                 <span className="text-black">Tại bàn</span>
@@ -343,7 +393,7 @@ export const PaymentModal = ({
               <div className="flex justify-between gap-2">
                 <span className="text-[#6d7278] shrink-0">Số bàn</span>
                 <span className="text-black">
-                  {table?.name?.replace("Bàn ", "") ?? "9"}
+                  {table?.name?.replace("Bàn ", "") ?? "—"}
                 </span>
               </div>
             </div>
@@ -505,6 +555,82 @@ export const PaymentModal = ({
                     </p>
                   </div>
                 )}
+                <div className="rounded-[10px] border border-[#e8e8e8] bg-white">
+                  <button
+                    type="button"
+                    onClick={() => setCustomerOpen((open) => !open)}
+                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-[12px] font-medium text-[#202325]">
+                        Khách hàng
+                      </span>
+                      <span className="block truncate text-[11px] text-[#797b7c]">
+                        {customer.name?.trim() || "Khách lẻ"}
+                        {customerEmail ? ` · ${customerEmail}` : ""}
+                      </span>
+                    </span>
+                    <ChevronDownIcon
+                      className={`h-4 w-4 shrink-0 text-[#636566] transition-transform ${customerOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {customerOpen && (
+                    <div className="flex flex-col gap-2 border-t border-[#e8e8e8] px-3 py-2.5">
+                      <input
+                        value={customerDraft.customerName}
+                        onChange={(event) =>
+                          setCustomerDraft((draft) => ({
+                            ...draft,
+                            customerName: event.target.value,
+                          }))
+                        }
+                        placeholder="Tên khách hàng"
+                        className="h-[34px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[12px] outline-none focus:border-[#025cca]"
+                      />
+                      <input
+                        value={customerDraft.customerPhone}
+                        onChange={(event) =>
+                          setCustomerDraft((draft) => ({
+                            ...draft,
+                            customerPhone: event.target.value,
+                          }))
+                        }
+                        placeholder="Số điện thoại"
+                        inputMode="tel"
+                        className="h-[34px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[12px] outline-none focus:border-[#025cca]"
+                      />
+                      <input
+                        value={customerDraft.customerEmail}
+                        onChange={(event) =>
+                          setCustomerDraft((draft) => ({
+                            ...draft,
+                            customerEmail: event.target.value,
+                          }))
+                        }
+                        placeholder="Email (để gửi hóa đơn)"
+                        inputMode="email"
+                        className="h-[34px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[12px] outline-none focus:border-[#025cca]"
+                      />
+                      {customerError && (
+                        <p className="text-[11px] text-[#d92d20]">
+                          {customerError}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void onSaveCustomer(customerDraft).then((saved) => {
+                            if (saved) setCustomerOpen(false);
+                          });
+                        }}
+                        disabled={customerSaving}
+                        className="h-[34px] rounded-[8px] border border-[#025cca] bg-white text-[12px] font-medium text-[#025cca] disabled:opacity-50"
+                      >
+                        {customerSaving ? "Đang lưu..." : "Lưu thông tin khách"}
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={onPrint}
@@ -514,10 +640,17 @@ export const PaymentModal = ({
                   </button>
                   <button
                     onClick={onSend}
-                    disabled={actionBusy}
+                    disabled={actionBusy || !hasCustomerEmail}
+                    title={
+                      hasCustomerEmail ? undefined : "Cần email khách hàng"
+                    }
                     className="h-[36px] rounded-[10px] bg-[#f0f8ff] text-[12px] font-medium text-[#025cca] disabled:opacity-50"
                   >
-                    {action === "send" ? "Đang gửi" : "Gửi hóa đơn"}
+                    {action === "send"
+                      ? "Đang gửi"
+                      : hasCustomerEmail
+                        ? "Gửi hóa đơn"
+                        : "Cần email khách hàng"}
                   </button>
                 </div>
                 {invoiceMessage && (

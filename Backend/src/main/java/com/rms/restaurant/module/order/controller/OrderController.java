@@ -51,6 +51,14 @@ public class OrderController {
         return ResponseEntity.ok(orderService.create(request));
     }
 
+    /** Customer contact for the receipt and the invoice email. Descriptive data only. */
+    @PutMapping("/{id}/customer")
+    public ResponseEntity<OrderResponse> updateCustomer(
+            @PathVariable String id,
+            @Valid @RequestBody com.rms.restaurant.module.order.dto.UpdateOrderCustomerRequest request) {
+        return ResponseEntity.ok(orderService.updateCustomer(id, request));
+    }
+
     @PutMapping("/{id}/items")
     public ResponseEntity<OrderResponse> addItems(@PathVariable String id, @Valid @RequestBody com.rms.restaurant.module.order.dto.AddOrderItemsRequest request) {
         return ResponseEntity.ok(orderService.addItems(id, request));
