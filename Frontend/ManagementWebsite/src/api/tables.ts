@@ -9,6 +9,14 @@ export interface TableDto {
   area: string
   status: TableStatus
   qrToken: string
+  activeOrderId?: string | null
+  upcomingReservation?: {
+    id: string
+    guestName: string
+    phone: string
+    partySize: number
+    datetime: string
+  } | null
 }
 
 // size is large so callers that need the full table list (no UI pagination) get everything in one page.

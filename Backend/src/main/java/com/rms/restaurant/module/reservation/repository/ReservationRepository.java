@@ -20,6 +20,9 @@ public interface ReservationRepository extends JpaRepository<Reservation, String
 
     Optional<Reservation> findFirstByTableIdAndStatusOrderByDatetimeAsc(String tableId, ReservationStatus status);
 
+    /** Most recent reservation in the given status for a table — used to attribute a currently-occupied table (post check-in) back to the guest who booked it. */
+    Optional<Reservation> findFirstByTableIdAndStatusOrderByDatetimeDesc(String tableId, ReservationStatus status);
+
     // BE-TBL-05: guard deleteTable() with a clean error instead of a raw FK-constraint 500
     boolean existsByTableId(String tableId);
 
@@ -125,5 +128,12 @@ public interface ReservationRepository extends JpaRepository<Reservation, String
             @Param("windowEnd")    LocalDateTime windowEnd,
             @Param("minPartySize") int minPartySize,
             @Param("maxPartySize") int maxPartySize
+    );
+
+    /** Table IDs (within the given set) that currently have a reservation in the given status. */
+    @Query("SELECT r.tableId FROM Reservation r WHERE r.tableId IN :tableIds AND r.status = :status")
+    List<String> findTableIdsByTableIdInAndStatus(
+            @Param("tableIds") List<String> tableIds,
+            @Param("status")   ReservationStatus status
     );
 }

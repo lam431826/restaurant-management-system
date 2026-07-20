@@ -12,6 +12,7 @@ import Timesheet from "./components/staff/schedule/Timesheet";
 import EmployeeSettings from "./components/staff/settings/EmployeeSettings";
 import Payroll from "./components/staff/payroll/Payroll";
 import PayrollUpdate from "./components/staff/payroll/PayrollUpdate";
+import MyProfile from "./components/staff/MyProfile";
 import ShiftReconciliation from "./components/reports/ShiftReconciliation";
 import EndOfDayReport from "./components/reports/EndOfDayReport";
 import FinancialReport from "./components/reports/FinancialReport";
@@ -68,6 +69,16 @@ function App() {
           }
         />
 
+        {/* ── Staff: self-service employee profile ── */}
+        <Route
+          path="/my-profile"
+          element={
+            <ProtectedRoute roles={["WAITER", "CASHIER", "MANAGER"]}>
+              <MyProfile />
+            </ProtectedRoute>
+          }
+        />
+
         {/* ── Manager role (dashboard chrome) ── */}
         <Route
           path="/manager"
@@ -91,7 +102,10 @@ function App() {
           <Route path="payroll/update" element={<PayrollUpdate />} />
           <Route path="cash-book" element={<CashBook />} />
           <Route path="reports/daily-summary" element={<EndOfDayReport />} />
-          <Route path="reports/shift-reconciliation" element={<ShiftReconciliation />} />
+          <Route
+            path="reports/shift-reconciliation"
+            element={<ShiftReconciliation />}
+          />
           <Route path="reports/financial" element={<FinancialReport />} />
           <Route path="audit-logs" element={<AuditLogPage />} />
         </Route>

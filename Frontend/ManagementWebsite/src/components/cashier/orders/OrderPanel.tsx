@@ -83,6 +83,10 @@ export const OrderPanel = ({
   const isTableEmpty = !!selectedTable && !selectedTable.occupied;
   const hasItems = items.length > 0;
   const customerDisplayName = customer.customerName.trim() || "Khách lẻ";
+  // Driven by whether an Order row actually exists — not selectedTable.occupied, which flips to
+  // true the moment a reservation is checked in (table.status → OCCUPIED) even though no Order
+  // has been created yet. Keying off orderId keeps the "Tạo Order" button reachable in that gap.
+  const reservationInfo = selectedTable?.upcomingReservation ?? null;
   const billableOrderItems = items.filter(
     (item) => item.status !== COOKING_STATUS_LABEL.REJECTED,
   );
@@ -103,10 +107,15 @@ export const OrderPanel = ({
       <div className="flex items-start justify-between shrink-0 mb-6">
         <div className="flex flex-col gap-1">
           <span className="text-[16px] font-medium text-[#202325]">
-            {customerDisplayName}
+            {reservationInfo
+              ? reservationInfo.guestName
+              : isTableEmpty
+                ? "Customer Name"
+                : "Walk-in Customer"}
           </span>
           <span className="text-[14px] text-[#636566]">
             {selectedTable ? selectedTable.name : "–"}
+            {reservationInfo ? ` · ${reservationInfo.partySize} người` : ""}
           </span>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -248,9 +257,7 @@ export const OrderPanel = ({
       <div className="shrink-0 mt-4 flex flex-col gap-3">
         <div className="h-px bg-[#e8e8e8]" />
         <div className="flex justify-between text-[14px]">
-          <span className="font-medium text-[#636566]">
-            Số món
-          </span>
+          <span className="font-medium text-[#636566]">Số món</span>
           <span className="font-semibold text-[#202325]">
             {billableOrderItems.length} món
           </span>
@@ -303,26 +310,26 @@ export const OrderPanel = ({
                 {itemMutationDisabledMessage}
               </div>
             )}
-          <button
-            onClick={onAddItems}
-            disabled={!shiftOpen || itemMutationDisabled}
-            title={
-              itemMutationDisabled ? itemMutationDisabledMessage : undefined
-            }
-            className="bg-[#e85d04] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#dc2f02] transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span className="text-[16px] font-medium text-white">
-              Thêm món vào Đơn
-            </span>
-          </button>
-          {canCancelOrder && (
             <button
-              onClick={() => onCancelOrder(cancellableOrderIds)}
-              className="bg-transparent border border-[#dc2f02] flex items-center justify-center h-[40px] rounded-[12px] w-full hover:bg-[#dc2f02] hover:text-white text-[#dc2f02] transition-colors"
+              onClick={onAddItems}
+              disabled={!shiftOpen || itemMutationDisabled}
+              title={
+                itemMutationDisabled ? itemMutationDisabledMessage : undefined
+              }
+              className="bg-[#e85d04] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#dc2f02] transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span className="text-[14px] font-medium">Hủy đơn hàng</span>
+              <span className="text-[16px] font-medium text-white">
+                Thêm món vào Đơn
+              </span>
             </button>
-          )}
+            {canCancelOrder && (
+              <button
+                onClick={() => onCancelOrder(cancellableOrderIds)}
+                className="bg-transparent border border-[#dc2f02] flex items-center justify-center h-[40px] rounded-[12px] w-full hover:bg-[#dc2f02] hover:text-white text-[#dc2f02] transition-colors"
+              >
+                <span className="text-[14px] font-medium">Hủy đơn hàng</span>
+              </button>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-2 mt-1">

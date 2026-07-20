@@ -125,6 +125,7 @@ const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
   INVALID_STATUS_TRANSITION:
     "Thao tác đổi trạng thái không hợp lệ. Vui lòng dùng đúng luồng xử lý.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
+  TABLE_HAS_ACTIVE_ORDER: "Bàn này đã có đơn hàng đang xử lý.",
 };
 
 const ORDER_ACTION_FALLBACK_ERROR =
@@ -2210,12 +2211,14 @@ const CashierOrders = () => {
           </div>
         </div>
 
-        {selectedTable?.upcomingReservation && !selectedOrder ? (
+        {selectedTable &&
+        selectedTable.status === "RESERVED" &&
+        !selectedTable.occupied ? (
           <ReservationPanel
             table={selectedTable}
-            onCheckIn={() => void handleReservationCheckIn()}
-            onNoShow={() => void handleReservationNoShow()}
-            onCancel={() => void handleReservationCancel()}
+            onCheckIn={handleReservationCheckIn}
+            onNoShow={handleReservationNoShow}
+            onCancel={handleReservationCancel}
             loading={reservationLoading}
             error={reservationError}
           />

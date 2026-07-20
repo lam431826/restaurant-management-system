@@ -5,6 +5,7 @@ import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
+import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.employee.dto.*;
 import com.rms.restaurant.module.employee.mapper.EmployeeMapper;
@@ -20,6 +21,7 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -184,6 +186,98 @@ public class EmployeeServiceImpl implements EmployeeService {
         employeeRepository.save(employee);
         log.info("Deactivated employee '{}'", employee.getCode());
         audit("EMPLOYEE_DEACTIVATE", employee);
+    }
+
+    // ── Self-service profile ("Hồ sơ của tôi") ────────────────────────────
+
+    @Override
+    @Transactional(readOnly = true)
+    public EmployeeResponse getMyProfile(String username) {
+        User user = findUserByUsername(username);
+        return employeeRepository.findByUserId(user.getId())
+                .map(employeeMapper::toResponse)
+                .orElseGet(() -> new EmployeeResponse(
+                        null, null, user.getFullName(), user.getPhone(), null, null,
+                        null, null, null, null, null, null, null,
+                        user.getEmail(), null, null, null));
+    }
+
+    @Override
+    public EmployeeResponse saveMyProfile(String username, SelfEmployeeProfileRequest request) {
+        User user = findUserByUsername(username);
+        syncUserProfile(user, request);
+
+        Employee employee = employeeRepository.findByUserId(user.getId()).orElse(null);
+        if (employee != null) {
+            if (!request.phone().trim().equals(employee.getPhone())
+                    && employeeRepository.existsByPhoneAndIdNot(request.phone().trim(), employee.getId())) {
+                throw new ConflictException(ApplicationError.DUPLICATE_EMPLOYEE_PHONE);
+            }
+            applyProfileFields(employee, request);
+            Employee saved = employeeRepository.save(employee);
+            audit("EMPLOYEE_SELF_UPDATE", saved);
+            return employeeMapper.toResponse(saved);
+        }
+
+        if (employeeRepository.existsByPhone(request.phone().trim())) {
+            throw new ConflictException(ApplicationError.DUPLICATE_EMPLOYEE_PHONE);
+        }
+        Employee newEmployee = Employee.builder()
+                .code(generateNextCode())
+                .status(EmployeeStatus.ACTIVE)
+                .userId(user.getId())
+                .build();
+        applyProfileFields(newEmployee, request);
+
+        Employee saved;
+        try {
+            saved = employeeRepository.save(newEmployee);
+        } catch (DataIntegrityViolationException e) {
+            // Two concurrent first-saves for the same user both missed the findByUserId check above —
+            // the DB-level filtered unique index (uq_employees_user_id, V29) is the real guard.
+            throw new ConflictException(ApplicationError.EMPLOYEE_USER_ALREADY_LINKED);
+        }
+        log.info("Self-created employee '{}' [{}] for user '{}'", saved.getCode(), saved.getName(), username);
+        audit("EMPLOYEE_SELF_CREATE", saved);
+        return employeeMapper.toResponse(saved);
+    }
+
+    private void applyProfileFields(Employee employee, SelfEmployeeProfileRequest request) {
+        employee.setName(request.name().trim());
+        employee.setPhone(request.phone().trim());
+        employee.setStartDate(request.startDate());
+        employee.setNote(trimToNull(request.note()));
+        employee.setIdNumber(trimToNull(request.idNumber()));
+        employee.setBirthday(request.birthday());
+        employee.setGender(trimToNull(request.gender()));
+        employee.setAddress(trimToNull(request.address()));
+        employee.setEmail(trimToNull(request.email()));
+    }
+
+    /**
+     * Self-service is the one path that writes name/phone/email back onto User too, so an
+     * employee editing their own profile doesn't fork the two rows out of sync over time.
+     * Validated against BOTH tables' uniqueness since the two are independent constraints.
+     */
+    private void syncUserProfile(User user, SelfEmployeeProfileRequest request) {
+        String phone = request.phone().trim();
+        if (!phone.equals(user.getPhone()) && userRepository.existsByPhoneAndIdNot(phone, user.getId())) {
+            throw new ConflictException(ApplicationError.DUPLICATE_PHONE);
+        }
+        String newEmail = trimToNull(request.email());
+        if (newEmail != null && !newEmail.equals(user.getEmail())
+                && userRepository.existsByEmailAndIdNot(newEmail, user.getId())) {
+            throw new ConflictException(ApplicationError.DUPLICATE_EMAIL);
+        }
+        user.setFullName(request.name().trim());
+        user.setPhone(phone);
+        if (newEmail != null) user.setEmail(newEmail); // never clear an already-verified email from a blank form field
+        userRepository.save(user);
+    }
+
+    private User findUserByUsername(String username) {
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.USER_NOT_FOUND));
     }
 
     // ── Salary settings (UC-EMP-07 / BR-SAL-01/02) ───────────────────────

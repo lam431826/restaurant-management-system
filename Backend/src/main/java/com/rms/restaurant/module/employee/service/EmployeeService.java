@@ -20,6 +20,12 @@ public interface EmployeeService {
 
     void deactivate(String id);
 
+    /** Self-service: the current user's own linked Employee, or a starter view pre-filled from their User row if none exists yet. */
+    EmployeeResponse getMyProfile(String username);
+
+    /** Self-service: create-or-update the current user's own Employee profile, keeping name/phone/email in sync with their User row. */
+    EmployeeResponse saveMyProfile(String username, SelfEmployeeProfileRequest request);
+
     SalarySettingResponse getSalarySetting(String employeeId);
 
     SalarySettingResponse upsertSalarySetting(String employeeId, SalarySettingRequest request);
