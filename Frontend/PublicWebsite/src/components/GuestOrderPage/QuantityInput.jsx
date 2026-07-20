@@ -1,4 +1,28 @@
+import { useState, useEffect } from 'react';
+
 export default function QuantityInput({ quantity, onChange, onRemove }) {
+  const [inputValue, setInputValue] = useState(quantity.toString());
+
+  useEffect(() => {
+    setInputValue(quantity.toString());
+  }, [quantity]);
+
+  const commitValue = () => {
+    const val = parseInt(inputValue, 10);
+    if (isNaN(val) || val <= 0) {
+      onRemove();
+    } else {
+      onChange(val);
+      setInputValue(val.toString());
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.target.blur();
+    }
+  };
+
   return (
     <div className="flex items-center gap-1 bg-gray-50 px-1 py-1 rounded-full border border-gray-200">
       <button 
@@ -9,12 +33,10 @@ export default function QuantityInput({ quantity, onChange, onRemove }) {
       </button>
       <input 
         type="number" 
-        value={quantity === 0 ? '' : quantity} 
-        onChange={(e) => {
-          const val = parseInt(e.target.value, 10)
-          if (!isNaN(val)) onChange(val)
-          else if (e.target.value === '') onRemove()
-        }}
+        value={inputValue} 
+        onChange={(e) => setInputValue(e.target.value)}
+        onBlur={commitValue}
+        onKeyDown={handleKeyDown}
         className="w-8 text-center bg-transparent font-bold text-sm outline-none m-0 p-0 hide-arrows"
         style={{ appearance: 'textfield' }}
       />

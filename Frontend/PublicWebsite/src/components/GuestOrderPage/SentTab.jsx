@@ -1,6 +1,6 @@
 export default function SentTab({ statusData, handleStartEditing, getItemImage }) {
   return (
-    <div className="flex-1 overflow-y-auto p-4 pb-8">
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 pb-8">
       {statusData && (
         <div className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100 flex items-center justify-between">
           <div>

@@ -118,8 +118,7 @@ const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
     "Không thể hủy đơn vì có món đã được bếp xử lý hoặc phục vụ.",
   ORDER_ITEM_STATUS_TRANSITION_NOT_ALLOWED:
     "Không thể hủy món ở trạng thái hiện tại.",
-  ORDER_ITEM_REMOVE_NOT_ALLOWED:
-    "Chỉ có thể xóa món khi món đang chờ duyệt.",
+  ORDER_ITEM_REMOVE_NOT_ALLOWED: "Chỉ có thể xóa món khi món đang chờ duyệt.",
   TABLE_NOT_AVAILABLE:
     "Bàn đã có đơn đang hoạt động, đang được sử dụng hoặc có lịch đặt. Danh sách bàn đã được làm mới.",
   TABLE_NOT_FOUND: "Không tìm thấy bàn. Vui lòng làm mới danh sách bàn.",
@@ -297,9 +296,9 @@ const PAYMENT_PROCESS_ERROR_MESSAGES: Record<string, string> = {
   PAYMENT_RECEIVED_AMOUNT_INVALID:
     "Số tiền khách đưa phải lớn hơn hoặc bằng số tiền cần thanh toán.",
   PAYMENT_NOT_FOUND: "Không tìm thấy giao dịch thanh toán.",
-  PAYMENT_NOT_PENDING:
-    "Giao dịch QR này không còn ở trạng thái chờ xử lý.",
-  PAYMENT_METHOD_MISMATCH: "Thao tác không phù hợp với phương thức thanh toán này.",
+  PAYMENT_NOT_PENDING: "Giao dịch QR này không còn ở trạng thái chờ xử lý.",
+  PAYMENT_METHOD_MISMATCH:
+    "Thao tác không phù hợp với phương thức thanh toán này.",
 };
 
 const PAYMENT_PROCESS_MESSAGE_FALLBACKS: Record<string, string> = {
@@ -398,8 +397,7 @@ const SPLIT_INVOICE_ERROR_MESSAGES: Record<string, string> = {
   ORDER_NOT_FOUND: "Đơn hàng không còn tồn tại. Dữ liệu đã được làm mới.",
   INVOICE_NOT_PAYABLE:
     "Trạng thái hóa đơn đã thay đổi và không còn có thể chia.",
-  INVOICE_ALREADY_PAID:
-    "Hóa đơn đã được thanh toán bởi một thao tác khác.",
+  INVOICE_ALREADY_PAID: "Hóa đơn đã được thanh toán bởi một thao tác khác.",
   INVOICE_NOT_SPLITTABLE: "Hóa đơn không đáp ứng điều kiện để chia.",
   INVALID_INVOICE_SPLIT:
     "Nhóm chia hóa đơn chưa hợp lệ. Vui lòng kiểm tra lại các món.",
@@ -432,13 +430,13 @@ const getSplitInvoiceErrorMessage = (error: unknown): string => {
 const MERGE_INVOICE_ERROR_MESSAGES: Record<string, string> = {
   VALIDATION_ERROR: "Vui lòng chọn ít nhất hai hóa đơn hợp lệ để gộp.",
   INVALID_INVOICE_MERGE: "Danh sách hóa đơn cần gộp không hợp lệ.",
-  INVOICE_NOT_FOUND: "Một hóa đơn không còn tồn tại. Danh sách đã được làm mới.",
+  INVOICE_NOT_FOUND:
+    "Một hóa đơn không còn tồn tại. Danh sách đã được làm mới.",
   ORDER_NOT_FOUND: "Đơn hàng không còn tồn tại. Dữ liệu đã được làm mới.",
   INVOICE_MERGE_ORDER_MISMATCH: "Các hóa đơn không thuộc cùng một đơn hàng.",
   INVOICE_NOT_MERGEABLE:
     "Trạng thái hóa đơn đã thay đổi và không còn có thể gộp.",
-  INVOICE_ALREADY_PAID:
-    "Một hóa đơn đã được thanh toán bởi thao tác khác.",
+  INVOICE_ALREADY_PAID: "Một hóa đơn đã được thanh toán bởi thao tác khác.",
   INVALID_INVOICE_TOTAL:
     "Tổng tiền hóa đơn đã thay đổi hoặc không hợp lệ để gộp.",
   INVOICE_ALLOCATION_DATA_INVALID:
@@ -523,6 +521,10 @@ const CashierOrders = () => {
     orderId: string | null;
     orderItemId: string | null;
   }>({ open: false, orderId: null, orderItemId: null });
+  const [cancelConfirmModal, setCancelConfirmModal] = useState<{
+    open: boolean;
+    orderIds: string[];
+  }>({ open: false, orderIds: [] });
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [successTotal, setSuccessTotal] = useState<number | null>(null);
   const [showChangePw, setShowChangePw] = useState(false);
@@ -530,7 +532,9 @@ const CashierOrders = () => {
   const [invoiceListOrderId, setInvoiceListOrderId] = useState<string | null>(
     null,
   );
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(
+    null,
+  );
   const [selectedInvoiceDetail, setSelectedInvoiceDetail] =
     useState<InvoiceDetail | null>(null);
   const [promotionCode, setPromotionCode] = useState("");
@@ -777,7 +781,9 @@ const CashierOrders = () => {
   // Real-time push races the poll above — an assistance request created/resolved
   // anywhere shows up near-instantly; the poll stays as a backstop if the WS drops.
   useRealtime("/topic/assistance", () => {
-    listPendingAssistance().then(setAssistanceRequests).catch(() => {});
+    listPendingAssistance()
+      .then(setAssistanceRequests)
+      .catch(() => {});
   });
 
   // Live orders and authoritative table ownership are polled together, kept in sync
@@ -903,6 +909,7 @@ const CashierOrders = () => {
         notes: i.note || "",
         rejectionNote: i.rejectionNote,
         orderId: order.id,
+        isQrOrder: i.isQrOrder ?? i.qrOrder,
       })),
     );
     setOrderItems(combinedItems);
@@ -912,7 +919,9 @@ const CashierOrders = () => {
   const selectedOrderId = selectedTable?.orderId ?? "";
   selectedTableIdRef.current = selectedTable?.id ?? "";
   selectedOrderIdRef.current = selectedOrderId;
-  const selectedOrder = activeOrders.find((order) => order.id === selectedOrderId);
+  const selectedOrder = activeOrders.find(
+    (order) => order.id === selectedOrderId,
+  );
   const selectedOrderCustomerKey = selectedOrder
     ? `${selectedOrder.id}|${selectedOrder.customerName ?? ""}|${selectedOrder.customerPhone ?? ""}|${selectedOrder.customerEmail ?? ""}`
     : `none|${selectedTable?.id ?? ""}`;
@@ -976,12 +985,15 @@ const CashierOrders = () => {
       (candidate) => candidate.id === selectedInvoiceId,
     ) ?? null;
 
+  console.log("ACTIVE ORDERS:", activeOrders);
   const pendingOrders = activeOrders.filter(
     (o) =>
       o.status === "PENDING" ||
       (o.status !== "CANCELLED" &&
         o.status !== "CLOSED" &&
-        o.items.some((i) => i.cookingStatus === "PENDING")),
+        o.items.some(
+          (i) => i.cookingStatus === "PENDING" && (i.isQrOrder || i.qrOrder),
+        )),
   );
   const pendingOrdersCount = pendingOrders.length;
   const currentOrderInvoiceDetail =
@@ -1079,10 +1091,7 @@ const CashierOrders = () => {
   );
 
   const refreshInvoices = useCallback(
-    async (
-      orderId: string,
-      preferredInvoiceId: string | null = null,
-    ) => {
+    async (orderId: string, preferredInvoiceId: string | null = null) => {
       const normalizedOrderId = orderId.trim();
       if (!normalizedOrderId) return null;
 
@@ -1687,7 +1696,14 @@ const CashierOrders = () => {
 
   const handleCancelOrder = async (orderIds: string[]) => {
     if (orderIds.length === 0) return;
-    if (!window.confirm("Bạn có chắc chắn muốn hủy đơn hàng này?")) return;
+    setCancelConfirmModal({ open: true, orderIds });
+  };
+
+  const executeCancelOrder = async () => {
+    const { orderIds } = cancelConfirmModal;
+    setCancelConfirmModal({ open: false, orderIds: [] });
+    if (orderIds.length === 0) return;
+
     setOrderActionMessage(null);
     try {
       await Promise.all(
@@ -1939,7 +1955,10 @@ const CashierOrders = () => {
     }
   };
 
-  const handleRemoveItemFromPending = (orderId: string, orderItemId: string) => {
+  const handleRemoveItemFromPending = (
+    orderId: string,
+    orderItemId: string,
+  ) => {
     setRejectModal({ open: true, orderId, itemId: orderItemId, text: "" });
   };
 
@@ -2268,7 +2287,6 @@ const CashierOrders = () => {
           onClose={() => setShowQRModal(false)}
           onAccept={handleAcceptPendingOrder}
           onReject={handleRejectPendingOrder}
-          onRemoveItem={handleRemoveItemFromPending}
         />
       )}
 
@@ -2276,13 +2294,35 @@ const CashierOrders = () => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
             <div className="w-12 h-12 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center mb-4">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
+              </svg>
             </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Xác nhận xóa</h3>
-            <p className="text-sm text-gray-600 mb-6">Bạn có chắc chắn muốn xóa món này khỏi đơn hàng?</p>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">
+              Xác nhận xóa
+            </h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Bạn có chắc chắn muốn xóa món này khỏi đơn hàng?
+            </p>
             <div className="flex gap-3 w-full">
               <button
-                onClick={() => setRemoveConfirmModal({ open: false, orderId: null, orderItemId: null })}
+                onClick={() =>
+                  setRemoveConfirmModal({
+                    open: false,
+                    orderId: null,
+                    orderItemId: null,
+                  })
+                }
                 className="flex-1 border border-gray-300 text-gray-700 font-bold py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
               >
                 Hủy
@@ -2298,16 +2338,74 @@ const CashierOrders = () => {
         </div>
       )}
 
+      {cancelConfirmModal.open && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-[#dc2f02] flex items-center justify-center mb-4">
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">
+              Hủy đơn hàng
+            </h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Bạn có chắc chắn muốn hủy đơn hàng này?
+            </p>
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() =>
+                  setCancelConfirmModal({ open: false, orderIds: [] })
+                }
+                className="flex-1 border border-gray-300 text-gray-700 font-bold py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Đóng
+              </button>
+              <button
+                onClick={() => void executeCancelOrder()}
+                className="flex-1 bg-[#dc2f02] text-white font-bold py-2.5 rounded-xl hover:bg-[#9d0208] transition-colors"
+              >
+                Xác nhận
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {orderActionMessage && orderActionMessage.type === "error" && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
             <div className="w-12 h-12 rounded-full bg-red-100 text-red-500 flex items-center justify-center mb-4">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
             </div>
             <h3 className="text-lg font-bold text-gray-900 mb-2">Thông báo</h3>
-            <p className="text-sm text-gray-600 mb-6">{orderActionMessage.text}</p>
-            <button 
-              onClick={() => setOrderActionMessage(null)} 
+            <p className="text-sm text-gray-600 mb-6">
+              {orderActionMessage.text}
+            </p>
+            <button
+              onClick={() => setOrderActionMessage(null)}
               className="w-full bg-gray-900 text-white font-bold py-2.5 rounded-xl hover:bg-gray-800 transition-colors"
             >
               Đóng
