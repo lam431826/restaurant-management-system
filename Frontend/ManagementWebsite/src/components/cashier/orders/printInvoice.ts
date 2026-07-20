@@ -1,4 +1,5 @@
 import type { InvoiceDetail } from "../../../services/invoiceApi";
+import { formatInvoiceCode, formatOrderCode } from "../../../utils/displayCodes";
 
 export const formatDateTime = (value: string) =>
   new Intl.DateTimeFormat("vi-VN", {
@@ -40,7 +41,7 @@ export const printCashierInvoice = (
     <html lang="vi">
       <head>
         <meta charset="utf-8" />
-        <title>Hóa đơn ${escapeHtml(invoice.id)}</title>
+        <title>Hóa đơn ${escapeHtml(formatInvoiceCode(invoice.id))}</title>
         <style>
           * { box-sizing: border-box; }
           body { margin: 0; background: #f8f5ed; color: #202325; font-family: "Courier New", monospace; }
@@ -72,7 +73,7 @@ export const printCashierInvoice = (
         <main class="receipt">
           <header class="header"><h1>Wasabi Sushi</h1><p class="printed-at">${escapeHtml(printedAt)}</p></header>
           <div class="separator"></div>
-          <section class="order-box"><span>Mã đơn hàng</span><strong>${escapeHtml(invoice.orderId)}</strong></section>
+          <section class="order-box"><span>Mã đơn hàng</span><strong>${escapeHtml(formatOrderCode(invoice.orderId))}</strong></section>
           <div class="separator"></div>
           <section>
             <div class="info-row"><span>Thu ngân</span><strong>${escapeHtml(cashierName)}</strong></div>

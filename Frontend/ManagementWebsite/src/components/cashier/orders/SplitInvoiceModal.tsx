@@ -5,6 +5,7 @@ import type {
   SplitInvoiceRequest,
 } from "../../../services/invoiceApi";
 import { XIcon } from "./icons";
+import { formatInvoiceCode } from "../../../utils/displayCodes";
 
 interface DraftGroup {
   id: number;
@@ -240,8 +241,12 @@ export const SplitInvoiceModal = ({
             >
               Chia hóa đơn
             </h2>
-            <p className="mt-1 truncate text-[13px] text-[#636566]">
-              Hóa đơn {invoice.id}
+            <p
+              className="mt-1 truncate text-[13px] text-[#636566]"
+              title={invoice.id}
+            >
+              Hóa đơn{" "}
+              <span className="font-mono">{formatInvoiceCode(invoice.id)}</span>
             </p>
           </div>
           <button

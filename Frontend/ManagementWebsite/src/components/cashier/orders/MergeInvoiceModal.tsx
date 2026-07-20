@@ -4,6 +4,8 @@ import type {
   MergeInvoiceRequest,
 } from "../../../services/invoiceApi";
 import { XIcon } from "./icons";
+import { getLifecycleLabel } from "../../transactions/invoiceLifecycle";
+import { formatInvoiceCode } from "../../../utils/displayCodes";
 
 interface MergeInvoiceModalProps {
   open: boolean;
@@ -274,15 +276,18 @@ export const MergeInvoiceModal = ({
                   />
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-mono text-[13px] font-semibold">
-                        {invoice.id.slice(0, 8)}
+                      <span
+                        className="font-mono text-[13px] font-semibold"
+                        title={invoice.id}
+                      >
+                        {formatInvoiceCode(invoice.id)}
                       </span>
                       <span className="text-[12px] font-medium">
                         {formatCurrency(invoice.totalAmount)}
                       </span>
                     </span>
                     <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
-                      <span>Trạng thái: {invoice.status}</span>
+                      <span>Trạng thái: {getLifecycleLabel(invoice.status)}</span>
                       <span>{invoice.paid ? "Đã thanh toán" : "Chưa thanh toán"}</span>
                       <span>Tạm tính: {formatCurrency(invoice.subtotal)}</span>
                     </span>
@@ -304,7 +309,9 @@ export const MergeInvoiceModal = ({
             </div>
             {selectedInvoices.map((invoice) => (
               <div key={invoice.id} className="mt-2 flex justify-between gap-3 text-[12px] text-[#636566]">
-                <span className="font-mono">{invoice.id.slice(0, 8)}</span>
+                <span className="font-mono" title={invoice.id}>
+                  {formatInvoiceCode(invoice.id)}
+                </span>
                 <span>{formatCurrency(invoice.totalAmount)}</span>
               </div>
             ))}

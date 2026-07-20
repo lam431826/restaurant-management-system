@@ -15,6 +15,7 @@ import {
   isActiveInvoice,
 } from "./invoiceLifecycle";
 import type { InvoiceViewTab } from "./invoiceLifecycle";
+import { formatInvoiceCode, formatOrderCode } from "../../utils/displayCodes";
 
 interface Props {
   invoices: InvoiceSummary[];
@@ -194,11 +195,11 @@ const InvoiceTable = ({
       )}
 
       <div className="flex-1 min-h-0 overflow-auto">
-        <table className="w-full min-w-[98rem] border-collapse">
+        <table className="w-full min-w-[80rem] border-collapse">
           <thead>
             <tr>
-              <th className={`${th} min-w-[22rem]`}>Mã hóa đơn</th>
-              <th className={`${th} min-w-[20rem]`}>Mã đơn hàng</th>
+              <th className={`${th} w-[16rem]`}>Mã hóa đơn</th>
+              <th className={`${th} w-[15rem]`}>Mã đơn hàng</th>
               <th className={`${th} w-[17rem]`}>Thời gian tạo</th>
               <th className={`${th} text-right w-[14rem]`}>Tạm tính</th>
               <th className={`${th} text-right w-[13rem]`}>Giảm giá</th>
@@ -218,11 +219,17 @@ const InvoiceTable = ({
                       onClick={() => void toggleDetail(invoice)}
                     >
                       <td
-                        className={`${td} font-medium break-all ${isOpen ? "text-primary" : ""}`}
+                        className={`${td} font-medium font-mono whitespace-nowrap ${isOpen ? "text-primary" : ""}`}
+                        title={invoice.id}
                       >
-                        {invoice.id}
+                        {formatInvoiceCode(invoice.id)}
                       </td>
-                      <td className={`${td} break-all`}>{invoice.orderId}</td>
+                      <td
+                        className={`${td} font-mono whitespace-nowrap text-ink-subtle`}
+                        title={invoice.orderId}
+                      >
+                        {formatOrderCode(invoice.orderId)}
+                      </td>
                       <td className={td}>
                         {formatDateTime(invoice.createdAt)}
                       </td>

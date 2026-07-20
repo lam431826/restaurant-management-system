@@ -11,6 +11,12 @@ import {
   getPaymentBadgeClass,
   getPaymentLabel,
 } from "./invoiceLifecycle";
+import {
+  formatInvoiceCode,
+  formatOrderCode,
+  formatShortCode,
+  formatTransactionCode,
+} from "../../utils/displayCodes";
 
 interface Props {
   invoice: InvoiceDetailData;
@@ -175,7 +181,7 @@ const InvoiceDetail = ({
       <html lang="vi">
         <head>
           <meta charset="utf-8" />
-          <title>Hóa đơn ${escapeHtml(invoice.id)}</title>
+          <title>Hóa đơn ${escapeHtml(formatInvoiceCode(invoice.id))}</title>
           <style>
             * { box-sizing: border-box; }
             body { margin: 0; background: #f8f5ed; color: #202325; font-family: "Courier New", monospace; }
@@ -207,7 +213,7 @@ const InvoiceDetail = ({
           <main class="receipt">
             <header class="header"><h1>Wasabi Sushi</h1><p class="printed-at">${escapeHtml(printedAt)}</p></header>
             <div class="separator"></div>
-            <section class="order-box"><span>Mã đơn hàng</span><strong>${escapeHtml(invoice.orderId)}</strong></section>
+            <section class="order-box"><span>Mã đơn hàng</span><strong>${escapeHtml(formatOrderCode(invoice.orderId))}</strong></section>
             <div class="separator"></div>
             <section>
               <div class="info-row"><span>Thu ngân</span><strong>${escapeHtml(cashierName)}</strong></div>
@@ -268,14 +274,20 @@ const InvoiceDetail = ({
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 pb-4 border-b border-line">
         <div>
           <div className="text-sm text-ink-muted">Mã hóa đơn</div>
-          <div className="text-md font-semibold text-ink mt-1 break-all">
-            {invoice.id}
+          <div
+            className="text-md font-semibold font-mono text-ink mt-1"
+            title={invoice.id}
+          >
+            {formatInvoiceCode(invoice.id)}
           </div>
         </div>
         <div>
           <div className="text-sm text-ink-muted">Mã đơn hàng</div>
-          <div className="text-md font-semibold text-ink mt-1 break-all">
-            {invoice.orderId}
+          <div
+            className="text-md font-semibold font-mono text-ink mt-1"
+            title={invoice.orderId}
+          >
+            {formatOrderCode(invoice.orderId)}
           </div>
         </div>
         <div>
@@ -325,35 +337,45 @@ const InvoiceDetail = ({
               </li>
             )}
             {invoice.splitFromInvoiceId && (
-              <li className="break-all">
+              <li>
                 Được tách từ hóa đơn:{" "}
-                <span className="text-ink font-medium">
-                  {invoice.splitFromInvoiceId}
+                <span
+                  className="text-ink font-medium font-mono"
+                  title={invoice.splitFromInvoiceId}
+                >
+                  {formatInvoiceCode(invoice.splitFromInvoiceId)}
                 </span>
               </li>
             )}
             {invoice.mergedIntoInvoiceId && (
-              <li className="break-all">
-                Đã chuyển tiếp sang hóa đơn:{" "}
-                <span className="text-ink font-medium">
-                  {invoice.mergedIntoInvoiceId}
+              <li>
+                Đã gộp vào hóa đơn:{" "}
+                <span
+                  className="text-ink font-medium font-mono"
+                  title={invoice.mergedIntoInvoiceId}
+                >
+                  {formatInvoiceCode(invoice.mergedIntoInvoiceId)}
                 </span>
               </li>
             )}
             {invoice.splitChildInvoiceIds.length > 0 && (
-              <li className="break-all">
+              <li>
                 Đã tách thành {invoice.splitChildInvoiceIds.length} hóa đơn con:{" "}
-                <span className="text-ink font-medium">
-                  {invoice.splitChildInvoiceIds.join(", ")}
+                <span className="text-ink font-medium font-mono">
+                  {invoice.splitChildInvoiceIds
+                    .map((childId) => formatInvoiceCode(childId))
+                    .join(", ")}
                 </span>
               </li>
             )}
             {invoice.mergedSourceInvoiceIds.length > 0 && (
-              <li className="break-all">
+              <li>
                 Được gộp từ {invoice.mergedSourceInvoiceIds.length} hóa đơn
                 nguồn:{" "}
-                <span className="text-ink font-medium">
-                  {invoice.mergedSourceInvoiceIds.join(", ")}
+                <span className="text-ink font-medium font-mono">
+                  {invoice.mergedSourceInvoiceIds
+                    .map((sourceId) => formatInvoiceCode(sourceId))
+                    .join(", ")}
                 </span>
               </li>
             )}
@@ -362,10 +384,10 @@ const InvoiceDetail = ({
       )}
 
       <div className="mt-4 overflow-x-auto border border-line rounded-md">
-        <table className="w-full min-w-[70rem] border-collapse">
+        <table className="w-full min-w-[60rem] border-collapse">
           <thead>
             <tr>
-              <th className={`${th} w-[18rem]`}>Mã món</th>
+              <th className={`${th} w-[11rem]`}>Mã món</th>
               <th className={th}>Tên món</th>
               <th className={`${th} text-right w-[10rem]`}>Số lượng</th>
               <th className={`${th} text-right w-[14rem]`}>Đơn giá</th>
@@ -376,7 +398,12 @@ const InvoiceDetail = ({
           <tbody>
             {invoice.items.map((item, index) => (
               <tr key={`${item.menuItemId}-${index}`}>
-                <td className={`${td} text-primary`}>{item.menuItemId}</td>
+                <td
+                  className={`${td} text-primary font-mono whitespace-nowrap`}
+                  title={item.menuItemId}
+                >
+                  {formatShortCode(item.menuItemId)}
+                </td>
                 <td className={td}>{item.menuItemName}</td>
                 <td className={`${td} text-right`}>{item.quantity}</td>
                 <td className={`${td} text-right`}>{money(item.unitPrice)}</td>
@@ -498,8 +525,11 @@ const InvoiceDetail = ({
                         {paymentStatusLabels[payment.status] ?? payment.status}
                       </span>
                     </td>
-                    <td className={`${td} text-ink-muted break-all`}>
-                      {payment.gatewayRef || "—"}
+                    <td
+                      className={`${td} text-ink-muted font-mono whitespace-nowrap`}
+                      title={payment.gatewayRef || undefined}
+                    >
+                      {formatTransactionCode(payment.gatewayRef)}
                     </td>
                   </tr>
                 ))}

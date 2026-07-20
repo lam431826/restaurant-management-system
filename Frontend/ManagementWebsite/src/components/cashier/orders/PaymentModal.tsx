@@ -21,6 +21,15 @@ import {
   XIcon,
   DeleteDigitIcon,
 } from "./icons";
+import {
+  getLifecycleBadgeClass,
+  getLifecycleLabel,
+} from "../../transactions/invoiceLifecycle";
+import {
+  formatInvoiceCode,
+  formatOrderCode,
+  formatTransactionCode,
+} from "../../../utils/displayCodes";
 
 /* ─── Payment modal ──────────────────────────────────────────────────────── */
 interface NonPayableReceiptItem {
@@ -250,9 +259,14 @@ export const PaymentModal = ({
               >
                 {invoices.map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
-                    {candidate.id.slice(0, 8)} · {candidate.status} ·{" "}
-                    {candidate.paid ? "Đã thanh toán" : "Chưa thanh toán"} ·{" "}
-                    {candidate.totalAmount.toLocaleString("vi-VN")} đ
+                    {formatInvoiceCode(candidate.id)} ·{" "}
+                    {getLifecycleLabel(candidate.status)} ·{" "}
+                    {candidate.status === "ACTIVE"
+                      ? candidate.paid
+                        ? "Đã thanh toán"
+                        : "Chưa thanh toán"
+                      : "Không áp dụng"}{" "}
+                    · {candidate.totalAmount.toLocaleString("vi-VN")} đ
                   </option>
                 ))}
               </select>
@@ -295,8 +309,11 @@ export const PaymentModal = ({
             </div>
             <div className="border border-dashed border-[#b0a080] rounded px-3 py-2 text-center">
               <p className="text-[10px] tracking-widest text-black">Mã đơn hàng</p>
-              <p className="text-[14px] font-bold tracking-wider text-black break-all">
-                {invoice.orderId}
+              <p
+                className="text-[14px] font-bold tracking-wider text-black"
+                title={invoice.orderId}
+              >
+                {formatOrderCode(invoice.orderId)}
               </p>
             </div>
             <div className="flex flex-col gap-3 text-[10px]">
@@ -413,14 +430,18 @@ export const PaymentModal = ({
                   <p className="text-[15px] font-semibold text-[#202325]">
                     Thao tác hóa đơn
                   </p>
-                  <span className="text-[11px] font-medium text-[#636566]">
-                    {invoice.status}
-                  </span>
-                  {invoice.paid && (
-                    <span className="text-[12px] font-medium text-[#286b4a]">
-                      Đã thanh toán
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`kv-badge ${getLifecycleBadgeClass(invoice.status)}`}
+                    >
+                      {getLifecycleLabel(invoice.status)}
                     </span>
-                  )}
+                    {invoice.paid && (
+                      <span className="text-[12px] font-medium text-[#286b4a]">
+                        Đã thanh toán
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {!isActiveInvoice ? (
                   <p className="text-[12px] text-[#636566]">
@@ -652,10 +673,13 @@ export const PaymentModal = ({
                           {qrPayment.amount.toLocaleString("vi-VN")} đ
                         </span>
                       </p>
-                      <p className="text-[14px] text-[#636566] break-all text-center">
+                      <p className="text-[14px] text-[#636566] text-center">
                         <span className="text-[#a2a4a4]">Mã giao dịch:</span>{" "}
-                        <span className="text-[#202325] font-medium">
-                          {qrPayment.gatewayRef ?? "—"}
+                        <span
+                          className="text-[#202325] font-medium font-mono"
+                          title={qrPayment.gatewayRef ?? undefined}
+                        >
+                          {formatTransactionCode(qrPayment.gatewayRef)}
                         </span>
                       </p>
                       <span
