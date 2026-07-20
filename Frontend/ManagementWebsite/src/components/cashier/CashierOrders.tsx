@@ -398,6 +398,10 @@ const CashierOrders = () => {
     orderId: string | null;
     orderItemId: string | null;
   }>({ open: false, orderId: null, orderItemId: null });
+  const [cancelConfirmModal, setCancelConfirmModal] = useState<{
+    open: boolean;
+    orderIds: string[];
+  }>({ open: false, orderIds: [] });
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [successTotal, setSuccessTotal] = useState<number | null>(null);
   const [showChangePw, setShowChangePw] = useState(false);
@@ -964,7 +968,14 @@ const CashierOrders = () => {
 
   const handleCancelOrder = async (orderIds: string[]) => {
     if (orderIds.length === 0) return;
-    if (!window.confirm("Bạn có chắc chắn muốn hủy đơn hàng này?")) return;
+    setCancelConfirmModal({ open: true, orderIds });
+  };
+
+  const executeCancelOrder = async () => {
+    const { orderIds } = cancelConfirmModal;
+    setCancelConfirmModal({ open: false, orderIds: [] });
+    if (orderIds.length === 0) return;
+    
     setOrderActionMessage(null);
     try {
       await Promise.all(
@@ -1481,6 +1492,33 @@ const CashierOrders = () => {
           </div>
         </div>
       )}
+
+      {cancelConfirmModal.open && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-[#dc2f02] flex items-center justify-center mb-4">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Hủy đơn hàng</h3>
+            <p className="text-sm text-gray-600 mb-6">Bạn có chắc chắn muốn hủy đơn hàng này?</p>
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setCancelConfirmModal({ open: false, orderIds: [] })}
+                className="flex-1 border border-gray-300 text-gray-700 font-bold py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Đóng
+              </button>
+              <button
+                onClick={() => void executeCancelOrder()}
+                className="flex-1 bg-[#dc2f02] text-white font-bold py-2.5 rounded-xl hover:bg-[#9d0208] transition-colors"
+              >
+                Xác nhận
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {orderActionMessage && orderActionMessage.type === "error" && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
