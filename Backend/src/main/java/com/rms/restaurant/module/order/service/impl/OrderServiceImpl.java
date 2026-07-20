@@ -134,8 +134,8 @@ public class OrderServiceImpl implements OrderService {
         }
         if (order.getItems() != null) {
             for (OrderItem item : order.getItems()) {
-                if (item.getCookingStatus() == CookingStatus.PENDING) {
-                    item.setCookingStatus(CookingStatus.COOKING);
+                if (item.getCookingStatus() == CookingStatus.PENDING && item.isQrOrder()) {
+                    item.setQrOrder(false);
                 }
             }
         }

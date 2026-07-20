@@ -40,4 +40,7 @@ public class OrderItem {
 
     @Column(name = "rejection_note", length = 300)
     private String rejectionNote;
+
+    @Column(name = "is_qr_order", nullable = false)
+    private boolean isQrOrder;
 }
