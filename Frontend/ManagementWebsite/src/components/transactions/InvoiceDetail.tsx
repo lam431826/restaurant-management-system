@@ -5,6 +5,18 @@ import { getPayments } from "../../services/paymentApi";
 import type { Payment, PaymentMethod } from "../../services/paymentApi";
 import { getStoredUser } from "../../services/tokenStorage";
 import { ApiClientError } from "../../services/apiClient";
+import {
+  getLifecycleBadgeClass,
+  getLifecycleLabel,
+  getPaymentBadgeClass,
+  getPaymentLabel,
+} from "./invoiceLifecycle";
+import {
+  formatInvoiceCode,
+  formatOrderCode,
+  formatShortCode,
+  formatTransactionCode,
+} from "../../utils/displayCodes";
 
 interface Props {
   invoice: InvoiceDetailData;
@@ -29,6 +41,11 @@ const INVOICE_ACTION_ERROR_MESSAGES: Record<string, string> = {
   ORDER_ALREADY_INVOICED:
     "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.",
   INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  INVOICE_CUSTOMER_EMAIL_REQUIRED:
+    "Đơn hàng chưa có email khách hàng nên không thể gửi hóa đơn.",
+  MAIL_CONFIGURATION_MISSING: "Chưa cấu hình email gửi hóa đơn.",
+  MAIL_DELIVERY_FAILED:
+    "Gửi hóa đơn thất bại. Vui lòng kiểm tra cấu hình email hoặc thử lại.",
   ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
   INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
   VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
@@ -52,8 +69,6 @@ const INVOICE_ACTION_MESSAGE_FALLBACKS: Record<string, string> = {
     INVOICE_ACTION_ERROR_MESSAGES.BAD_REQUEST,
 };
 
-const SEND_INVOICE_SUCCESS_MESSAGE =
-  "Đã ghi nhận gửi hóa đơn mô phỏng";
 const SEND_INVOICE_FALLBACK_ERROR =
   "Không thể gửi hóa đơn. Vui lòng thử lại.";
 const PAYMENT_HISTORY_FALLBACK_ERROR =
@@ -80,6 +95,21 @@ const paymentMethodLabels: Record<PaymentMethod, string> = {
   CARD: "Thẻ",
   QR: "Mã QR",
   E_WALLET: "Ví điện tử",
+};
+
+// PENDING/CANCELLED only occur for QR (simulated external payment); CASH is
+// always created as PAID immediately.
+const paymentStatusLabels: Record<string, string> = {
+  PENDING: "Chờ thanh toán",
+  PAID: "Đã thanh toán",
+  CANCELLED: "Đã hủy",
+};
+
+const paymentStatusBadgeClass = (status: string): string => {
+  if (status === "PAID") return "kv-badge-success";
+  if (status === "PENDING") return "kv-badge-warning";
+  if (status === "CANCELLED") return "kv-badge-neutral";
+  return "kv-badge-neutral";
 };
 
 const escapeHtml = (value: string | number) =>
@@ -154,7 +184,7 @@ const InvoiceDetail = ({
       <html lang="vi">
         <head>
           <meta charset="utf-8" />
-          <title>Hóa đơn ${escapeHtml(invoice.id)}</title>
+          <title>Hóa đơn ${escapeHtml(formatInvoiceCode(invoice.id))}</title>
           <style>
             * { box-sizing: border-box; }
             body { margin: 0; background: #f8f5ed; color: #202325; font-family: "Courier New", monospace; }
@@ -186,7 +216,7 @@ const InvoiceDetail = ({
           <main class="receipt">
             <header class="header"><h1>Wasabi Sushi</h1><p class="printed-at">${escapeHtml(printedAt)}</p></header>
             <div class="separator"></div>
-            <section class="order-box"><span>Mã đơn hàng</span><strong>${escapeHtml(invoice.orderId)}</strong></section>
+            <section class="order-box"><span>Mã đơn hàng</span><strong>${escapeHtml(formatOrderCode(invoice.orderId))}</strong></section>
             <div class="separator"></div>
             <section>
               <div class="info-row"><span>Thu ngân</span><strong>${escapeHtml(cashierName)}</strong></div>
@@ -225,9 +255,7 @@ const InvoiceDetail = ({
       const response = await sendInvoice(invoice.id);
       setActionMessage({
         type: "success",
-        text: `${SEND_INVOICE_SUCCESS_MESSAGE} lúc ${formatDateTime(
-          response.sentAt,
-        )}.`,
+        text: `${response.message} lúc ${formatDateTime(response.sentAt)}.`,
       });
     } catch (sendError) {
       setActionMessage({
@@ -247,14 +275,20 @@ const InvoiceDetail = ({
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 pb-4 border-b border-line">
         <div>
           <div className="text-sm text-ink-muted">Mã hóa đơn</div>
-          <div className="text-md font-semibold text-ink mt-1 break-all">
-            {invoice.id}
+          <div
+            className="text-md font-semibold font-mono text-ink mt-1"
+            title={invoice.id}
+          >
+            {formatInvoiceCode(invoice.id)}
           </div>
         </div>
         <div>
           <div className="text-sm text-ink-muted">Mã đơn hàng</div>
-          <div className="text-md font-semibold text-ink mt-1 break-all">
-            {invoice.orderId}
+          <div
+            className="text-md font-semibold font-mono text-ink mt-1"
+            title={invoice.orderId}
+          >
+            {formatOrderCode(invoice.orderId)}
           </div>
         </div>
         <div>
@@ -264,11 +298,17 @@ const InvoiceDetail = ({
           </div>
         </div>
         <div>
-          <div className="text-sm text-ink-muted">Trạng thái</div>
+          <div className="text-sm text-ink-muted">Vòng đời</div>
           <span
-            className={`kv-badge mt-1 ${invoice.paid ? "kv-badge-success" : "kv-badge-warning"}`}
+            className={`kv-badge mt-1 ${getLifecycleBadgeClass(invoice.status)}`}
           >
-            {invoice.paid ? "Đã thanh toán" : "Chưa thanh toán"}
+            {getLifecycleLabel(invoice.status)}
+          </span>
+        </div>
+        <div>
+          <div className="text-sm text-ink-muted">Thanh toán</div>
+          <span className={`kv-badge mt-1 ${getPaymentBadgeClass(invoice)}`}>
+            {getPaymentLabel(invoice)}
           </span>
         </div>
         <div>
@@ -283,11 +323,72 @@ const InvoiceDetail = ({
         </div>
       </div>
 
+      {(invoice.status !== "ACTIVE" ||
+        invoice.splitFromInvoiceId ||
+        invoice.mergedIntoInvoiceId ||
+        invoice.splitChildInvoiceIds.length > 0 ||
+        invoice.mergedSourceInvoiceIds.length > 0) && (
+        <div className="mt-4 px-4 py-3 rounded-md bg-primary-25 border border-line text-md">
+          <div className="font-semibold text-ink">Liên kết vòng đời</div>
+          <ul className="mt-2 flex flex-col gap-1 text-ink-subtle">
+            {invoice.status !== "ACTIVE" && (
+              <li>
+                Hóa đơn này là bản ghi lịch sử và không thể thanh toán trực
+                tiếp.
+              </li>
+            )}
+            {invoice.splitFromInvoiceId && (
+              <li>
+                Được tách từ hóa đơn:{" "}
+                <span
+                  className="text-ink font-medium font-mono"
+                  title={invoice.splitFromInvoiceId}
+                >
+                  {formatInvoiceCode(invoice.splitFromInvoiceId)}
+                </span>
+              </li>
+            )}
+            {invoice.mergedIntoInvoiceId && (
+              <li>
+                Đã gộp vào hóa đơn:{" "}
+                <span
+                  className="text-ink font-medium font-mono"
+                  title={invoice.mergedIntoInvoiceId}
+                >
+                  {formatInvoiceCode(invoice.mergedIntoInvoiceId)}
+                </span>
+              </li>
+            )}
+            {invoice.splitChildInvoiceIds.length > 0 && (
+              <li>
+                Đã tách thành {invoice.splitChildInvoiceIds.length} hóa đơn con:{" "}
+                <span className="text-ink font-medium font-mono">
+                  {invoice.splitChildInvoiceIds
+                    .map((childId) => formatInvoiceCode(childId))
+                    .join(", ")}
+                </span>
+              </li>
+            )}
+            {invoice.mergedSourceInvoiceIds.length > 0 && (
+              <li>
+                Được gộp từ {invoice.mergedSourceInvoiceIds.length} hóa đơn
+                nguồn:{" "}
+                <span className="text-ink font-medium font-mono">
+                  {invoice.mergedSourceInvoiceIds
+                    .map((sourceId) => formatInvoiceCode(sourceId))
+                    .join(", ")}
+                </span>
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
+
       <div className="mt-4 overflow-x-auto border border-line rounded-md">
-        <table className="w-full min-w-[70rem] border-collapse">
+        <table className="w-full min-w-[60rem] border-collapse">
           <thead>
             <tr>
-              <th className={`${th} w-[18rem]`}>Mã món</th>
+              <th className={`${th} w-[11rem]`}>Mã món</th>
               <th className={th}>Tên món</th>
               <th className={`${th} text-right w-[10rem]`}>Số lượng</th>
               <th className={`${th} text-right w-[14rem]`}>Đơn giá</th>
@@ -298,7 +399,12 @@ const InvoiceDetail = ({
           <tbody>
             {invoice.items.map((item, index) => (
               <tr key={`${item.menuItemId}-${index}`}>
-                <td className={`${td} text-primary`}>{item.menuItemId}</td>
+                <td
+                  className={`${td} text-primary font-mono whitespace-nowrap`}
+                  title={item.menuItemId}
+                >
+                  {formatShortCode(item.menuItemId)}
+                </td>
                 <td className={td}>{item.menuItemName}</td>
                 <td className={`${td} text-right`}>{item.quantity}</td>
                 <td className={`${td} text-right`}>{money(item.unitPrice)}</td>
@@ -415,13 +521,16 @@ const InvoiceDetail = ({
                     </td>
                     <td className={td}>
                       <span
-                        className={`kv-badge ${payment.status === "PAID" ? "kv-badge-success" : "kv-badge-neutral"}`}
+                        className={`kv-badge ${paymentStatusBadgeClass(payment.status)}`}
                       >
-                        {payment.status}
+                        {paymentStatusLabels[payment.status] ?? payment.status}
                       </span>
                     </td>
-                    <td className={`${td} text-ink-muted break-all`}>
-                      {payment.gatewayRef || "—"}
+                    <td
+                      className={`${td} text-ink-muted font-mono whitespace-nowrap`}
+                      title={payment.gatewayRef || undefined}
+                    >
+                      {formatTransactionCode(payment.gatewayRef)}
                     </td>
                   </tr>
                 ))}

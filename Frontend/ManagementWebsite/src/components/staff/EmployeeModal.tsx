@@ -232,8 +232,6 @@ const CellInput = ({ value, onChange, defaultValue, center, w = 'w-[10rem]' }: {
     onChange={e => onChange?.(e.target.value.replace(/\D/g, ''))}
     className={`${w} h-9 px-2 bg-field border border-line-default rounded-md text-md text-ink focus:border-primary focus:outline-none ${center ? 'text-center' : ''}`} />
 )
-const PlusBtn = () => (<button type="button" className="text-primary text-xl leading-none hover:opacity-80 cursor-pointer" aria-label="Thêm">+</button>)
-
 const ShiftPicker = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)

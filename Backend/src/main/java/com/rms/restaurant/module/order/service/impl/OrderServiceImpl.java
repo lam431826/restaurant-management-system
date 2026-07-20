@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.rms.restaurant.module.order.repository.OrderRepository;
+import com.rms.restaurant.module.order.repository.OrderItemRepository;
 import com.rms.restaurant.module.order.mapper.OrderMapper;
 import com.rms.restaurant.module.menu.repository.MenuItemRepository;
 import com.rms.restaurant.module.table.repository.TableRepository;
@@ -17,33 +18,55 @@ import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
 import com.rms.restaurant.module.payment.model.Invoice;
+import com.rms.restaurant.module.payment.model.InvoiceItemAllocation;
+import com.rms.restaurant.module.payment.repository.InvoiceItemAllocationRepository;
 import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.payment.repository.PaymentRepository;
 import com.rms.restaurant.module.menu.model.MenuItem;
 import com.rms.restaurant.common.utils.enums.CookingStatus;
+import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
+import com.rms.restaurant.common.utils.enums.ReservationStatus;
+import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
-import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
+import com.rms.restaurant.module.reservation.repository.ReservationRepository;
 import org.springframework.data.domain.Page;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class OrderServiceImpl implements OrderService {
 
+    private static final List<OrderStatus> TERMINAL_ORDER_STATUSES =
+            List.of(OrderStatus.CLOSED, OrderStatus.CANCELLED);
+    private static final List<ReservationStatus> SCHEDULED_BLOCKING_RESERVATION_STATUSES =
+            List.of(ReservationStatus.PENDING, ReservationStatus.CONFIRMED);
+    private static final int RESERVATION_WINDOW_BEFORE_MINUTES = 60;
+    private static final int RESERVATION_WINDOW_AFTER_MINUTES = 120;
+
     private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
     private final OrderMapper orderMapper;
     private final com.rms.restaurant.module.order.repository.AssistanceRequestRepository assistanceRequestRepository;
     private final MenuItemRepository menuItemRepository;
     private final TableRepository tableRepository;
     private final InvoiceRepository invoiceRepository;
+    private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
+    private final ReservationRepository reservationRepository;
     private final RealtimeEventPublisher realtimeEventPublisher;
 
     @Override
@@ -57,27 +80,86 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         return orderMapper.toResponse(order);
     }
+
+    /**
+     * Stores the customer contact a cashier captured for this order. Contact details are
+     * descriptive only — they never affect order status, pricing or payment validation.
+     * A blank value clears the field so a mistyped entry can be removed.
+     */
+    @Override
+    @Transactional
+    public OrderResponse updateCustomer(String id, UpdateOrderCustomerRequest request) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+
+        order.setCustomerName(trimToNull(request.customerName()));
+        order.setCustomerPhone(trimToNull(request.customerPhone()));
+        order.setCustomerEmail(trimToNull(request.customerEmail()));
+
+        return orderMapper.toResponse(orderRepository.save(order));
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
     @Override
     public OrderResponse updateStatus(String id, OrderStatus status) {
-        if (status == OrderStatus.CLOSED) {
-            return closeOrder(id);
+        Order order = orderRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+
+        if (status == null) {
+            throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION);
         }
+
+        OrderStatus currentStatus = order.getStatus();
+        if (currentStatus == status) {
+            return orderMapper.toResponse(order);
+        }
+
         if (status == OrderStatus.CANCELLED) {
             throw new ApplicationException(
                     ApplicationError.INVALID_STATUS_TRANSITION,
                     "Use /api/orders/{id}/cancel to cancel an order"
             );
         }
+        if (status == OrderStatus.CLOSED) {
+            throw new ApplicationException(
+                    ApplicationError.INVALID_STATUS_TRANSITION,
+                    "Use /api/orders/{id}/close to close an order"
+            );
+        }
 
-        Order order = orderRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        validateGenericStatusTransition(currentStatus, status);
         order.setStatus(status);
         return orderMapper.toResponse(orderRepository.save(order));
     }
 
+    private void validateGenericStatusTransition(OrderStatus currentStatus, OrderStatus requestedStatus) {
+        if (currentStatus == OrderStatus.CLOSED || currentStatus == OrderStatus.CANCELLED) {
+            throw new ApplicationException(
+                    ApplicationError.INVALID_STATUS_TRANSITION,
+                    "Closed and cancelled orders are terminal"
+            );
+        }
+
+        boolean allowed = (currentStatus == OrderStatus.PENDING && requestedStatus == OrderStatus.ACCEPTED)
+                || (currentStatus == OrderStatus.ACCEPTED && requestedStatus == OrderStatus.PREPARING)
+                || (currentStatus == OrderStatus.PREPARING && requestedStatus == OrderStatus.SERVED);
+
+        if (!allowed) {
+            throw new ApplicationException(
+                    ApplicationError.INVALID_STATUS_TRANSITION,
+                    "Order status transition from " + currentStatus + " to " + requestedStatus + " is not allowed"
+            );
+        }
+    }
+
     @Override
     public OrderResponse closeOrder(String id) {
-        Order order = orderRepository.findById(id)
+        String orderId = normalizeOrderId(id);
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
 
         if (order.getStatus() == OrderStatus.CLOSED) {
@@ -91,15 +173,28 @@ public class OrderServiceImpl implements OrderService {
             );
         }
 
-        Invoice invoice = invoiceRepository.findByOrderId(order.getId())
-                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
+        List<OrderItem> orderItems = orderItemRepository.findAllByOrderIdForUpdate(orderId);
+        List<OrderItem> payableItems = validateOrderItemsForClose(order, orderItems);
 
-        if (!invoice.isPaid()) {
+        List<Invoice> activeInvoices = invoiceRepository
+                .findByOrderIdAndStatusOrderByCreatedAtAscIdAsc(orderId, InvoiceStatus.ACTIVE);
+        if (activeInvoices.isEmpty()) {
             throw new ApplicationException(
                     ApplicationError.ORDER_NOT_CLOSEABLE,
-                    "Cannot close order before invoice is paid"
+                    "Cannot close order without an active invoice"
             );
         }
+
+        Set<String> activeInvoiceIds = validateActiveInvoices(order, activeInvoices);
+
+        if (activeInvoices.stream().anyMatch(invoice -> !invoice.isPaid())) {
+            throw new ApplicationException(
+                    ApplicationError.ORDER_NOT_CLOSEABLE,
+                    "Cannot close order before all active invoices are paid"
+            );
+        }
+
+        validateCloseAllocationCoverage(payableItems, activeInvoiceIds);
 
         order.setStatus(OrderStatus.CLOSED);
         RestaurantTable table = tableRepository.findById(order.getTableId()).orElse(null);
@@ -158,23 +253,17 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse removeItem(String orderId, String itemId) {
-        Order order = orderRepository.findById(orderId)
+        String normalizedOrderId = normalizeOrderId(orderId);
+        Order order = orderRepository.findByIdForUpdate(normalizedOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         ensureOrderItemsCanBeModified(order);
-        if (order.getItems() != null) {
-            OrderItem itemToRemove = null;
-            for (OrderItem item : order.getItems()) {
-                if (item.getId().equals(itemId)) {
-                    validateItemCanBeRemoved(item);
-                    if (item.getQuantity() > 1) {
-                        item.setQuantity(item.getQuantity() - 1);
-                    } else {
-                        itemToRemove = item;
-                    }
-                    break;
-                }
-            }
-            if (itemToRemove != null) {
+
+        OrderItem itemToRemove = findOwnedOrderItemForUpdate(order, itemId);
+        if (itemToRemove != null) {
+            validateItemCanBeRemoved(itemToRemove);
+            if (itemToRemove.getQuantity() > 1) {
+                itemToRemove.setQuantity(itemToRemove.getQuantity() - 1);
+            } else {
                 order.getItems().remove(itemToRemove);
             }
         }
@@ -182,17 +271,61 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderResponse create(CreateOrderRequest request, String cashierUsername) {
-        RestaurantTable table = tableRepository.findById(request.tableId())
+    public OrderResponse create(CreateOrderRequest request) {
+        String tableId = request.tableId().trim();
+        List<String> tableIds = List.of(tableId);
+
+        List<Order> lockedOrders = orderRepository.findActiveByTableIdsForUpdate(
+                tableIds,
+                TERMINAL_ORDER_STATUSES
+        );
+        List<RestaurantTable> lockedTables = tableRepository.findAllByIdInForUpdate(tableIds);
+        RestaurantTable table = lockedTables.stream()
+                .filter(candidate -> candidate.getId().equals(tableId))
+                .findFirst()
                 .orElseThrow(() -> new ApplicationException(ApplicationError.TABLE_NOT_FOUND));
-        User cashier = userRepository.findByUsername(cashierUsername)
-                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.USER_NOT_FOUND));
+
+        List<String> revalidatedOrderIds = orderRepository.findActiveIdsByTableIds(
+                tableIds,
+                TERMINAL_ORDER_STATUSES
+        );
+        List<String> lockedOrderIds = lockedOrders.stream().map(Order::getId).sorted().toList();
+        List<String> currentOrderIds = revalidatedOrderIds.stream().distinct().sorted().toList();
+
+        if (!lockedOrderIds.equals(currentOrderIds)
+                || !lockedOrders.isEmpty()
+                || !table.isActive()
+                || table.getStatus() != TableStatus.AVAILABLE) {
+            throw new ApplicationException(
+                    ApplicationError.TABLE_NOT_AVAILABLE,
+                    "Table already has an active order or is no longer available"
+            );
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        boolean hasBlockingReservation = !reservationRepository.findBlockingForTablesForUpdate(
+                tableIds,
+                ReservationStatus.CHECKED_IN,
+                SCHEDULED_BLOCKING_RESERVATION_STATUSES,
+                now.minusMinutes(RESERVATION_WINDOW_BEFORE_MINUTES),
+                now.plusMinutes(RESERVATION_WINDOW_AFTER_MINUTES)
+        ).isEmpty();
+        if (hasBlockingReservation) {
+            throw new ApplicationException(
+                    ApplicationError.TABLE_NOT_AVAILABLE,
+                    "Table has a blocking reservation for the current service time"
+            );
+        }
 
         Order order = new Order();
         order.setTableId(table.getId());
         order.setStatus(OrderStatus.ACCEPTED); // Cashier creates order, it's already accepted
         order.setNote(request.note());
-        order.setCashierId(cashier.getId());
+        // Optional contact the cashier typed before the order existed. Purely descriptive,
+        // so it is applied after every table/reservation check has already passed.
+        order.setCustomerName(trimToNull(request.customerName()));
+        order.setCustomerPhone(trimToNull(request.customerPhone()));
+        order.setCustomerEmail(trimToNull(request.customerEmail()));
         order.setItems(new java.util.ArrayList<>());
 
         if (request.items() != null) {
@@ -212,7 +345,7 @@ public class OrderServiceImpl implements OrderService {
             });
         }
 
-        table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.OCCUPIED);
+        table.setStatus(TableStatus.OCCUPIED);
         tableRepository.save(table);
         realtimeEventPublisher.publishTableStatus(table);
 
@@ -224,7 +357,8 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse addItems(String id, AddOrderItemsRequest request) {
-        Order order = orderRepository.findById(id)
+        String orderId = normalizeOrderId(id);
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         ensureOrderItemsCanBeModified(order);
 
@@ -267,11 +401,15 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse updateItemStatus(String orderId, String itemId, com.rms.restaurant.module.order.dto.UpdateOrderItemStatusRequest request) {
-        Order order = orderRepository.findById(orderId)
+        String normalizedOrderId = normalizeOrderId(orderId);
+        Order order = orderRepository.findByIdForUpdate(normalizedOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         ensureOrderItemsCanBeModified(order);
 
-        OrderItem item = findOrderItem(order, itemId);
+        OrderItem item = findOwnedOrderItemForUpdate(order, itemId);
+        if (item == null) {
+            throw new ResourceNotFoundException(ApplicationError.MENU_ITEM_NOT_FOUND);
+        }
         validateItemStatusTransition(item.getCookingStatus(), request.status());
         item.setCookingStatus(request.status());
         if (request.status() == CookingStatus.REJECTED) {
@@ -284,6 +422,16 @@ public class OrderServiceImpl implements OrderService {
         realtimeEventPublisher.publishOrderEvent("ITEM_STATUS_CHANGED", response);
         realtimeEventPublisher.publishGuestOrderStatus(response);
         return response;
+    }
+
+    private OrderItem findOwnedOrderItemForUpdate(Order order, String itemId) {
+        OrderItem item = orderItemRepository.findByIdForUpdate(itemId).orElse(null);
+        if (item == null
+                || item.getOrder() == null
+                || !order.getId().equals(item.getOrder().getId())) {
+            return null;
+        }
+        return item;
     }
 
     private OrderItem findOrderItem(Order order, String itemId) {
@@ -335,14 +483,15 @@ public class OrderServiceImpl implements OrderService {
             );
         }
 
-        if (invoiceRepository.findByOrderId(order.getId()).isPresent()) {
+        if (invoiceRepository.existsByOrderId(order.getId())) {
             throw new ApplicationException(ApplicationError.ORDER_ALREADY_INVOICED);
         }
     }
 
     @Override
     public OrderResponse cancel(String id, CancelOrderRequest request) {
-        Order order = orderRepository.findById(id)
+        String orderId = normalizeOrderId(id);
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
         if (order.getStatus() == OrderStatus.CANCELLED) {
             return orderMapper.toResponse(order);
@@ -355,7 +504,8 @@ public class OrderServiceImpl implements OrderService {
         }
         validateOrderHasNoInvoiceOrPayment(order);
 
-        boolean hasNonCancellableItem = order.getItems().stream()
+        List<OrderItem> orderItems = orderItemRepository.findAllByOrderIdForUpdate(orderId);
+        boolean hasNonCancellableItem = orderItems.stream()
                 .anyMatch(item -> item.getCookingStatus() != com.rms.restaurant.common.utils.enums.CookingStatus.PENDING
                         && item.getCookingStatus() != com.rms.restaurant.common.utils.enums.CookingStatus.REJECTED);
         if (hasNonCancellableItem) {
@@ -390,25 +540,19 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private void validateOrderHasNoInvoiceOrPayment(Order order) {
-        java.util.Optional<Invoice> invoiceOpt = invoiceRepository.findByOrderId(order.getId());
-        if (invoiceOpt.isEmpty()) {
+        List<Invoice> invoices = invoiceRepository.findByOrderIdOrderByCreatedAtDescIdDesc(order.getId());
+        if (invoices.isEmpty()) {
             return;
         }
 
-        Invoice invoice = invoiceOpt.get();
-        if (invoice.isPaid()) {
+        boolean hasPaidInvoice = invoices.stream().anyMatch(Invoice::isPaid);
+        List<String> invoiceIds = invoices.stream().map(Invoice::getId).toList();
+        boolean hasPaidPayment = !invoiceIds.isEmpty()
+                && paymentRepository.existsByInvoiceIdInAndStatus(invoiceIds, "PAID");
+        if (hasPaidInvoice || hasPaidPayment) {
             throw new ApplicationException(
                     ApplicationError.CANNOT_CANCEL_PAID_ORDER,
-                    "Cannot cancel an order with a paid invoice"
-            );
-        }
-
-        boolean hasPaidPayment = paymentRepository.findByInvoiceId(invoice.getId()).stream()
-                .anyMatch(payment -> "PAID".equals(payment.getStatus()));
-        if (hasPaidPayment) {
-            throw new ApplicationException(
-                    ApplicationError.CANNOT_CANCEL_PAID_ORDER,
-                    "Cannot cancel an order with a paid payment"
+                    "Cannot cancel an order with paid invoice or payment history"
             );
         }
 
@@ -416,6 +560,118 @@ public class OrderServiceImpl implements OrderService {
                 ApplicationError.CANNOT_CANCEL_INVOICED_ORDER,
                 "Cannot cancel an order after invoice has been created"
         );
+    }
+
+    private String normalizeOrderId(String id) {
+        if (id == null || id.isBlank()) {
+            throw new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND);
+        }
+        return id.trim();
+    }
+
+    private List<OrderItem> validateOrderItemsForClose(Order order, List<OrderItem> orderItems) {
+        List<OrderItem> payableItems = new ArrayList<>();
+        for (OrderItem item : orderItems) {
+            validateCloseOrderItemIdentity(order, item);
+
+            CookingStatus status = item.getCookingStatus();
+            if (status == null) {
+                throw invalidAllocationData();
+            }
+            if (status == CookingStatus.PENDING || status == CookingStatus.COOKING) {
+                throw new ApplicationException(ApplicationError.ORDER_NOT_CLOSEABLE);
+            }
+            if (status == CookingStatus.READY || status == CookingStatus.SERVED) {
+                payableItems.add(item);
+            }
+        }
+
+        if (payableItems.isEmpty()) {
+            throw new ApplicationException(ApplicationError.ORDER_NOT_CLOSEABLE);
+        }
+        return payableItems;
+    }
+
+    private void validateCloseOrderItemIdentity(Order order, OrderItem item) {
+        if (item == null
+                || item.getId() == null
+                || item.getId().isBlank()
+                || item.getOrder() == null
+                || !order.getId().equals(item.getOrder().getId())) {
+            throw invalidAllocationData();
+        }
+    }
+
+    private Set<String> validateActiveInvoices(Order order, List<Invoice> activeInvoices) {
+        Set<String> activeInvoiceIds = new HashSet<>();
+        for (Invoice invoice : activeInvoices) {
+            if (invoice == null
+                    || invoice.getId() == null
+                    || invoice.getId().isBlank()
+                    || !order.getId().equals(invoice.getOrderId())
+                    || invoice.getStatus() != InvoiceStatus.ACTIVE
+                    || !activeInvoiceIds.add(invoice.getId())) {
+                throw invalidAllocationData();
+            }
+        }
+        return activeInvoiceIds;
+    }
+
+    private void validateCloseAllocationCoverage(
+            List<OrderItem> payableItems,
+            Set<String> activeInvoiceIds
+    ) {
+        Set<String> payableItemIds = new HashSet<>();
+        Map<String, Integer> allocationCountByItemId = new HashMap<>();
+        for (OrderItem item : payableItems) {
+            if (!payableItemIds.add(item.getId())) {
+                throw invalidAllocationData();
+            }
+            allocationCountByItemId.put(item.getId(), 0);
+        }
+
+        List<InvoiceItemAllocation> allocations = invoiceItemAllocationRepository
+                .findActiveByOrderItemIdsForUpdate(payableItemIds);
+        for (InvoiceItemAllocation allocation : allocations) {
+            validateCloseAllocation(allocation, payableItemIds, activeInvoiceIds);
+            int allocationCount = allocationCountByItemId.merge(allocation.getOrderItemId(), 1, Integer::sum);
+            if (allocationCount > 1) {
+                throw invalidAllocationData();
+            }
+        }
+
+        if (allocationCountByItemId.values().stream().anyMatch(count -> count != 1)) {
+            throw new ApplicationException(
+                    ApplicationError.ORDER_NOT_CLOSEABLE,
+                    "Cannot close order before every payable item is invoiced"
+            );
+        }
+    }
+
+    private void validateCloseAllocation(
+            InvoiceItemAllocation allocation,
+            Set<String> payableItemIds,
+            Set<String> activeInvoiceIds
+    ) {
+        if (allocation == null
+                || allocation.getId() == null
+                || allocation.getId().isBlank()
+                || allocation.getOrderItemId() == null
+                || allocation.getOrderItemId().isBlank()
+                || allocation.getInvoiceId() == null
+                || allocation.getInvoiceId().isBlank()
+                || !allocation.isActive()
+                || allocation.getAllocatedQuantity() <= 0
+                || allocation.getUnitPriceSnapshot() == null
+                || allocation.getUnitPriceSnapshot().compareTo(BigDecimal.ZERO) <= 0
+                || !payableItemIds.contains(allocation.getOrderItemId())
+                || !activeInvoiceIds.contains(allocation.getInvoiceId())) {
+            throw invalidAllocationData();
+        }
+    }
+
+    private ApplicationException invalidAllocationData() {
+        return new ApplicationException(ApplicationError.INVOICE_ALLOCATION_DATA_INVALID);
     }
 
     @Override public void respondAssistance(AssistanceRespondRequest request) {

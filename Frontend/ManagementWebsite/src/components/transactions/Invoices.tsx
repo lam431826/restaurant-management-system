@@ -1,15 +1,30 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import InvoiceFilters from "./InvoiceFilters";
 import type { FilterState } from "./InvoiceFilters";
 import InvoiceTable from "./InvoiceTable";
 import InvoiceToolbar from "./InvoiceToolbar";
 import { getInvoices } from "../../services/invoiceApi";
-import type { InvoiceSummary } from "../../services/invoiceApi";
+import type { InvoiceStatus, InvoiceSummary } from "../../services/invoiceApi";
 import { ApiClientError } from "../../services/apiClient";
+import { HISTORY_STATUSES, OPERATIONAL_STATUSES } from "./invoiceLifecycle";
+import type { InvoiceViewTab } from "./invoiceLifecycle";
 
 const initialFilters: FilterState = {
   orderId: "",
   paid: "all",
+  lifecycle: "all",
+};
+
+/**
+ * Lifecycle scope is always sent to the backend so the server, not the client, decides
+ * which rows belong to the tab. Operational is ACTIVE only; history is SPLIT/MERGED.
+ */
+const resolveStatusFilter = (
+  tab: InvoiceViewTab,
+  filters: FilterState,
+): InvoiceStatus[] => {
+  if (tab === "operational") return OPERATIONAL_STATUSES;
+  return filters.lifecycle === "all" ? HISTORY_STATUSES : [filters.lifecycle];
 };
 
 const INVOICE_LIST_ERROR_MESSAGES: Record<string, string> = {
@@ -44,53 +59,108 @@ const getInvoiceListErrorMessage = (error: unknown): string => {
 };
 
 const Invoices = () => {
+  const [tab, setTab] = useState<InvoiceViewTab>("operational");
   const [filters, setFilters] = useState<FilterState>(initialFilters);
   const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const requestRef = useRef(0);
 
-  const loadInvoices = useCallback(async (nextFilters: FilterState) => {
-    setLoading(true);
-    setError("");
-    try {
-      setInvoices(
-        await getInvoices({
+  const loadInvoices = useCallback(
+    async (nextTab: InvoiceViewTab, nextFilters: FilterState) => {
+      const requestId = ++requestRef.current;
+      setLoading(true);
+      setError("");
+      try {
+        const result = await getInvoices({
           orderId: nextFilters.orderId || undefined,
+          // Payment filtering only applies to operational ACTIVE invoices. A history
+          // request must never reinterpret paid=false as an outstanding receivable.
           paid:
-            nextFilters.paid === "all"
-              ? undefined
-              : nextFilters.paid === "paid",
-        }),
-      );
-    } catch (loadError) {
-      setError(getInvoiceListErrorMessage(loadError));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+            nextTab === "operational" && nextFilters.paid !== "all"
+              ? nextFilters.paid === "paid"
+              : undefined,
+          status: resolveStatusFilter(nextTab, nextFilters),
+        });
+        // Ignore a response that a newer tab/filter request has already superseded.
+        if (requestId !== requestRef.current) return;
+        setInvoices(result);
+      } catch (loadError) {
+        if (requestId !== requestRef.current) return;
+        setError(getInvoiceListErrorMessage(loadError));
+      } finally {
+        if (requestId === requestRef.current) setLoading(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
-    void loadInvoices(filters);
-  }, [filters, loadInvoices]);
+    void loadInvoices(tab, filters);
+  }, [tab, filters, loadInvoices]);
 
   const refreshInvoices = async () => {
-    await loadInvoices(filters);
+    await loadInvoices(tab, filters);
     setRefreshVersion((version) => version + 1);
+  };
+
+  const changeTab = (nextTab: InvoiceViewTab) => {
+    if (nextTab === tab) return;
+    // Reset filters that do not apply to the target tab, keep the order-id search.
+    setFilters((current) => ({
+      orderId: current.orderId,
+      paid: "all",
+      lifecycle: "all",
+    }));
+    setTab(nextTab);
   };
 
   return (
     <div className="flex h-[calc(100vh-var(--kv-header-height))] bg-surface overflow-hidden">
       <aside className="w-[24rem] shrink-0 flex flex-col px-4 pt-5 pb-4 overflow-y-auto border-r border-line bg-card">
-        <InvoiceFilters initialState={initialFilters} onApply={setFilters} />
+        <InvoiceFilters
+          initialState={initialFilters}
+          tab={tab}
+          onApply={setFilters}
+        />
       </aside>
 
       <section className="flex-1 min-w-0 flex flex-col p-5 gap-4">
         <InvoiceToolbar
           invoices={invoices}
           loading={loading}
+          tab={tab}
           onRefresh={() => void refreshInvoices()}
         />
+
+        <div
+          className="flex items-center gap-1 border-b border-line"
+          role="tablist"
+          aria-label="Chế độ xem hóa đơn"
+        >
+          {(
+            [
+              ["operational", "Đang hiệu lực"],
+              ["history", "Lịch sử vòng đời"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={tab === value}
+              onClick={() => changeTab(value)}
+              className={`h-10 px-4 text-md font-semibold border-b-2 -mb-px transition-colors ${
+                tab === value
+                  ? "border-primary text-primary"
+                  : "border-transparent text-ink-subtle hover:text-ink"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         {error && (
           <div
@@ -110,6 +180,7 @@ const Invoices = () => {
         <InvoiceTable
           invoices={invoices}
           loading={loading}
+          tab={tab}
           refreshVersion={refreshVersion}
         />
       </section>

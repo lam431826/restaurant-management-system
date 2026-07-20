@@ -15,7 +15,10 @@ public class InvoiceMapper {
                 invoice.getDiscountAmount(),
                 invoice.getTotalAmount(),
                 invoice.isPaid(),
-                invoice.getCreatedAt()
+                invoice.getCreatedAt(),
+                invoice.getStatus(),
+                invoice.getMergedIntoInvoiceId(),
+                invoice.getSplitFromInvoiceId()
         );
     }
 
@@ -28,7 +31,10 @@ public class InvoiceMapper {
                 invoice.getTotalAmount(),
                 invoice.isPaid(),
                 invoice.getPromotionId(),
-                invoice.getCreatedAt()
+                invoice.getCreatedAt(),
+                invoice.getStatus(),
+                invoice.getMergedIntoInvoiceId(),
+                invoice.getSplitFromInvoiceId()
         );
     }
 }

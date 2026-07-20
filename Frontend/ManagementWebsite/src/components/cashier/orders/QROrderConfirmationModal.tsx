@@ -48,7 +48,7 @@ export const QROrderConfirmationModal = ({
   tables,
   onClose,
   onAccept,
-  onReject,
+  onReject: _onReject,
   onRemoveItem,
 }: QROrderConfirmationModalProps) => {
   const [activeTab, setActiveTab] = useState<TabKey>("pending");

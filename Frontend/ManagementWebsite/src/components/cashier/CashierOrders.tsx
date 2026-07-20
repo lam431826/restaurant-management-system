@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRealtime } from "../../hooks/useRealtime";
 import { useAuth } from "../../context/AuthContext";
@@ -26,12 +26,23 @@ import {
   generateInvoice,
   getInvoiceById,
   getInvoices,
+  mergeInvoices,
   sendInvoice,
+  splitInvoice,
 } from "../../services/invoiceApi";
-import type { InvoiceDetail, InvoiceSummary } from "../../services/invoiceApi";
-import { processPayment } from "../../services/paymentApi";
-import type { PaymentMethod } from "../../services/paymentApi";
-import { getStoredUser } from "../../services/tokenStorage";
+import type {
+  InvoiceDetail,
+  InvoiceSummary,
+  MergeInvoiceRequest,
+  SplitInvoiceRequest,
+} from "../../services/invoiceApi";
+import {
+  processCashPayment,
+  initiateQrPayment as initiateQrPaymentApi,
+  simulateQrPaymentSuccess,
+  cancelQrPayment as cancelQrPaymentApi,
+} from "../../services/paymentApi";
+import type { Payment } from "../../services/paymentApi";
 import { listCategories, searchItems } from "../../services/menuService";
 import type { MenuCategory } from "../../services/menuService";
 import {
@@ -39,6 +50,7 @@ import {
   cancelOrder,
   createOrder,
   closeOrder,
+  getOrder,
   listOrders,
   listPendingAssistance,
   acceptOrder,
@@ -46,8 +58,13 @@ import {
   respondAssistance,
   updateOrderItemStatus,
   updateOrderItemNote,
+  updateOrderCustomer,
 } from "../../services/orderApi";
-import type { AssistanceRequest, Order } from "../../services/orderApi";
+import type {
+  AssistanceRequest,
+  Order,
+  OrderCustomerInput,
+} from "../../services/orderApi";
 
 import type {
   MenuItem,
@@ -101,7 +118,11 @@ const ORDER_ACTION_ERROR_MESSAGES: Record<string, string> = {
     "Không thể hủy đơn vì có món đã được bếp xử lý hoặc phục vụ.",
   ORDER_ITEM_STATUS_TRANSITION_NOT_ALLOWED:
     "Không thể hủy món ở trạng thái hiện tại.",
-  ORDER_ITEM_REMOVE_NOT_ALLOWED: "Chỉ có thể xóa món khi món đang chờ duyệt.",
+  ORDER_ITEM_REMOVE_NOT_ALLOWED:
+    "Chỉ có thể xóa món khi món đang chờ duyệt.",
+  TABLE_NOT_AVAILABLE:
+    "Bàn đã có đơn đang hoạt động, đang được sử dụng hoặc có lịch đặt. Danh sách bàn đã được làm mới.",
+  TABLE_NOT_FOUND: "Không tìm thấy bàn. Vui lòng làm mới danh sách bàn.",
   INVALID_STATUS_TRANSITION:
     "Thao tác đổi trạng thái không hợp lệ. Vui lòng dùng đúng luồng xử lý.",
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
@@ -271,6 +292,14 @@ const PAYMENT_PROCESS_ERROR_MESSAGES: Record<string, string> = {
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
   VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
   BAD_REQUEST: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
+  PAYMENT_NO_OPEN_SHIFT: "Bạn cần mở ca thu ngân trước khi thanh toán.",
+  PAYMENT_METHOD_NOT_SUPPORTED: "Phương thức thanh toán này không được hỗ trợ.",
+  PAYMENT_RECEIVED_AMOUNT_INVALID:
+    "Số tiền khách đưa phải lớn hơn hoặc bằng số tiền cần thanh toán.",
+  PAYMENT_NOT_FOUND: "Không tìm thấy giao dịch thanh toán.",
+  PAYMENT_NOT_PENDING:
+    "Giao dịch QR này không còn ở trạng thái chờ xử lý.",
+  PAYMENT_METHOD_MISMATCH: "Thao tác không phù hợp với phương thức thanh toán này.",
 };
 
 const PAYMENT_PROCESS_MESSAGE_FALLBACKS: Record<string, string> = {
@@ -288,6 +317,8 @@ const PAYMENT_PROCESS_MESSAGE_FALLBACKS: Record<string, string> = {
   "Invalid enum value": PAYMENT_PROCESS_ERROR_MESSAGES.BAD_REQUEST,
   "Malformed or unreadable request body":
     PAYMENT_PROCESS_ERROR_MESSAGES.BAD_REQUEST,
+  "Shift is not opening": PAYMENT_PROCESS_ERROR_MESSAGES.PAYMENT_NO_OPEN_SHIFT,
+  "Payment not found": PAYMENT_PROCESS_ERROR_MESSAGES.PAYMENT_NOT_FOUND,
 };
 
 const PAYMENT_PROCESS_FALLBACK_ERROR =
@@ -314,6 +345,11 @@ const INVOICE_UI_ERROR_MESSAGES: Record<string, string> = {
   ORDER_NOT_FOUND: "Không tìm thấy đơn hàng.",
   ORDER_ALREADY_INVOICED: "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.",
   INVOICE_ALREADY_PAID: "Hóa đơn này đã được thanh toán.",
+  INVOICE_CUSTOMER_EMAIL_REQUIRED:
+    "Vui lòng nhập email khách hàng trước khi gửi hóa đơn.",
+  MAIL_CONFIGURATION_MISSING: "Chưa cấu hình email gửi hóa đơn.",
+  MAIL_DELIVERY_FAILED:
+    "Gửi hóa đơn thất bại. Vui lòng kiểm tra cấu hình email hoặc thử lại.",
   ORDER_NOT_PAYABLE: "Không thể thanh toán đơn đã đóng hoặc đã hủy.",
   INVALID_INVOICE_TOTAL: "Hóa đơn có tổng tiền không hợp lệ.",
   VALIDATION_ERROR: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.",
@@ -337,8 +373,9 @@ const INVOICE_UI_MESSAGE_FALLBACKS: Record<string, string> = {
 };
 
 const INVOICE_DETAIL_LOAD_FALLBACK_ERROR = "Không thể tải chi tiết hóa đơn.";
-const SEND_INVOICE_SUCCESS_MESSAGE = "Đã ghi nhận gửi hóa đơn mô phỏng.";
 const SEND_INVOICE_FALLBACK_ERROR = "Không thể gửi hóa đơn. Vui lòng thử lại.";
+const SAVE_CUSTOMER_FALLBACK_ERROR =
+  "Không thể lưu thông tin khách hàng. Vui lòng thử lại.";
 
 const getInvoiceUiErrorMessage = (
   error: unknown,
@@ -356,6 +393,101 @@ const getInvoiceUiErrorMessage = (
   return fallback?.[1] ?? fallbackMessage;
 };
 
+const SPLIT_INVOICE_ERROR_MESSAGES: Record<string, string> = {
+  INVOICE_NOT_FOUND: "Hóa đơn không còn tồn tại. Danh sách đã được làm mới.",
+  ORDER_NOT_FOUND: "Đơn hàng không còn tồn tại. Dữ liệu đã được làm mới.",
+  INVOICE_NOT_PAYABLE:
+    "Trạng thái hóa đơn đã thay đổi và không còn có thể chia.",
+  INVOICE_ALREADY_PAID:
+    "Hóa đơn đã được thanh toán bởi một thao tác khác.",
+  INVOICE_NOT_SPLITTABLE: "Hóa đơn không đáp ứng điều kiện để chia.",
+  INVALID_INVOICE_SPLIT:
+    "Nhóm chia hóa đơn chưa hợp lệ. Vui lòng kiểm tra lại các món.",
+  INVALID_INVOICE_TOTAL:
+    "Trạng thái tài chính của hóa đơn không hợp lệ để chia.",
+  INVOICE_ALLOCATION_DATA_INVALID:
+    "Dữ liệu phân bổ món không nhất quán. Vui lòng tải lại hóa đơn.",
+};
+
+const STALE_INVOICE_ERROR_CODES = new Set([
+  "INVOICE_NOT_FOUND",
+  "ORDER_NOT_FOUND",
+  "INVOICE_NOT_PAYABLE",
+  "INVOICE_ALREADY_PAID",
+  "INVOICE_NOT_SPLITTABLE",
+  "INVALID_INVOICE_TOTAL",
+  "INVOICE_ALLOCATION_DATA_INVALID",
+]);
+
+const getSplitInvoiceErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return (
+      SPLIT_INVOICE_ERROR_MESSAGES[error.code] ??
+      "Không thể chia hóa đơn. Vui lòng thử lại."
+    );
+  }
+  return "Không thể chia hóa đơn. Vui lòng thử lại.";
+};
+
+const MERGE_INVOICE_ERROR_MESSAGES: Record<string, string> = {
+  VALIDATION_ERROR: "Vui lòng chọn ít nhất hai hóa đơn hợp lệ để gộp.",
+  INVALID_INVOICE_MERGE: "Danh sách hóa đơn cần gộp không hợp lệ.",
+  INVOICE_NOT_FOUND: "Một hóa đơn không còn tồn tại. Danh sách đã được làm mới.",
+  ORDER_NOT_FOUND: "Đơn hàng không còn tồn tại. Dữ liệu đã được làm mới.",
+  INVOICE_MERGE_ORDER_MISMATCH: "Các hóa đơn không thuộc cùng một đơn hàng.",
+  INVOICE_NOT_MERGEABLE:
+    "Trạng thái hóa đơn đã thay đổi và không còn có thể gộp.",
+  INVOICE_ALREADY_PAID:
+    "Một hóa đơn đã được thanh toán bởi thao tác khác.",
+  INVALID_INVOICE_TOTAL:
+    "Tổng tiền hóa đơn đã thay đổi hoặc không hợp lệ để gộp.",
+  INVOICE_ALLOCATION_DATA_INVALID:
+    "Dữ liệu phân bổ món không nhất quán. Danh sách đã được làm mới.",
+  INVOICE_NOT_PAYABLE:
+    "Một hóa đơn không còn ở trạng thái có thể thanh toán hoặc gộp.",
+};
+
+const STALE_MERGE_ERROR_CODES = new Set([
+  "INVOICE_NOT_FOUND",
+  "ORDER_NOT_FOUND",
+  "INVOICE_MERGE_ORDER_MISMATCH",
+  "INVOICE_NOT_MERGEABLE",
+  "INVOICE_ALREADY_PAID",
+  "INVALID_INVOICE_TOTAL",
+  "INVOICE_ALLOCATION_DATA_INVALID",
+  "INVOICE_NOT_PAYABLE",
+]);
+
+const getMergeInvoiceErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiClientError && error.code) {
+    return (
+      MERGE_INVOICE_ERROR_MESSAGES[error.code] ??
+      "Không thể gộp hóa đơn. Vui lòng thử lại."
+    );
+  }
+  return "Không thể gộp hóa đơn. Vui lòng thử lại.";
+};
+
+const chooseInvoiceId = (
+  invoiceList: InvoiceSummary[],
+  preferredInvoiceId: string | null,
+) => {
+  if (
+    preferredInvoiceId &&
+    invoiceList.some((candidate) => candidate.id === preferredInvoiceId)
+  ) {
+    return preferredInvoiceId;
+  }
+  return (
+    invoiceList.find(
+      (candidate) => candidate.status === "ACTIVE" && !candidate.paid,
+    )?.id ??
+    invoiceList.find((candidate) => candidate.status === "ACTIVE")?.id ??
+    invoiceList[0]?.id ??
+    null
+  );
+};
+
 const CashierOrders = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -366,7 +498,7 @@ const CashierOrders = () => {
   const [menuCategories, setMenuCategories] = useState<MenuCategory[]>([]);
   const [activeMenuCategory, setActiveMenuCategory] = useState("all");
   const [tables, setTables] = useState<TableItem[]>([]);
-  const [tablesLoading, setTablesLoading] = useState(false);
+  const [tablesLoading, setTablesLoading] = useState(true);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -394,21 +526,47 @@ const CashierOrders = () => {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [successTotal, setSuccessTotal] = useState<number | null>(null);
   const [showChangePw, setShowChangePw] = useState(false);
-  const [backendOrderId, setBackendOrderId] = useState("");
-  const [invoiceChecked, setInvoiceChecked] = useState(false);
-  const [invoice, setInvoice] = useState<InvoiceSummary | null>(null);
-  const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(
+  const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
+  const [invoiceListOrderId, setInvoiceListOrderId] = useState<string | null>(
     null,
   );
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [selectedInvoiceDetail, setSelectedInvoiceDetail] =
+    useState<InvoiceDetail | null>(null);
   const [promotionCode, setPromotionCode] = useState("");
-  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceListLoading, setInvoiceListLoading] = useState(false);
+  const [invoiceListError, setInvoiceListError] = useState("");
+  const [invoiceDetailLoading, setInvoiceDetailLoading] = useState(false);
+  const [invoiceDetailError, setInvoiceDetailError] = useState("");
   const [invoiceAction, setInvoiceAction] = useState<string | null>(null);
+  const [customerSaving, setCustomerSaving] = useState(false);
+  const [customerError, setCustomerError] = useState("");
+  // Draft contact for the order panel. Before an order exists this is the only copy and
+  // is sent with createOrder; once the order exists it mirrors the saved Order record.
+  const [customerDraft, setCustomerDraft] = useState({
+    customerName: "",
+    customerPhone: "",
+    customerEmail: "",
+  });
+  const [splitError, setSplitError] = useState("");
+  const [mergeError, setMergeError] = useState("");
   const [invoiceMessage, setInvoiceMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [qrPayment, setQrPayment] = useState<Payment | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState("");
+  const invoiceListRequestRef = useRef(0);
+  const invoiceDetailRequestRef = useRef(0);
+  const splitSubmissionRef = useRef(false);
+  const mergeSubmissionRef = useRef(false);
+  const createOrderSubmissionRef = useRef(false);
+  const selectedOrderIdRef = useRef("");
+  const selectedTableIdRef = useRef("");
+  const [createOrderSubmitting, setCreateOrderSubmitting] = useState(false);
   const [orderActionMessage, setOrderActionMessage] = useState<{
     type: "error";
     text: string;
@@ -433,7 +591,7 @@ const CashierOrders = () => {
   const [mergeCash, setMergeCash] = useState<string>("");
   const [mergeNote, setMergeNote] = useState<string>("");
   const [mergeLoading, setMergeLoading] = useState(false);
-  const [mergeError, setMergeError] = useState<string>("");
+  const [shiftMergeError, setShiftMergeError] = useState<string>("");
 
   // BR-AUTH-01/04: warn before logout while an OPEN shift is still owned.
   const [logoutWarn, setLogoutWarn] = useState(false);
@@ -462,9 +620,60 @@ const CashierOrders = () => {
     navigate("/login", { replace: true });
   };
 
+  const loadCashierState = useCallback(async () => {
+    const [tableRows, orderPage] = await Promise.all([
+      listTables(),
+      listOrders(0, 100),
+    ]);
+    const mappedTables = tableRows
+      .filter((table) => table.active)
+      .sort((a, b) => a.order - b.order)
+      .map(toTableItem);
+    const orderById = new Map(orderPage.data.map((order) => [order.id, order]));
+    const missingActiveOrderIds = Array.from(
+      new Set(
+        mappedTables
+          .map((table) => table.orderId)
+          .filter(
+            (orderId): orderId is string =>
+              Boolean(orderId) && !orderById.has(orderId as string),
+          ),
+      ),
+    );
+    const missingOrders = await Promise.allSettled(
+      missingActiveOrderIds.map((orderId) => getOrder(orderId)),
+    );
+    missingOrders.forEach((result) => {
+      if (
+        result.status === "fulfilled" &&
+        ACTIVE_ORDER_STATUSES.includes(result.value.status)
+      ) {
+        orderById.set(result.value.id, result.value);
+      }
+    });
+
+    setActiveOrders(Array.from(orderById.values()));
+    setTables((currentTables) => {
+      const selectedId = currentTables.find((table) => table.selected)?.id;
+      return mappedTables.map((table) => ({
+        ...table,
+        selected: table.id === selectedId,
+      }));
+    });
+    setActiveArea((currentArea) => {
+      if (
+        currentArea === "all" ||
+        mappedTables.some((table) => table.area === currentArea)
+      ) {
+        return currentArea;
+      }
+      return mappedTables[0]?.area ?? "all";
+    });
+  }, []);
+
   // BR-CS-19: open the merge dialog and load candidate main shifts.
   const openMergeDialog = async () => {
-    setMergeError("");
+    setShiftMergeError("");
     setMergeTargetId("");
     setMergeCash("");
     setMergeNote("");
@@ -480,12 +689,12 @@ const CashierOrders = () => {
   const submitMerge = async () => {
     if (!shift) return;
     if (!mergeTargetId) {
-      setMergeError("Vui lòng chọn ca chính để gộp.");
+      setShiftMergeError("Vui lòng chọn ca chính để gộp.");
       return;
     }
     const cash = parseInt(mergeCash.replace(/\D/g, "") || "0", 10);
     setMergeLoading(true);
-    setMergeError("");
+    setShiftMergeError("");
     try {
       await mergeFloatingShift(
         shift.id,
@@ -498,7 +707,7 @@ const CashierOrders = () => {
       setShift(null);
       setShiftModalOpen(true);
     } catch (err) {
-      setMergeError(
+      setShiftMergeError(
         err instanceof Error ? err.message : "Không thể gộp ca tạm.",
       );
     } finally {
@@ -515,25 +724,6 @@ const CashierOrders = () => {
       void doLogout();
     }
   };
-
-  useEffect(() => {
-    setTablesLoading(true);
-    listTables()
-      .then((res) => {
-        const items = res
-          .filter((t) => t.active)
-          .sort((a, b) => a.order - b.order)
-          .map(toTableItem);
-        setTables(items);
-        // default to first area
-        const firstArea = items[0]?.area;
-        if (firstArea) setActiveArea(firstArea);
-      })
-      .catch(() => {
-        /* silently keep empty */
-      })
-      .finally(() => setTablesLoading(false));
-  }, []);
 
   // Re-fetches table list from backend and merges selection state.
   // Called after reservation actions and order close/cancel so statuses
@@ -584,26 +774,28 @@ const CashierOrders = () => {
     return () => clearInterval(intv);
   }, []);
 
-  // Real-time push races the 10s poll above — an assistance request created/resolved
+  // Real-time push races the poll above — an assistance request created/resolved
   // anywhere shows up near-instantly; the poll stays as a backstop if the WS drops.
   useRealtime("/topic/assistance", () => {
     listPendingAssistance().then(setAssistanceRequests).catch(() => {});
   });
 
-  // Live orders, polled to keep table occupancy and the order panel in sync with the kitchen.
+  // Live orders and authoritative table ownership are polled together, kept in sync
+  // with the kitchen; real-time push (below) is the primary path and this poll is a backstop.
   useEffect(() => {
-    const fetchOrders = async () => {
+    const refresh = async () => {
       try {
-        const res = await listOrders(0, 100);
-        setActiveOrders(res.data);
+        await loadCashierState();
       } catch (err) {
         console.error(err);
+      } finally {
+        setTablesLoading(false);
       }
     };
-    void fetchOrders();
-    const interval = setInterval(fetchOrders, 3000);
+    void refresh();
+    const interval = setInterval(() => void refresh(), 10000);
     return () => clearInterval(interval);
-  }, [refreshTrigger]);
+  }, [loadCashierState, refreshTrigger]);
 
   // Order/item status changes pushed over WS bump refreshTrigger, reusing the same
   // refetch path the mutation handlers below already use — one source of truth.
@@ -633,7 +825,10 @@ const CashierOrders = () => {
     setTables((prevTables) =>
       prevTables.map((t) => {
         const tableOrders = activeOrders.filter(
-          (o) => o.tableId === t.id && ACTIVE_ORDER_STATUSES.includes(o.status),
+          (order) =>
+            order.tableId === t.id &&
+            ACTIVE_ORDER_STATUSES.includes(order.status) &&
+            (!t.orderId || order.id === t.orderId),
         );
         if (tableOrders.length === 0) {
           return {
@@ -691,6 +886,7 @@ const CashierOrders = () => {
     const tableOrders = activeOrders.filter(
       (o) =>
         o.tableId === selectedTable.id &&
+        (!selectedTable.orderId || o.id === selectedTable.orderId) &&
         ACTIVE_ORDER_STATUSES.includes(o.status),
     );
     if (tableOrders.length === 0) {
@@ -714,9 +910,53 @@ const CashierOrders = () => {
 
   const hasSelectedMenu = cart.length > 0;
   const selectedOrderId = selectedTable?.orderId ?? "";
-  const selectedOrder = activeOrders.find(
-    (order) => order.id === selectedOrderId,
-  );
+  selectedTableIdRef.current = selectedTable?.id ?? "";
+  selectedOrderIdRef.current = selectedOrderId;
+  const selectedOrder = activeOrders.find((order) => order.id === selectedOrderId);
+  const selectedOrderCustomerKey = selectedOrder
+    ? `${selectedOrder.id}|${selectedOrder.customerName ?? ""}|${selectedOrder.customerPhone ?? ""}|${selectedOrder.customerEmail ?? ""}`
+    : `none|${selectedTable?.id ?? ""}`;
+
+  // Once an order exists its stored contact is the source of truth; with no order the
+  // draft is kept as typed and only reset when the cashier moves to another table.
+  useEffect(() => {
+    if (selectedOrder) {
+      setCustomerDraft({
+        customerName: selectedOrder.customerName ?? "",
+        customerPhone: selectedOrder.customerPhone ?? "",
+        customerEmail: selectedOrder.customerEmail ?? "",
+      });
+    } else {
+      setCustomerDraft({
+        customerName: "",
+        customerPhone: "",
+        customerEmail: "",
+      });
+    }
+    setCustomerError("");
+    // Keyed on the stored values so a save or a table switch re-seeds, but typing does not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrderCustomerKey]);
+
+  // Receipt identity comes from the signed-in account: prefer the human full name and
+  // only fall back to the login name when no display name is stored.
+  const cashierDisplayName =
+    user?.fullName?.trim() || user?.username?.trim() || "Thu ngân";
+  // Real shift, never a fixed time range. An open shift only knows when it started.
+  const shiftDisplayLabel = (() => {
+    if (!shift) return "Chưa mở ca";
+    const openedAt = new Date(shift.openedAt);
+    const time = (value: Date) =>
+      value.toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    if (shift.closedAt) {
+      return `${time(openedAt)} - ${time(new Date(shift.closedAt))}`;
+    }
+    return `Đang mở từ ${time(openedAt)}`;
+  })();
   const selectedOrderItemCount =
     selectedOrder?.items.reduce((total, item) => total + item.quantity, 0) ?? 0;
   const nonPayableRejectedItems =
@@ -728,6 +968,13 @@ const CashierOrders = () => {
         quantity: item.quantity,
         note: item.rejectionNote,
       })) ?? [];
+  const invoiceListMatchesOrder =
+    !!selectedOrderId && invoiceListOrderId === selectedOrderId;
+  const currentOrderInvoices = invoiceListMatchesOrder ? invoices : [];
+  const selectedInvoice =
+    currentOrderInvoices.find(
+      (candidate) => candidate.id === selectedInvoiceId,
+    ) ?? null;
 
   const pendingOrders = activeOrders.filter(
     (o) =>
@@ -737,23 +984,29 @@ const CashierOrders = () => {
         o.items.some((i) => i.cookingStatus === "PENDING")),
   );
   const pendingOrdersCount = pendingOrders.length;
-  const orderHasInvoice =
-    !!invoice && !!selectedOrderId && invoice.orderId === selectedOrderId;
-  const currentOrderInvoice = orderHasInvoice ? invoice : null;
   const currentOrderInvoiceDetail =
-    currentOrderInvoice &&
-    invoiceDetail?.id === currentOrderInvoice.id &&
-    invoiceDetail.orderId === selectedOrderId
-      ? invoiceDetail
+    selectedInvoice &&
+    selectedInvoiceDetail?.id === selectedInvoice.id &&
+    selectedInvoiceDetail.orderId === selectedOrderId
+      ? selectedInvoiceDetail
       : null;
+  const activeOrderInvoices = currentOrderInvoices.filter(
+    (candidate) => candidate.status === "ACTIVE",
+  );
+  const orderHasInvoice = currentOrderInvoices.length > 0;
+  const invoiceChecked =
+    invoiceListMatchesOrder && !invoiceListLoading && !invoiceListError;
   const orderIsFinal =
     selectedOrder?.status === "CLOSED" || selectedOrder?.status === "CANCELLED";
   const canCloseSelectedOrder =
-    !!selectedOrder && !!currentOrderInvoice?.paid && !orderIsFinal;
+    !!selectedOrder &&
+    activeOrderInvoices.length > 0 &&
+    activeOrderInvoices.every((candidate) => candidate.paid) &&
+    !orderIsFinal;
   const emptyOrderWithoutInvoice =
     !!selectedOrder &&
     invoiceChecked &&
-    !currentOrderInvoice &&
+    !orderHasInvoice &&
     !orderIsFinal &&
     selectedOrderItemCount === 0;
   const disableItemMutation = orderHasInvoice || orderIsFinal;
@@ -768,57 +1021,114 @@ const CashierOrders = () => {
     });
   };
 
-  const resetInvoiceLink = () => {
-    setBackendOrderId("");
-    setInvoiceChecked(false);
-    setInvoice(null);
-    setInvoiceDetail(null);
+  const resetInvoiceLink = useCallback(() => {
+    invoiceListRequestRef.current += 1;
+    invoiceDetailRequestRef.current += 1;
+    setInvoices([]);
+    setInvoiceListOrderId(null);
+    setSelectedInvoiceId(null);
+    setSelectedInvoiceDetail(null);
     setPromotionCode("");
+    setInvoiceListLoading(false);
+    setInvoiceListError("");
+    setInvoiceDetailLoading(false);
+    setInvoiceDetailError("");
     setInvoiceAction(null);
+    setSplitError("");
+    setMergeError("");
+    splitSubmissionRef.current = false;
+    mergeSubmissionRef.current = false;
     setInvoiceMessage(null);
     setPaymentOpen(false);
     setPaymentError("");
     setPaymentProcessing(false);
     setOrderActionMessage(null);
-  };
+  }, []);
 
-  const loadInvoiceForOrder = async (orderId: string) => {
-    const normalizedOrderId = orderId.trim();
-    if (!normalizedOrderId) {
-      setInvoiceMessage({
-        type: "error",
-        text: "Vui lòng chọn đơn hàng trước khi tạo hóa đơn",
-      });
-      return null;
-    }
+  const loadInvoiceDetail = useCallback(
+    async (invoiceId: string, expectedOrderId: string) => {
+      const requestId = ++invoiceDetailRequestRef.current;
+      setSelectedInvoiceDetail(null);
+      setInvoiceDetailLoading(true);
+      setInvoiceDetailError("");
+      try {
+        const detailData = await getInvoiceById(invoiceId);
+        if (requestId !== invoiceDetailRequestRef.current) return null;
+        if (detailData.orderId !== expectedOrderId) {
+          setInvoiceDetailError("Hóa đơn không thuộc đơn hàng đang chọn.");
+          return null;
+        }
+        setSelectedInvoiceDetail(detailData);
+        return detailData;
+      } catch (loadError) {
+        if (requestId !== invoiceDetailRequestRef.current) return null;
+        setInvoiceDetailError(
+          getInvoiceUiErrorMessage(
+            loadError,
+            INVOICE_DETAIL_LOAD_FALLBACK_ERROR,
+          ),
+        );
+        return null;
+      } finally {
+        if (requestId === invoiceDetailRequestRef.current) {
+          setInvoiceDetailLoading(false);
+        }
+      }
+    },
+    [],
+  );
 
-    setInvoiceLoading(true);
-    setInvoiceMessage(null);
-    try {
-      const foundInvoice =
-        (await getInvoices({ orderId: normalizedOrderId }))[0] ?? null;
-      setInvoiceChecked(true);
-      setInvoice(foundInvoice);
-      setInvoiceDetail(null);
+  const refreshInvoices = useCallback(
+    async (
+      orderId: string,
+      preferredInvoiceId: string | null = null,
+    ) => {
+      const normalizedOrderId = orderId.trim();
+      if (!normalizedOrderId) return null;
 
-      if (!foundInvoice) return null;
-
-      const detailData = await getInvoiceById(foundInvoice.id);
-      setInvoiceDetail(detailData);
-      return foundInvoice;
-    } catch (loadError) {
-      setInvoiceMessage({
-        type: "error",
-        text: getInvoiceUiErrorMessage(
-          loadError,
-          INVOICE_DETAIL_LOAD_FALLBACK_ERROR,
-        ),
-      });
-      return null;
-    } finally {
-      setInvoiceLoading(false);
-    }
-  };
+      const requestId = ++invoiceListRequestRef.current;
+      setInvoiceListLoading(true);
+      setInvoiceListError("");
+      try {
+        const foundInvoices = await getInvoices({ orderId: normalizedOrderId });
+        if (requestId !== invoiceListRequestRef.current) return null;
+        const nextSelectedId = chooseInvoiceId(
+          foundInvoices,
+          preferredInvoiceId,
+        );
+        setInvoices(foundInvoices);
+        setInvoiceListOrderId(normalizedOrderId);
+        setSelectedInvoiceId(nextSelectedId);
+        setSelectedInvoiceDetail(null);
+        setInvoiceDetailError("");
+        if (nextSelectedId) {
+          await loadInvoiceDetail(nextSelectedId, normalizedOrderId);
+        } else {
+          invoiceDetailRequestRef.current += 1;
+          setInvoiceDetailLoading(false);
+        }
+        return nextSelectedId;
+      } catch (loadError) {
+        if (requestId !== invoiceListRequestRef.current) return null;
+        setInvoices([]);
+        setInvoiceListOrderId(normalizedOrderId);
+        setSelectedInvoiceId(null);
+        setSelectedInvoiceDetail(null);
+        setInvoiceListError(
+          getInvoiceUiErrorMessage(
+            loadError,
+            "Không thể tải danh sách hóa đơn.",
+          ),
+        );
+        return null;
+      } finally {
+        if (requestId === invoiceListRequestRef.current) {
+          setInvoiceListLoading(false);
+        }
+      }
+    },
+    [loadInvoiceDetail],
+  );
 
   const handleGenerateInvoice = async () => {
     const invoiceOrderId = selectedOrderId.trim();
@@ -842,13 +1152,12 @@ const CashierOrders = () => {
     setInvoiceMessage(null);
     setOrderActionMessage(null);
     try {
-      setBackendOrderId(invoiceOrderId);
-      await generateInvoice({
+      const createdInvoice = await generateInvoice({
         orderId: invoiceOrderId,
         promotionCode: null,
       });
-      const createdInvoice = await loadInvoiceForOrder(invoiceOrderId);
-      if (createdInvoice) setPaymentOpen(true);
+      await refreshInvoices(invoiceOrderId, createdInvoice.id);
+      setPaymentOpen(true);
       setInvoiceMessage({
         type: "success",
         text: "Hóa đơn đã được tạo và sẵn sàng thanh toán.",
@@ -870,12 +1179,12 @@ const CashierOrders = () => {
   };
 
   const handleApplyDiscount = async () => {
-    if (!invoice || !promotionCode.trim()) return;
+    if (!selectedInvoice || !promotionCode.trim()) return;
     setInvoiceAction("discount");
     setInvoiceMessage(null);
     try {
-      await applyInvoiceDiscount(invoice.id, promotionCode.trim());
-      await loadInvoiceForOrder(invoice.orderId);
+      await applyInvoiceDiscount(selectedInvoice.id, promotionCode.trim());
+      await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
       setPromotionCode("");
       setInvoiceMessage({
         type: "success",
@@ -886,21 +1195,25 @@ const CashierOrders = () => {
         type: "error",
         text: getPromotionDiscountErrorMessage(discountError),
       });
+      if (
+        discountError instanceof ApiClientError &&
+        discountError.code &&
+        STALE_INVOICE_ERROR_CODES.has(discountError.code)
+      ) {
+        await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
+      }
     } finally {
       setInvoiceAction(null);
     }
   };
 
   const handleSendInvoice = async () => {
-    if (!invoice) return;
+    if (!selectedInvoice) return;
     setInvoiceAction("send");
     setInvoiceMessage(null);
     try {
-      await sendInvoice(invoice.id);
-      setInvoiceMessage({
-        type: "success",
-        text: SEND_INVOICE_SUCCESS_MESSAGE,
-      });
+      const result = await sendInvoice(selectedInvoice.id);
+      setInvoiceMessage({ type: "success", text: result.message });
     } catch (sendError) {
       setInvoiceMessage({
         type: "error",
@@ -911,14 +1224,41 @@ const CashierOrders = () => {
     }
   };
 
+  // Customer contact lives on the order, so the receipt and the invoice email both read
+  // the same record. Saving is independent of payment and never blocks it.
+  const handleSaveCustomer = async (customer: OrderCustomerInput) => {
+    if (!selectedOrderId) return false;
+    setCustomerSaving(true);
+    setCustomerError("");
+    try {
+      const updated = await updateOrderCustomer(selectedOrderId, customer);
+      setActiveOrders((orders) =>
+        orders.map((order) => (order.id === updated.id ? updated : order)),
+      );
+      return true;
+    } catch (saveError) {
+      setCustomerError(
+        getInvoiceUiErrorMessage(saveError, SAVE_CUSTOMER_FALLBACK_ERROR),
+      );
+      return false;
+    } finally {
+      setCustomerSaving(false);
+    }
+  };
+
   const handlePrintInvoice = () => {
-    if (!invoiceDetail) return;
-    const cashierName = getStoredUser()?.fullName || "Duy Tan";
+    if (!currentOrderInvoiceDetail) return;
     if (
       !printCashierInvoice(
-        invoiceDetail,
+        currentOrderInvoiceDetail,
         selectedTable?.name || "-",
-        cashierName,
+        cashierDisplayName,
+        shiftDisplayLabel,
+        {
+          name: selectedOrder?.customerName ?? null,
+          phone: selectedOrder?.customerPhone ?? null,
+          email: selectedOrder?.customerEmail ?? null,
+        },
       )
     ) {
       setInvoiceMessage({
@@ -928,8 +1268,8 @@ const CashierOrders = () => {
     }
   };
 
-  const handleProcessPayment = async (method: PaymentMethod) => {
-    if (!invoice) {
+  const handleConfirmCash = async (receivedAmount: number) => {
+    if (!selectedInvoice) {
       setPaymentError("Không xác định được hóa đơn cần thanh toán");
       return;
     }
@@ -937,15 +1277,207 @@ const CashierOrders = () => {
     setPaymentProcessing(true);
     setPaymentError("");
     try {
-      const createdPayment = await processPayment(invoice.id, method);
+      const createdPayment = await processCashPayment(
+        selectedInvoice.id,
+        receivedAmount,
+      );
       setPaymentOpen(false);
       setSuccessTotal(createdPayment.amount);
-      await loadInvoiceForOrder(invoice.orderId);
+      await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
       setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
     } catch (processError) {
       setPaymentError(getPaymentProcessErrorMessage(processError));
+      if (
+        processError instanceof ApiClientError &&
+        processError.code &&
+        STALE_INVOICE_ERROR_CODES.has(processError.code)
+      ) {
+        await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
+      }
     } finally {
       setPaymentProcessing(false);
+    }
+  };
+
+  const handleResetQrState = () => {
+    setQrPayment(null);
+    setQrError("");
+  };
+
+  const handleInitiateQr = async () => {
+    if (!selectedInvoice) {
+      setQrError("Không xác định được hóa đơn cần thanh toán");
+      return;
+    }
+    setQrLoading(true);
+    setQrError("");
+    try {
+      const payment = await initiateQrPaymentApi(selectedInvoice.id);
+      setQrPayment(payment);
+    } catch (initiateError) {
+      setQrError(getPaymentProcessErrorMessage(initiateError));
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  const handleSimulateQrSuccess = async () => {
+    if (!qrPayment || !selectedInvoice) return;
+    setPaymentProcessing(true);
+    setQrError("");
+    try {
+      const confirmedPayment = await simulateQrPaymentSuccess(qrPayment.id);
+      setQrPayment(confirmedPayment);
+      setPaymentOpen(false);
+      setSuccessTotal(confirmedPayment.amount);
+      await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
+      setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
+    } catch (confirmError) {
+      setQrError(getPaymentProcessErrorMessage(confirmError));
+      if (
+        confirmError instanceof ApiClientError &&
+        confirmError.code &&
+        STALE_INVOICE_ERROR_CODES.has(confirmError.code)
+      ) {
+        await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
+      }
+    } finally {
+      setPaymentProcessing(false);
+    }
+  };
+
+  const handleCancelQr = async () => {
+    if (!qrPayment) return;
+    setPaymentProcessing(true);
+    setQrError("");
+    try {
+      await cancelQrPaymentApi(qrPayment.id);
+      setQrPayment(null);
+    } catch (cancelError) {
+      setQrError(getPaymentProcessErrorMessage(cancelError));
+    } finally {
+      setPaymentProcessing(false);
+    }
+  };
+
+  const handleSelectInvoice = (invoiceId: string) => {
+    if (!selectedOrderId || invoiceId === selectedInvoiceId) return;
+    setSelectedInvoiceId(invoiceId);
+    setSelectedInvoiceDetail(null);
+    setInvoiceDetailError("");
+    setInvoiceMessage(null);
+    setPaymentError("");
+    setSplitError("");
+    setPromotionCode("");
+    handleResetQrState();
+    void loadInvoiceDetail(invoiceId, selectedOrderId);
+  };
+
+  const handleSplitInvoice = async (
+    request: SplitInvoiceRequest,
+  ): Promise<boolean> => {
+    if (
+      splitSubmissionRef.current ||
+      !selectedInvoice ||
+      !currentOrderInvoiceDetail
+    ) {
+      return false;
+    }
+    splitSubmissionRef.current = true;
+    setInvoiceAction("split");
+    setSplitError("");
+    setInvoiceMessage(null);
+    try {
+      const result = await splitInvoice(selectedInvoice.id, request);
+      const firstChildId = result.children[0]?.invoiceId;
+      if (!firstChildId) {
+        setSplitError(
+          "Máy chủ không trả về hóa đơn con. Danh sách hóa đơn đã được làm mới.",
+        );
+        await refreshInvoices(selectedInvoice.orderId, null);
+        return false;
+      }
+      await refreshInvoices(selectedInvoice.orderId, firstChildId);
+      setInvoiceMessage({
+        type: "success",
+        text: "Chia hóa đơn thành công. Hóa đơn con đầu tiên đã được chọn.",
+      });
+      setPaymentOpen(true);
+      return true;
+    } catch (splitFailure) {
+      setSplitError(getSplitInvoiceErrorMessage(splitFailure));
+      if (
+        splitFailure instanceof ApiClientError &&
+        splitFailure.code &&
+        STALE_INVOICE_ERROR_CODES.has(splitFailure.code)
+      ) {
+        await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
+        if (splitFailure.code === "ORDER_NOT_FOUND") {
+          setRefreshTrigger((value) => value + 1);
+        }
+      }
+      return false;
+    } finally {
+      splitSubmissionRef.current = false;
+      setInvoiceAction(null);
+    }
+  };
+
+  const handleMergeInvoices = async (
+    request: MergeInvoiceRequest,
+  ): Promise<boolean> => {
+    const expectedOrderId = selectedOrderId.trim();
+    const uniqueInvoiceIds = [...new Set(request.invoiceIds)];
+    if (
+      mergeSubmissionRef.current ||
+      !expectedOrderId ||
+      uniqueInvoiceIds.length < 2
+    ) {
+      return false;
+    }
+
+    mergeSubmissionRef.current = true;
+    setInvoiceAction("merge");
+    setMergeError("");
+    setInvoiceMessage(null);
+    try {
+      const result = await mergeInvoices({ invoiceIds: uniqueInvoiceIds });
+      if (selectedOrderIdRef.current !== expectedOrderId) return true;
+
+      const targetInvoiceId = result.targetInvoice?.id?.trim();
+      if (result.orderId !== expectedOrderId || !targetInvoiceId) {
+        setMergeError(
+          "Máy chủ trả về hóa đơn đích không hợp lệ. Danh sách đã được làm mới.",
+        );
+        await refreshInvoices(expectedOrderId, selectedInvoiceId);
+        return false;
+      }
+
+      await refreshInvoices(expectedOrderId, targetInvoiceId);
+      if (selectedOrderIdRef.current !== expectedOrderId) return true;
+      setInvoiceMessage({
+        type: "success",
+        text: "Gộp hóa đơn thành công. Hóa đơn đích đã được chọn.",
+      });
+      setPaymentOpen(true);
+      return true;
+    } catch (mergeFailure) {
+      if (selectedOrderIdRef.current !== expectedOrderId) return false;
+      setMergeError(getMergeInvoiceErrorMessage(mergeFailure));
+      if (
+        mergeFailure instanceof ApiClientError &&
+        mergeFailure.code &&
+        STALE_MERGE_ERROR_CODES.has(mergeFailure.code)
+      ) {
+        await refreshInvoices(expectedOrderId, selectedInvoiceId);
+        if (mergeFailure.code === "ORDER_NOT_FOUND") {
+          setRefreshTrigger((value) => value + 1);
+        }
+      }
+      return false;
+    } finally {
+      mergeSubmissionRef.current = false;
+      setInvoiceAction(null);
     }
   };
 
@@ -997,7 +1529,13 @@ const CashierOrders = () => {
   };
 
   const handleTableSelect = (id: string | null) => {
+    const previousTableId = tables.find((table) => table.selected)?.id;
+    if (previousTableId && previousTableId !== id) {
+      setCart([]);
+      setMenuItems((items) => items.map((item) => ({ ...item, qty: 0 })));
+    }
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
+    setOrderActionMessage(null);
     resetInvoiceLink();
     if (id) {
       const selected = tables.find((t) => t.id === id);
@@ -1073,22 +1611,11 @@ const CashierOrders = () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (
-      selectedTable &&
-      selectedTable.occupied &&
-      selectedTable.orderId &&
-      selectedOrder?.id === selectedTable.orderId &&
-      !backendOrderId
-    ) {
-      setBackendOrderId(selectedTable.orderId);
-      loadInvoiceForOrder(selectedTable.orderId);
+    resetInvoiceLink();
+    if (selectedOrderId && selectedOrder?.id === selectedOrderId) {
+      void refreshInvoices(selectedOrderId, null);
     }
-  }, [
-    selectedTable?.orderId,
-    selectedTable?.occupied,
-    selectedOrder?.id,
-    backendOrderId,
-  ]);
+  }, [selectedOrderId, selectedOrder?.id, refreshInvoices, resetInvoiceLink]);
 
   const handleStatusChange = async (
     orderId: string,
@@ -1292,26 +1819,65 @@ const CashierOrders = () => {
   };
 
   const handleCreateOrder = async () => {
+    if (createOrderSubmissionRef.current) return;
     if (cart.length === 0) {
       setTab("menu");
       return;
     }
     if (!selectedTable) return;
+
+    const expectedTableId = selectedTable.id;
+    createOrderSubmissionRef.current = true;
+    setCreateOrderSubmitting(true);
+    setOrderActionMessage(null);
     try {
-      await createOrder(
-        selectedTable.id,
-        cart.map((c) => ({
-          menuItemId: c.menuItemId,
-          quantity: c.qty,
-          note: c.note,
+      const createdOrder = await createOrder(
+        expectedTableId,
+        cart.map((item) => ({
+          menuItemId: item.menuItemId,
+          quantity: item.qty,
+          note: item.note,
         })),
+        undefined,
+        customerDraft,
       );
-      setCart([]);
-      setMenuItems((items) => items.map((i) => ({ ...i, qty: 0 })));
-      setTab("table");
+      setActiveOrders((orders) => [
+        ...orders.filter((order) => order.id !== createdOrder.id),
+        createdOrder,
+      ]);
+      setTables((currentTables) =>
+        currentTables.map((table) =>
+          table.id === expectedTableId
+            ? {
+                ...table,
+                occupied: true,
+                status: "OCCUPIED",
+                orderId: createdOrder.id,
+                amount: createdOrder.totalAmount,
+                items: createdOrder.items.reduce(
+                  (total, item) => total + item.quantity,
+                  0,
+                ),
+              }
+            : table,
+        ),
+      );
+      if (selectedTableIdRef.current === expectedTableId) {
+        setCart([]);
+        setMenuItems((items) => items.map((item) => ({ ...item, qty: 0 })));
+        setTab("table");
+      }
       setRefreshTrigger((t) => t + 1);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
+      setRefreshTrigger((trigger) => trigger + 1);
+    } finally {
+      createOrderSubmissionRef.current = false;
+      setCreateOrderSubmitting(false);
     }
   };
 
@@ -1402,19 +1968,17 @@ const CashierOrders = () => {
   };
   const checkoutDisabled =
     invoiceAction !== null ||
-    invoiceLoading ||
+    invoiceListLoading ||
     !selectedOrderId ||
     emptyOrderWithoutInvoice ||
-    (currentOrderInvoice
-      ? !currentOrderInvoiceDetail || currentOrderInvoice.paid
-      : !invoiceChecked);
-  const checkoutLabel = currentOrderInvoice?.paid
-    ? "Đã thanh toán"
-    : currentOrderInvoice
+    (orderHasInvoice ? !selectedInvoiceId : !invoiceChecked);
+  const checkoutLabel = orderHasInvoice
+    ? activeOrderInvoices.some((candidate) => !candidate.paid)
       ? "Mở thanh toán"
-      : invoiceChecked
-        ? "Tạo hóa đơn"
-        : "Đang kiểm tra hóa đơn";
+      : "Mở hóa đơn"
+    : invoiceChecked
+      ? "Tạo hóa đơn"
+      : "Đang kiểm tra hóa đơn";
 
   if (shiftLoading) {
     return (
@@ -1627,55 +2191,74 @@ const CashierOrders = () => {
           </div>
         </div>
 
-        <OrderPanel
-          items={[
-            ...orderItems,
-            ...cart.map((c) => ({
-              id: c.cartItemId,
-              name: c.name,
-              qty: c.qty,
-              notes: c.note,
-              status: "MỚI",
-              price: c.price,
-              orderId: "cart",
-            })),
-          ]}
-          hasSelectedMenu={hasSelectedMenu}
-          onStatusChange={handleStatusChange}
-          onCheckout={() => {
-            setOrderActionMessage(null);
-            setPaymentError("");
-            if (currentOrderInvoice) {
-              setPaymentOpen(true);
-            } else {
-              void handleGenerateInvoice();
+        {selectedTable?.upcomingReservation && !selectedOrder ? (
+          <ReservationPanel
+            table={selectedTable}
+            onCheckIn={() => void handleReservationCheckIn()}
+            onNoShow={() => void handleReservationNoShow()}
+            onCancel={() => void handleReservationCancel()}
+            loading={reservationLoading}
+            error={reservationError}
+          />
+        ) : (
+          <OrderPanel
+            items={[
+              ...orderItems,
+              ...cart.map((c) => ({
+                id: c.cartItemId,
+                name: c.name,
+                qty: c.qty,
+                notes: c.note,
+                status: "MỚI",
+                price: c.price,
+                orderId: "cart",
+              })),
+            ]}
+            hasSelectedMenu={hasSelectedMenu}
+            onStatusChange={handleStatusChange}
+            onCheckout={() => {
+              setOrderActionMessage(null);
+              setPaymentError("");
+              setSplitError("");
+              if (orderHasInvoice) {
+                setPaymentOpen(true);
+              } else {
+                void handleGenerateInvoice();
+              }
+            }}
+            onCreateOrder={handleCreateOrder}
+            onAddItems={handleAddItems}
+            onNote={handleOpenNote}
+            onRemoveItem={handleRemoveItem}
+            onRejectItem={handleOpenReject}
+            onCancelOrder={handleCancelOrder}
+            selectedTable={selectedTable}
+            customer={customerDraft}
+            onCustomerChange={setCustomerDraft}
+            onSaveCustomer={() => void handleSaveCustomer(customerDraft)}
+            customerSaving={customerSaving}
+            customerError={customerError}
+            orderExists={Boolean(selectedOrderId)}
+            checkoutDisabled={checkoutDisabled}
+            checkoutLabel={checkoutLabel}
+            shiftOpen={!!shift}
+            invoicePaid={canCloseSelectedOrder}
+            itemMutationDisabled={disableItemMutation}
+            itemMutationDisabledMessage={itemMutationDisabledMessage}
+            orderActionMessage={orderActionMessage}
+            createOrderSubmitting={createOrderSubmitting}
+            emptyOrderMessage={
+              emptyOrderWithoutInvoice ? EMPTY_ORDER_MESSAGE : undefined
             }
-          }}
-          onCreateOrder={handleCreateOrder}
-          onAddItems={handleAddItems}
-          onNote={handleOpenNote}
-          onRemoveItem={handleRemoveItem}
-          onRejectItem={handleOpenReject}
-          onCancelOrder={handleCancelOrder}
-          selectedTable={selectedTable}
-          checkoutDisabled={checkoutDisabled}
-          checkoutLabel={checkoutLabel}
-          shiftOpen={!!shift}
-          invoicePaid={canCloseSelectedOrder}
-          itemMutationDisabled={disableItemMutation}
-          itemMutationDisabledMessage={itemMutationDisabledMessage}
-          actionMessage={null}
-          emptyOrderMessage={
-            emptyOrderWithoutInvoice ? EMPTY_ORDER_MESSAGE : undefined
-          }
-          cancelOrderIds={
-            emptyOrderWithoutInvoice && selectedOrderId
-              ? [selectedOrderId]
-              : undefined
-          }
-          onCloseOrder={handleCloseOrder}
-          invoiceTools={null}
-        />
+            cancelOrderIds={
+              emptyOrderWithoutInvoice && selectedOrderId
+                ? [selectedOrderId]
+                : undefined
+            }
+            onCloseOrder={handleCloseOrder}
+            invoiceTools={null}
+          />
+        )}
       </div>
 
       {showQRModal && (
@@ -1735,22 +2318,57 @@ const CashierOrders = () => {
 
       <BottomNav active="orders" />
 
-      {paymentOpen && currentOrderInvoiceDetail && (
+      {paymentOpen && selectedOrderId && (
         <PaymentModal
+          invoices={currentOrderInvoices}
+          selectedInvoiceId={selectedInvoiceId}
           invoice={currentOrderInvoiceDetail}
           table={selectedTable}
+          invoiceListLoading={invoiceListLoading}
+          invoiceListError={invoiceListError}
+          detailLoading={invoiceDetailLoading}
+          detailError={invoiceDetailError}
           processing={paymentProcessing}
           error={paymentError}
           promotionCode={promotionCode}
           action={invoiceAction}
+          splitError={splitError}
+          mergeError={mergeError}
+          role={user?.role}
           invoiceMessage={invoiceMessage}
           nonPayableItems={nonPayableRejectedItems}
+          qrPayment={qrPayment}
+          qrLoading={qrLoading}
+          qrError={qrError}
+          cashierName={cashierDisplayName}
+          shiftLabel={shiftDisplayLabel}
+          customer={{
+            name: selectedOrder?.customerName ?? null,
+            phone: selectedOrder?.customerPhone ?? null,
+            email: selectedOrder?.customerEmail ?? null,
+          }}
+          customerSaving={customerSaving}
+          customerError={customerError}
+          onSaveCustomer={handleSaveCustomer}
           onClose={() => setPaymentOpen(false)}
-          onConfirm={(method) => void handleProcessPayment(method)}
+          onSelectInvoice={handleSelectInvoice}
+          onRefreshInvoices={() => {
+            void refreshInvoices(selectedOrderId, selectedInvoiceId);
+          }}
+          onConfirmCash={(receivedAmount) =>
+            void handleConfirmCash(receivedAmount)
+          }
+          onInitiateQr={() => void handleInitiateQr()}
+          onSimulateQrSuccess={() => void handleSimulateQrSuccess()}
+          onCancelQr={() => void handleCancelQr()}
+          onResetQrState={handleResetQrState}
           onPromotionCodeChange={setPromotionCode}
           onApplyDiscount={() => void handleApplyDiscount()}
           onPrint={handlePrintInvoice}
           onSend={() => void handleSendInvoice()}
+          onSplit={handleSplitInvoice}
+          onMerge={handleMergeInvoices}
+          onResetMergeError={() => setMergeError("")}
         />
       )}
       {successTotal !== null && (
@@ -1873,9 +2491,9 @@ const CashierOrders = () => {
                 placeholder="Ghi chú (nếu lệch tiền)"
                 className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[14px] text-[#202325] outline-none focus:border-[#025cca]"
               />
-              {mergeError && (
+              {shiftMergeError && (
                 <div className="px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-600">
-                  {mergeError}
+                  {shiftMergeError}
                 </div>
               )}
             </div>

@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.payment.model;
 
+import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
@@ -36,7 +37,39 @@ public class Invoice {
     @Column(name = "is_paid", nullable = false)
     private boolean paid;
 
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    private InvoiceStatus status = InvoiceStatus.ACTIVE;
+
+    @Column(name = "merged_into_invoice_id", length = 36)
+    private String mergedIntoInvoiceId;
+
+    @Column(name = "split_from_invoice_id", length = 36)
+    private String splitFromInvoiceId;
+
     @CreatedDate
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
+
+    public Invoice(
+            String id,
+            String orderId,
+            BigDecimal subtotal,
+            BigDecimal discountAmount,
+            BigDecimal totalAmount,
+            String promotionId,
+            boolean paid,
+            LocalDateTime createdAt
+    ) {
+        this.id = id;
+        this.orderId = orderId;
+        this.subtotal = subtotal;
+        this.discountAmount = discountAmount;
+        this.totalAmount = totalAmount;
+        this.promotionId = promotionId;
+        this.paid = paid;
+        this.status = InvoiceStatus.ACTIVE;
+        this.createdAt = createdAt;
+    }
 }

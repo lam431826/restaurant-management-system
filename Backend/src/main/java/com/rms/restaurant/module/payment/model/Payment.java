@@ -43,6 +43,23 @@ public class Payment {
     @Column(length = 20)
     private String status;
 
+    // CASH only: what the customer handed over and the change given back.
+    @Column(name = "received_amount", precision = 12, scale = 0)
+    private BigDecimal receivedAmount;
+
+    @Column(name = "change_amount", precision = 12, scale = 0)
+    private BigDecimal changeAmount;
+
+    // QR only: when the simulated external payment window expires (informational).
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
+
+    // When the payment actually reached PAID (immediate for CASH, on simulated
+    // gateway confirmation for QR) — distinct from createdAt for QR, where the
+    // PENDING row is created before the payment is settled.
+    @Column(name = "paid_at")
+    private LocalDateTime paidAt;
+
     @CreatedDate
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

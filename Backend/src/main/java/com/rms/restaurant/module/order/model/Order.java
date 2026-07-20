@@ -34,6 +34,17 @@ public class Order {
     @Column(length = 500)
     private String note;
 
+    // Optional customer contact. A walk-in order may have none; the cashier can fill
+    // these in from the payment screen so the receipt and invoice email use real data.
+    @Column(name = "customer_name", length = 150)
+    private String customerName;
+
+    @Column(name = "customer_phone", length = 20)
+    private String customerPhone;
+
+    @Column(name = "customer_email", length = 150)
+    private String customerEmail;
+
     @Builder.Default
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();

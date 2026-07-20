@@ -6,10 +6,21 @@ import type {
   InvoiceSummary,
 } from "../../services/invoiceApi";
 import { ApiClientError } from "../../services/apiClient";
+import {
+  getLifecycleBadgeClass,
+  getLifecycleLabel,
+  getLineageHint,
+  getPaymentBadgeClass,
+  getPaymentLabel,
+  isActiveInvoice,
+} from "./invoiceLifecycle";
+import type { InvoiceViewTab } from "./invoiceLifecycle";
+import { formatInvoiceCode, formatOrderCode } from "../../utils/displayCodes";
 
 interface Props {
   invoices: InvoiceSummary[];
   loading: boolean;
+  tab: InvoiceViewTab;
   refreshVersion: number;
 }
 
@@ -61,6 +72,7 @@ const getInvoiceDetailErrorMessage = (error: unknown): string => {
 const InvoiceTable = ({
   invoices,
   loading,
+  tab,
   refreshVersion,
 }: Props) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -100,7 +112,12 @@ const InvoiceTable = ({
     await loadDetail(invoice.id);
   };
 
-  const totals = invoices.reduce(
+  // Financial totals are derived from ACTIVE invoices only. SPLIT/MERGED sources are
+  // superseded records whose value already lives in their ACTIVE descendants, so
+  // including them would double count. The backend already scopes the tab; this filter
+  // keeps the invariant local and explicit.
+  const activeInvoices = invoices.filter(isActiveInvoice);
+  const totals = activeInvoices.reduce(
     (sum, invoice) => ({
       subtotal: sum.subtotal + invoice.subtotal,
       discount: sum.discount + invoice.discountAmount,
@@ -109,14 +126,22 @@ const InvoiceTable = ({
     { subtotal: 0, discount: 0, total: 0 },
   );
 
+  const splitCount = invoices.filter(
+    (invoice) => invoice.status === "SPLIT",
+  ).length;
+  const mergedCount = invoices.filter(
+    (invoice) => invoice.status === "MERGED",
+  ).length;
+  const isHistory = tab === "history";
+
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-card border border-line rounded-t-lg overflow-hidden">
-      {!loading && invoices.length > 0 && (
+      {!loading && invoices.length > 0 && !isHistory && (
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-3 px-4 py-3 bg-primary-25 border-b border-line shrink-0">
           <div>
-            <div className="text-sm text-ink-muted">Tổng hóa đơn</div>
+            <div className="text-sm text-ink-muted">Hóa đơn đang hiệu lực</div>
             <div className="text-lg font-semibold text-ink mt-0.5">
-              {invoices.length}
+              {activeInvoices.length}
             </div>
           </div>
           <div>
@@ -132,7 +157,9 @@ const InvoiceTable = ({
             </div>
           </div>
           <div>
-            <div className="text-sm text-ink-muted">Tổng thanh toán</div>
+            {/* Invoice face value, not collected revenue. Collected revenue must come
+                from successful Payment records, which this screen does not read. */}
+            <div className="text-sm text-ink-muted">Tổng giá trị hóa đơn</div>
             <div className="text-lg font-bold text-primary mt-0.5">
               {money(totals.total)}
             </div>
@@ -140,17 +167,45 @@ const InvoiceTable = ({
         </div>
       )}
 
+      {!loading && invoices.length > 0 && isHistory && (
+        <div className="grid grid-cols-3 gap-x-6 gap-y-3 px-4 py-3 bg-primary-25 border-b border-line shrink-0">
+          <div>
+            <div className="text-sm text-ink-muted">Bản ghi lịch sử</div>
+            <div className="text-lg font-semibold text-ink mt-0.5">
+              {invoices.length}
+            </div>
+          </div>
+          <div>
+            <div className="text-sm text-ink-muted">Đã tách</div>
+            <div className="text-lg font-semibold text-ink mt-0.5">
+              {splitCount}
+            </div>
+          </div>
+          <div>
+            <div className="text-sm text-ink-muted">Đã gộp</div>
+            <div className="text-lg font-semibold text-ink mt-0.5">
+              {mergedCount}
+            </div>
+          </div>
+          <div className="col-span-3 text-sm text-ink-muted">
+            Hóa đơn lịch sử đã được chuyển tiếp sang hóa đơn khác. Giá trị của
+            chúng không được cộng vào doanh thu hay công nợ.
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 overflow-auto">
-        <table className="w-full min-w-[98rem] border-collapse">
+        <table className="w-full min-w-[80rem] border-collapse">
           <thead>
             <tr>
-              <th className={`${th} min-w-[22rem]`}>Mã hóa đơn</th>
-              <th className={`${th} min-w-[20rem]`}>Mã đơn hàng</th>
+              <th className={`${th} w-[16rem]`}>Mã hóa đơn</th>
+              <th className={`${th} w-[15rem]`}>Mã đơn hàng</th>
               <th className={`${th} w-[17rem]`}>Thời gian tạo</th>
               <th className={`${th} text-right w-[14rem]`}>Tạm tính</th>
               <th className={`${th} text-right w-[13rem]`}>Giảm giá</th>
               <th className={`${th} text-right w-[15rem]`}>Tổng thanh toán</th>
-              <th className={`${th} w-[15rem]`}>Trạng thái</th>
+              <th className={`${th} w-[17rem]`}>Vòng đời</th>
+              <th className={`${th} w-[15rem]`}>Thanh toán</th>
             </tr>
           </thead>
           <tbody>
@@ -164,11 +219,17 @@ const InvoiceTable = ({
                       onClick={() => void toggleDetail(invoice)}
                     >
                       <td
-                        className={`${td} font-medium break-all ${isOpen ? "text-primary" : ""}`}
+                        className={`${td} font-medium font-mono whitespace-nowrap ${isOpen ? "text-primary" : ""}`}
+                        title={invoice.id}
                       >
-                        {invoice.id}
+                        {formatInvoiceCode(invoice.id)}
                       </td>
-                      <td className={`${td} break-all`}>{invoice.orderId}</td>
+                      <td
+                        className={`${td} font-mono whitespace-nowrap text-ink-subtle`}
+                        title={invoice.orderId}
+                      >
+                        {formatOrderCode(invoice.orderId)}
+                      </td>
                       <td className={td}>
                         {formatDateTime(invoice.createdAt)}
                       </td>
@@ -183,15 +244,27 @@ const InvoiceTable = ({
                       </td>
                       <td className={td}>
                         <span
-                          className={`kv-badge ${invoice.paid ? "kv-badge-success" : "kv-badge-warning"}`}
+                          className={`kv-badge ${getLifecycleBadgeClass(invoice.status)}`}
                         >
-                          {invoice.paid ? "Đã thanh toán" : "Chưa thanh toán"}
+                          {getLifecycleLabel(invoice.status)}
+                        </span>
+                        {getLineageHint(invoice) && (
+                          <div className="text-sm text-ink-muted mt-1 break-all">
+                            {getLineageHint(invoice)}
+                          </div>
+                        )}
+                      </td>
+                      <td className={td}>
+                        <span
+                          className={`kv-badge ${getPaymentBadgeClass(invoice)}`}
+                        >
+                          {getPaymentLabel(invoice)}
                         </span>
                       </td>
                     </tr>
                     {isOpen && (
                       <tr>
-                        <td colSpan={7} className="p-0">
+                        <td colSpan={8} className="p-0">
                           {detailLoading && (
                             <div className="px-5 py-8 text-center text-md text-ink-muted">
                               Đang tải chi tiết hóa đơn...
@@ -219,7 +292,7 @@ const InvoiceTable = ({
               <tr>
                 <td
                   className={`${td} text-center text-ink-muted py-16`}
-                  colSpan={7}
+                  colSpan={8}
                 >
                   Đang tải danh sách hóa đơn...
                 </td>
@@ -229,9 +302,11 @@ const InvoiceTable = ({
               <tr>
                 <td
                   className={`${td} text-center text-ink-muted py-16`}
-                  colSpan={7}
+                  colSpan={8}
                 >
-                  Không tìm thấy hóa đơn nào
+                  {isHistory
+                    ? "Chưa có hóa đơn lịch sử nào"
+                    : "Không tìm thấy hóa đơn nào"}
                 </td>
               </tr>
             )}

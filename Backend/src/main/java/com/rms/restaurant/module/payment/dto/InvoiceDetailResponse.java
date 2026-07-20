@@ -1,5 +1,7 @@
 package com.rms.restaurant.module.payment.dto;
 
+import com.rms.restaurant.common.utils.enums.InvoiceStatus;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -14,5 +16,12 @@ public record InvoiceDetailResponse(
         LocalDateTime createdAt,
         String promotionId,
         String promotionCode,
-        List<InvoiceItemResponse> items
+        List<InvoiceItemResponse> items,
+        InvoiceStatus status,
+        String mergedIntoInvoiceId,
+        String splitFromInvoiceId,
+        // Reverse lineage. Children of a SPLIT source, and the sources that were merged
+        // into this invoice. Empty when not applicable.
+        List<String> splitChildInvoiceIds,
+        List<String> mergedSourceInvoiceIds
 ) {}

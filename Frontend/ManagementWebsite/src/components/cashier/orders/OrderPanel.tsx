@@ -1,8 +1,15 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 import type { OrderItem, TableItem } from "./types";
 import { COOKING_STATUS_LABEL } from "./types";
 import { OrderItemRow } from "./OrderItemRow";
-import { CheckIcon, ReceiptIcon } from "./icons";
+import { CheckIcon, ChevronDownIcon, ReceiptIcon } from "./icons";
+
+export interface OrderCustomerDraft {
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+}
 
 /* ─── Order panel ────────────────────────────────────────────────────────── */
 export const OrderPanel = ({
@@ -25,9 +32,16 @@ export const OrderPanel = ({
   itemMutationDisabled,
   itemMutationDisabledMessage,
   orderActionMessage,
+  createOrderSubmitting,
   emptyOrderMessage,
   cancelOrderIds,
   onCloseOrder,
+  customer,
+  onCustomerChange,
+  onSaveCustomer,
+  customerSaving,
+  customerError,
+  orderExists,
 }: {
   items: OrderItem[];
   hasSelectedMenu: boolean;
@@ -52,12 +66,23 @@ export const OrderPanel = ({
   itemMutationDisabled?: boolean;
   itemMutationDisabledMessage?: string;
   orderActionMessage?: { type: "error"; text: string } | null;
+  createOrderSubmitting?: boolean;
   emptyOrderMessage?: string;
   cancelOrderIds?: string[];
   onCloseOrder?: () => void;
+  // Customer contact. Before the order exists this is a local draft; afterwards it is
+  // the saved Order record that the receipt, payment modal and send-invoice all read.
+  customer: OrderCustomerDraft;
+  onCustomerChange: (customer: OrderCustomerDraft) => void;
+  onSaveCustomer: () => void;
+  customerSaving?: boolean;
+  customerError?: string;
+  orderExists: boolean;
 }) => {
+  const [customerOpen, setCustomerOpen] = useState(false);
   const isTableEmpty = !!selectedTable && !selectedTable.occupied;
   const hasItems = items.length > 0;
+  const customerDisplayName = customer.customerName.trim() || "Khách lẻ";
   const billableOrderItems = items.filter(
     (item) => item.status !== COOKING_STATUS_LABEL.REJECTED,
   );
@@ -78,7 +103,7 @@ export const OrderPanel = ({
       <div className="flex items-start justify-between shrink-0 mb-6">
         <div className="flex flex-col gap-1">
           <span className="text-[16px] font-medium text-[#202325]">
-            {isTableEmpty ? "Customer Name" : "Nguyen Van A"}
+            {customerDisplayName}
           </span>
           <span className="text-[14px] text-[#636566]">
             {selectedTable ? selectedTable.name : "–"}
@@ -117,6 +142,85 @@ export const OrderPanel = ({
             </>
           )}
         </div>
+      </div>
+
+      <div className="shrink-0 mb-3 rounded-[10px] border border-[#e8e8e8] bg-white">
+        <button
+          type="button"
+          onClick={() => setCustomerOpen((open) => !open)}
+          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+        >
+          <span className="min-w-0">
+            <span className="block text-[13px] font-medium text-[#202325]">
+              Thông tin khách hàng
+            </span>
+            <span className="block truncate text-[11px] text-[#797b7c]">
+              {customerDisplayName}
+              {customer.customerEmail.trim()
+                ? ` · ${customer.customerEmail.trim()}`
+                : ""}
+            </span>
+          </span>
+          <ChevronDownIcon
+            className={`w-4 h-4 shrink-0 text-[#636566] transition-transform ${customerOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+        {customerOpen && (
+          <div className="flex flex-col gap-2 border-t border-[#e8e8e8] px-3 py-2.5">
+            <input
+              value={customer.customerName}
+              onChange={(event) =>
+                onCustomerChange({
+                  ...customer,
+                  customerName: event.target.value,
+                })
+              }
+              placeholder="Tên khách hàng"
+              className="h-[34px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[12px] outline-none focus:border-[#025cca]"
+            />
+            <input
+              value={customer.customerPhone}
+              onChange={(event) =>
+                onCustomerChange({
+                  ...customer,
+                  customerPhone: event.target.value,
+                })
+              }
+              placeholder="Số điện thoại"
+              inputMode="tel"
+              className="h-[34px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[12px] outline-none focus:border-[#025cca]"
+            />
+            <input
+              value={customer.customerEmail}
+              onChange={(event) =>
+                onCustomerChange({
+                  ...customer,
+                  customerEmail: event.target.value,
+                })
+              }
+              placeholder="Email (để gửi hóa đơn)"
+              inputMode="email"
+              className="h-[34px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[12px] outline-none focus:border-[#025cca]"
+            />
+            {customerError && (
+              <p className="text-[11px] text-[#d92d20]">{customerError}</p>
+            )}
+            {orderExists ? (
+              <button
+                type="button"
+                onClick={onSaveCustomer}
+                disabled={customerSaving}
+                className="h-[34px] rounded-[8px] border border-[#025cca] bg-white text-[12px] font-medium text-[#025cca] disabled:opacity-50"
+              >
+                {customerSaving ? "Đang lưu..." : "Lưu thông tin khách"}
+              </button>
+            ) : (
+              <p className="text-[11px] text-[#797b7c]">
+                Thông tin sẽ được lưu cùng đơn hàng khi tạo đơn.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <p className="text-[16px] font-semibold text-[#202325] shrink-0 mb-3">
@@ -159,15 +263,34 @@ export const OrderPanel = ({
           </span>
         </div>
         {isTableEmpty ? (
-          <button
-            onClick={onCreateOrder}
-            disabled={!shiftOpen}
-            className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span className="text-[16px] font-medium text-white">
-              {hasSelectedMenu ? "Xác nhận Tạo Order" : "Tạo Order"}
-            </span>
-          </button>
+          <div className="flex flex-col gap-2 mt-1">
+            {visibleActionMessage && (
+              <div
+                className="px-3 py-2 rounded-[10px] bg-[#fff0f0] text-[#d92d20] text-[12px] leading-5"
+                role="alert"
+              >
+                {visibleActionMessage}
+              </div>
+            )}
+            <button
+              onClick={onCreateOrder}
+              disabled={
+                !shiftOpen ||
+                createOrderSubmitting ||
+                selectedTable.status !== "AVAILABLE" ||
+                Boolean(selectedTable.orderId)
+              }
+              className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="text-[16px] font-medium text-white">
+                {createOrderSubmitting
+                  ? "Đang tạo Order..."
+                  : hasSelectedMenu
+                    ? "Xác nhận Tạo Order"
+                    : "Tạo Order"}
+              </span>
+            </button>
+          </div>
         ) : hasSelectedMenu ? (
           <div className="flex flex-col gap-2 mt-1">
             {visibleActionMessage && (

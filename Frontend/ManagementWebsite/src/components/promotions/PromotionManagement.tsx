@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import PromotionModal from './PromotionModal'
 import PromotionTable from './PromotionTable'
+import PromotionFilters from './PromotionFilters'
+import type { PromotionFilterState } from './PromotionFilters'
 import {
   createPromotion,
   deletePromotion,
@@ -13,15 +15,14 @@ import type {
   UpdatePromotionRequest,
 } from '../../services/promotionApi'
 
-type StatusFilter = 'all' | 'active' | 'inactive'
+const initialFilters: PromotionFilterState = { search: '', status: 'all' }
 
 const PromotionManagement = () => {
   const [promotions, setPromotions] = useState<Promotion[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState<StatusFilter>('all')
+  const [filters, setFilters] = useState<PromotionFilterState>(initialFilters)
   const [showForm, setShowForm] = useState(false)
   const [editingPromotion, setEditingPromotion] = useState<Promotion | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -43,14 +44,14 @@ const PromotionManagement = () => {
   }, [loadPromotions])
 
   const filteredPromotions = useMemo(() => {
-    const keyword = search.trim().toLowerCase()
+    const keyword = filters.search.trim().toLowerCase()
     return promotions.filter(promotion => {
-      if (status === 'active' && !promotion.active) return false
-      if (status === 'inactive' && promotion.active) return false
+      if (filters.status === 'active' && !promotion.active) return false
+      if (filters.status === 'inactive' && promotion.active) return false
       if (keyword && !`${promotion.code} ${promotion.description}`.toLowerCase().includes(keyword)) return false
       return true
     })
-  }, [promotions, search, status])
+  }, [promotions, filters])
 
   const openCreate = () => {
     setEditingPromotion(null)
@@ -98,45 +99,27 @@ const PromotionManagement = () => {
 
   return (
     <div className="flex h-[calc(100vh-var(--kv-header-height))] bg-surface overflow-hidden">
+      <aside className="w-[24rem] shrink-0 flex flex-col px-4 pt-5 pb-4 overflow-y-auto border-r border-line bg-card">
+        <PromotionFilters initialState={initialFilters} onApply={setFilters} />
+      </aside>
+
       <section className="flex-1 min-w-0 flex flex-col p-5 gap-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-h3 font-extrabold text-ink">Quản lý khuyến mãi</h1>
+            <h1 className="text-h3 font-bold text-ink">Quản lý khuyến mãi</h1>
             <p className="text-md text-ink-subtle mt-1">Theo dõi mã giảm giá, thời hạn và số lượt sử dụng</p>
           </div>
-          <button type="button" className="kv-btn kv-btn-primary h-10 self-start lg:self-auto" onClick={openCreate}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            Khuyến mãi
-          </button>
-        </div>
-
-        <div className="flex flex-col md:flex-row md:items-center gap-3">
-          <div className="flex-1 min-w-0 relative flex items-center">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-4 text-ink-muted pointer-events-none" aria-hidden="true">
-              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              className="w-full h-12 pl-[4.4rem] pr-4 bg-card border border-line rounded-full text-md text-ink shadow-sm transition-[border-color,box-shadow] placeholder:text-ink-muted focus:outline-none focus:border-primary focus:shadow-[0_0_0_0.3rem_rgba(var(--kv-primary-rgb),0.12)]"
-              placeholder="Tìm theo mã hoặc mô tả"
-              value={search}
-              onChange={event => setSearch(event.target.value)}
-            />
+          <div className="flex items-center gap-2 shrink-0">
+            <button type="button" className="kv-btn kv-btn-outline-neutral h-10 bg-card" onClick={() => void loadPromotions()} disabled={loading}>
+              Làm mới
+            </button>
+            <button type="button" className="kv-btn kv-btn-primary h-10" onClick={openCreate}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              Khuyến mãi
+            </button>
           </div>
-          <select
-            className="h-12 min-w-[19rem] px-4 bg-card border border-line rounded-md text-md text-ink focus:outline-none focus:border-primary"
-            value={status}
-            onChange={event => setStatus(event.target.value as StatusFilter)}
-            aria-label="Lọc theo trạng thái"
-          >
-            <option value="all">Tất cả trạng thái</option>
-            <option value="active">Đang hoạt động</option>
-            <option value="inactive">Ngừng hoạt động</option>
-          </select>
-          <button type="button" className="kv-btn kv-btn-outline-neutral h-10 bg-card" onClick={() => void loadPromotions()} disabled={loading}>
-            Làm mới
-          </button>
         </div>
 
         {error && (

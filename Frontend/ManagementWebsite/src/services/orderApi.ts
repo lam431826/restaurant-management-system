@@ -23,6 +23,17 @@ export interface Order {
   items: OrderItemLine[]
   totalAmount: number
   createdAt: string
+  // Optional customer contact captured by the cashier; drives the receipt and the
+  // invoice email. Absent for a walk-in order nobody has filled in yet.
+  customerName: string | null
+  customerPhone: string | null
+  customerEmail: string | null
+}
+
+export interface OrderCustomerInput {
+  customerName: string
+  customerPhone: string
+  customerEmail: string
 }
 
 export interface OrderItemInput {
@@ -49,8 +60,21 @@ export const listOrders = (page = 0, size = 100): Promise<PageResponse<Order>> =
 
 export const getOrder = (id: string): Promise<Order> => api.get<Order>(`/api/orders/${id}`)
 
-export const createOrder = (tableId: string, items: OrderItemInput[], note?: string): Promise<Order> =>
-  api.post<Order>('/api/orders', { tableId, items, note })
+export const createOrder = (
+  tableId: string,
+  items: OrderItemInput[],
+  note?: string,
+  // Optional contact drafted in the order panel before the order existed.
+  customer?: Partial<OrderCustomerInput>,
+): Promise<Order> =>
+  api.post<Order>('/api/orders', {
+    tableId,
+    items,
+    note,
+    customerName: customer?.customerName || undefined,
+    customerPhone: customer?.customerPhone || undefined,
+    customerEmail: customer?.customerEmail || undefined,
+  })
 
 export const addOrderItems = (orderId: string, items: OrderItemInput[]): Promise<Order> =>
   api.put<Order>(`/api/orders/${orderId}/items`, { items })
@@ -79,6 +103,13 @@ export const closeOrder = (orderId: string): Promise<Order> =>
 
 export const updateOrderStatus = (orderId: string, status: OrderStatus): Promise<Order> =>
   api.put<Order>(`/api/orders/${orderId}/status`, { status })
+
+/** Saves customer contact on the order. Blank fields clear the stored value. */
+export const updateOrderCustomer = (
+  orderId: string,
+  customer: OrderCustomerInput,
+): Promise<Order> =>
+  api.put<Order>(`/api/orders/${orderId}/customer`, customer)
 
 export const cancelOrder = (orderId: string, reason: string): Promise<Order> =>
   api.put<Order>(`/api/orders/${orderId}/cancel`, { reason })
