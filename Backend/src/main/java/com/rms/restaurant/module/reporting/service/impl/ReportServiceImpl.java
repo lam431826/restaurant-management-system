@@ -1,9 +1,13 @@
 package com.rms.restaurant.module.reporting.service.impl;
 
 import com.rms.restaurant.common.utils.enums.CookingStatus;
+import com.rms.restaurant.common.utils.enums.FinancialGranularity;
 import com.rms.restaurant.common.utils.enums.PaymentMethod;
+import com.rms.restaurant.common.utils.enums.PayslipStatus;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
+import com.rms.restaurant.module.menu.model.MenuItem;
+import com.rms.restaurant.module.menu.repository.MenuItemRepository;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
 import com.rms.restaurant.module.order.repository.OrderItemRepository;
@@ -12,8 +16,12 @@ import com.rms.restaurant.module.payment.model.Invoice;
 import com.rms.restaurant.module.payment.model.Payment;
 import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.payment.repository.PaymentRepository;
+import com.rms.restaurant.module.payroll.model.PayrollSheet;
+import com.rms.restaurant.module.payroll.model.Payslip;
+import com.rms.restaurant.module.payroll.repository.PayrollSheetRepository;
+import com.rms.restaurant.module.payroll.repository.PayslipRepository;
 import com.rms.restaurant.module.reporting.dto.EndOfDaySalesRow;
-import com.rms.restaurant.module.reporting.dto.FinancialReportResponse;
+import com.rms.restaurant.module.reporting.dto.FinancialPeriodResponse;
 import com.rms.restaurant.module.reporting.dto.MenuPerformanceResponse;
 import com.rms.restaurant.module.reporting.dto.TrafficReportResponse;
 import com.rms.restaurant.module.reporting.service.ReportService;
@@ -26,11 +34,15 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -44,8 +56,179 @@ public class ReportServiceImpl implements ReportService {
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final TableRepository tableRepository;
+    private final MenuItemRepository menuItemRepository;
+    private final PayrollSheetRepository payrollSheetRepository;
+    private final PayslipRepository payslipRepository;
 
-    @Override public FinancialReportResponse getFinancialReport(LocalDate from, LocalDate to) { return null; }
+    @Override
+    public List<FinancialPeriodResponse> getFinancialReport(int year, FinancialGranularity granularity) {
+        LocalDate today = LocalDate.now();
+        if (year > today.getYear()) return List.of();
+
+        LocalDate yearStart = LocalDate.of(year, 1, 1);
+        LocalDate yearEnd = year == today.getYear() ? today : LocalDate.of(year, 12, 31);
+
+        Map<YearMonth, MonthAccumulator> byMonth = new TreeMap<>();
+        for (YearMonth ym = YearMonth.from(yearStart); !ym.isAfter(YearMonth.from(yearEnd)); ym = ym.plusMonths(1)) {
+            byMonth.put(ym, new MonthAccumulator());
+        }
+
+        accumulateRevenueAndCogs(byMonth, yearStart.atStartOfDay(), yearEnd.atTime(23, 59, 59));
+        accumulatePayroll(byMonth, yearStart, yearEnd);
+
+        List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries = new ArrayList<>(byMonth.entrySet());
+
+        List<FinancialPeriodResponse> periods = switch (granularity) {
+            case MONTH -> monthEntries.stream()
+                    .map(e -> toResponse(monthKey(e.getKey()), monthLabel(e.getKey()), e.getValue()))
+                    .toList();
+            case QUARTER -> buildQuarterPeriods(monthEntries, year);
+            case YEAR -> buildYearPeriod(monthEntries, year);
+        };
+
+        List<FinancialPeriodResponse> mostRecentFirst = new ArrayList<>(periods);
+        Collections.reverse(mostRecentFirst);
+        return mostRecentFirst;
+    }
+
+    /** Doanh thu bán hàng, chiết khấu hóa đơn (from paid Invoices) and giá vốn hàng bán
+     * (from payable OrderItems × MenuItem.costPrice), bucketed by the invoice's month. */
+    private void accumulateRevenueAndCogs(Map<YearMonth, MonthAccumulator> byMonth, LocalDateTime from, LocalDateTime to) {
+        List<Invoice> invoices = invoiceRepository.findPaidBetween(from, to);
+        if (invoices.isEmpty()) return;
+
+        List<String> orderIds = invoices.stream().map(Invoice::getOrderId).distinct().toList();
+        Map<String, BigDecimal> cogsByOrderId = computeCogsByOrder(orderIds);
+
+        for (Invoice invoice : invoices) {
+            MonthAccumulator acc = byMonth.get(YearMonth.from(invoice.getCreatedAt()));
+            if (acc == null) continue;
+            BigDecimal discount = invoice.getDiscountAmount() == null ? BigDecimal.ZERO : invoice.getDiscountAmount();
+            acc.salesRevenue = acc.salesRevenue.add(invoice.getSubtotal());
+            acc.invoiceDiscount = acc.invoiceDiscount.add(discount);
+            acc.cogs = acc.cogs.add(cogsByOrderId.getOrDefault(invoice.getOrderId(), BigDecimal.ZERO));
+        }
+    }
+
+    private Map<String, BigDecimal> computeCogsByOrder(List<String> orderIds) {
+        List<OrderItem> items = orderItemRepository.findByOrderIdIn(orderIds).stream()
+                .filter(this::isPayableItem)
+                .toList();
+        if (items.isEmpty()) return Map.of();
+
+        Set<String> menuItemIds = items.stream().map(OrderItem::getMenuItemId).collect(Collectors.toSet());
+        Map<String, BigDecimal> costByMenuItemId = menuItemRepository.findAllById(menuItemIds).stream()
+                .collect(Collectors.toMap(MenuItem::getId, mi -> mi.getCostPrice() == null ? BigDecimal.ZERO : mi.getCostPrice()));
+
+        return items.stream().collect(Collectors.groupingBy(
+                oi -> oi.getOrder().getId(),
+                Collectors.reducing(BigDecimal.ZERO,
+                        oi -> costByMenuItemId.getOrDefault(oi.getMenuItemId(), BigDecimal.ZERO)
+                                .multiply(BigDecimal.valueOf(oi.getQuantity())),
+                        BigDecimal::add)));
+    }
+
+    /** Phí chi trả lương Nhân viên, accrual basis: FINALIZED sheets' ACTIVE payslip totals,
+     * attributed to the month containing the sheet's periodEnd (matches how MONTHLY-term
+     * sheets already align to calendar months; CUSTOM-term sheets are attributed to the
+     * single month of their periodEnd rather than prorated — a documented simplification). */
+    private void accumulatePayroll(Map<YearMonth, MonthAccumulator> byMonth, LocalDate yearStart, LocalDate yearEnd) {
+        List<PayrollSheet> sheets = payrollSheetRepository.findFinalizedOverlapping(yearStart, yearEnd);
+        if (sheets.isEmpty()) return;
+
+        List<String> sheetIds = sheets.stream().map(PayrollSheet::getId).toList();
+        Map<String, PayrollSheet> sheetsById = sheets.stream()
+                .collect(Collectors.toMap(PayrollSheet::getId, s -> s));
+
+        Map<String, BigDecimal> payrollBySheetId = payslipRepository.findByPayrollSheetIdIn(sheetIds).stream()
+                .filter(p -> p.getStatus() == PayslipStatus.ACTIVE)
+                .collect(Collectors.groupingBy(Payslip::getPayrollSheetId,
+                        Collectors.reducing(BigDecimal.ZERO, Payslip::getTotal, BigDecimal::add)));
+
+        for (Map.Entry<String, BigDecimal> entry : payrollBySheetId.entrySet()) {
+            PayrollSheet sheet = sheetsById.get(entry.getKey());
+            MonthAccumulator acc = byMonth.get(YearMonth.from(sheet.getPeriodEnd()));
+            if (acc == null) continue;
+            acc.expPayroll = acc.expPayroll.add(entry.getValue());
+        }
+    }
+
+    private List<FinancialPeriodResponse> buildQuarterPeriods(List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries, int year) {
+        Map<Integer, MonthAccumulator> byQuarter = new TreeMap<>();
+        for (Map.Entry<YearMonth, MonthAccumulator> e : monthEntries) {
+            int quarter = (e.getKey().getMonthValue() - 1) / 3 + 1;
+            byQuarter.computeIfAbsent(quarter, q -> new MonthAccumulator()).add(e.getValue());
+        }
+        return byQuarter.entrySet().stream()
+                .map(e -> toResponse(year + "-Q" + e.getKey(), "Q" + e.getKey() + "." + year, e.getValue()))
+                .toList();
+    }
+
+    private List<FinancialPeriodResponse> buildYearPeriod(List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries, int year) {
+        MonthAccumulator total = new MonthAccumulator();
+        for (Map.Entry<YearMonth, MonthAccumulator> e : monthEntries) total.add(e.getValue());
+        return List.of(toResponse(String.valueOf(year), String.valueOf(year), total));
+    }
+
+    private String monthKey(YearMonth ym) {
+        return String.format("%d-%02d", ym.getYear(), ym.getMonthValue());
+    }
+
+    private String monthLabel(YearMonth ym) {
+        return "T" + ym.getMonthValue() + "." + ym.getYear();
+    }
+
+    /** Derives the remaining P&L lines from the four computable base figures. The ~12 sub-lines
+     * with no domain counterpart yet (returnedGoods, expCCDC, expDepreciation, expDeliveryFee,
+     * expQRFee, expWriteOff, expPointRedeem, incReturnFee, incSalaryAdvanceReturn, otherExpense)
+     * are always zero — there is nothing tracked for them anywhere else in this app. */
+    private FinancialPeriodResponse toResponse(String key, String label, MonthAccumulator acc) {
+        BigDecimal returnedGoods = BigDecimal.ZERO;
+        BigDecimal discountReduction = acc.invoiceDiscount.add(returnedGoods);
+        BigDecimal netRevenue = acc.salesRevenue.subtract(discountReduction);
+        BigDecimal grossProfit = netRevenue.subtract(acc.cogs);
+
+        BigDecimal expCCDC = BigDecimal.ZERO;
+        BigDecimal expDepreciation = BigDecimal.ZERO;
+        BigDecimal expDeliveryFee = BigDecimal.ZERO;
+        BigDecimal expQRFee = BigDecimal.ZERO;
+        BigDecimal expWriteOff = BigDecimal.ZERO;
+        BigDecimal expPointRedeem = BigDecimal.ZERO;
+        BigDecimal expenses = expCCDC.add(expDepreciation).add(expDeliveryFee).add(expQRFee)
+                .add(expWriteOff).add(expPointRedeem).add(acc.expPayroll);
+        BigDecimal operatingProfit = grossProfit.subtract(expenses);
+
+        BigDecimal incReturnFee = BigDecimal.ZERO;
+        BigDecimal incSalaryAdvanceReturn = BigDecimal.ZERO;
+        BigDecimal otherIncome = incReturnFee.add(incSalaryAdvanceReturn);
+        BigDecimal otherExpense = BigDecimal.ZERO;
+        BigDecimal netProfit = operatingProfit.add(otherIncome).subtract(otherExpense);
+
+        return new FinancialPeriodResponse(
+                key, label,
+                acc.salesRevenue, discountReduction, acc.invoiceDiscount, returnedGoods,
+                netRevenue, acc.cogs, grossProfit,
+                expenses, expCCDC, expDepreciation, expDeliveryFee, expQRFee, expWriteOff, expPointRedeem, acc.expPayroll,
+                operatingProfit,
+                otherIncome, incReturnFee, incSalaryAdvanceReturn,
+                otherExpense,
+                netProfit);
+    }
+
+    private static class MonthAccumulator {
+        BigDecimal salesRevenue = BigDecimal.ZERO;
+        BigDecimal invoiceDiscount = BigDecimal.ZERO;
+        BigDecimal cogs = BigDecimal.ZERO;
+        BigDecimal expPayroll = BigDecimal.ZERO;
+
+        void add(MonthAccumulator other) {
+            salesRevenue = salesRevenue.add(other.salesRevenue);
+            invoiceDiscount = invoiceDiscount.add(other.invoiceDiscount);
+            cogs = cogs.add(other.cogs);
+            expPayroll = expPayroll.add(other.expPayroll);
+        }
+    }
+
     @Override public TrafficReportResponse getTrafficReport(LocalDate from, LocalDate to) { return null; }
     @Override public MenuPerformanceResponse getMenuPerformance(LocalDate from, LocalDate to) { return null; }
 

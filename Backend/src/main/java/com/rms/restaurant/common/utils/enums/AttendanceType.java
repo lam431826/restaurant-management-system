@@ -2,7 +2,6 @@ package com.rms.restaurant.common.utils.enums;
 
 /**
  * Attendance record classification (SRS_AT UC-AT-03/04, BR-AT-06).
- * Distinct from the legacy roster module's AttendanceStatus (self clock-in lifecycle).
  */
 public enum AttendanceType {
     PRESENT,

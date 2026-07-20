@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Field, Picker, SectionCard, inputCls } from '../staff/EmployeeModal'
+import CategoryModal from './CategoryModal'
 import { listEmployees } from '../../api/employees'
 import type { EmployeeDto } from '../../api/employees'
 import { useAuth } from '../../context/AuthContext'
 import {
-  METHOD_LABEL, CASH_FLOW_METHODS, nextVoucherCode,
+  METHOD_LABEL, nextVoucherCode,
 } from '../../data/cashBookMockData'
 import type {
   CashFlowCategory, CashFlowMethod, CashFlowType, CashFlowVoucher, PartnerGroup,
@@ -17,8 +18,12 @@ interface Props {
   vouchers: CashFlowVoucher[]
   onClose: () => void
   onSave: (voucher: CashFlowVoucher) => void
-  onAddCategory: (name: string, type: CashFlowType) => CashFlowCategory
+  onAddCategory: (type: CashFlowType, data: { name: string; description: string; accountingToIncome: boolean }) => CashFlowCategory
+  onUpdateCategory: (id: string, data: { name: string; description: string; accountingToIncome: boolean }) => void
+  onDeleteCategory: (id: string) => void
 }
+
+type CategoryModalState = { mode: 'create' } | { mode: 'edit'; category: CashFlowCategory }
 
 const CloseIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -40,11 +45,18 @@ const ChevronDown = ({ className = '' }: { className?: string }) => (
     <polyline points="6 9 12 15 18 9" />
   </svg>
 )
+const PencilIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </svg>
+)
+const PlusCircleIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12h8" />
+  </svg>
+)
 
 const partnerGroupLabel: Record<PartnerGroup, string> = { EMPLOYEE: 'Nhân viên', OTHER: 'Khác' }
-const methodLabels = CASH_FLOW_METHODS.map(m => METHOD_LABEL[m])
-const labelToMethod = (label: string): CashFlowMethod =>
-  CASH_FLOW_METHODS.find(m => METHOD_LABEL[m] === label) ?? 'CASH'
 
 const toDatetimeLocal = (isoValue: string) => {
   const d = new Date(isoValue)
@@ -59,55 +71,19 @@ const formatAmount = (raw: string) => {
   return n.toLocaleString('en-US')
 }
 
-// ── Inline "+ add category" popover next to the Loại thu/chi picker ────────
-const CategoryAdd = ({ onAdd }: { onAdd: (name: string) => void }) => {
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState('')
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [])
-  const submit = () => {
-    if (!name.trim()) return
-    onAdd(name.trim())
-    setName(''); setOpen(false)
-  }
-  return (
-    <div ref={ref} className="relative shrink-0">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        title="Thêm loại thu/chi"
-        className="w-11 h-11 flex items-center justify-center rounded-md border border-line-default text-primary text-xl leading-none cursor-pointer hover:bg-primary-50"
-      >
-        +
-      </button>
-      {open && (
-        <div className="absolute right-0 top-[calc(100%+0.4rem)] z-[var(--kv-z-dropdown)] w-72 bg-card border border-line-default rounded-lg shadow-lg p-3">
-          <input
-            autoFocus
-            className={inputCls}
-            placeholder="Tên loại thu/chi"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') submit() }}
-          />
-          <div className="flex justify-end gap-2 mt-2">
-            <button type="button" className="kv-btn kv-btn-outline-neutral h-8 bg-card" onClick={() => setOpen(false)}>Bỏ qua</button>
-            <button type="button" className="kv-btn kv-btn-primary h-8" onClick={submit}>Thêm</button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Employee search picker (partnerGroup === 'EMPLOYEE') ───────────────────
+// ── Employee search picker — used both for "Tên người nộp/nhận" (partnerGroup
+// === 'EMPLOYEE') and for "Người thu/chi". `fallbackLabel` lets the latter show
+// the current user's name by default without that name having to match a real
+// employee record. ─────────────────────────────────────────────────────────
 const EmployeePicker = ({
-  value, employees, loading, onChange,
-}: { value: string; employees: EmployeeDto[]; loading: boolean; onChange: (id: string, name: string) => void }) => {
+  value, employees, loading, fallbackLabel, onChange,
+}: {
+  value: string
+  employees: EmployeeDto[]
+  loading: boolean
+  fallbackLabel?: string
+  onChange: (id: string, name: string) => void
+}) => {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -127,8 +103,8 @@ const EmployeePicker = ({
         onClick={() => setOpen(o => !o)}
         className={`flex items-center justify-between w-full h-11 px-3 bg-field border rounded-md cursor-pointer transition-colors ${open ? 'border-primary' : 'border-line-default hover:border-line-strong'}`}
       >
-        <span className={`text-md truncate ${value ? 'text-ink' : 'text-ink-muted'}`}>
-          {selected ? `${selected.code} - ${selected.name}` : 'Chọn nhân viên'}
+        <span className={`text-md truncate ${selected || fallbackLabel ? 'text-ink' : 'text-ink-muted'}`}>
+          {selected ? `${selected.code} - ${selected.name}` : (fallbackLabel || 'Chọn nhân viên')}
         </span>
         <ChevronDown className={`text-ink-muted transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -166,23 +142,92 @@ const EmployeePicker = ({
   )
 }
 
-const CashFlowModal = ({ type, defaultMethod, categories, vouchers, onClose, onSave, onAddCategory }: Props) => {
+// ── "Loại thu/chi" dropdown — per-row edit (pencil) + "Tạo mới" footer row ──
+const CategoryPicker = ({
+  value, categories, placeholder, onSelect, onEdit, onCreate,
+}: {
+  value: string
+  categories: CashFlowCategory[]
+  placeholder: string
+  onSelect: (name: string) => void
+  onEdit: (category: CashFlowCategory) => void
+  onCreate: () => void
+}) => {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`flex items-center justify-between w-full h-11 px-3 bg-field border rounded-md cursor-pointer transition-colors ${open ? 'border-primary' : 'border-line-default hover:border-line-strong'}`}
+      >
+        <span className={`text-md truncate ${value ? 'text-ink' : 'text-ink-muted'}`}>{value || placeholder}</span>
+        <ChevronDown className={`text-ink-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute top-[calc(100%+0.4rem)] left-0 right-0 bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] flex flex-col overflow-hidden">
+          <div className="px-3 py-2 text-sm font-medium text-ink-subtle bg-fill">Loại thu chi</div>
+          <div className="overflow-y-auto max-h-[14rem] py-1">
+            {categories.length === 0 && <div className="px-3 py-2 text-md text-ink-muted">Không có dữ liệu</div>}
+            {categories.map(cat => (
+              <div
+                key={cat.id}
+                className={`group flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer transition-colors hover:bg-[var(--kv-state-hover-bg)] ${cat.name === value ? 'bg-[var(--kv-action-primary-faded-bg)]' : ''}`}
+                onClick={() => { onSelect(cat.name); setOpen(false) }}
+              >
+                <span className={`text-md truncate ${cat.name === value ? 'text-primary font-medium' : 'text-ink'}`}>{cat.name}</span>
+                <button
+                  type="button"
+                  title="Sửa"
+                  onClick={e => { e.stopPropagation(); onEdit(cat); setOpen(false) }}
+                  className="w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-ink-subtle opacity-0 group-hover:opacity-100 hover:bg-card hover:text-primary transition-opacity cursor-pointer"
+                >
+                  <PencilIcon />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-line-default shrink-0">
+            <button
+              type="button"
+              onClick={() => { onCreate(); setOpen(false) }}
+              className="w-full flex items-center gap-2 px-3 py-2.5 text-md text-primary hover:bg-primary-50 cursor-pointer"
+            >
+              <PlusCircleIcon /> Tạo mới
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const CashFlowModal = ({
+  type, defaultMethod, categories, vouchers, onClose, onSave, onAddCategory, onUpdateCategory, onDeleteCategory,
+}: Props) => {
   const { user } = useAuth()
 
   const [dateTimeLocal, setDateTimeLocal] = useState(() => toDatetimeLocal(new Date().toISOString()))
   const [categoryName, setCategoryName] = useState('')
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
-  const [method, setMethod] = useState<CashFlowMethod>(defaultMethod ?? 'CASH')
+  const [method] = useState<CashFlowMethod>(defaultMethod ?? 'CASH')
   const [partnerGroup, setPartnerGroup] = useState<PartnerGroup>('OTHER')
   const [partnerName, setPartnerName] = useState('')
   const [employeeId, setEmployeeId] = useState('')
   const [employeeName, setEmployeeName] = useState('')
+  const [collectorId, setCollectorId] = useState('')
+  const [collectorName, setCollectorName] = useState(user?.fullName ?? user?.username ?? 'manager')
   const [accountingToIncome, setAccountingToIncome] = useState(true)
   const [error, setError] = useState('')
-  // categories prop is stable for the lifetime of this modal instance (it only
-  // changes via handleAddCategory below, which updates this state directly).
-  const [localCategories, setLocalCategories] = useState(categories)
+  const [categoryModal, setCategoryModal] = useState<CategoryModalState | null>(null)
 
   const [employees, setEmployees] = useState<EmployeeDto[]>([])
   const [employeesLoading, setEmployeesLoading] = useState(false)
@@ -199,11 +244,12 @@ const CashFlowModal = ({ type, defaultMethod, categories, vouchers, onClose, onS
     }
   }, [])
 
+  // Needed for both "Tên người nộp/nhận" (Nhân viên) and "Người thu/chi", so
+  // fetch once up front instead of gating on partnerGroup.
   useEffect(() => {
-    if (partnerGroup !== 'EMPLOYEE' || employees.length > 0) return
     const t = setTimeout(() => { void fetchEmployees() }, 0)
     return () => clearTimeout(t)
-  }, [partnerGroup, employees.length, fetchEmployees])
+  }, [fetchEmployees])
 
   useEffect(() => {
     const prev = document.body.style.overflow
@@ -216,30 +262,47 @@ const CashFlowModal = ({ type, defaultMethod, categories, vouchers, onClose, onS
     }
   }, [onClose])
 
-  const code = nextVoucherCode(vouchers, type)
-  const title = type === 'RECEIPT' ? 'Thêm phiếu thu' : 'Thêm phiếu chi'
+  const isReceipt = type === 'RECEIPT'
+  const title = `Tạo ${isReceipt ? 'phiếu thu' : 'phiếu chi'} ${METHOD_LABEL[method].toLowerCase()}`
+  const categoryTypeLabel = isReceipt ? 'Loại thu' : 'Loại chi'
+  const collectorLabel = isReceipt ? 'Người thu' : 'Người chi'
+  const partnerGroupFieldLabel = isReceipt ? 'Đối tượng nộp' : 'Đối tượng nhận'
+  const partnerNameFieldLabel = isReceipt ? 'Tên người nộp' : 'Tên người nhận'
 
-  const categoryOptions = localCategories.filter(c => c.type === type).map(c => c.name)
+  const categoriesForType = categories.filter(c => c.type === type)
 
-  const handleAddCategory = (name: string) => {
-    const created = onAddCategory(name, type)
-    setLocalCategories(list => [...list, created])
-    setCategoryName(created.name)
+  const handleCategorySave = (data: { name: string; description: string; accountingToIncome: boolean }) => {
+    if (categoryModal?.mode === 'edit') {
+      onUpdateCategory(categoryModal.category.id, data)
+      if (categoryModal.category.name === categoryName) setCategoryName(data.name)
+    } else {
+      const created = onAddCategory(type, data)
+      setCategoryName(created.name)
+      if (error) setError('')
+    }
+    setCategoryModal(null)
+  }
+  const handleCategoryDelete = () => {
+    if (categoryModal?.mode === 'edit') {
+      onDeleteCategory(categoryModal.category.id)
+      if (categoryModal.category.name === categoryName) setCategoryName('')
+    }
+    setCategoryModal(null)
   }
 
-  const handleSave = () => {
-    if (!categoryName) { setError('Vui lòng chọn loại thu/chi'); return }
+  const buildPayload = (): CashFlowVoucher | null => {
+    if (!categoryName) { setError('Vui lòng chọn loại thu/chi'); return null }
     const amountValue = parseInt(amount.replace(/\D/g, '') || '0', 10)
-    if (amountValue <= 0) { setError('Vui lòng nhập giá trị lớn hơn 0'); return }
-    if (partnerGroup === 'OTHER' && !partnerName.trim()) { setError('Vui lòng nhập tên người nộp/nhận'); return }
-    if (partnerGroup === 'EMPLOYEE' && !employeeId) { setError('Vui lòng chọn nhân viên'); return }
+    if (amountValue <= 0) { setError('Vui lòng nhập giá trị lớn hơn 0'); return null }
+    if (partnerGroup === 'OTHER' && !partnerName.trim()) { setError('Vui lòng nhập tên người nộp/nhận'); return null }
+    if (partnerGroup === 'EMPLOYEE' && !employeeId) { setError('Vui lòng chọn nhân viên'); return null }
 
-    const chosenCategory = localCategories.find(c => c.name === categoryName && c.type === type)
-    if (!chosenCategory) { setError('Loại thu/chi không hợp lệ'); return }
+    const chosenCategory = categories.find(c => c.name === categoryName && c.type === type)
+    if (!chosenCategory) { setError('Loại thu/chi không hợp lệ'); return null }
 
-    const payload: CashFlowVoucher = {
+    return {
       id: crypto.randomUUID(),
-      code,
+      code: nextVoucherCode(vouchers, type),
       type,
       createdAt: fromDatetimeLocal(dateTimeLocal),
       categoryId: chosenCategory.id,
@@ -250,10 +313,21 @@ const CashFlowModal = ({ type, defaultMethod, categories, vouchers, onClose, onS
       amount: amountValue,
       note: note.trim(),
       accountingToIncome,
-      createdBy: user?.fullName ?? user?.username ?? 'manager',
+      createdBy: collectorName,
       voided: false,
     }
-    onSave(payload)
+  }
+
+  const handleSave = () => {
+    const payload = buildPayload()
+    if (payload) onSave(payload)
+  }
+  const handleSaveAndPrint = () => {
+    const payload = buildPayload()
+    if (payload) {
+      onSave(payload)
+      window.print()
+    }
   }
 
   return (
@@ -274,7 +348,7 @@ const CashFlowModal = ({ type, defaultMethod, categories, vouchers, onClose, onS
           <SectionCard>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               <Field label="Mã phiếu">
-                <input className={`${inputCls} text-ink-muted`} value={code} disabled />
+                <input className={`${inputCls} text-ink-muted`} value="" placeholder="Tự động" disabled />
               </Field>
               <Field label="Thời gian">
                 <input
@@ -285,30 +359,27 @@ const CashFlowModal = ({ type, defaultMethod, categories, vouchers, onClose, onS
                 />
               </Field>
 
-              <Field label={type === 'RECEIPT' ? 'Loại thu' : 'Loại chi'}>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 min-w-0">
-                    <Picker
-                      value={categoryName}
-                      options={categoryOptions}
-                      placeholder={type === 'RECEIPT' ? 'Chọn loại thu' : 'Chọn loại chi'}
-                      onChange={v => { setCategoryName(v); if (error) setError('') }}
-                    />
-                  </div>
-                  <CategoryAdd onAdd={handleAddCategory} />
-                </div>
+              <Field label={categoryTypeLabel}>
+                <CategoryPicker
+                  value={categoryName}
+                  categories={categoriesForType}
+                  placeholder={isReceipt ? 'Chọn loại thu' : 'Chọn loại chi'}
+                  onSelect={v => { setCategoryName(v); if (error) setError('') }}
+                  onEdit={cat => setCategoryModal({ mode: 'edit', category: cat })}
+                  onCreate={() => setCategoryModal({ mode: 'create' })}
+                />
               </Field>
-              <Field label="Giá trị">
-                <input
-                  inputMode="numeric"
-                  className={`${inputCls} text-right`}
-                  placeholder="0"
-                  value={amount}
-                  onChange={e => { setAmount(formatAmount(e.target.value)); if (error) setError('') }}
+              <Field label={collectorLabel}>
+                <EmployeePicker
+                  value={collectorId}
+                  employees={employees}
+                  loading={employeesLoading}
+                  fallbackLabel={collectorName}
+                  onChange={(id, name) => { setCollectorId(id); setCollectorName(name) }}
                 />
               </Field>
 
-              <Field label="Nhóm người nộp/nhận">
+              <Field label={partnerGroupFieldLabel}>
                 <Picker
                   value={partnerGroupLabel[partnerGroup]}
                   options={Object.values(partnerGroupLabel)}
@@ -320,7 +391,13 @@ const CashFlowModal = ({ type, defaultMethod, categories, vouchers, onClose, onS
                   }}
                 />
               </Field>
-              <Field label="Tên người nộp/nhận">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-md text-ink-subtle">{partnerNameFieldLabel}</label>
+                  {partnerGroup === 'OTHER' && (
+                    <span className="text-md text-primary cursor-pointer hover:underline">Tạo mới</span>
+                  )}
+                </div>
                 {partnerGroup === 'EMPLOYEE' ? (
                   <EmployeePicker
                     value={employeeId}
@@ -331,25 +408,26 @@ const CashFlowModal = ({ type, defaultMethod, categories, vouchers, onClose, onS
                 ) : (
                   <input
                     className={inputCls}
-                    placeholder="Nhập tên"
+                    placeholder="Tìm kiếm"
                     value={partnerName}
                     onChange={e => { setPartnerName(e.target.value); if (error) setError('') }}
                   />
                 )}
-              </Field>
+              </div>
 
-              <Field label="Phương thức">
-                <Picker
-                  value={METHOD_LABEL[method]}
-                  options={methodLabels}
-                  placeholder="Chọn phương thức"
-                  onChange={v => setMethod(labelToMethod(v))}
+              <Field label="Số tiền" className="md:col-span-2">
+                <input
+                  inputMode="numeric"
+                  className={`${inputCls} text-right`}
+                  placeholder="0"
+                  value={amount}
+                  onChange={e => { setAmount(formatAmount(e.target.value)); if (error) setError('') }}
                 />
               </Field>
-              <Field label="Ghi chú">
+              <Field label="Ghi chú" className="md:col-span-2">
                 <textarea
-                  className={`${inputCls} h-11 py-2 resize-none`}
-                  placeholder="Ghi chú"
+                  className={`${inputCls} h-28 py-2 resize-none`}
+                  placeholder="Nhập ghi chú"
                   value={note}
                   onChange={e => setNote(e.target.value)}
                 />
@@ -375,10 +453,21 @@ const CashFlowModal = ({ type, defaultMethod, categories, vouchers, onClose, onS
           <span className="text-md text-danger">{error}</span>
           <div className="flex items-center gap-2">
             <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose}>Bỏ qua</button>
+            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={handleSaveAndPrint}>Lưu &amp; In</button>
             <button className="kv-btn kv-btn-primary h-10" onClick={handleSave}>Lưu</button>
           </div>
         </div>
       </div>
+
+      {categoryModal && (
+        <CategoryModal
+          type={type}
+          category={categoryModal.mode === 'edit' ? categoryModal.category : undefined}
+          onClose={() => setCategoryModal(null)}
+          onSave={handleCategorySave}
+          onDelete={categoryModal.mode === 'edit' ? handleCategoryDelete : undefined}
+        />
+      )}
     </div>
   )
 }

@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,4 +33,11 @@ public interface PayrollSheetRepository extends JpaRepository<PayrollSheet, Stri
 
     @Query("SELECT MAX(s.code) FROM PayrollSheet s WHERE s.code LIKE 'BL%'")
     Optional<String> findMaxCode();
+
+    /** Báo cáo tài chính (accrual basis): FINALIZED sheets whose accrual period overlaps
+     * [from, to] at all, for attributing payroll expense to the calendar month/quarter/year
+     * containing each sheet's periodEnd. */
+    @Query("SELECT s FROM PayrollSheet s WHERE s.status = com.rms.restaurant.common.utils.enums.PayrollSheetStatus.FINALIZED " +
+           "AND s.periodStart <= :to AND s.periodEnd >= :from")
+    List<PayrollSheet> findFinalizedOverlapping(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }

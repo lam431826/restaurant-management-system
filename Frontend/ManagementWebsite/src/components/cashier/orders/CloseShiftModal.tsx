@@ -166,13 +166,13 @@ export const CloseShiftModal = ({
         {/* Body */}
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 flex flex-col gap-4 bg-white">
           {/* Tiền mặt đầu ca */}
-          <div className="border border-[#ececec] rounded-2xl px-6 py-4 flex items-center justify-between">
+          <div className="border border-[#d9d9d9] rounded-2xl px-6 py-4 flex items-center justify-between">
             <span className="text-[16px] font-semibold text-[#202325]">Tiền mặt đầu ca</span>
             <span className="text-[22px] font-bold text-[#025cca]">{num(openingCash)}</span>
           </div>
 
           {/* Tiền mặt trong ca */}
-          <div className="border border-[#ececec] rounded-2xl px-6 py-5">
+          <div className="border border-[#d9d9d9] rounded-2xl px-6 py-5">
             <div className="flex items-center justify-between mb-4">
               <span className="text-[16px] font-semibold text-[#202325]">Tiền mặt trong ca</span>
               <span className="flex items-center gap-1.5">
@@ -188,8 +188,6 @@ export const CloseShiftModal = ({
                   { label: 'Chuyển khoản', value: salesTransfer },
                   { label: 'Thẻ', value: salesCard },
                   { label: 'Ví điện tử', value: salesWallet },
-                  { label: 'Điểm', value: 0 },
-                  { label: 'Công nợ', value: 0 },
                 ]}
                 total={salesTotal}
               />
@@ -199,7 +197,6 @@ export const CloseShiftModal = ({
                   { label: 'Tiền mặt', value: data.totalCashIn },
                   { label: 'Chuyển khoản', value: 0 },
                   { label: 'Thẻ', value: 0 },
-                  { label: 'Điểm', value: '—' },
                 ]}
                 total={data.totalCashIn}
               />
@@ -209,7 +206,6 @@ export const CloseShiftModal = ({
                   { label: 'Tiền mặt', value: data.totalCashOut },
                   { label: 'Chuyển khoản', value: 0 },
                   { label: 'Thẻ', value: 0 },
-                  { label: 'Điểm', value: '—' },
                 ]}
                 total={data.totalCashOut}
               />
@@ -217,7 +213,7 @@ export const CloseShiftModal = ({
           </div>
 
           {/* Tiền mặt cuối ca */}
-          <div className="border border-[#ececec] rounded-2xl px-6 py-5">
+          <div className="border border-[#d9d9d9] rounded-2xl px-6 py-5">
             <div className="flex items-center justify-between mb-4">
               <span className="text-[16px] font-semibold text-[#202325]">Tiền mặt cuối ca</span>
               <span className="flex items-center gap-1.5">

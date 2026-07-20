@@ -1,11 +1,10 @@
-// Báo cáo tài chính (P&L / "Báo cáo kết quả hoạt động kinh doanh") — frontend-only, cloned
-// from a saved KiotViet "Báo cáo > Tài chính" export. No backend financial-report API exists
-// yet, so period figures are generated deterministically (same year/granularity -> same
-// numbers across re-renders) instead of coming from a real query. Most expense/other-income
-// sub-lines are hardcoded to 0 because those concepts (asset depreciation, delivery-partner
-// fees, QR transaction fees, loyalty-point redemption, goods write-off) don't exist anywhere
-// else in this app's domain either — only sales revenue, invoice discount, COGS and staff
-// payroll cost have a real counterpart to eventually wire up.
+// Báo cáo tài chính (P&L / "Báo cáo kết quả hoạt động kinh doanh") — types/constants shared by
+// FinancialReport.tsx/FinancialReportFilters.tsx/FinancialReportPreview.tsx. Period figures now
+// come from a real backend endpoint (GET /reports/financial, see api/reports.ts), not mock data.
+// Most expense/other-income sub-lines still come back as 0 from the backend because those
+// concepts (asset depreciation, delivery-partner fees, QR transaction fees, loyalty-point
+// redemption, goods write-off) don't exist anywhere else in this app's domain either — only
+// sales revenue, invoice discount, COGS and staff payroll cost have a real counterpart.
 
 export const BRANCHES = ['Chi nhánh trung tâm']
 
@@ -16,10 +15,7 @@ export interface FinancialFilterState {
   granularity: FinancialGranularity
 }
 
-const now = new Date()
-export const CURRENT_YEAR = now.getFullYear()
-const CURRENT_MONTH = now.getMonth() + 1 // 1-12
-const CURRENT_QUARTER = Math.ceil(CURRENT_MONTH / 3)
+export const CURRENT_YEAR = new Date().getFullYear()
 
 export const YEAR_OPTIONS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2]
 
@@ -74,64 +70,6 @@ export interface FinancialPeriod {
   values: Record<FinLineKey, number>
 }
 
-/* ── deterministic seeded RNG: same period label always renders the same mock figures ──── */
-const seedFromString = (s: string) => {
-  let h = 0
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0
-  return h >>> 0
-}
-const mulberry32 = (seed: number) => () => {
-  let t = (seed += 0x6d2b79f5)
-  t = Math.imul(t ^ (t >>> 15), t | 1)
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-}
-const between = (rnd: () => number, min: number, max: number) => Math.round((min + rnd() * (max - min)) / 1000) * 1000
-
-const computePeriodValues = (periodKey: string, scale: number): Record<FinLineKey, number> => {
-  const rnd = mulberry32(seedFromString(periodKey))
-
-  const salesRevenue = between(rnd, 22_000_000, 55_000_000) * scale
-  const invoiceDiscount = Math.round(salesRevenue * (0.001 + rnd() * 0.004) / 1000) * 1000
-  const returnedGoods = 0
-  const discountReduction = invoiceDiscount + returnedGoods
-  const netRevenue = salesRevenue - discountReduction
-  const cogs = Math.round(netRevenue * (0.62 + rnd() * 0.15) / 1000) * 1000
-  const grossProfit = netRevenue - cogs
-
-  // Only staff payroll cost has a real backend counterpart today — everything else in
-  // "Chi phí" (CCDC leasing, asset depreciation, delivery-partner fees, QR transaction fees,
-  // goods write-off, loyalty-point redemption) has no tracked concept anywhere in this app.
-  const expCCDC = 0
-  const expDepreciation = 0
-  const expDeliveryFee = 0
-  const expQRFee = 0
-  const expWriteOff = 0
-  const expPointRedeem = 0
-  const expPayroll = between(rnd, 6_000_000, 12_000_000) * scale
-  const expenses = expCCDC + expDepreciation + expDeliveryFee + expQRFee + expWriteOff + expPointRedeem + expPayroll
-
-  const operatingProfit = grossProfit - expenses
-
-  const incReturnFee = 0
-  const incSalaryAdvanceReturn = 0
-  const otherIncome = incReturnFee + incSalaryAdvanceReturn
-
-  const otherExpense = 0
-
-  const netProfit = (operatingProfit + otherIncome) - otherExpense
-
-  return {
-    salesRevenue, discountReduction, invoiceDiscount, returnedGoods,
-    netRevenue, cogs, grossProfit,
-    expenses, expCCDC, expDepreciation, expDeliveryFee, expQRFee, expWriteOff, expPointRedeem, expPayroll,
-    operatingProfit,
-    otherIncome, incReturnFee, incSalaryAdvanceReturn,
-    otherExpense,
-    netProfit,
-  }
-}
-
 const ZERO_VALUES: Record<FinLineKey, number> = FIN_LINES.reduce(
   (acc, l) => ({ ...acc, [l.key]: 0 }), {} as Record<FinLineKey, number>,
 )
@@ -142,25 +80,3 @@ export const sumValues = (periods: FinancialPeriod[]): Record<FinLineKey, number
     for (const k of Object.keys(acc) as FinLineKey[]) next[k] = acc[k] + p.values[k]
     return next
   }, { ...ZERO_VALUES })
-
-/** Periods run most-recent-first within the selected year, and never include periods that
- * haven't happened yet — matches the reference (viewed in Q3.2026, it only lists Q3 and Q2). */
-export const buildFinancialPeriods = (year: number, granularity: FinancialGranularity): FinancialPeriod[] => {
-  if (granularity === 'year') {
-    return [{ key: `${year}`, label: `${year}`, values: computePeriodValues(`${year}`, 12) }]
-  }
-  if (granularity === 'quarter') {
-    const lastQuarter = year === CURRENT_YEAR ? CURRENT_QUARTER : year < CURRENT_YEAR ? 4 : 0
-    const quarters = Array.from({ length: lastQuarter }, (_, i) => lastQuarter - i)
-    return quarters.map(q => {
-      const key = `${year}-Q${q}`
-      return { key, label: `Q${q}.${year}`, values: computePeriodValues(key, 3) }
-    })
-  }
-  const lastMonth = year === CURRENT_YEAR ? CURRENT_MONTH : year < CURRENT_YEAR ? 12 : 0
-  const months = Array.from({ length: lastMonth }, (_, i) => lastMonth - i)
-  return months.map(m => {
-    const key = `${year}-${String(m).padStart(2, '0')}`
-    return { key, label: `T${m}.${year}`, values: computePeriodValues(key, 1) }
-  })
-}

@@ -596,7 +596,6 @@ export const navItems = [
       { label: 'Hàng hóa', href: '#' },
       { label: 'Khách hàng', href: '#' },
       { label: 'Nhà cung cấp', href: '#' },
-      { label: 'Nhân viên', href: '#/manager/reports/attendance' },
       { label: 'Kênh bán hàng', href: '#' },
       { label: 'Tài chính', href: '#/manager/reports/financial' },
     ],

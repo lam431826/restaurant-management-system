@@ -14,7 +14,7 @@ interface Props {
 const toggle = <T,>(list: T[], value: T): T[] =>
   list.includes(value) ? list.filter(v => v !== value) : [...list, value]
 
-const partnerScopeLabel: Record<PartnerScope, string> = { ALL: 'Tất cả', EMPLOYEE: 'Nhân viên', OTHER: 'Khác' }
+const partnerScopeLabel: Record<PartnerScope, string> = { ALL: 'Tất cả', EMPLOYEE: 'Nhân viên', OTHER: 'Khác', CUSTOMER: 'Khách hàng' }
 
 const ChevronDown = ({ className = '' }: { className?: string }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>

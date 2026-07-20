@@ -1449,8 +1449,8 @@ const CashierOrders = () => {
         onResolveRequest={handleResolveAssistance}
         onLogout={handleLogout}
         onChangePassword={() => setShowChangePw(true)}
-        onCloseShift={() => setShowCloseShift(true)}
         onCashMovement={() => setShowCashMovement(true)}
+        onCloseShift={() => setShowCloseShift(true)}
       />
 
       {shift?.shiftType === "FLOATING" && shift.status === "OPEN" && (

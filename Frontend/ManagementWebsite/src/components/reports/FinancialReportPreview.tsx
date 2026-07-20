@@ -12,6 +12,9 @@ interface Props {
   periods: FinancialPeriod[]
   filters: FinancialFilterState
   generatedAt: Date
+  loading: boolean
+  error: string
+  onRefresh: () => void
 }
 
 const IconBtn = ({ label, disabled, onClick, children }: { label: string; disabled?: boolean; onClick?: () => void; children: React.ReactNode }) => (
@@ -106,9 +109,10 @@ const exportCsv = (periods: FinancialPeriod[], filters: FinancialFilterState) =>
   URL.revokeObjectURL(url)
 }
 
-const FinancialReportPreview = ({ periods, filters, generatedAt }: Props) => {
+const FinancialReportPreview = ({ periods, filters, generatedAt, loading, error, onRefresh }: Props) => {
   const [zoom, setZoom] = useState(100)
   const [fullscreen, setFullscreen] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const exportRef = useRef<HTMLDivElement>(null)
@@ -130,6 +134,12 @@ const FinancialReportPreview = ({ periods, filters, generatedAt }: Props) => {
     else void containerRef.current?.requestFullscreen()
   }
 
+  const handleRefresh = () => {
+    setRefreshing(true)
+    onRefresh()
+    setTimeout(() => setRefreshing(false), 300)
+  }
+
   const handlePrint = () => {
     const win = window.open('', '_blank', 'width=1100,height=720')
     if (!win) return
@@ -149,7 +159,9 @@ const FinancialReportPreview = ({ periods, filters, generatedAt }: Props) => {
       <div className="shrink-0 flex items-center gap-0.5 px-2 py-1.5 bg-card border-b border-line">
         <IconBtn label="Hoàn tác" disabled><UndoIcon /></IconBtn>
         <IconBtn label="Làm lại" disabled><RedoIcon /></IconBtn>
-        <IconBtn label="Làm mới" disabled><RefreshIcon /></IconBtn>
+        <IconBtn label="Làm mới" onClick={handleRefresh}>
+          <span className={refreshing || loading ? 'animate-spin inline-flex' : 'inline-flex'}><RefreshIcon /></span>
+        </IconBtn>
         <Divider />
         <IconBtn label="Trang đầu" disabled><FirstIcon /></IconBtn>
         <IconBtn label="Trang trước" disabled><PrevIcon /></IconBtn>
@@ -174,6 +186,10 @@ const FinancialReportPreview = ({ periods, filters, generatedAt }: Props) => {
         <IconBtn label={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'} onClick={toggleFullscreen}><FullscreenIcon active={fullscreen} /></IconBtn>
       </div>
 
+      {error && (
+        <div className="shrink-0 px-4 py-2 bg-danger-50 text-danger text-md border-b border-danger/30">{error}</div>
+      )}
+
       <div className="flex-1 min-h-0 overflow-auto p-6">
         <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }} className="transition-transform w-fit mx-auto">
           <div className="bg-card shadow-lg p-8 w-fit">
@@ -197,7 +213,9 @@ const FinancialReportPreview = ({ periods, filters, generatedAt }: Props) => {
                 </tr>
               </thead>
               <tbody>
-                {periods.length === 0 ? (
+                {loading && periods.length === 0 ? (
+                  <tr><td colSpan={columns.length + 1} className="text-center text-ink-muted py-10">Đang tải dữ liệu...</td></tr>
+                ) : periods.length === 0 ? (
                   <tr><td colSpan={columns.length + 1} className="text-center text-ink-muted py-10">Không có dữ liệu phù hợp</td></tr>
                 ) : FIN_LINES.map((line, i) => (
                   <tr key={line.key} className={i % 2 === 1 ? 'bg-fill/30' : ''}>

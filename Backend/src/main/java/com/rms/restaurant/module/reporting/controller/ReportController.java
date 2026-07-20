@@ -1,8 +1,10 @@
 package com.rms.restaurant.module.reporting.controller;
 
+import com.rms.restaurant.common.utils.enums.FinancialGranularity;
 import com.rms.restaurant.common.utils.enums.PaymentMethod;
 import com.rms.restaurant.common.utils.wrapper.ApiResponse;
 import com.rms.restaurant.module.reporting.dto.EndOfDaySalesRow;
+import com.rms.restaurant.module.reporting.dto.FinancialPeriodResponse;
 import com.rms.restaurant.module.reporting.service.ReportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -35,5 +37,14 @@ public class ReportController {
             @RequestParam(required = false) String tableName) {
         return ResponseEntity.ok(ApiResponse.success(
                 reportService.getEndOfDaySales(from, to, staffIds, paymentMethod, areaName, tableName)));
+    }
+
+    // Báo cáo tài chính (P&L) — one row per month/quarter/year within the given year.
+    @GetMapping("/financial")
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    public ResponseEntity<ApiResponse<List<FinancialPeriodResponse>>> getFinancialReport(
+            @RequestParam int year,
+            @RequestParam FinancialGranularity granularity) {
+        return ResponseEntity.ok(ApiResponse.success(reportService.getFinancialReport(year, granularity)));
     }
 }

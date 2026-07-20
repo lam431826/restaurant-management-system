@@ -7,11 +7,9 @@ import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
-import com.rms.restaurant.common.utils.enums.AttendanceStatus;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.payment.model.Payment;
 import com.rms.restaurant.module.payment.repository.PaymentRepository;
-import com.rms.restaurant.module.roster.repository.RosterAttendanceRepository;
 import com.rms.restaurant.module.shift.dto.*;
 import com.rms.restaurant.module.shift.mapper.ShiftMapper;
 import com.rms.restaurant.module.shift.model.Shift;
@@ -77,7 +75,6 @@ public class ShiftServiceImpl implements ShiftService {
     private final PaymentRepository paymentRepo;
     private final OrderRepository orderRepo;
     private final UserRepository userRepo;
-    private final RosterAttendanceRepository attendanceRepo;
     private final ShiftMapper shiftMapper;
     private final AuditService auditService;
 
@@ -86,13 +83,6 @@ public class ShiftServiceImpl implements ShiftService {
     @Override
     public ShiftSummaryResponse open(OpenShiftRequest request, String cashierUsername) {
         User cashier = resolveUser(cashierUsername);
-
-        // BR-X-01: cashier must be CHECKED_IN on today's work shift
-        boolean isClockedIn = attendanceRepo.existsByEmployeeIdAndWorkDateAndStatus(
-                cashier.getId(), LocalDate.now(), AttendanceStatus.CHECKED_IN);
-        if (!isClockedIn) {
-            throw new ApplicationException(ApplicationError.CASHIER_NOT_CHECKED_IN);
-        }
 
         // BR-CS-01: each cashier may have at most one OPEN shift at a time
         shiftRepo.findByCashierIdAndStatus(cashier.getId(), STATUS_OPEN).ifPresent(existing -> {
