@@ -40,6 +40,7 @@ export interface OrderItem {
   price: number;
   orderId: string;
   rejectionNote?: string | null;
+  isQrOrder?: boolean;
 }
 
 export interface CartItem {
@@ -75,7 +76,6 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 };
 
 export const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
-  "PENDING",
   "ACCEPTED",
   "PREPARING",
   "SERVED",

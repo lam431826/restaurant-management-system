@@ -7,7 +7,6 @@ export interface QROrderConfirmationModalProps {
   onClose: () => void;
   onAccept: (order: Order) => void;
   onReject: (order: Order) => void;
-  onRemoveItem: (orderId: string, orderItemId: string) => void;
 }
 
 type TabKey = "pending" | "confirmed" | "cancelled";
@@ -49,7 +48,6 @@ export const QROrderConfirmationModal = ({
   onClose,
   onAccept,
   onReject,
-  onRemoveItem,
 }: QROrderConfirmationModalProps) => {
   const [activeTab, setActiveTab] = useState<TabKey>("pending");
   const [selectedArea, setSelectedArea] = useState("all");
@@ -69,7 +67,7 @@ export const QROrderConfirmationModal = ({
 
   /* ── Classify orders ───────────────────────────────────────── */
   const pendingOrders = useMemo(
-    () => orders.filter((o) => o.status === "PENDING" || (o.status !== "CANCELLED" && o.status !== "CLOSED" && o.items.some((i) => i.cookingStatus === "PENDING"))),
+    () => orders.filter((o) => o.status === "PENDING" || (o.status !== "CANCELLED" && o.status !== "CLOSED" && o.items.some((i) => i.cookingStatus === "PENDING" && i.isQrOrder))),
     [orders],
   );
 
@@ -123,20 +121,20 @@ export const QROrderConfirmationModal = ({
 
   /* ── Render an order card ──────────────────────────────────── */
   const renderCard = (order: Order) => {
-    const pendingItems = order.items.filter((i) => i.cookingStatus === "PENDING");
+    const pendingItems = order.items.filter((i) => i.cookingStatus === "PENDING" && i.isQrOrder);
     const acceptedItems = order.items.filter(
-      (i) => i.cookingStatus === "COOKING" || i.cookingStatus === "READY" || i.cookingStatus === "SERVED",
+      (i) => (i.cookingStatus === "COOKING" || i.cookingStatus === "READY" || i.cookingStatus === "SERVED") && i.isQrOrder,
     );
-    const rejectedItems = order.items.filter((i) => i.cookingStatus === "REJECTED");
+    const rejectedItems = order.items.filter((i) => i.cookingStatus === "REJECTED" && i.isQrOrder);
 
     // Decide which items to show as main list
     let mainItems: OrderItemLine[];
     if (activeTab === "pending") {
-      mainItems = order.status === "PENDING" ? order.items : pendingItems;
+      mainItems = order.status === "PENDING" ? order.items.filter(i => i.isQrOrder) : pendingItems;
     } else if (activeTab === "confirmed") {
       mainItems = acceptedItems;
     } else {
-      mainItems = order.items;
+      mainItems = order.items.filter(i => i.isQrOrder);
     }
 
     if (mainItems.length === 0 && rejectedItems.length === 0) return null;
@@ -182,17 +180,6 @@ export const QROrderConfirmationModal = ({
                 <span className="text-[15px] font-semibold text-gray-700">
                   {(item.unitPrice * item.quantity).toLocaleString("vi-VN")}
                 </span>
-                {activeTab === "pending" && (
-                  <button
-                    onClick={() => onRemoveItem(order.id, item.orderItemId)}
-                    className="text-gray-400 hover:text-red-500 transition-colors p-1"
-                    title="Xóa món"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 stroke-[3px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
               </div>
             </div>
           ))}
@@ -223,7 +210,15 @@ export const QROrderConfirmationModal = ({
         {/* Action buttons (only on pending tab) */}
         {activeTab === "pending" && (
           <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
-
+            <button
+              onClick={() => onReject(order)}
+              className="px-6 py-2 bg-red-50 text-red-600 rounded-full text-[15px] font-bold hover:bg-red-100 flex items-center gap-1.5 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 stroke-[3px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Hủy
+            </button>
             <button
               onClick={() => onAccept(order)}
               className="px-6 py-2 bg-[#2563eb] text-white rounded-full text-[15px] font-bold hover:bg-[#1d4ed8] flex items-center gap-1.5 transition-colors shadow-sm"

@@ -594,6 +594,7 @@ const CashierOrders = () => {
         notes: i.note || "",
         rejectionNote: i.rejectionNote,
         orderId: order.id,
+        isQrOrder: i.isQrOrder,
       })),
     );
     setOrderItems(combinedItems);
@@ -615,7 +616,7 @@ const CashierOrders = () => {
       })) ?? [];
 
   const pendingOrders = activeOrders.filter(
-    (o) => o.status === "PENDING" || (o.status !== "CANCELLED" && o.status !== "CLOSED" && o.items.some((i) => i.cookingStatus === "PENDING"))
+    (o) => o.status === "PENDING" || (o.status !== "CANCELLED" && o.status !== "CLOSED" && o.items.some((i) => i.cookingStatus === "PENDING" && i.isQrOrder))
   );
   const pendingOrdersCount = pendingOrders.length;
   const orderHasInvoice =
@@ -1463,7 +1464,6 @@ const CashierOrders = () => {
           onClose={() => setShowQRModal(false)}
           onAccept={handleAcceptPendingOrder}
           onReject={handleRejectPendingOrder}
-          onRemoveItem={handleRemoveItemFromPending}
         />
       )}
 
