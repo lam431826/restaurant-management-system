@@ -249,10 +249,12 @@ const CreateModal = ({ onClose, onCreated }: { onClose: () => void; onCreated: (
       })
       onCreated(res.data.data.user, res.data.data.tempPassword)
     } catch (err: any) {
-      const msg = err.response?.data?.message ?? ''
-      if (err.response?.status === 409) setErrors({ username: 'Tên đăng nhập đã tồn tại' })
-      else if (msg) setErrors({ username: msg })
-      else setErrors({ username: 'Có lỗi xảy ra, vui lòng thử lại' })
+      const code = err.response?.data?.error
+      const msg = err.response?.data?.message ?? 'Có lỗi xảy ra, vui lòng thử lại'
+      if (code === 'DUPLICATE_USERNAME') setErrors({ username: 'Tên đăng nhập đã tồn tại' })
+      else if (code === 'DUPLICATE_EMAIL') setErrors({ email: 'Email đã được sử dụng' })
+      else if (code === 'DUPLICATE_PHONE') setErrors({ phone: 'Số điện thoại đã được sử dụng' })
+      else setErrors({ username: msg })
     } finally {
       setLoading(false)
     }
@@ -403,7 +405,11 @@ const EditModal = ({ user, isSelf, onClose, onSaved }: { user: UserDto; isSelf: 
       })
       onSaved(res.data.data)
     } catch (err: any) {
-      setErrors({ fullName: err.response?.data?.message ?? 'Có lỗi xảy ra' })
+      const code = err.response?.data?.error
+      const msg = err.response?.data?.message ?? 'Có lỗi xảy ra'
+      if (code === 'DUPLICATE_EMAIL') setErrors({ email: 'Email đã được sử dụng' })
+      else if (code === 'DUPLICATE_PHONE') setErrors({ phone: 'Số điện thoại đã được sử dụng' })
+      else setErrors({ fullName: msg })
     } finally {
       setLoading(false)
     }
