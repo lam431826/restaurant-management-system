@@ -14,6 +14,11 @@ interface Props {
 const ASSUMED_DURATION_MIN = 90
 const OCCUPYING_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN']
 
+// Mirrors ReservationServiceImpl's real conflict rule (checkTableAvailabilityForStatuses):
+// two bookings on the same table conflict when |T1-T2| < 180min. Getting this out of sync
+// with the backend would let the dropdown mark a table "valid" that the server then rejects.
+const CONFLICT_WINDOW_MINUTES = 180
+
 const sameLocalDate = (iso: string, ymd: string) => {
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -21,6 +26,15 @@ const sameLocalDate = (iso: string, ymd: string) => {
 }
 
 const fmtTime = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+
+// date is 'YYYY-MM-DD', time is 'HH:mm' — combined without a zone suffix so JS parses it as
+// local wall-clock time, the same way `reservations[].datetime` (a zoneless LocalDateTime from
+// the backend) already gets parsed elsewhere in this file.
+const combineDateTime = (ymd: string, hm: string): Date | null => {
+  if (!ymd || !hm) return null
+  const d = new Date(`${ymd}T${hm}:00`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
 
 // OCCUPIED covers both a checked-in reservation and a walk-in seated with no reservation at all
 // (see the "seat via empty order" flow on the Cashier screen) — upcomingReservation (populated
@@ -88,11 +102,41 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
 
   // List every table (not just AVAILABLE ones) grouped by area, so the waiter can see the whole
   // floor — including which busy tables are walk-ins vs. checked-in reservations — while picking.
-  // Non-AVAILABLE tables are shown but disabled; they simply can't be assigned right now.
   const areas = [...new Set(tables.map(t => t.area))]
 
   const selectedTable = tableId ? (tables.find(t => t.id === tableId) ?? null) : null
   const isToday = sameLocalDate(new Date().toISOString(), date)
+  const partySizeNum = Number(guests)
+  const requestedDt = combineDateTime(date, time)
+
+  // Mirrors the two checks ReservationServiceImpl.create() actually runs server-side
+  // (validateTableCapacity then checkTableAvailability) so an invalid table is caught here,
+  // not after a round-trip to the backend on submit. A table is disabled — not hidden — when
+  // invalid, so the waiter still sees why (consistent with the live-status visibility above).
+  const tableValidity = (t: TableDto): { ok: boolean; reason: string | null } => {
+    if (partySizeNum >= 1 && partySizeNum > t.capacity) {
+      return { ok: false, reason: `không đủ chỗ, tối đa ${t.capacity}` }
+    }
+    if (requestedDt) {
+      const conflict = reservations.some(r =>
+        r.tableId === t.id &&
+        OCCUPYING_STATUSES.includes(r.status) &&
+        Math.abs(new Date(r.datetime).getTime() - requestedDt.getTime()) < CONFLICT_WINDOW_MINUTES * 60000,
+      )
+      if (conflict) return { ok: false, reason: 'trùng khung giờ với đặt bàn khác' }
+    }
+    return { ok: true, reason: null }
+  }
+
+  // If the waiter already picked a table and then changes party size/date/time such that it
+  // no longer qualifies, drop the selection instead of silently letting a now-invalid table
+  // ride through to submit (a disabled <option> doesn't automatically un-select itself).
+  useEffect(() => {
+    if (tableId && selectedTable && !tableValidity(selectedTable).ok) {
+      setTableId('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guests, date, time])
 
   // Existing bookings on the selected table for the selected day, so the waiter can see at a
   // glance whether the requested time overlaps something already on the books before saving.
@@ -188,11 +232,14 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
                 <option value="">— Chưa xếp bàn —</option>
                 {areas.map(area => (
                   <optgroup key={area} label={area}>
-                    {tables.filter(t => t.area === area).map(t => (
-                      <option key={t.id} value={t.id} disabled={t.status !== 'AVAILABLE'}>
-                        {t.name} ({t.capacity} chỗ) — {tableStatusLabel(t)}
-                      </option>
-                    ))}
+                    {tables.filter(t => t.area === area).map(t => {
+                      const validity = tableValidity(t)
+                      return (
+                        <option key={t.id} value={t.id} disabled={!validity.ok}>
+                          {t.name} ({t.capacity} chỗ) — {tableStatusLabel(t)}{validity.reason ? ` · ${validity.reason}` : ''}
+                        </option>
+                      )
+                    })}
                   </optgroup>
                 ))}
               </select>
