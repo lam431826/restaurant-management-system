@@ -16,6 +16,7 @@ import MySchedule from "./components/staff/schedule/MySchedule";
 import AttendanceReport from "./components/staff/schedule/AttendanceReport";
 import ShiftReconciliation from "./components/reports/ShiftReconciliation";
 import EndOfDayReport from "./components/reports/EndOfDayReport";
+import FinancialReport from "./components/reports/FinancialReport";
 import Reservation from "./components/reservation/Reservation";
 import CashierOrders from "./components/cashier/CashierOrders";
 import AdminDashboard from "./components/admin/AdminDashboard";
@@ -104,6 +105,7 @@ function App() {
           <Route path="reports/attendance" element={<AttendanceReport />} />
           <Route path="reports/daily-summary" element={<EndOfDayReport />} />
           <Route path="reports/shift-reconciliation" element={<ShiftReconciliation />} />
+          <Route path="reports/financial" element={<FinancialReport />} />
           <Route path="audit-logs" element={<AuditLogPage />} />
         </Route>
 
