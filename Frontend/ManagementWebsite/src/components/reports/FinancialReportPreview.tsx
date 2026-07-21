@@ -9,6 +9,30 @@ const fmtDateTime = (d: Date) =>
 const escapeHtml = (v: string | number) =>
   String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+/** Strips to digits and re-applies vi-VN dot separators — used live on every keystroke so the
+ * custom-line amount inputs stay readable (e.g. "500.000") while the user is still typing. */
+const formatAmountInput = (raw: string) => {
+  const digits = raw.replace(/\D/g, '')
+  return digits === '' ? '' : parseInt(digits, 10).toLocaleString('vi-VN')
+}
+
+/** Controlled, live-formatted amount cell for a custom Chi phí/Thu nhập khác line at month
+ * granularity. Resyncs its text from `amount` whenever the underlying value changes (e.g. after
+ * a save round-trips through onRefresh). */
+const CustomLineAmountInput = ({ amount, onCommit }: { amount: number; onCommit: (raw: string) => void }) => {
+  const [text, setText] = useState(() => money(amount))
+  useEffect(() => setText(money(amount)), [amount])
+  return (
+    <input
+      value={text}
+      inputMode="numeric"
+      className="w-full h-7 px-1 text-right bg-transparent border border-transparent rounded hover:border-line-default focus:border-primary outline-none"
+      onChange={e => setText(formatAmountInput(e.target.value))}
+      onBlur={e => onCommit(e.target.value)}
+    />
+  )
+}
+
 interface Props {
   periods: FinancialPeriod[]
   customLines: FinancialCustomLine[]
@@ -298,12 +322,9 @@ const FinancialReportPreview = ({ periods, customLines, filters, generatedAt, lo
                             return (
                               <td key={c.label} className="px-2 py-2 text-sm text-ink text-right">
                                 {editable ? (
-                                  <input
-                                    key={`${cl.id}-${c.key}-${amount}`}
-                                    defaultValue={money(amount)}
-                                    inputMode="numeric"
-                                    className="w-full h-7 px-1 text-right bg-transparent border border-transparent rounded hover:border-line-default focus:border-primary outline-none"
-                                    onBlur={e => handleCustomAmountBlur(cl.id, c.key, e.target.value)}
+                                  <CustomLineAmountInput
+                                    amount={amount}
+                                    onCommit={raw => handleCustomAmountBlur(cl.id, c.key, raw)}
                                   />
                                 ) : money(amount)}
                               </td>
