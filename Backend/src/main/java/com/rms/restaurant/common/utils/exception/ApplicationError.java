@@ -160,6 +160,16 @@ public enum ApplicationError {
     AT_VIOLATION_TYPE_NOT_FOUND("Không tìm thấy loại vi phạm", HttpStatus.NOT_FOUND),
     AT_SETTING_INVALID("Thiết lập chấm công không hợp lệ", HttpStatus.BAD_REQUEST),
 
+    // Cash Book (Sổ quỹ)
+    CASHBOOK_CATEGORY_NOT_FOUND("Cash book category not found", HttpStatus.NOT_FOUND),
+    DUPLICATE_CASHBOOK_CATEGORY_NAME("A cash book category with this name already exists", HttpStatus.CONFLICT),
+    CASHBOOK_CATEGORY_IN_USE("Category is used by existing vouchers; it cannot be deleted", HttpStatus.CONFLICT),
+    CASHBOOK_CATEGORY_SYSTEM_RESERVED("This category is reserved by the system and cannot be deleted", HttpStatus.CONFLICT),
+    CASHBOOK_VOUCHER_NOT_FOUND("Cash book voucher not found", HttpStatus.NOT_FOUND),
+    CASHBOOK_VOUCHER_ALREADY_VOIDED("Voucher has already been voided", HttpStatus.CONFLICT),
+    CASHBOOK_VOUCHER_CATEGORY_TYPE_MISMATCH("Category type does not match the voucher type", HttpStatus.UNPROCESSABLE_ENTITY),
+    CASHBOOK_VOUCHER_PARTNER_GROUP_INVALID("Voucher partner group is invalid for this operation", HttpStatus.UNPROCESSABLE_ENTITY),
+
     // System
     INTERNAL_ERROR("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR);
 

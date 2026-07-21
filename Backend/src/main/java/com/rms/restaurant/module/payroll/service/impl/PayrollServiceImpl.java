@@ -6,6 +6,9 @@ import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.attendance.dto.AttendanceForPayroll;
 import com.rms.restaurant.module.attendance.service.AttendanceService;
+import com.rms.restaurant.module.cashbook.dto.SystemVoucherRequest;
+import com.rms.restaurant.module.cashbook.dto.VoucherResponse;
+import com.rms.restaurant.module.cashbook.service.CashbookService;
 import com.rms.restaurant.module.employee.model.Employee;
 import com.rms.restaurant.module.employee.repository.EmployeeRepository;
 import com.rms.restaurant.module.employee.repository.SalarySettingRepository;
@@ -47,6 +50,8 @@ public class PayrollServiceImpl implements PayrollService {
     private final AttendanceService attendanceService;
     private final SalaryCalculator salaryCalculator;
     private final PayrollMapper mapper;
+    // BR-PAY-17: each salary payout mints a Cash Book (Sổ quỹ) voucher — cashbook owns PC%06d numbering.
+    private final CashbookService cashbookService;
 
     // ── UC-PAY-02: list ─────────────────────────────────────────────────────
 
@@ -275,14 +280,12 @@ public class PayrollServiceImpl implements PayrollService {
     public List<PaymentResponse> pay(String sheetId, PayRequest request, String username) {
         PayrollSheet sheet = requireSheet(sheetId);
         requireStatus(sheet, PayrollSheetStatus.FINALIZED, ApplicationError.PAYROLL_SHEET_NOT_FINALIZED);
-        long nextVoucherNo = numericSuffix(paymentRepository.findMaxVoucherCode().orElse(null));
         List<PaymentResponse> results = new ArrayList<>();
         for (PayRequest.PayItem item : request.items()) {
             Payslip payslip = requirePayslipInSheet(item.payslipId(), sheetId);
             requireActive(payslip);
             validateAmount(item.amount(), payslip);
-            PayslipPayment payment = recordPayment(payslip, item.amount(), request, username,
-                    "PC" + String.format("%06d", ++nextVoucherNo));
+            PayslipPayment payment = recordPayment(payslip, item.amount(), request, username);
             results.add(mapper.toPaymentResponse(payment, payslip));
         }
         rollUpSheetPaymentStatus(sheet);
@@ -298,12 +301,19 @@ public class PayrollServiceImpl implements PayrollService {
         }
     }
 
-    /** BR-PAY-17: each payment gets a voucher code — the Cash Book (Sổ quỹ) integration stub. */
-    private PayslipPayment recordPayment(Payslip payslip, BigDecimal amount, PayRequest request,
-                                         String username, String voucherCode) {
+    /** BR-PAY-17: each payment mints a Cash Book (Sổ quỹ) PAYMENT voucher against the
+     * SALARY_PAYMENT system category; cashbook returns the PC%06d code to store here. */
+    private PayslipPayment recordPayment(Payslip payslip, BigDecimal amount, PayRequest request, String username) {
+        VoucherResponse voucher = cashbookService.createSystemVoucher(new SystemVoucherRequest(
+                CashFlowType.PAYMENT, "SALARY_PAYMENT", request.paidAt(),
+                request.method() == SalaryPaymentMethod.TRANSFER ? CashFlowMethod.BANK : CashFlowMethod.CASH,
+                CashbookPartnerGroup.EMPLOYEE, payslip.getEmployeeId(), payslip.getEmployeeName(),
+                amount, trimToNull(request.note()), true,
+                CashbookSourceType.PAYROLL, payslip.getId(), username));
+
         PayslipPayment payment = paymentRepository.save(PayslipPayment.builder()
                 .payslipId(payslip.getId())
-                .voucherCode(voucherCode)
+                .voucherCode(voucher.code())
                 .amount(amount)
                 .method(request.method())
                 .paidAt(request.paidAt())
