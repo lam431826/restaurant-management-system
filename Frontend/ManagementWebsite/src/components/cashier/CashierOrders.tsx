@@ -81,6 +81,7 @@ import type {
 import {
   toTableItem,
   ACTIVE_ORDER_STATUSES,
+  OCCUPIED_STATUSES,
   COOKING_STATUS_LABEL,
   COOKING_STATUS_FROM_LABEL,
   ROLE_LABEL,
@@ -679,14 +680,17 @@ const CashierOrders = () => {
       const selectedId = currentTables.find((table) => table.selected)?.id;
       return mappedTables.map((table) => {
         const old = currentTables.find((p) => p.id === table.id);
+        const status = old?.status === "BILLING" ? "BILLING" : table.status;
         return {
           ...table,
           selected: table.id === selectedId,
-          occupied: old?.occupied ?? false,
+          // See the matching fix in refreshTables() — derive occupied from fresh status instead
+          // of blindly preserving the old value.
+          occupied: OCCUPIED_STATUSES.includes(status) || Boolean(old?.orderId),
           amount: old?.amount ?? 0,
           items: old?.items ?? 0,
           orderId: old?.orderId ?? null,
-          status: old?.status === "BILLING" ? "BILLING" : table.status,
+          status,
         };
       });
     });
@@ -759,7 +763,7 @@ const CashierOrders = () => {
   // Called after reservation actions and order close/cancel so statuses
   // (RESERVED→OCCUPIED, OCCUPIED→AVAILABLE, etc.) reflect backend truth.
   const refreshTables = () => {
-    listTables()
+    return listTables()
       .then((res) => {
         const updated = res
           .filter((t) => t.active)
@@ -768,14 +772,25 @@ const CashierOrders = () => {
         setTables((prev) =>
           updated.map((t) => {
             const old = prev.find((p) => p.id === t.id);
+            const status = old?.status === "BILLING" ? "BILLING" : t.status;
             return {
               ...t,
               selected: old?.selected ?? false,
-              occupied: old?.occupied ?? false,
+              // Bug fix: this used to always preserve the OLD occupied value instead of
+              // deriving it from the just-fetched status — combined with the activeOrders
+              // overlay effect's own occupied-when-no-order bug (also fixed), a table checked
+              // in with no order yet stayed permanently "not occupied" in the UI (ReservationPanel
+              // kept offering a "Check-In khách" that always failed with
+              // INVALID_STATUS_TRANSITION) until something unrelated nudged activeOrders.
+              // Trust status — now genuinely OCCUPIED/BILLING without requiring an order (see
+              // Check-in khách / reservation check-in) — amount/items/orderId still come from
+              // the activeOrders overlay below to avoid the polling jitter this preservation
+              // pattern was originally added for.
+              occupied: OCCUPIED_STATUSES.includes(status) || Boolean(old?.orderId),
               amount: old?.amount ?? 0,
               items: old?.items ?? 0,
               orderId: old?.orderId ?? null,
-              status: old?.status === "BILLING" ? "BILLING" : t.status,
+              status,
             };
           }),
         );
@@ -859,8 +874,7 @@ const CashierOrders = () => {
 
   // Overlay live order totals onto the table grid (amount/guests/item count, orderId link).
   // Status is NOT overridden here — backend-provided statuses (RESERVED, CLEANING, etc.)
-  // are preserved. Only tables with active orders are marked OCCUPIED; refreshTables()
-  // is responsible for resetting OCCUPIED→AVAILABLE after orders close.
+  // are preserved.
   useEffect(() => {
     setTables((prevTables) =>
       prevTables.map((t) => {
@@ -873,7 +887,14 @@ const CashierOrders = () => {
           return {
             ...t,
             orderId: null,
-            occupied: false,
+            // Bug fix: this used to hardcode occupied: false whenever there was no matching
+            // active order — correct back when OCCUPIED always implied an order existed, but
+            // "Check-in khách"/reservation check-in now legitimately puts a table into OCCUPIED
+            // with zero orders. Forcing occupied: false here made the panel-selection logic in
+            // this file (which keys off `occupied`, not `status`) keep showing ReservationPanel
+            // for an already-checked-in table, offering a "Check-In khách" button that always
+            // failed with INVALID_STATUS_TRANSITION since the reservation was already CHECKED_IN.
+            occupied: OCCUPIED_STATUSES.includes(t.status),
             amount: 0,
             items: 0,
             // status intentionally not touched — keeps RESERVED/CLEANING/AVAILABLE from API
@@ -1605,8 +1626,12 @@ const CashierOrders = () => {
     setReservationError(null);
     try {
       await checkInReservation(res.id);
-      // Backend set table→OCCUPIED; refresh so the panel switches to OrderPanel
-      refreshTables();
+      // Bug fix: refreshTables() used to be fire-and-forget here, so loading cleared (and the
+      // button re-enabled) before the table list actually reflected the check-in — a cashier
+      // clicking again in that window got a confusing INVALID_STATUS_TRANSITION for a check-in
+      // that had already succeeded. Await it so the panel only switches to OrderPanel once the
+      // fresh state has actually landed, and the button stays disabled until then.
+      await refreshTables();
     } catch (e) {
       setReservationError(
         e instanceof Error ? e.message : "Check-in thất bại, vui lòng thử lại",
@@ -1626,7 +1651,7 @@ const CashierOrders = () => {
       await markNoShowReservation(res.id);
       // Deselect table, then refresh to pick up AVAILABLE status
       setTables((ts) => ts.map((t) => ({ ...t, selected: false })));
-      refreshTables();
+      await refreshTables();
     } catch (e) {
       setReservationError(
         e instanceof Error ? e.message : "Thao tác thất bại, vui lòng thử lại",
@@ -1647,7 +1672,7 @@ const CashierOrders = () => {
       await cancelStaffReservation(res.id);
       // Deselect table, then refresh to pick up AVAILABLE status
       setTables((ts) => ts.map((t) => ({ ...t, selected: false })));
-      refreshTables();
+      await refreshTables();
     } catch (e) {
       setReservationError(
         e instanceof Error
