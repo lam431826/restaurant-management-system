@@ -21,9 +21,13 @@ import com.rms.restaurant.module.payroll.model.Payslip;
 import com.rms.restaurant.module.payroll.repository.PayrollSheetRepository;
 import com.rms.restaurant.module.payroll.repository.PayslipRepository;
 import com.rms.restaurant.module.reporting.dto.EndOfDaySalesRow;
+import com.rms.restaurant.module.reporting.dto.FinancialCustomLineAmountDto;
+import com.rms.restaurant.module.reporting.dto.FinancialCustomLineDto;
 import com.rms.restaurant.module.reporting.dto.FinancialPeriodResponse;
 import com.rms.restaurant.module.reporting.dto.MenuPerformanceResponse;
 import com.rms.restaurant.module.reporting.dto.TrafficReportResponse;
+import com.rms.restaurant.common.utils.enums.FinancialLineGroup;
+import com.rms.restaurant.module.reporting.service.FinancialCustomLineService;
 import com.rms.restaurant.module.reporting.service.ReportService;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
@@ -59,6 +63,7 @@ public class ReportServiceImpl implements ReportService {
     private final MenuItemRepository menuItemRepository;
     private final PayrollSheetRepository payrollSheetRepository;
     private final PayslipRepository payslipRepository;
+    private final FinancialCustomLineService financialCustomLineService;
 
     @Override
     public List<FinancialPeriodResponse> getFinancialReport(int year, FinancialGranularity granularity) {
@@ -76,14 +81,17 @@ public class ReportServiceImpl implements ReportService {
         accumulateRevenueAndCogs(byMonth, yearStart.atStartOfDay(), yearEnd.atTime(23, 59, 59));
         accumulatePayroll(byMonth, yearStart, yearEnd);
 
+        List<FinancialCustomLineDto> customLines = financialCustomLineService.list();
+        accumulateCustomLines(byMonth, financialCustomLineService.getValuesForYear(year));
+
         List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries = new ArrayList<>(byMonth.entrySet());
 
         List<FinancialPeriodResponse> periods = switch (granularity) {
             case MONTH -> monthEntries.stream()
-                    .map(e -> toResponse(monthKey(e.getKey()), monthLabel(e.getKey()), e.getValue()))
+                    .map(e -> toResponse(monthKey(e.getKey()), monthLabel(e.getKey()), e.getValue(), customLines))
                     .toList();
-            case QUARTER -> buildQuarterPeriods(monthEntries, year);
-            case YEAR -> buildYearPeriod(monthEntries, year);
+            case QUARTER -> buildQuarterPeriods(monthEntries, year, customLines);
+            case YEAR -> buildYearPeriod(monthEntries, year, customLines);
         };
 
         List<FinancialPeriodResponse> mostRecentFirst = new ArrayList<>(periods);
@@ -153,21 +161,37 @@ public class ReportServiceImpl implements ReportService {
         }
     }
 
-    private List<FinancialPeriodResponse> buildQuarterPeriods(List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries, int year) {
+    private List<FinancialPeriodResponse> buildQuarterPeriods(
+            List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries, int year, List<FinancialCustomLineDto> customLines) {
         Map<Integer, MonthAccumulator> byQuarter = new TreeMap<>();
         for (Map.Entry<YearMonth, MonthAccumulator> e : monthEntries) {
             int quarter = (e.getKey().getMonthValue() - 1) / 3 + 1;
             byQuarter.computeIfAbsent(quarter, q -> new MonthAccumulator()).add(e.getValue());
         }
         return byQuarter.entrySet().stream()
-                .map(e -> toResponse(year + "-Q" + e.getKey(), "Q" + e.getKey() + "." + year, e.getValue()))
+                .map(e -> toResponse(year + "-Q" + e.getKey(), "Q" + e.getKey() + "." + year, e.getValue(), customLines))
                 .toList();
     }
 
-    private List<FinancialPeriodResponse> buildYearPeriod(List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries, int year) {
+    private List<FinancialPeriodResponse> buildYearPeriod(
+            List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries, int year, List<FinancialCustomLineDto> customLines) {
         MonthAccumulator total = new MonthAccumulator();
         for (Map.Entry<YearMonth, MonthAccumulator> e : monthEntries) total.add(e.getValue());
-        return List.of(toResponse(String.valueOf(year), String.valueOf(year), total));
+        return List.of(toResponse(String.valueOf(year), String.valueOf(year), total, customLines));
+    }
+
+    /** Folds each user-defined custom line's per-month entered amount into the matching
+     * MonthAccumulator, so quarter/year aggregation (MonthAccumulator.add) sums them for free. */
+    private void accumulateCustomLines(Map<YearMonth, MonthAccumulator> byMonth, Map<String, BigDecimal[]> valuesByLine) {
+        for (Map.Entry<YearMonth, MonthAccumulator> e : byMonth.entrySet()) {
+            int monthIndex = e.getKey().getMonthValue() - 1;
+            for (Map.Entry<String, BigDecimal[]> lineEntry : valuesByLine.entrySet()) {
+                BigDecimal amount = lineEntry.getValue()[monthIndex];
+                if (amount != null && amount.signum() != 0) {
+                    e.getValue().customLineAmounts.merge(lineEntry.getKey(), amount, BigDecimal::add);
+                }
+            }
+        }
     }
 
     private String monthKey(YearMonth ym) {
@@ -178,29 +202,31 @@ public class ReportServiceImpl implements ReportService {
         return "T" + ym.getMonthValue() + "." + ym.getYear();
     }
 
-    /** Derives the remaining P&L lines from the four computable base figures. The ~12 sub-lines
-     * with no domain counterpart yet (returnedGoods, expCCDC, expDepreciation, expDeliveryFee,
-     * expQRFee, expWriteOff, expPointRedeem, incReturnFee, incSalaryAdvanceReturn, otherExpense)
-     * are always zero — there is nothing tracked for them anywhere else in this app. */
-    private FinancialPeriodResponse toResponse(String key, String label, MonthAccumulator acc) {
+    /** Derives the remaining P&L lines from the computable base figures. returnedGoods and
+     * otherExpense are always zero — nothing tracked for them anywhere else in this app.
+     * expenses/otherIncome now fold in the user-managed custom lines (see FinancialCustomLine)
+     * instead of the old fixed zero placeholders. */
+    private FinancialPeriodResponse toResponse(
+            String key, String label, MonthAccumulator acc, List<FinancialCustomLineDto> customLines) {
         BigDecimal returnedGoods = BigDecimal.ZERO;
         BigDecimal discountReduction = acc.invoiceDiscount.add(returnedGoods);
         BigDecimal netRevenue = acc.salesRevenue.subtract(discountReduction);
         BigDecimal grossProfit = netRevenue.subtract(acc.cogs);
 
-        BigDecimal expCCDC = BigDecimal.ZERO;
-        BigDecimal expDepreciation = BigDecimal.ZERO;
-        BigDecimal expDeliveryFee = BigDecimal.ZERO;
-        BigDecimal expQRFee = BigDecimal.ZERO;
-        BigDecimal expWriteOff = BigDecimal.ZERO;
-        BigDecimal expPointRedeem = BigDecimal.ZERO;
-        BigDecimal expenses = expCCDC.add(expDepreciation).add(expDeliveryFee).add(expQRFee)
-                .add(expWriteOff).add(expPointRedeem).add(acc.expPayroll);
+        BigDecimal customExpenseTotal = BigDecimal.ZERO;
+        BigDecimal customOtherIncomeTotal = BigDecimal.ZERO;
+        List<FinancialCustomLineAmountDto> customLineValues = new ArrayList<>();
+        for (FinancialCustomLineDto line : customLines) {
+            BigDecimal amount = acc.customLineAmounts.getOrDefault(line.id(), BigDecimal.ZERO);
+            customLineValues.add(new FinancialCustomLineAmountDto(line.id(), amount));
+            if (line.group() == FinancialLineGroup.EXPENSE) customExpenseTotal = customExpenseTotal.add(amount);
+            else customOtherIncomeTotal = customOtherIncomeTotal.add(amount);
+        }
+
+        BigDecimal expenses = acc.expPayroll.add(customExpenseTotal);
         BigDecimal operatingProfit = grossProfit.subtract(expenses);
 
-        BigDecimal incReturnFee = BigDecimal.ZERO;
-        BigDecimal incSalaryAdvanceReturn = BigDecimal.ZERO;
-        BigDecimal otherIncome = incReturnFee.add(incSalaryAdvanceReturn);
+        BigDecimal otherIncome = customOtherIncomeTotal;
         BigDecimal otherExpense = BigDecimal.ZERO;
         BigDecimal netProfit = operatingProfit.add(otherIncome).subtract(otherExpense);
 
@@ -208,11 +234,12 @@ public class ReportServiceImpl implements ReportService {
                 key, label,
                 acc.salesRevenue, discountReduction, acc.invoiceDiscount, returnedGoods,
                 netRevenue, acc.cogs, grossProfit,
-                expenses, expCCDC, expDepreciation, expDeliveryFee, expQRFee, expWriteOff, expPointRedeem, acc.expPayroll,
+                expenses, acc.expPayroll,
                 operatingProfit,
-                otherIncome, incReturnFee, incSalaryAdvanceReturn,
+                otherIncome,
                 otherExpense,
-                netProfit);
+                netProfit,
+                customLineValues);
     }
 
     private static class MonthAccumulator {
@@ -220,12 +247,14 @@ public class ReportServiceImpl implements ReportService {
         BigDecimal invoiceDiscount = BigDecimal.ZERO;
         BigDecimal cogs = BigDecimal.ZERO;
         BigDecimal expPayroll = BigDecimal.ZERO;
+        Map<String, BigDecimal> customLineAmounts = new java.util.HashMap<>();
 
         void add(MonthAccumulator other) {
             salesRevenue = salesRevenue.add(other.salesRevenue);
             invoiceDiscount = invoiceDiscount.add(other.invoiceDiscount);
             cogs = cogs.add(other.cogs);
             expPayroll = expPayroll.add(other.expPayroll);
+            other.customLineAmounts.forEach((lineId, amount) -> customLineAmounts.merge(lineId, amount, BigDecimal::add));
         }
     }
 

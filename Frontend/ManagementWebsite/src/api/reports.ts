@@ -44,10 +44,16 @@ export const getEndOfDaySalesReport = (params: EndOfDaySalesParams) =>
 
 export type FinancialGranularityParam = 'MONTH' | 'QUARTER' | 'YEAR'
 
-/** One period row of "Báo cáo tài chính" (P&L). Sub-lines with no domain counterpart yet
- * (returnedGoods, expCCDC, expDepreciation, expDeliveryFee, expQRFee, expWriteOff,
- * expPointRedeem, incReturnFee, incSalaryAdvanceReturn, otherExpense) are always 0 — the
- * backend has nothing tracked for them anywhere else in the app. */
+/** One custom line's amount within a single period, keyed by customLineId. */
+export interface FinancialCustomLineAmount {
+  lineId: string
+  amount: number
+}
+
+/** One period row of "Báo cáo tài chính" (P&L). returnedGoods/otherExpense are always 0 — the
+ * backend has nothing tracked for them anywhere else in the app. The old fixed always-zero
+ * expense/other-income sub-lines are now user-managed custom lines, see customLineValues and
+ * api/financialCustomLines.ts. */
 export interface FinancialPeriodRow {
   key: string
   label: string
@@ -59,20 +65,38 @@ export interface FinancialPeriodRow {
   cogs: number
   grossProfit: number
   expenses: number
-  expCCDC: number
-  expDepreciation: number
-  expDeliveryFee: number
-  expQRFee: number
-  expWriteOff: number
-  expPointRedeem: number
   expPayroll: number
   operatingProfit: number
   otherIncome: number
-  incReturnFee: number
-  incSalaryAdvanceReturn: number
   otherExpense: number
   netProfit: number
+  customLineValues: FinancialCustomLineAmount[]
 }
 
 export const getFinancialReport = (year: number, granularity: FinancialGranularityParam) =>
   apiClient.get<{ data: FinancialPeriodRow[] }>('/reports/financial', { params: { year, granularity } })
+
+/* ── Chi phí / Thu nhập khác custom line items (Tài chính settings tab) ──────────────────── */
+export type FinancialLineGroupParam = 'EXPENSE' | 'OTHER_INCOME'
+
+export interface FinancialCustomLineRow {
+  id: string
+  group: FinancialLineGroupParam
+  name: string
+  sortOrder: number
+}
+
+export const listFinancialCustomLines = () =>
+  apiClient.get<{ data: FinancialCustomLineRow[] }>('/reports/financial/custom-lines')
+
+export const createFinancialCustomLine = (group: FinancialLineGroupParam, name: string) =>
+  apiClient.post<{ data: FinancialCustomLineRow }>('/reports/financial/custom-lines', { group, name })
+
+export const updateFinancialCustomLine = (id: string, group: FinancialLineGroupParam, name: string) =>
+  apiClient.put<{ data: FinancialCustomLineRow }>(`/reports/financial/custom-lines/${id}`, { group, name })
+
+export const deleteFinancialCustomLine = (id: string) =>
+  apiClient.delete(`/reports/financial/custom-lines/${id}`)
+
+export const upsertFinancialCustomLineValue = (id: string, year: number, month: number, amount: number) =>
+  apiClient.put(`/reports/financial/custom-lines/${id}/values`, { year, month, amount })

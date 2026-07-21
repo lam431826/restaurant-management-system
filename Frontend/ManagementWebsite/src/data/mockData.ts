@@ -519,14 +519,6 @@ export const promoLinks = [
   { id: 3, title: 'Vay vốn',            subtitle: 'Giải ngân tới 1 tỷ đồng chỉ trong 24H', icon: 'loan' },
 ];
 
-export const helpLinks = [
-  { label: 'Hướng dẫn sử dụng', icon: 'question', href: 'https://kiotviet.vn/ho-tro/?type=fnb' },
-  { label: 'TeamViewer', icon: 'teamview', img: '/assets/teamview.svg', href: 'https://get.teamviewer.com/kiotviet18006162' },
-  { label: 'UltraViewer', icon: 'ultra', img: '/assets/ultra.svg', href: '#' },
-  { label: 'AnyDesk', icon: 'any', img: '/assets/any.svg', href: 'https://download.anydesk.com/AnyDesk.exe' },
-  { label: 'Cài Driver cho phần cứng', icon: 'driver', img: '/assets/driver-install.svg', href: '#' },
-];
-
 export const cashierModes = [
   { id: 12, label: 'Lễ tân', icon: 'ik-calendar-day' },
   { id: 11, label: 'Nhà bếp', icon: 'ik-bell-concierge' },
@@ -579,7 +571,6 @@ export const navItems = [
       { label: 'Bảng chấm công', href: '#/manager/timesheet' },
       { label: 'Bảng lương', href: '#/manager/payroll' },
       { label: 'Bảng hoa hồng', href: '#' },
-      { label: 'Thiết lập nhân viên', href: '#/manager/employee-settings' },
     ],
   },
   {

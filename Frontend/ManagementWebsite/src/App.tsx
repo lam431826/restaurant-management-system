@@ -9,7 +9,7 @@ import Invoices from "./components/transactions/Invoices";
 import Employees from "./components/staff/Employees";
 import Schedule from "./components/staff/schedule/Schedule";
 import Timesheet from "./components/staff/schedule/Timesheet";
-import EmployeeSettings from "./components/staff/settings/EmployeeSettings";
+import SettingsPage from "./components/settings/SettingsPage";
 import Payroll from "./components/staff/payroll/Payroll";
 import PayrollUpdate from "./components/staff/payroll/PayrollUpdate";
 import MyProfile from "./components/staff/MyProfile";
@@ -97,7 +97,7 @@ function App() {
           <Route path="employees" element={<Employees />} />
           <Route path="schedule" element={<Schedule />} />
           <Route path="timesheet" element={<Timesheet />} />
-          <Route path="employee-settings" element={<EmployeeSettings />} />
+          <Route path="settings" element={<SettingsPage />} />
           <Route path="payroll" element={<Payroll />} />
           <Route path="payroll/update" element={<PayrollUpdate />} />
           <Route path="cash-book" element={<CashBook />} />
