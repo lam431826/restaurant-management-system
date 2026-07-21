@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 
 public record InvoiceListItem(
         String id,
+        String code,
         LocalDateTime createdAt,
         String tableName,
         BigDecimal subtotal,

@@ -25,11 +25,7 @@ import {
   getLifecycleBadgeClass,
   getLifecycleLabel,
 } from "../../transactions/invoiceLifecycle";
-import {
-  formatInvoiceCode,
-  formatOrderCode,
-  formatTransactionCode,
-} from "../../../utils/displayCodes";
+import { formatTransactionCode } from "../../../utils/displayCodes";
 
 /* ─── Payment modal ──────────────────────────────────────────────────────── */
 interface NonPayableReceiptItem {
@@ -215,7 +211,10 @@ export const PaymentModal = ({
   const splitDisabledReason = (() => {
     if (!splitVisible) return "";
     if (detailLoading || !invoice) return "Đang tải chi tiết hóa đơn.";
-    if (invoice.items.length < 2) return "Cần ít nhất hai món để chia hóa đơn.";
+    // Eligibility is counted in units, not lines: a single line of quantity 2 can be split.
+    if (invoice.items.reduce((total, item) => total + item.quantity, 0) < 2) {
+      return "Cần ít nhất hai phần món để chia hóa đơn.";
+    }
     if (invoice.items.some((item) => !item.allocationId?.trim())) {
       return "Dữ liệu định danh món chưa đầy đủ.";
     }
@@ -295,7 +294,7 @@ export const PaymentModal = ({
               >
                 {invoices.map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
-                    {formatInvoiceCode(candidate.id)} ·{" "}
+                    {candidate.code} ·{" "}
                     {getLifecycleLabel(candidate.status)} ·{" "}
                     {candidate.status === "ACTIVE"
                       ? candidate.paid
@@ -349,7 +348,7 @@ export const PaymentModal = ({
                 className="text-[14px] font-bold tracking-wider text-black"
                 title={invoice.orderId}
               >
-                {formatOrderCode(invoice.orderId)}
+                {invoice.orderCode}
               </p>
             </div>
             <div className="flex flex-col gap-3 text-[10px]">

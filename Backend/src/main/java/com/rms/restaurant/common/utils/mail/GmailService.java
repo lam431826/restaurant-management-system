@@ -188,13 +188,6 @@ public class GmailService {
         return value != null && !value.isBlank() && !value.startsWith("${");
     }
 
-    /** Short, human-readable code from a UUID: "INV-81101925". Mirrors the UI helper. */
-    private static String shortCode(String prefix, String id) {
-        if (id == null || id.isBlank()) return "-";
-        String hex = id.replace("-", "");
-        return prefix + "-" + hex.substring(0, Math.min(8, hex.length())).toUpperCase();
-    }
-
     private static final String RESTAURANT_NAME = "Wasabi Sushi";
 
     /** One printed line of the invoice email — mirrors the receipt's item row. */
@@ -220,8 +213,8 @@ public class GmailService {
             String toEmail,
             String guestName,
             String customerPhone,
-            String invoiceId,
-            String orderId,
+            String invoiceCode,
+            String orderCode,
             String tableName,
             List<InvoiceEmailLine> items,
             BigDecimal subtotal,
@@ -231,8 +224,6 @@ public class GmailService {
             String paymentMethodLabel,
             LocalDateTime sentAt
     ) {
-        String invoiceCode = shortCode("INV", invoiceId);
-        String orderCode = shortCode("ORD", orderId);
         String displayName = (guestName == null || guestName.isBlank()) ? "Khách lẻ" : guestName;
         String sentAtText = sentAt.format(DATETIME_FORMATTER);
         String statusLabel = paid ? "Đã thanh toán" : "Chưa thanh toán";

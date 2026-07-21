@@ -8,7 +8,9 @@ import java.util.List;
 
 public record InvoiceDetailResponse(
         String id,
+        String code,
         String orderId,
+        String orderCode,
         BigDecimal subtotal,
         BigDecimal discountAmount,
         BigDecimal totalAmount,
@@ -19,9 +21,13 @@ public record InvoiceDetailResponse(
         List<InvoiceItemResponse> items,
         InvoiceStatus status,
         String mergedIntoInvoiceId,
+        String mergedIntoInvoiceCode,
         String splitFromInvoiceId,
+        String splitFromInvoiceCode,
         // Reverse lineage. Children of a SPLIT source, and the sources that were merged
         // into this invoice. Empty when not applicable.
         List<String> splitChildInvoiceIds,
-        List<String> mergedSourceInvoiceIds
+        List<String> splitChildInvoiceCodes,
+        List<String> mergedSourceInvoiceIds,
+        List<String> mergedSourceInvoiceCodes
 ) {}

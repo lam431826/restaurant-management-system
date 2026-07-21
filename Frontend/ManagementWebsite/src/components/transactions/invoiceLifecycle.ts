@@ -1,5 +1,4 @@
 import type { InvoiceStatus, InvoiceSummary } from "../../services/invoiceApi";
-import { formatInvoiceCode } from "../../utils/displayCodes";
 
 export type InvoiceViewTab = "operational" | "history";
 
@@ -54,13 +53,13 @@ export const getPaymentBadgeClass = (invoice: {
 /** Short lineage hint, e.g. the merge target or the split source this row came from. */
 export const getLineageHint = (invoice: InvoiceSummary): string | null => {
   if (invoice.status === "MERGED" && invoice.mergedIntoInvoiceId) {
-    return `Đã gộp vào ${formatInvoiceCode(invoice.mergedIntoInvoiceId)}`;
+    return `Đã gộp vào ${invoice.mergedIntoInvoiceCode ?? "—"}`;
   }
   if (invoice.status === "SPLIT") {
     return "Đã chuyển tiếp sang hóa đơn con";
   }
   if (invoice.status === "ACTIVE" && invoice.splitFromInvoiceId) {
-    return `Tách từ ${formatInvoiceCode(invoice.splitFromInvoiceId)}`;
+    return `Tách từ ${invoice.splitFromInvoiceCode ?? "—"}`;
   }
   return null;
 };

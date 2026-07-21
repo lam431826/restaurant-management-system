@@ -10,8 +10,8 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * BR-PAY-16/17: one salary payout against a payslip. voucherCode (PC%06d) stands in for
- * the Cash Book (Sổ quỹ) expense voucher until that module exists.
+ * BR-PAY-16/17: one salary payout against a payslip. voucherCode (PC%06d) is minted by the
+ * Cash Book (Sổ quỹ) module via CashbookService.createSystemVoucher.
  */
 @Entity
 @Table(name = "payslip_payments")

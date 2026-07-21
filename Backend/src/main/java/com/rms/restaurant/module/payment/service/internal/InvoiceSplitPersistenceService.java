@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.payment.service.internal;
 
+import com.rms.restaurant.common.codegen.BusinessCodeGenerator;
 import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
@@ -30,6 +31,8 @@ public class InvoiceSplitPersistenceService {
     private final InvoiceSplitValidator invoiceSplitValidator;
     private final InvoiceRepository invoiceRepository;
     private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
+    private final InvoiceAllocationQuantityGuard quantityGuard;
+    private final BusinessCodeGenerator businessCodeGenerator;
     private final EntityManager entityManager;
 
     @Transactional
@@ -50,11 +53,31 @@ public class InvoiceSplitPersistenceService {
         invoiceRepository.flush();
         validatePersistedChildIdentities(savedChildren, plan.groups().size());
 
+        // Source allocations shrink to their remainder. An allocation fully moved to a child
+        // is deleted outright rather than deactivated: the source invoice stays ACTIVE (it
+        // never transitions to SPLIT), so there is no "this invoice just became historical"
+        // moment to freeze a snapshot for. If the row were left behind merely deactivated, it
+        // would keep living under this invoice_id indefinitely — and if this same invoice is
+        // later used as a merge source, the historical loader for MERGED/SPLIT invoices reads
+        // every row ever tied to invoice_id (active or not), resurrecting quantity this
+        // invoice gave away in an earlier, unrelated split and double-counting it.
+        List<InvoiceItemAllocation> keptAllocations = new ArrayList<>();
+        List<InvoiceItemAllocation> exhaustedAllocations = new ArrayList<>();
         for (InvoiceItemAllocation sourceAllocation : plan.sourceAllocations()) {
-            sourceAllocation.setActive(false);
+            int remaining = plan.remainingQuantityByAllocationId()
+                    .getOrDefault(sourceAllocation.getId(), -1);
+            if (remaining < 0) {
+                throw invalidPersistenceState();
+            }
+            if (remaining == 0) {
+                exhaustedAllocations.add(sourceAllocation);
+            } else {
+                sourceAllocation.setAllocatedQuantity(remaining);
+                keptAllocations.add(sourceAllocation);
+            }
         }
-        invoiceItemAllocationRepository.saveAll(plan.sourceAllocations());
-        // The filtered unique index requires old rows to become inactive before replacements are inserted.
+        invoiceItemAllocationRepository.saveAll(keptAllocations);
+        invoiceItemAllocationRepository.deleteAll(exhaustedAllocations);
         invoiceItemAllocationRepository.flush();
 
         List<InvoiceItemAllocation> childAllocations = buildChildAllocations(plan, savedChildren);
@@ -63,7 +86,9 @@ public class InvoiceSplitPersistenceService {
         );
         invoiceItemAllocationRepository.flush();
 
-        sourceInvoice.setStatus(InvoiceStatus.SPLIT);
+        // The source keeps its remainder and stays ACTIVE and payable.
+        sourceInvoice.setSubtotal(plan.remainingSubtotal());
+        sourceInvoice.setTotalAmount(plan.remainingSubtotal());
         invoiceRepository.save(sourceInvoice);
         invoiceRepository.flush();
 
@@ -74,6 +99,7 @@ public class InvoiceSplitPersistenceService {
                 savedChildren,
                 savedChildAllocations
         );
+        quantityGuard.assertNotOverAllocated(plan.orderItems());
         return buildResult(plan, savedChildren, savedChildAllocations);
     }
 
@@ -88,8 +114,8 @@ public class InvoiceSplitPersistenceService {
                 || plan.sourceInvoice().isPaid()
                 || plan.sourceInvoice().getMergedIntoInvoiceId() != null
                 || plan.sourceInvoice().getPromotionId() != null
-                || plan.groups().size() < 2
-                || plan.sourceAllocations().size() < 2
+                || plan.groups().isEmpty()
+                || plan.sourceAllocations().isEmpty()
                 || allocationSnapshots.size() != plan.sourceAllocations().size()) {
             throw invalidPersistenceState();
         }
@@ -106,6 +132,7 @@ public class InvoiceSplitPersistenceService {
         List<Invoice> children = new ArrayList<>();
         for (ValidatedInvoiceSplitPlan.ValidatedGroup group : plan.groups()) {
             children.add(Invoice.builder()
+                    .code(businessCodeGenerator.nextInvoiceCode())
                     .orderId(plan.owningOrder().getId())
                     .subtotal(group.subtotal())
                     .discountAmount(BigDecimal.ZERO)
@@ -131,12 +158,13 @@ public class InvoiceSplitPersistenceService {
         List<InvoiceItemAllocation> allocations = new ArrayList<>();
         for (int groupIndex = 0; groupIndex < plan.groups().size(); groupIndex++) {
             Invoice child = children.get(groupIndex);
-            for (InvoiceItemAllocation sourceAllocation : plan.groups().get(groupIndex).allocations()) {
+            for (ValidatedInvoiceSplitPlan.ValidatedSelection selection
+                    : plan.groups().get(groupIndex).selections()) {
                 allocations.add(InvoiceItemAllocation.builder()
                         .invoiceId(child.getId())
-                        .orderItemId(sourceAllocation.getOrderItemId())
-                        .allocatedQuantity(sourceAllocation.getAllocatedQuantity())
-                        .unitPriceSnapshot(sourceAllocation.getUnitPriceSnapshot())
+                        .orderItemId(selection.allocation().getOrderItemId())
+                        .allocatedQuantity(selection.quantity())
+                        .unitPriceSnapshot(selection.allocation().getUnitPriceSnapshot())
                         .active(true)
                         .build());
             }
@@ -151,17 +179,19 @@ public class InvoiceSplitPersistenceService {
             List<Invoice> children,
             List<InvoiceItemAllocation> childAllocations
     ) {
-        validateSourceUnchanged(plan.sourceInvoice(), sourceSnapshot, InvoiceStatus.SPLIT);
-        if (children.size() != plan.groups().size()
-                || childAllocations.size() != plan.sourceAllocations().size()) {
+        // The source keeps its identity and stays ACTIVE; only its money moves.
+        validateSourceRetained(plan.sourceInvoice(), sourceSnapshot, plan.remainingSubtotal());
+        if (children.size() != plan.groups().size()) {
             throw invalidPersistenceState();
         }
 
-        Set<String> sourceAllocationIds = new LinkedHashSet<>();
         Set<String> childAllocationIds = new LinkedHashSet<>();
         BigDecimal childSubtotalSum = BigDecimal.ZERO;
         BigDecimal childTotalSum = BigDecimal.ZERO;
+        // Units handed to children, per source allocation.
+        Map<String, Integer> movedByAllocationId = new LinkedHashMap<>();
         int allocationOffset = 0;
+
         for (int groupIndex = 0; groupIndex < children.size(); groupIndex++) {
             Invoice child = children.get(groupIndex);
             ValidatedInvoiceSplitPlan.ValidatedGroup group = plan.groups().get(groupIndex);
@@ -169,30 +199,49 @@ public class InvoiceSplitPersistenceService {
             childSubtotalSum = childSubtotalSum.add(child.getSubtotal());
             childTotalSum = childTotalSum.add(child.getTotalAmount());
 
-            for (InvoiceItemAllocation sourceAllocation : group.allocations()) {
-                if (allocationOffset >= childAllocations.size()
-                        || !sourceAllocationIds.add(sourceAllocation.getId())) {
+            for (ValidatedInvoiceSplitPlan.ValidatedSelection selection : group.selections()) {
+                if (allocationOffset >= childAllocations.size()) {
                     throw invalidPersistenceState();
                 }
                 SourceAllocationSnapshot sourceAllocationSnapshot = sourceSnapshots.get(
-                        sourceAllocation.getId()
+                        selection.allocation().getId()
                 );
-                validateSourceAllocation(sourceAllocation, sourceAllocationSnapshot);
                 validateChildAllocation(
                         childAllocations.get(allocationOffset++),
                         child,
-                        sourceAllocationSnapshot
+                        sourceAllocationSnapshot,
+                        selection.quantity()
                 );
                 if (!childAllocationIds.add(childAllocations.get(allocationOffset - 1).getId())) {
                     throw invalidPersistenceState();
                 }
+                movedByAllocationId.merge(
+                        selection.allocation().getId(), selection.quantity(), Integer::sum
+                );
             }
         }
 
+        // Quantity conservation, per source allocation:
+        //     remaining on source + units moved to children == original quantity.
+        for (InvoiceItemAllocation sourceAllocation : plan.sourceAllocations()) {
+            SourceAllocationSnapshot snapshot = sourceSnapshots.get(sourceAllocation.getId());
+            int expectedRemaining = plan.remainingQuantityByAllocationId()
+                    .getOrDefault(sourceAllocation.getId(), -1);
+            int moved = movedByAllocationId.getOrDefault(sourceAllocation.getId(), 0);
+            if (snapshot == null
+                    || expectedRemaining < 0
+                    || expectedRemaining + moved != snapshot.allocatedQuantity()) {
+                throw invalidPersistenceState();
+            }
+            validateSourceAllocationAfterSplit(sourceAllocation, snapshot, expectedRemaining);
+        }
+
+        // Money conservation: source remainder + every child == the original source total.
         if (allocationOffset != childAllocations.size()
-                || !sourceAllocationIds.equals(plan.coveredAllocationIds())
-                || childSubtotalSum.compareTo(plan.sourceSubtotal()) != 0
-                || childTotalSum.compareTo(plan.sourceTotal()) != 0) {
+                || childSubtotalSum.add(plan.remainingSubtotal())
+                        .compareTo(plan.sourceSubtotal()) != 0
+                || childTotalSum.add(plan.remainingSubtotal())
+                        .compareTo(plan.sourceTotal()) != 0) {
             throw invalidPersistenceState();
         }
     }
@@ -205,6 +254,8 @@ public class InvoiceSplitPersistenceService {
         if (child == null
                 || child.getId() == null
                 || child.getId().isBlank()
+                || child.getCode() == null
+                || child.getCode().isBlank()
                 || child.getCreatedAt() == null
                 || !plan.owningOrder().getId().equals(child.getOrderId())
                 || child.getStatus() != InvoiceStatus.ACTIVE
@@ -222,14 +273,29 @@ public class InvoiceSplitPersistenceService {
         }
     }
 
-    private void validateSourceAllocation(
+    /**
+     * A source allocation either keeps exactly its remaining units and stays active, or is
+     * fully moved and deleted outright (see the comment in {@link #splitAtomically} for why
+     * deletion, not deactivation, is correct here). Identity fields on a kept row must never
+     * drift.
+     */
+    private void validateSourceAllocationAfterSplit(
             InvoiceItemAllocation allocation,
-            SourceAllocationSnapshot snapshot
+            SourceAllocationSnapshot snapshot,
+            int expectedRemaining
     ) {
-        if (allocation == null
-                || snapshot == null
-                || allocation.isActive()
-                || !snapshot.matchesUnchangedFields(allocation)) {
+        if (allocation == null || snapshot == null) {
+            throw invalidPersistenceState();
+        }
+        if (expectedRemaining == 0) {
+            if (invoiceItemAllocationRepository.existsById(allocation.getId())) {
+                throw invalidPersistenceState();
+            }
+            return;
+        }
+        if (!snapshot.matchesIdentityFields(allocation)
+                || !allocation.isActive()
+                || allocation.getAllocatedQuantity() != expectedRemaining) {
             throw invalidPersistenceState();
         }
     }
@@ -237,16 +303,19 @@ public class InvoiceSplitPersistenceService {
     private void validateChildAllocation(
             InvoiceItemAllocation allocation,
             Invoice child,
-            SourceAllocationSnapshot source
+            SourceAllocationSnapshot source,
+            int expectedQuantity
     ) {
         if (allocation == null
+                || source == null
                 || allocation.getId() == null
                 || allocation.getId().isBlank()
                 || allocation.getCreatedAt() == null
                 || !allocation.isActive()
                 || !child.getId().equals(allocation.getInvoiceId())
                 || !source.orderItemId().equals(allocation.getOrderItemId())
-                || source.allocatedQuantity() != allocation.getAllocatedQuantity()
+                || expectedQuantity < 1
+                || allocation.getAllocatedQuantity() != expectedQuantity
                 || allocation.getUnitPriceSnapshot() == null
                 || allocation.getUnitPriceSnapshot().compareTo(source.unitPriceSnapshot()) != 0) {
             throw invalidPersistenceState();
@@ -262,15 +331,16 @@ public class InvoiceSplitPersistenceService {
         int allocationOffset = 0;
         for (int groupIndex = 0; groupIndex < plan.groups().size(); groupIndex++) {
             ValidatedInvoiceSplitPlan.ValidatedGroup group = plan.groups().get(groupIndex);
-            List<String> sourceAllocationIds = group.allocations().stream()
-                    .map(InvoiceItemAllocation::getId)
+            List<String> sourceAllocationIds = group.selections().stream()
+                    .map(selection -> selection.allocation().getId())
                     .toList();
             List<String> childAllocationIds = new ArrayList<>();
-            for (int i = 0; i < group.allocations().size(); i++) {
+            for (int i = 0; i < group.selections().size(); i++) {
                 childAllocationIds.add(childAllocations.get(allocationOffset++).getId());
             }
             childResults.add(new PersistedInvoiceSplitResult.PersistedChildInvoice(
                     children.get(groupIndex).getId(),
+                    children.get(groupIndex).getCode(),
                     group.subtotal(),
                     group.subtotal(),
                     sourceAllocationIds,
@@ -279,9 +349,12 @@ public class InvoiceSplitPersistenceService {
         }
         return new PersistedInvoiceSplitResult(
                 plan.sourceInvoice().getId(),
+                plan.sourceInvoice().getCode(),
                 plan.sourceInvoice().getStatus(),
-                plan.sourceSubtotal(),
-                plan.sourceTotal(),
+                // What the source actually kept, not its pre-split total — the source stays
+                // ACTIVE and this is the amount now displayed/charged on it.
+                plan.remainingSubtotal(),
+                plan.remainingSubtotal(),
                 childResults
         );
     }
@@ -311,6 +384,32 @@ public class InvoiceSplitPersistenceService {
                     || !childIds.add(child.getId())) {
                 throw invalidPersistenceState();
             }
+        }
+    }
+
+    /**
+     * After a partial split the source stays ACTIVE and unpaid; only its subtotal/total drop
+     * to the retained remainder. Everything identifying it must be untouched.
+     */
+    private void validateSourceRetained(
+            Invoice source,
+            SourceInvoiceSnapshot snapshot,
+            BigDecimal expectedRemainingSubtotal
+    ) {
+        if (!snapshot.id().equals(source.getId())
+                || !snapshot.orderId().equals(source.getOrderId())
+                || source.getStatus() != InvoiceStatus.ACTIVE
+                || source.isPaid() != snapshot.paid()
+                || source.isPaid()
+                || !sameAmount(expectedRemainingSubtotal, source.getSubtotal())
+                || !sameAmount(expectedRemainingSubtotal, source.getTotalAmount())
+                || expectedRemainingSubtotal.compareTo(BigDecimal.ZERO) <= 0
+                || !sameAmount(snapshot.discountAmount(), source.getDiscountAmount())
+                || !Objects.equals(snapshot.promotionId(), source.getPromotionId())
+                || !Objects.equals(snapshot.createdAt(), source.getCreatedAt())
+                || !Objects.equals(snapshot.splitFromInvoiceId(), source.getSplitFromInvoiceId())
+                || source.getMergedIntoInvoiceId() != null) {
+            throw invalidPersistenceState();
         }
     }
 
@@ -395,11 +494,14 @@ public class InvoiceSplitPersistenceService {
             );
         }
 
-        private boolean matchesUnchangedFields(InvoiceItemAllocation allocation) {
+        /**
+         * Identity only — deliberately excludes allocatedQuantity, which a partial split is
+         * expected to reduce. The quantity itself is checked against the plan's remainder.
+         */
+        private boolean matchesIdentityFields(InvoiceItemAllocation allocation) {
             return id.equals(allocation.getId())
                     && invoiceId.equals(allocation.getInvoiceId())
                     && orderItemId.equals(allocation.getOrderItemId())
-                    && allocatedQuantity == allocation.getAllocatedQuantity()
                     && allocation.getUnitPriceSnapshot() != null
                     && unitPriceSnapshot.compareTo(allocation.getUnitPriceSnapshot()) == 0
                     && Objects.equals(createdAt, allocation.getCreatedAt());

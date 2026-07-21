@@ -1,5 +1,9 @@
 package com.rms.restaurant.module.payment.service.impl;
 
+import com.rms.restaurant.common.utils.enums.CashFlowMethod;
+import com.rms.restaurant.common.utils.enums.CashFlowType;
+import com.rms.restaurant.common.utils.enums.CashbookPartnerGroup;
+import com.rms.restaurant.common.utils.enums.CashbookSourceType;
 import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.enums.PaymentMethod;
@@ -8,6 +12,8 @@ import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
+import com.rms.restaurant.module.cashbook.dto.SystemVoucherRequest;
+import com.rms.restaurant.module.cashbook.service.CashbookService;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.payment.dto.PaymentResponse;
@@ -55,6 +61,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final UserRepository userRepository;
     private final ShiftRepository shiftRepository;
     private final MockQrPaymentGateway qrGateway;
+    private final CashbookService cashbookService;
 
     // ── BR-PM-01: CASH — immediate payment ─────────────────────────────────────
 
@@ -117,6 +124,7 @@ public class PaymentServiceImpl implements PaymentService {
         Payment savedPayment = paymentRepository.save(payment);
         invoice.setPaid(true);
         invoiceRepository.save(invoice);
+        createReceiptVoucher(order, savedPayment, cashierUsername);
 
         audit("PAYMENT_PROCESS", savedPayment.getId(),
                 "{\"invoiceId\":\"" + esc(invoice.getId()) + "\",\"amount\":" + savedPayment.getAmount()
@@ -217,6 +225,7 @@ public class PaymentServiceImpl implements PaymentService {
         Payment savedPayment = paymentRepository.save(payment);
         invoice.setPaid(true);
         invoiceRepository.save(invoice);
+        createReceiptVoucher(order, savedPayment, cashierUsername);
 
         audit("PAYMENT_QR_CONFIRM", savedPayment.getId(),
                 "{\"invoiceId\":\"" + esc(invoice.getId()) + "\",\"amount\":" + savedPayment.getAmount()
@@ -252,6 +261,20 @@ public class PaymentServiceImpl implements PaymentService {
                 "{\"invoiceId\":\"" + esc(savedPayment.getInvoiceId()) + "\"}");
 
         return paymentMapper.toResponse(savedPayment);
+    }
+
+    /** Auto-generates a Cash Book (Sổ quỹ) RECEIPT voucher against the SALES_RECEIPT system
+     * category whenever an invoice gets paid — no dedicated customer table exists (V36 adds
+     * customer_name directly on orders), so the partner is CUSTOMER with free-text name only. */
+    private void createReceiptVoucher(Order order, Payment payment, String username) {
+        String partnerName = (order.getCustomerName() == null || order.getCustomerName().isBlank())
+                ? "Khách lẻ" : order.getCustomerName();
+        cashbookService.createSystemVoucher(new SystemVoucherRequest(
+                CashFlowType.RECEIPT, "SALES_RECEIPT", payment.getPaidAt(),
+                payment.getMethod() == PaymentMethod.QR ? CashFlowMethod.BANK : CashFlowMethod.CASH,
+                CashbookPartnerGroup.CUSTOMER, null, partnerName,
+                payment.getAmount(), null, true,
+                CashbookSourceType.INVOICE_PAYMENT, payment.getInvoiceId(), username));
     }
 
     // ── Shared helpers ────────────────────────────────────────────────────────

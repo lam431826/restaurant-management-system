@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 
 public record InvoiceResponse(
         String id,
+        String code,
         String orderId,
         BigDecimal subtotal,
         BigDecimal discountAmount,

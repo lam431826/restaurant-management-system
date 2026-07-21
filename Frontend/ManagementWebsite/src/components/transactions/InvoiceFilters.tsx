@@ -14,13 +14,22 @@ interface Props {
   initialState: FilterState;
   tab: InvoiceViewTab;
   onApply: (filters: FilterState) => void;
+  // Whether any legacy SPLIT-status invoice has been observed. With the partial-quantity
+  // split contract, new splits stay ACTIVE and never produce a SPLIT row, so the "Đã tách"
+  // filter is only offered when it could actually return something.
+  hasSplitHistory: boolean;
 }
 
 const fieldCls =
   "w-full h-10 px-3 bg-field border border-line-default rounded-md text-md text-ink transition-colors " +
   "placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary";
 
-const InvoiceFilters = ({ initialState, tab, onApply }: Props) => {
+const InvoiceFilters = ({
+  initialState,
+  tab,
+  onApply,
+  hasSplitHistory,
+}: Props) => {
   const [orderId, setOrderId] = useState(initialState.orderId);
   const [paid, setPaid] = useState<PaidFilter>(initialState.paid);
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>(
@@ -78,7 +87,11 @@ const InvoiceFilters = ({ initialState, tab, onApply }: Props) => {
               ["SPLIT", "Đã tách"],
               ["MERGED", "Đã gộp"],
             ] as const
-          ).map(([value, label]) => (
+          )
+            // "Đã tách" is offered only once a legacy SPLIT row is actually known to
+            // exist — otherwise this option can only ever return an empty result.
+            .filter(([value]) => value !== "SPLIT" || hasSplitHistory)
+            .map(([value, label]) => (
             <label key={value} className="kv-radio">
               <input
                 type="radio"

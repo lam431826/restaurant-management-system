@@ -11,12 +11,7 @@ import {
   getPaymentBadgeClass,
   getPaymentLabel,
 } from "./invoiceLifecycle";
-import {
-  formatInvoiceCode,
-  formatOrderCode,
-  formatShortCode,
-  formatTransactionCode,
-} from "../../utils/displayCodes";
+import { formatShortCode, formatTransactionCode } from "../../utils/displayCodes";
 
 interface Props {
   invoice: InvoiceDetailData;
@@ -184,7 +179,7 @@ const InvoiceDetail = ({
       <html lang="vi">
         <head>
           <meta charset="utf-8" />
-          <title>Hóa đơn ${escapeHtml(formatInvoiceCode(invoice.id))}</title>
+          <title>Hóa đơn ${escapeHtml(invoice.code)}</title>
           <style>
             * { box-sizing: border-box; }
             body { margin: 0; background: #f8f5ed; color: #202325; font-family: "Courier New", monospace; }
@@ -216,7 +211,7 @@ const InvoiceDetail = ({
           <main class="receipt">
             <header class="header"><h1>Wasabi Sushi</h1><p class="printed-at">${escapeHtml(printedAt)}</p></header>
             <div class="separator"></div>
-            <section class="order-box"><span>Mã đơn hàng</span><strong>${escapeHtml(formatOrderCode(invoice.orderId))}</strong></section>
+            <section class="order-box"><span>Mã đơn hàng</span><strong>${escapeHtml(invoice.orderCode)}</strong></section>
             <div class="separator"></div>
             <section>
               <div class="info-row"><span>Thu ngân</span><strong>${escapeHtml(cashierName)}</strong></div>
@@ -279,7 +274,7 @@ const InvoiceDetail = ({
             className="text-md font-semibold font-mono text-ink mt-1"
             title={invoice.id}
           >
-            {formatInvoiceCode(invoice.id)}
+            {invoice.code}
           </div>
         </div>
         <div>
@@ -288,7 +283,7 @@ const InvoiceDetail = ({
             className="text-md font-semibold font-mono text-ink mt-1"
             title={invoice.orderId}
           >
-            {formatOrderCode(invoice.orderId)}
+            {invoice.orderCode}
           </div>
         </div>
         <div>
@@ -344,7 +339,7 @@ const InvoiceDetail = ({
                   className="text-ink font-medium font-mono"
                   title={invoice.splitFromInvoiceId}
                 >
-                  {formatInvoiceCode(invoice.splitFromInvoiceId)}
+                  {invoice.splitFromInvoiceCode ?? "—"}
                 </span>
               </li>
             )}
@@ -355,7 +350,7 @@ const InvoiceDetail = ({
                   className="text-ink font-medium font-mono"
                   title={invoice.mergedIntoInvoiceId}
                 >
-                  {formatInvoiceCode(invoice.mergedIntoInvoiceId)}
+                  {invoice.mergedIntoInvoiceCode ?? "—"}
                 </span>
               </li>
             )}
@@ -363,9 +358,7 @@ const InvoiceDetail = ({
               <li>
                 Đã tách thành {invoice.splitChildInvoiceIds.length} hóa đơn con:{" "}
                 <span className="text-ink font-medium font-mono">
-                  {invoice.splitChildInvoiceIds
-                    .map((childId) => formatInvoiceCode(childId))
-                    .join(", ")}
+                  {invoice.splitChildInvoiceCodes.join(", ")}
                 </span>
               </li>
             )}
@@ -374,9 +367,7 @@ const InvoiceDetail = ({
                 Được gộp từ {invoice.mergedSourceInvoiceIds.length} hóa đơn
                 nguồn:{" "}
                 <span className="text-ink font-medium font-mono">
-                  {invoice.mergedSourceInvoiceIds
-                    .map((sourceId) => formatInvoiceCode(sourceId))
-                    .join(", ")}
+                  {invoice.mergedSourceInvoiceCodes.join(", ")}
                 </span>
               </li>
             )}

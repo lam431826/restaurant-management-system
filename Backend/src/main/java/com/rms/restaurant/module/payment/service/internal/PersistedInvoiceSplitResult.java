@@ -8,6 +8,7 @@ import java.util.Objects;
 
 public record PersistedInvoiceSplitResult(
         String sourceInvoiceId,
+        String sourceInvoiceCode,
         InvoiceStatus sourceStatus,
         BigDecimal sourceSubtotal,
         BigDecimal sourceTotal,
@@ -15,6 +16,7 @@ public record PersistedInvoiceSplitResult(
 ) {
     public PersistedInvoiceSplitResult {
         Objects.requireNonNull(sourceInvoiceId);
+        Objects.requireNonNull(sourceInvoiceCode);
         Objects.requireNonNull(sourceStatus);
         Objects.requireNonNull(sourceSubtotal);
         Objects.requireNonNull(sourceTotal);
@@ -23,6 +25,7 @@ public record PersistedInvoiceSplitResult(
 
     public record PersistedChildInvoice(
             String childInvoiceId,
+            String childInvoiceCode,
             BigDecimal subtotal,
             BigDecimal totalAmount,
             List<String> sourceAllocationIds,
@@ -30,6 +33,7 @@ public record PersistedInvoiceSplitResult(
     ) {
         public PersistedChildInvoice {
             Objects.requireNonNull(childInvoiceId);
+            Objects.requireNonNull(childInvoiceCode);
             Objects.requireNonNull(subtotal);
             Objects.requireNonNull(totalAmount);
             sourceAllocationIds = List.copyOf(sourceAllocationIds);
