@@ -130,9 +130,15 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
       )
       if (conflict) return { ok: false, reason: 'trùng khung giờ với đặt bàn khác' }
     }
-    if (t.occupiedSince) {
+    // Bug fix: this compared Date.now() (when the waiter happens to be looking at the picker)
+    // against the cooldown window, so it blocked/allowed based on the wrong clock — a table
+    // could get blocked for a reservation dated next week just because "now" fell inside the
+    // window, or wrongly allowed for a same-day slot that actually falls inside it. Mirror
+    // ReservationServiceImpl.validateWalkInCooldown(): compare the reservation's own requested
+    // datetime instead.
+    if (t.occupiedSince && requestedDt) {
       const cooldownEnd = new Date(t.occupiedSince).getTime() + WALK_IN_COOLDOWN_MINUTES * 60000
-      if (Date.now() < cooldownEnd) {
+      if (requestedDt.getTime() < cooldownEnd) {
         return { ok: false, reason: `khách vãng lai vừa ngồi, chờ đến ${fmtTime(new Date(cooldownEnd))}` }
       }
     }

@@ -85,7 +85,7 @@ public class ReservationServiceImpl implements ReservationService {
             validateTableExists(request.tableId());
             validateTableCapacity(request.tableId(), request.partySize());
             checkTableAvailability(request.tableId(), request.datetime(), "");
-            validateWalkInCooldown(request.tableId());
+            validateWalkInCooldown(request.tableId(), request.datetime());
         }
         Reservation reservation = Reservation.builder()
                 .guestName(request.guestName())
@@ -161,10 +161,10 @@ public class ReservationServiceImpl implements ReservationService {
             validateTableExists(request.tableId());
             int effectivePartySize = request.partySize() != null ? request.partySize() : reservation.getPartySize();
             validateTableCapacity(request.tableId(), effectivePartySize);
-            checkTableAvailability(request.tableId(),
-                    request.datetime() != null ? request.datetime() : reservation.getDatetime(),
-                    id);
-            validateWalkInCooldown(request.tableId());
+            LocalDateTime effectiveDatetime =
+                    request.datetime() != null ? request.datetime() : reservation.getDatetime();
+            checkTableAvailability(request.tableId(), effectiveDatetime, id);
+            validateWalkInCooldown(request.tableId(), effectiveDatetime);
             reservation.setTableId(request.tableId());
         } else if (reservation.getTableId() != null
                 && (request.partySize() != null || request.datetime() != null)) {
@@ -458,13 +458,18 @@ public class ReservationServiceImpl implements ReservationService {
 
     /**
      * BR: a table currently seated with a walk-in (no reservation, OrderServiceImpl sets
-     * RestaurantTable.occupiedSince) cannot be assigned to a new reservation until 90 min
-     * (dining) + 30 min (cleanup) have elapsed since the walk-in was seated.
+     * RestaurantTable.occupiedSince) cannot be assigned to a reservation whose own datetime
+     * falls within 90 min (dining) + 30 min (cleanup) of when the walk-in was seated — i.e. the
+     * blocked window is [occupiedSince, occupiedSince + 2h), scoped to that reservation's own
+     * target day/time. Bug fix: this previously compared against LocalDateTime.now() (when the
+     * request was made) instead of the reservation's own datetime, so it blocked every
+     * reservation — any date, any time — made while "now" happened to fall in that 2h window,
+     * and never blocked one made outside it even if its target time fell inside the window.
      */
-    private void validateWalkInCooldown(String tableId) {
+    private void validateWalkInCooldown(String tableId, LocalDateTime reservationDatetime) {
         tableRepository.findById(tableId).ifPresent(t -> {
             LocalDateTime occupiedSince = t.getOccupiedSince();
-            if (occupiedSince != null && LocalDateTime.now().isBefore(occupiedSince.plusMinutes(WALK_IN_COOLDOWN_MINUTES))) {
+            if (occupiedSince != null && reservationDatetime.isBefore(occupiedSince.plusMinutes(WALK_IN_COOLDOWN_MINUTES))) {
                 throw new ApplicationException(ApplicationError.TABLE_RECENTLY_WALK_IN_OCCUPIED);
             }
         });

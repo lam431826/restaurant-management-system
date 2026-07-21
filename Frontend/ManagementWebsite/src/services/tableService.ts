@@ -26,6 +26,9 @@ export interface TableItem {
   qrToken: string | null
   activeOrderId: string | null
   upcomingReservation: ReservationSummary | null
+  /** Set only when this table's OCCUPIED status came from a walk-in check-in (no reservation).
+   * Null for reservation-driven occupancy. */
+  occupiedSince: string | null
 }
 
 export interface TableArea {
@@ -57,6 +60,7 @@ interface TableResponse {
   qrToken: string | null
   activeOrderId: string | null
   upcomingReservation: ReservationSummary | null
+  occupiedSince: string | null
 }
 
 const toItem = (t: TableResponse): TableItem => ({
@@ -71,6 +75,7 @@ const toItem = (t: TableResponse): TableItem => ({
   qrToken: t.qrToken,
   activeOrderId: t.activeOrderId ?? null,
   upcomingReservation: t.upcomingReservation ?? null,
+  occupiedSince: t.occupiedSince ?? null,
 })
 
 const toBody = (input: TableInput) => ({
@@ -114,6 +119,18 @@ export const updateTable = (id: string, input: TableInput): Promise<TableItem> =
 
 export const setTableActive = (id: string, active: boolean): Promise<void> =>
   api.patch<void>(`/api/tables/${id}/active`, { active })
+
+// Walk-in check-in: seats a walk-in guest (AVAILABLE → OCCUPIED) without creating an order yet,
+// stamping RestaurantTable.occupiedSince server-side. Only AVAILABLE → OCCUPIED is meaningful
+// from the Cashier floor view — other transitions (BILLING/CLEANING) belong to other screens.
+export const checkInWalkIn = (id: string): Promise<TableItem> =>
+  api.patch<ApiResponse<TableResponse>>(`/api/tables/${id}/status`, { status: 'OCCUPIED' }).then(r => toItem(r.data))
+
+// Undo a mistaken walk-in check-in — only meaningful before an order exists (the caller is
+// responsible for that check; the backend has no order-awareness at the table-status endpoint).
+// Reverts OCCUPIED → AVAILABLE, which also clears occupiedSince server-side.
+export const undoWalkInCheckIn = (id: string): Promise<TableItem> =>
+  api.patch<ApiResponse<TableResponse>>(`/api/tables/${id}/status`, { status: 'AVAILABLE' }).then(r => toItem(r.data))
 
 export const deleteTable = (id: string): Promise<void> => api.del<void>(`/api/tables/${id}`)
 

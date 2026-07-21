@@ -14,7 +14,11 @@ import type { ShiftSummary, OpenShiftBrief } from "../../services/shiftService";
 import { OpenShiftModal } from "./orders/OpenShiftModal";
 import { CloseShiftModal } from "./orders/CloseShiftModal";
 import { CashMovementModal } from "./orders/CashMovementModal";
-import { listTables } from "../../services/tableService";
+import {
+  listTables,
+  checkInWalkIn,
+  undoWalkInCheckIn,
+} from "../../services/tableService";
 import {
   checkInReservation,
   markNoShowReservation,
@@ -577,6 +581,8 @@ const CashierOrders = () => {
   const selectedOrderIdRef = useRef("");
   const selectedTableIdRef = useRef("");
   const [createOrderSubmitting, setCreateOrderSubmitting] = useState(false);
+  const [checkInWalkInSubmitting, setCheckInWalkInSubmitting] = useState(false);
+  const [undoCheckInSubmitting, setUndoCheckInSubmitting] = useState(false);
   const [orderActionMessage, setOrderActionMessage] = useState<{
     type: "error";
     text: string;
@@ -1910,6 +1916,75 @@ const CashierOrders = () => {
     }
   };
 
+  // Seats a walk-in guest (AVAILABLE → OCCUPIED, or RESERVED → OCCUPIED while in walk-in-seating
+  // mode) without creating an order yet — the "Tạo Order" button stays available right after for
+  // when the guest is actually ready to order. Distinct from handleCreateOrder, which seats the
+  // walk-in as an implicit side effect of adding items.
+  const handleCheckInWalkIn = async () => {
+    if (!selectedTable) return;
+    const expectedTableId = selectedTable.id;
+    setCheckInWalkInSubmitting(true);
+    setOrderActionMessage(null);
+    try {
+      const updated = await checkInWalkIn(expectedTableId);
+      setTables((currentTables) =>
+        currentTables.map((table) =>
+          table.id === expectedTableId
+            ? {
+                ...table,
+                status: updated.status,
+                occupied: true,
+                upcomingReservation: null,
+                occupiedSince: updated.occupiedSince,
+              }
+            : table,
+        ),
+      );
+      setWalkInOverrideTableId((id) => (id === expectedTableId ? null : id));
+    } catch (e) {
+      console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
+    } finally {
+      setCheckInWalkInSubmitting(false);
+    }
+  };
+
+  // Undoes a mistaken "Check-in khách" click — only ever reachable before an order exists for
+  // the table (see OrderPanel's canUndoWalkInCheckIn), so there's nothing else to unwind besides
+  // the table status itself.
+  const handleUndoWalkInCheckIn = async () => {
+    if (!selectedTable) return;
+    const expectedTableId = selectedTable.id;
+    setUndoCheckInSubmitting(true);
+    setOrderActionMessage(null);
+    try {
+      const updated = await undoWalkInCheckIn(expectedTableId);
+      setTables((currentTables) =>
+        currentTables.map((table) =>
+          table.id === expectedTableId
+            ? {
+                ...table,
+                status: updated.status,
+                occupied: false,
+                occupiedSince: updated.occupiedSince,
+              }
+            : table,
+        ),
+      );
+    } catch (e) {
+      console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
+    } finally {
+      setUndoCheckInSubmitting(false);
+    }
+  };
+
   const handleAddItems = async () => {
     if (!selectedTable || !selectedTable.orderId) return;
     if (disableItemMutation) {
@@ -2275,6 +2350,10 @@ const CashierOrders = () => {
               }
             }}
             onCreateOrder={handleCreateOrder}
+            onCheckInWalkIn={handleCheckInWalkIn}
+            checkInWalkInSubmitting={checkInWalkInSubmitting}
+            onUndoWalkInCheckIn={handleUndoWalkInCheckIn}
+            undoCheckInSubmitting={undoCheckInSubmitting}
             onAddItems={handleAddItems}
             onNote={handleOpenNote}
             onRemoveItem={handleRemoveItem}

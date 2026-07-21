@@ -36,6 +36,9 @@ export interface TableItem {
     partySize: number;
     datetime: string;
   } | null;
+  /** Set only when this table's OCCUPIED status came from a walk-in check-in (no reservation).
+   * Null for reservation-driven occupancy. */
+  occupiedSince: string | null;
 }
 export interface OrderItem {
   id: string;
@@ -76,6 +79,7 @@ export const toTableItem = (dto: TableServiceItem): TableItem => {
     items: 0,
     orderId: dto.activeOrderId,
     upcomingReservation: dto.upcomingReservation ?? null,
+    occupiedSince: dto.occupiedSince ?? null,
   };
 };
 
