@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { NotificationLogDto } from '../../api/notifications'
 import type { ReservationDto } from '../../api/reservations'
 
@@ -39,6 +40,7 @@ interface Props {
 }
 
 const ReservationHeader = ({ tab, onTab, onLogout, onChangePassword, notifLogs = [], notifLoading = false, bellOpen = false, onBellToggle, newReservations = [], unseenNotifCount = 0, onOpenReservation }: Props) => {
+  const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const bellRef = useRef<HTMLDivElement>(null)
