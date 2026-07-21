@@ -19,6 +19,7 @@ export interface OrderItemLine {
 
 export interface Order {
   id: string
+  code: string
   tableId: string
   tableName: string
   status: OrderStatus

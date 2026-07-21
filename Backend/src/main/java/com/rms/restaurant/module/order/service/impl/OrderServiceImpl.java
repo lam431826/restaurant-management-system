@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.order.service.impl;
 
+import com.rms.restaurant.common.codegen.BusinessCodeGenerator;
 import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.order.dto.*;
@@ -71,6 +72,7 @@ public class OrderServiceImpl implements OrderService {
     private final ReservationRepository reservationRepository;
     private final com.rms.restaurant.module.reservation.service.ReservationService reservationService;
     private final RealtimeEventPublisher realtimeEventPublisher;
+    private final BusinessCodeGenerator businessCodeGenerator;
 
     @Override
     public PageResponse<OrderResponse> list(Pageable pageable) {
@@ -402,6 +404,7 @@ public class OrderServiceImpl implements OrderService {
                 .orElse(null);
 
         Order order = new Order();
+        order.setCode(businessCodeGenerator.nextOrderCode());
         order.setTableId(table.getId());
         order.setStatus(OrderStatus.ACCEPTED); // Cashier creates order, it's already accepted
         order.setNote(request.note());

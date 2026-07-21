@@ -8,6 +8,7 @@ import java.util.Objects;
 
 public record SplitInvoiceResponse(
         String sourceInvoiceId,
+        String sourceInvoiceCode,
         InvoiceStatus sourceStatus,
         BigDecimal sourceSubtotal,
         BigDecimal sourceTotal,
@@ -15,6 +16,7 @@ public record SplitInvoiceResponse(
 ) {
     public SplitInvoiceResponse {
         Objects.requireNonNull(sourceInvoiceId);
+        Objects.requireNonNull(sourceInvoiceCode);
         Objects.requireNonNull(sourceStatus);
         Objects.requireNonNull(sourceSubtotal);
         Objects.requireNonNull(sourceTotal);

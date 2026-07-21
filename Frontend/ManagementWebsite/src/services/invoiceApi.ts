@@ -4,7 +4,9 @@ export type InvoiceStatus = 'ACTIVE' | 'MERGED' | 'SPLIT'
 
 export interface InvoiceSummary {
   id: string
+  code: string
   orderId: string
+  orderCode: string
   subtotal: number
   discountAmount: number
   totalAmount: number
@@ -13,7 +15,9 @@ export interface InvoiceSummary {
   createdAt: string
   status: InvoiceStatus
   mergedIntoInvoiceId: string | null
+  mergedIntoInvoiceCode: string | null
   splitFromInvoiceId: string | null
+  splitFromInvoiceCode: string | null
 }
 
 export interface InvoiceItem {
@@ -31,11 +35,14 @@ export interface InvoiceDetail extends InvoiceSummary {
   promotionCode: string | null
   items: InvoiceItem[]
   splitChildInvoiceIds: string[]
+  splitChildInvoiceCodes: string[]
   mergedSourceInvoiceIds: string[]
+  mergedSourceInvoiceCodes: string[]
 }
 
 export interface InvoiceMutationResponse {
   id: string
+  code: string
   orderId: string
   subtotal: number
   discountAmount: number
@@ -67,6 +74,7 @@ export interface SplitInvoiceRequest {
 
 export interface SplitInvoiceChildResponse {
   invoiceId: string
+  invoiceCode: string
   subtotal: number
   totalAmount: number
   sourceAllocationIds: string[]
@@ -75,6 +83,7 @@ export interface SplitInvoiceChildResponse {
 
 export interface SplitInvoiceResponse {
   sourceInvoiceId: string
+  sourceInvoiceCode: string
   sourceStatus: InvoiceStatus
   sourceSubtotal: number
   sourceTotal: number

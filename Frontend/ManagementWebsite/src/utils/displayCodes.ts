@@ -7,18 +7,14 @@
  * support, while tables, cards and modals show the short code.
  *
  * A UUID's first block is stable and already used across the cashier UI, so we keep that
- * convention: INV-81101925, ORD-1A2B3C4D, PAY-9F8E7D6C.
+ * convention: PAY-9F8E7D6C. Orders and Invoices instead carry a persisted, human-readable
+ * business code ("DH000001" / "HD000001") straight from the backend — display those
+ * directly (order.code / invoice.code) rather than deriving a short code here.
  */
 
 /** First `length` hex characters of a UUID, dashes removed, upper-cased. */
 const shortId = (value: string, length = 8): string =>
   value.replace(/-/g, "").slice(0, length).toUpperCase();
-
-export const formatInvoiceCode = (id: string | null | undefined): string =>
-  id ? `INV-${shortId(id)}` : "—";
-
-export const formatOrderCode = (id: string | null | undefined): string =>
-  id ? `ORD-${shortId(id)}` : "—";
 
 export const formatPaymentCode = (id: string | null | undefined): string =>
   id ? `PAY-${shortId(id)}` : "—";

@@ -40,6 +40,7 @@ public class OrderMapper {
         
         return new OrderResponse(
                 order.getId(),
+                order.getCode(),
                 order.getTableId(),
                 tableName,
                 order.getStatus(),

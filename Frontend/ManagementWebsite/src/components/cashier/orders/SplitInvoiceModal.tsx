@@ -5,7 +5,6 @@ import type {
   SplitInvoiceRequest,
 } from "../../../services/invoiceApi";
 import { XIcon } from "./icons";
-import { formatInvoiceCode } from "../../../utils/displayCodes";
 
 /** Units to peel off each line into the new invoice. Keyed by allocationId. */
 type SplitQuantities = Record<string, number>;
@@ -202,7 +201,7 @@ export const SplitInvoiceModal = ({
               title={invoice.id}
             >
               Hóa đơn{" "}
-              <span className="font-mono">{formatInvoiceCode(invoice.id)}</span>
+              <span className="font-mono">{invoice.code}</span>
             </p>
           </div>
           <button

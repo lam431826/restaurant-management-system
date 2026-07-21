@@ -19,6 +19,9 @@ public class Invoice {
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
+    @Column(nullable = false, unique = true, length = 20, updatable = false)
+    private String code;
+
     @Column(name = "order_id", nullable = false)
     private String orderId;
 
