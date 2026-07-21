@@ -823,8 +823,6 @@ const CashierOrders = () => {
       }
     };
     void fetchAssistance();
-    const intv = setInterval(fetchAssistance, 3000);
-    return () => clearInterval(intv);
   }, []);
 
   // Real-time push races the poll above — an assistance request created/resolved
@@ -848,8 +846,6 @@ const CashierOrders = () => {
       }
     };
     void refresh();
-    const interval = setInterval(() => void refresh(), 10000);
-    return () => clearInterval(interval);
   }, [loadCashierState, refreshTrigger]);
 
   // Order/item status changes pushed over WS bump refreshTrigger, reusing the same
