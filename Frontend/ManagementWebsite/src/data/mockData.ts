@@ -445,7 +445,8 @@ export const reservationStatusMeta: Record<ReservationStatus, { label: string; c
 export interface Reservation {
   id: string;          // UUID từ backend
   code: string;        // Mã hiển thị (viết tắt từ id)
-  arriveTime: string;  // Giờ đến định dạng dd/MM/yyyy HH:mm
+  arriveTime: string;  // Giờ đến định dạng dd/MM/yyyy HH:mm (chỉ để hiển thị)
+  datetimeIso: string; // Giờ đến dạng ISO (LocalDateTime từ backend) — dùng để lọc/so sánh
   customer: string;    // Tên khách
   phone: string;       // Điện thoại
   guestEmail: string | null;

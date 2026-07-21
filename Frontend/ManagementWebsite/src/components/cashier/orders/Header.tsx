@@ -228,16 +228,6 @@ export const Header = ({
               <button
                 onClick={() => {
                   setOpen(false);
-                  navigate("/my-schedule");
-                }}
-                className="flex items-center gap-2 w-full px-4 py-2.5 text-[14px] text-[#202325] hover:bg-[#f5f5f5] transition-colors"
-              >
-                <SwitchScreenIcon />
-                Lịch làm việc của tôi
-              </button>
-              <button
-                onClick={() => {
-                  setOpen(false);
                   navigate("/my-profile");
                 }}
                 className="flex items-center gap-2 w-full px-4 py-2.5 text-[14px] text-[#202325] hover:bg-[#f5f5f5] transition-colors"

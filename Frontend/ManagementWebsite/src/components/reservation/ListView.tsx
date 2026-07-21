@@ -234,9 +234,17 @@ const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onNoShow, onCancel, onEd
 }
 
 /* ── Main component ───────────────────────────────────────────────────────── */
+// Local YYYY-MM-DD (not toISOString, which shifts to UTC and can land on the wrong day).
+const toDateInputValue = (d: Date) => {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onNoShow, onCancel, onAssignTable, onEdit }: Props) => {
   const [code, setCode] = useState('')
   const [timeMode, setTimeMode] = useState<'all' | 'other'>('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [statuses, setStatuses] = useState<Set<ReservationStatus>>(new Set(['PENDING', 'CONFIRMED']))
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [detail, setDetail] = useState<Reservation | null>(null)
@@ -251,12 +259,21 @@ const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onNoShow, o
 
   const filtered = useMemo(() => {
     const q = code.trim().toLowerCase()
+    // Compare by local calendar date (YYYY-MM-DD), not raw timestamp — a "from/to" range
+    // should include the entire to-day, not cut off at midnight.
+    const from = timeMode === 'other' && dateFrom ? dateFrom : null
+    const to = timeMode === 'other' && dateTo ? dateTo : null
     return reservations.filter(r => {
       if (!statuses.has(r.status)) return false
       if (q && !r.customer.toLowerCase().includes(q) && !r.phone.includes(q) && !r.id.toLowerCase().includes(q)) return false
+      if (from || to) {
+        const resDate = toDateInputValue(new Date(r.datetimeIso))
+        if (from && resDate < from) return false
+        if (to && resDate > to) return false
+      }
       return true
     })
-  }, [reservations, statuses, code])
+  }, [reservations, statuses, code, timeMode, dateFrom, dateTo])
 
   const totalGuests = filtered.reduce((s, r) => s + r.guests, 0)
 
@@ -301,11 +318,57 @@ const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onNoShow, o
             </label>
             <label className="flex items-center justify-between">
               <span className="kv-radio">
-                <input type="radio" name="res-time" checked={timeMode === 'other'} onChange={() => setTimeMode('other')} />
+                <input
+                  type="radio"
+                  name="res-time"
+                  checked={timeMode === 'other'}
+                  onChange={() => {
+                    setTimeMode('other')
+                    // Default to today so the range isn't empty the moment it's opened.
+                    if (!dateFrom && !dateTo) {
+                      const today = toDateInputValue(new Date())
+                      setDateFrom(today)
+                      setDateTo(today)
+                    }
+                  }}
+                />
                 <span className="kv-radio-dot" /><span className="kv-radio-text">Lựa chọn khác</span>
               </span>
               <CalendarIcon />
             </label>
+
+            {timeMode === 'other' && (
+              <div className="flex flex-col gap-2 pl-1 pt-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-ink-muted font-medium w-10 shrink-0">Từ</span>
+                  <input
+                    type="date"
+                    className={`${fieldCls} h-9`}
+                    value={dateFrom}
+                    max={dateTo || undefined}
+                    onChange={e => setDateFrom(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-ink-muted font-medium w-10 shrink-0">Đến</span>
+                  <input
+                    type="date"
+                    className={`${fieldCls} h-9`}
+                    value={dateTo}
+                    min={dateFrom || undefined}
+                    onChange={e => setDateTo(e.target.value)}
+                  />
+                </div>
+                {(dateFrom || dateTo) && (
+                  <button
+                    className="self-start text-xs text-primary hover:underline"
+                    onClick={() => { setDateFrom(''); setDateTo('') }}
+                  >
+                    Xóa khoảng ngày
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </Section>
 

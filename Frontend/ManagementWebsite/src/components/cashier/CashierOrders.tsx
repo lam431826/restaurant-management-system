@@ -2245,43 +2245,12 @@ const CashierOrders = () => {
 
       <div className="flex flex-1 gap-3 lg:gap-4 p-3 lg:p-4 overflow-hidden">
         <div className="flex flex-col flex-1 gap-2.5 min-w-0 overflow-hidden">
-          {tab === "table" && (
-            <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 min-h-[38px]">
-              <div className="flex gap-2 flex-wrap">
-                {areas.map((area) => (
-                  <button
-                    key={area}
-                    onClick={() => setActiveArea(area)}
-                    className={`px-4 py-1.5 rounded-[8px] border border-[#e8e8e8] text-[14px] transition-colors ${activeArea === area ? "bg-white text-[#37383a]" : "bg-[#f5f5f5] text-[#797b7c] hover:bg-white"}`}
-                  >
-                    {area === "all" ? "Tất cả khu vực" : area}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-5">
-                {TABLE_FILTERS.map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={() => setFilter(f.id)}
-                    className="flex items-center gap-2 text-[14px]"
-                  >
-                    <div
-                      className={`w-[18px] h-[18px] rounded-full border flex items-center justify-center shrink-0 ${tableFilter === f.id ? "border-[#025cca]" : "border-[#37383a]"}`}
-                    >
-                      {tableFilter === f.id && (
-                        <div className="w-2.5 h-2.5 rounded-full bg-[#025cca]" />
-                      )}
-                    </div>
-                    <span className="text-black">
-                      {f.label} ({tableCounts[f.id]})
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between shrink-0">
+          {/* Bug fix: items-center used to re-center the toggle against the right column's
+              height, which grows in "Phòng bàn" mode (search box + QR button) vs "Menu" mode
+              (search box only) — the toggle visibly jumped position between the two tabs.
+              items-start pins both to the row's top edge regardless of the right column's
+              height. */}
+          <div className="flex items-start justify-between shrink-0">
             <div className="flex h-[52px] rounded-[12px] overflow-hidden border-2 border-[#e8e8e8]">
               {(
                 [
@@ -2331,6 +2300,42 @@ const CashierOrders = () => {
               )}
             </div>
           </div>
+
+          {tab === "table" && (
+            <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 min-h-[38px]">
+              <div className="flex gap-2 flex-wrap">
+                {areas.map((area) => (
+                  <button
+                    key={area}
+                    onClick={() => setActiveArea(area)}
+                    className={`px-4 py-1.5 rounded-[8px] border border-[#e8e8e8] text-[14px] transition-colors ${activeArea === area ? "bg-white text-[#37383a]" : "bg-[#f5f5f5] text-[#797b7c] hover:bg-white"}`}
+                  >
+                    {area === "all" ? "Tất cả khu vực" : area}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-5">
+                {TABLE_FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => setFilter(f.id)}
+                    className="flex items-center gap-2 text-[14px]"
+                  >
+                    <div
+                      className={`w-[18px] h-[18px] rounded-full border flex items-center justify-center shrink-0 ${tableFilter === f.id ? "border-[#025cca]" : "border-[#37383a]"}`}
+                    >
+                      {tableFilter === f.id && (
+                        <div className="w-2.5 h-2.5 rounded-full bg-[#025cca]" />
+                      )}
+                    </div>
+                    <span className="text-black">
+                      {f.label} ({tableCounts[f.id]})
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center justify-between shrink-0">
             <h2 className="text-[24px] font-semibold text-[#202325]">
