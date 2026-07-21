@@ -13,7 +13,7 @@ const defaultRouteForRole = (role?: string) => {
 
 const MyProfile = () => {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, updateUser } = useAuth()
 
   const [profile, setProfile] = useState<MyEmployeeProfileDto | null>(null)
   const [name, setName] = useState('')
@@ -77,6 +77,10 @@ const MyProfile = () => {
         address: address.trim() || undefined,
       })
       setProfile(res.data.data)
+      // Bug fix: the saved name/phone/email were previously only reflected server-side
+      // (users + employees tables) — the cached session must be updated too, or the UI
+      // keeps showing stale data until the next login.
+      updateUser({ fullName: res.data.data.name })
       setSuccess('Đã lưu hồ sơ.')
     } catch (err: any) {
       const code = err.response?.data?.error

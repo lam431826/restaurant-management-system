@@ -19,6 +19,11 @@ const OCCUPYING_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN']
 // with the backend would let the dropdown mark a table "valid" that the server then rejects.
 const CONFLICT_WINDOW_MINUTES = 180
 
+// Mirrors ReservationServiceImpl.validateWalkInCooldown(): a table seated with a walk-in
+// (no reservation) can't be assigned to a new reservation until 90min dining + 30min cleanup
+// have elapsed since it was seated.
+const WALK_IN_COOLDOWN_MINUTES = 120
+
 const sameLocalDate = (iso: string, ymd: string) => {
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -125,6 +130,12 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
       )
       if (conflict) return { ok: false, reason: 'trùng khung giờ với đặt bàn khác' }
     }
+    if (t.occupiedSince) {
+      const cooldownEnd = new Date(t.occupiedSince).getTime() + WALK_IN_COOLDOWN_MINUTES * 60000
+      if (Date.now() < cooldownEnd) {
+        return { ok: false, reason: `khách vãng lai vừa ngồi, chờ đến ${fmtTime(new Date(cooldownEnd))}` }
+      }
+    }
     return { ok: true, reason: null }
   }
 
@@ -156,7 +167,14 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
   const liveWalkInBlock = isToday && selectedTable
     && (selectedTable.status === 'OCCUPIED' || selectedTable.status === 'BILLING')
     && !selectedTable.upcomingReservation
-    ? [{ key: 'walk-in-now', start: new Date(), end: null as Date | null, label: 'Khách vãng lai đang ngồi (không qua đặt trước)' }]
+    ? [{
+        key: 'walk-in-now',
+        start: selectedTable.occupiedSince ? new Date(selectedTable.occupiedSince) : new Date(),
+        end: selectedTable.occupiedSince
+          ? new Date(new Date(selectedTable.occupiedSince).getTime() + WALK_IN_COOLDOWN_MINUTES * 60000)
+          : null,
+        label: 'Khách vãng lai đang ngồi (không qua đặt trước)',
+      }]
     : []
 
   // Only the busy blocks are drawn; every gap between/around them is implicitly the open,

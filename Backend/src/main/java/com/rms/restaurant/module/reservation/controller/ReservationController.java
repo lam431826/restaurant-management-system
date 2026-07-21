@@ -23,7 +23,7 @@ public class ReservationController {
     private final ReservationService reservationService;
 
     // Staff tạo đặt bàn qua điện thoại → auto CONFIRMED
-    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER', 'MANAGER')")
     @PostMapping
     public ResponseEntity<ApiResponse<ReservationResponse>> create(
             @Valid @RequestBody CreateReservationRequest request) {
@@ -47,14 +47,14 @@ public class ReservationController {
     }
 
     // RM-01 (staff confirm sau khi gọi điện cho khách): PENDING → CONFIRMED
-    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER', 'MANAGER')")
     @PutMapping("/{id}/confirm")
     public ResponseEntity<ApiResponse<ReservationResponse>> confirm(@PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success(reservationService.confirm(id)));
     }
 
     // RM-02: Cập nhật thông tin reservation (tableId, partySize, datetime, note)
-    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER', 'MANAGER')")
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<ReservationResponse>> update(
             @PathVariable String id,
@@ -86,7 +86,7 @@ public class ReservationController {
     }
 
     // Chuyển bàn cho CHECKED_IN reservation
-    @PreAuthorize("hasAnyRole('WAITER', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER', 'MANAGER')")
     @PutMapping("/{id}/transfer-table")
     public ResponseEntity<ApiResponse<ReservationResponse>> transferTable(
             @PathVariable String id,

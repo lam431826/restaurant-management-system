@@ -5,5 +5,8 @@ public enum ReservationStatus {
     CONFIRMED,
     CHECKED_IN,
     NO_SHOW,
-    CANCELLED
+    CANCELLED,
+    /** The guest's stay is done — their order was closed/paid. Set by
+     * ReservationService.completeStayForTable(), never via the generic update() endpoint. */
+    COMPLETED
 }

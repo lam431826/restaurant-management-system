@@ -58,7 +58,9 @@ const TableCard = ({
         style={{ backgroundColor: seatColor }}
       >
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-2">
-          {table.status === "RESERVED" && table.upcomingReservation ? (
+          {/* Not gated on status === "RESERVED": a table also carries an upcomingReservation
+              once it frees back to AVAILABLE with a later same-day guest still CONFIRMED on it. */}
+          {table.upcomingReservation && !table.occupied ? (
             <>
               <p className="text-[11px] font-semibold text-blue-800 leading-tight truncate w-full text-center">
                 {table.upcomingReservation.guestName}

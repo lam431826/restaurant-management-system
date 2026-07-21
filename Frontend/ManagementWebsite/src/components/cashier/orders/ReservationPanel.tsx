@@ -27,6 +27,8 @@ export const ReservationPanel = ({
   onCancel,
   loading,
   error,
+  canSeatWalkIn,
+  onSeatWalkIn,
 }: {
   table: TableItem;
   onCheckIn: () => void;
@@ -34,6 +36,12 @@ export const ReservationPanel = ({
   onCancel: () => void;
   loading: boolean;
   error: string | null;
+  // True once the reservation is far enough out that a walk-in can safely use the table first
+  // (dining + cleanup window clears before the reservation is due) — see
+  // OrderServiceImpl.create()'s server-side check, which is the actual source of truth; this
+  // only decides whether to offer the button, the backend still validates on submit.
+  canSeatWalkIn?: boolean;
+  onSeatWalkIn?: () => void;
 }) => {
   const res = table.upcomingReservation;
 
@@ -104,6 +112,15 @@ export const ReservationPanel = ({
                 Hủy đặt bàn
               </button>
             </div>
+            {canSeatWalkIn && onSeatWalkIn && (
+              <button
+                disabled={loading}
+                onClick={onSeatWalkIn}
+                className="w-full h-11 rounded-[10px] bg-[#e85d04] text-white text-[13px] font-semibold hover:bg-[#dc2f02] active:bg-[#c02702] disabled:opacity-50 transition-colors shadow-sm"
+              >
+                Xếp khách vãng lai vào bàn này (còn hơn 2 giờ tới giờ đặt)
+              </button>
+            )}
           </div>
         </>
       )}

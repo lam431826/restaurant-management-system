@@ -23,6 +23,7 @@ interface Session {
 interface AuthContextType {
   user: AuthUser | null
   saveSession: (session: Session) => void
+  updateUser: (patch: Partial<AuthUser>) => void
   signOut: () => void
   isAuthenticated: boolean
 }
@@ -38,6 +39,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('refresh_token', refreshToken)
     localStorage.setItem('user', JSON.stringify(u))
     setUser(u)
+  }
+
+  // Bug fix: profile edits (e.g. /my-profile) previously only updated the server-side
+  // `employees`/`users` rows — the cached session here was left stale until the next login.
+  const updateUser = (patch: Partial<AuthUser>) => {
+    setUser(prev => {
+      if (!prev) return prev
+      const next = { ...prev, ...patch }
+      localStorage.setItem('user', JSON.stringify(next))
+      return next
+    })
   }
 
   const signOut = () => {
@@ -66,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user])
 
   return (
-    <AuthContext.Provider value={{ user, saveSession, signOut, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, saveSession, updateUser, signOut, isAuthenticated: !!user }}>
       {children}
     </AuthContext.Provider>
   )

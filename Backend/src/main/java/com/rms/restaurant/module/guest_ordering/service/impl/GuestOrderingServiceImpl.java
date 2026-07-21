@@ -20,7 +20,10 @@ import com.rms.restaurant.module.order.model.OrderItem;
 import com.rms.restaurant.module.order.repository.AssistanceRequestRepository;
 import com.rms.restaurant.module.order.repository.OrderItemRepository;
 import com.rms.restaurant.module.order.repository.OrderRepository;
+import com.rms.restaurant.common.utils.enums.ReservationStatus;
 import com.rms.restaurant.module.payment.repository.InvoiceRepository;
+import com.rms.restaurant.module.reservation.model.Reservation;
+import com.rms.restaurant.module.reservation.repository.ReservationRepository;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +49,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     private final AssistanceRequestRepository assistanceRequestRepository;
     private final OrderMapper orderMapper;
     private final InvoiceRepository invoiceRepository;
+    private final ReservationRepository reservationRepository;
     private final RealtimeEventPublisher realtimeEventPublisher;
 
     // ── GO-03: Khách quét QR → gọi món ──────────────────────────────────────
@@ -60,10 +64,21 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
             throw new ApplicationException(ApplicationError.TABLE_HAS_PENDING_ORDER);
         }
 
+        // If this table is already occupied by a checked-in reservation, link the order/invoice
+        // back to the guest who booked it (same as the staff order-create path).
+        Reservation activeReservation = reservationRepository
+                .findFirstByTableIdAndStatusOrderByDatetimeDesc(table.getId(), ReservationStatus.CHECKED_IN)
+                .orElse(null);
+
         Order order = new Order();
         order.setTableId(table.getId());
         order.setStatus(OrderStatus.PENDING);
         order.setNote(request.note());
+        if (activeReservation != null) {
+            order.setCustomerName(activeReservation.getGuestName());
+            order.setCustomerPhone(activeReservation.getPhone());
+            order.setCustomerEmail(activeReservation.getGuestEmail());
+        }
         order.setItems(new ArrayList<>());
 
         if (request.items() != null) {
@@ -84,9 +99,14 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
             });
         }
 
-        table.setStatus(TableStatus.OCCUPIED);
-        tableRepository.save(table);
-        realtimeEventPublisher.publishTableStatus(table);
+        // Table may already be OCCUPIED (checked-in reservation) — only flip status/stamp
+        // occupiedSince when this QR order is itself seating a fresh walk-in.
+        if (table.getStatus() == TableStatus.AVAILABLE) {
+            table.setStatus(TableStatus.OCCUPIED);
+            table.setOccupiedSince(java.time.LocalDateTime.now());
+            tableRepository.save(table);
+            realtimeEventPublisher.publishTableStatus(table);
+        }
 
         Order savedOrder = orderRepository.save(order);
         realtimeEventPublisher.publishOrderEvent("ORDER_CREATED", orderMapper.toResponse(savedOrder));

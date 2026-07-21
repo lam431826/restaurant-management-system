@@ -152,6 +152,10 @@ const Reservation = () => {
     }
   }, [])
 
+  const loadTables = useCallback(() => {
+    listTables().then(r => setTables(r.data.data)).catch(() => {})
+  }, [])
+
   const handleEdit = (id: string) => {
     const dto = dtos.find(d => d.id === id)
     if (dto) setEditingDto(dto)
@@ -159,18 +163,21 @@ const Reservation = () => {
 
   useEffect(() => { load() }, [load])
 
-  useEffect(() => {
-    listTables().then(r => setTables(r.data.data)).catch(() => {})
-  }, [])
+  useEffect(() => { loadTables() }, [loadTables])
 
-  // Live push on new bookings (online or staff-created) — refresh the list immediately instead
-  // of waiting for a manual reload, and surface online (PENDING) requests in the bell as they
-  // need staff review.
+  // Live push for reservation changes — new bookings (online or staff-created) AND status
+  // changes (confirm/check-in/no-show/cancel, or the automatic CHECKED_IN→COMPLETED once a
+  // table's order closes). Previously only 'CREATED' refreshed the list, so a status change
+  // made elsewhere (another waiter/cashier, or the BR-04 no-show cron) never showed up here
+  // without a manual page reload. Table statuses move in lockstep with reservation status
+  // (check-in/cancel/no-show/complete all flip a table too), so refresh both together — this
+  // keeps the "Xếp bàn" table-assignment dropdown from showing stale availability as well.
   useRealtime('/topic/reservations', (body) => {
     const evt = body as { eventType?: string; reservation?: ReservationDto } | null
-    if (evt?.eventType !== 'CREATED' || !evt.reservation) return
+    if (!evt?.eventType || !evt.reservation) return
     load()
-    if (evt.reservation.status === 'PENDING') {
+    loadTables()
+    if (evt.eventType === 'CREATED' && evt.reservation.status === 'PENDING') {
       setNewReservations(prev => [evt.reservation as ReservationDto, ...prev].slice(0, 20))
       showToast(`Có yêu cầu đặt bàn mới: ${evt.reservation.guestName} — ${evt.reservation.partySize} khách`, 'info', 6000)
     }
