@@ -337,12 +337,7 @@ const AttendanceSettingsView = ({ onOpenShiftList, shiftCount, settings, commit,
       <Block title="Thiết lập ca làm việc" desc="Quản lý các ca làm việc của cửa hàng"
         right={<button onClick={onOpenShiftList} className="flex items-center gap-1 text-md text-ink hover:text-primary cursor-pointer">{shiftCount} ca làm việc <ChevronRight /></button>} />
 
-      <Block title="Số giờ của ngày công chuẩn" desc="Thiết lập số giờ tính 1 công hay 0,5 công của loại lương Theo ngày công chuẩn (BR-AT-08)">
-        <div className="flex items-center gap-3">
-          <span className="text-md text-ink">Số giờ của 1 ngày công chuẩn là</span>
-          <TimePopover minutes={settings.standardWorkdayMinutes} onChange={v => set('standardWorkdayMinutes', v)} />
-          <InfoIcon />
-        </div>
+      <Block title="Tính nửa công" desc="Thiết lập nửa công khi thời gian làm việc trong khoảng quy định (BR-AT-08)">
         <CheckLabel checked={settings.halfDayEnabled} onChange={v => set('halfDayEnabled', v)}>
           <span className="text-md text-ink">Tính nửa công khi thời gian làm việc</span>
           <InfoIcon />

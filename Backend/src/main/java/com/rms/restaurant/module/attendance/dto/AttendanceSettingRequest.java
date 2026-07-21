@@ -5,7 +5,6 @@ import jakarta.validation.constraints.NotNull;
 
 /** UC-AT-05: full settings snapshot — the UI always saves the whole form. */
 public record AttendanceSettingRequest(
-        int standardWorkdayMinutes,
         boolean halfDayEnabled,
         int halfDayMinMinutes,
         int halfDayMaxMinutes,

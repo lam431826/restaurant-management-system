@@ -314,7 +314,7 @@ public class ReportServiceImpl implements ReportService {
 
         return new EndOfDaySalesRow(
                 invoice.getId(),
-                invoice.getId(),
+                invoice.getCode(),
                 invoice.getCreatedAt(),
                 table != null ? table.getName() : null,
                 table != null ? table.getArea() : null,

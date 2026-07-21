@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { BRANCHES } from '../../data/endOfDayReportMockData'
 import { PAYMENT_METHOD_ABBR } from '../../api/reports'
 import type { EndOfDaySalesRow, ReportPaymentMethod } from '../../api/reports'
@@ -167,6 +168,7 @@ const exportCsv = (rows: EndOfDaySalesRow[], filters: EndOfDayFilterState) => {
 const td = (align: 'left' | 'right', extra = '') => `px-2 py-2 text-sm text-ink ${align === 'right' ? 'text-right' : 'text-left'} ${extra}`
 
 const EndOfDayPreview = ({ rows, filters, generatedAt, loading, error, onRefresh }: Props) => {
+  const navigate = useNavigate()
   const [zoom, setZoom] = useState(90)
   const [fullscreen, setFullscreen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -339,7 +341,16 @@ const EndOfDayPreview = ({ rows, filters, generatedAt, loading, error, onRefresh
                           {/* exploded invoice line — every filterable field as its own column */}
                           {!collapsed && (
                             <tr className="border-b border-line">
-                              <td className={td('left')}><span className="text-primary">{r.code}</span></td>
+                              <td className={td('left')}>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/manager/invoices?invoiceId=${r.id}`)}
+                                  title="Xem hóa đơn trong Giao dịch"
+                                  className="text-primary font-mono hover:underline cursor-pointer"
+                                >
+                                  {r.code}
+                                </button>
+                              </td>
                               <td className={td('left')}>{r.tableName ?? '—'}</td>
                               <td className={td('left')}>{r.staffName ?? '—'}</td>
                               <td className={td('left')}>{fmtTime(r.time)}</td>

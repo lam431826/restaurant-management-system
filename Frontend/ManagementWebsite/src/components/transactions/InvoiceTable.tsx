@@ -15,7 +15,6 @@ import {
   isActiveInvoice,
 } from "./invoiceLifecycle";
 import type { InvoiceViewTab } from "./invoiceLifecycle";
-import { formatInvoiceCode, formatOrderCode } from "../../utils/displayCodes";
 
 interface Props {
   invoices: InvoiceSummary[];
@@ -145,6 +144,10 @@ const InvoiceTable = ({
     { subtotal: 0, discount: 0, total: 0 },
   );
 
+  // Counted strictly by lifecycle status so the numbers always describe exactly the rows
+  // this tab is showing. An ACTIVE invoice carrying splitFromInvoiceId is a split *child*:
+  // it is still payable, lives in the operational tab, and must never be counted here —
+  // otherwise the counter would claim history records the table cannot show.
   const splitCount = invoices.filter(
     (invoice) => invoice.status === "SPLIT",
   ).length;
@@ -186,29 +189,44 @@ const InvoiceTable = ({
         </div>
       )}
 
-      {!loading && invoices.length > 0 && isHistory && (
-        <div className="grid grid-cols-3 gap-x-6 gap-y-3 px-4 py-3 bg-primary-25 border-b border-line shrink-0">
+      {/* Rendered even when the history dataset is empty, so the counters always describe
+          the rows on screen. Hiding the block at zero made an empty history view look
+          broken rather than simply empty.
+          "Đã tách" only appears when a legacy SPLIT row actually exists — with the
+          partial-quantity split contract, new splits never produce one, so showing an
+          always-present "Đã tách: 0" card would look like a normal, currently-empty
+          history category rather than "this category doesn't apply anymore". */}
+      {!loading && isHistory && (
+        <div
+          className={`grid ${splitCount > 0 ? "grid-cols-3" : "grid-cols-2"} gap-x-6 gap-y-3 px-4 py-3 bg-primary-25 border-b border-line shrink-0`}
+        >
           <div>
             <div className="text-sm text-ink-muted">Bản ghi lịch sử</div>
             <div className="text-lg font-semibold text-ink mt-0.5">
               {invoices.length}
             </div>
           </div>
-          <div>
-            <div className="text-sm text-ink-muted">Đã tách</div>
-            <div className="text-lg font-semibold text-ink mt-0.5">
-              {splitCount}
+          {splitCount > 0 && (
+            <div>
+              <div className="text-sm text-ink-muted">Đã tách</div>
+              <div className="text-lg font-semibold text-ink mt-0.5">
+                {splitCount}
+              </div>
             </div>
-          </div>
+          )}
           <div>
             <div className="text-sm text-ink-muted">Đã gộp</div>
             <div className="text-lg font-semibold text-ink mt-0.5">
               {mergedCount}
             </div>
           </div>
-          <div className="col-span-3 text-sm text-ink-muted">
+          <div
+            className={`${splitCount > 0 ? "col-span-3" : "col-span-2"} text-sm text-ink-muted`}
+          >
             Hóa đơn lịch sử đã được chuyển tiếp sang hóa đơn khác. Giá trị của
-            chúng không được cộng vào doanh thu hay công nợ.
+            chúng không được cộng vào doanh thu hay công nợ. Hóa đơn tách theo số
+            lượng vẫn còn thanh toán được nên nằm ở tab "Đang hiệu lực", không
+            tính vào đây.
           </div>
         </div>
       )}
@@ -242,13 +260,13 @@ const InvoiceTable = ({
                         className={`${td} font-medium font-mono whitespace-nowrap ${isOpen ? "text-primary" : ""}`}
                         title={invoice.id}
                       >
-                        {formatInvoiceCode(invoice.id)}
+                        {invoice.code}
                       </td>
                       <td
                         className={`${td} font-mono whitespace-nowrap text-ink-subtle`}
                         title={invoice.orderId}
                       >
-                        {formatOrderCode(invoice.orderId)}
+                        {invoice.orderCode}
                       </td>
                       <td className={td}>
                         {formatDateTime(invoice.createdAt)}
@@ -325,7 +343,7 @@ const InvoiceTable = ({
                   colSpan={8}
                 >
                   {isHistory
-                    ? "Chưa có hóa đơn lịch sử nào"
+                    ? "Chưa có hóa đơn lịch sử nào. Hóa đơn tách theo số lượng vẫn đang hiệu lực và hiển thị ở tab \"Đang hiệu lực\"."
                     : "Không tìm thấy hóa đơn nào"}
                 </td>
               </tr>

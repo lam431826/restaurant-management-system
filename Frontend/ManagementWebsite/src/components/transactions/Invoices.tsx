@@ -70,6 +70,10 @@ const Invoices = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshVersion, setRefreshVersion] = useState(0);
+  // Sticky: once a legacy SPLIT row is confirmed to exist, the "Đã tách" filter stays
+  // offered even if the user then narrows to a scope (e.g. "Đã gộp") that no longer
+  // includes it. Never reset to false — that would just make the option flicker.
+  const [hasSplitHistory, setHasSplitHistory] = useState(false);
   const requestRef = useRef(0);
 
   const loadInvoices = useCallback(
@@ -91,6 +95,9 @@ const Invoices = () => {
         // Ignore a response that a newer tab/filter request has already superseded.
         if (requestId !== requestRef.current) return;
         setInvoices(result);
+        if (result.some((invoice) => invoice.status === "SPLIT")) {
+          setHasSplitHistory(true);
+        }
       } catch (loadError) {
         if (requestId !== requestRef.current) return;
         setError(getInvoiceListErrorMessage(loadError));
@@ -128,6 +135,7 @@ const Invoices = () => {
           initialState={initialFilters}
           tab={tab}
           onApply={setFilters}
+          hasSplitHistory={hasSplitHistory}
         />
       </aside>
 

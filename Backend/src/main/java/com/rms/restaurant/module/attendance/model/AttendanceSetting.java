@@ -26,10 +26,6 @@ public class AttendanceSetting {
     private String id;
 
     @Builder.Default
-    @Column(name = "standard_workday_minutes", nullable = false)
-    private int standardWorkdayMinutes = 480;
-
-    @Builder.Default
     @Column(name = "half_day_enabled", nullable = false)
     private boolean halfDayEnabled = false;
 

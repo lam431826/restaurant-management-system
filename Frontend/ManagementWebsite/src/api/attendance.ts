@@ -85,7 +85,6 @@ export interface TimesheetCellDto {
 }
 
 export interface AttendanceSettingsDto {
-  standardWorkdayMinutes: number
   halfDayEnabled: boolean
   halfDayMinMinutes: number
   halfDayMaxMinutes: number

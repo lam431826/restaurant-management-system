@@ -4,7 +4,9 @@ export type InvoiceStatus = 'ACTIVE' | 'MERGED' | 'SPLIT'
 
 export interface InvoiceSummary {
   id: string
+  code: string
   orderId: string
+  orderCode: string
   subtotal: number
   discountAmount: number
   totalAmount: number
@@ -13,7 +15,9 @@ export interface InvoiceSummary {
   createdAt: string
   status: InvoiceStatus
   mergedIntoInvoiceId: string | null
+  mergedIntoInvoiceCode: string | null
   splitFromInvoiceId: string | null
+  splitFromInvoiceCode: string | null
 }
 
 export interface InvoiceItem {
@@ -31,11 +35,14 @@ export interface InvoiceDetail extends InvoiceSummary {
   promotionCode: string | null
   items: InvoiceItem[]
   splitChildInvoiceIds: string[]
+  splitChildInvoiceCodes: string[]
   mergedSourceInvoiceIds: string[]
+  mergedSourceInvoiceCodes: string[]
 }
 
 export interface InvoiceMutationResponse {
   id: string
+  code: string
   orderId: string
   subtotal: number
   discountAmount: number
@@ -47,16 +54,27 @@ export interface InvoiceMutationResponse {
   splitFromInvoiceId: string | null
 }
 
-export interface SplitInvoiceGroupRequest {
-  allocationIds: string[]
+/** Take `quantity` units off the source allocation. Whole units only. */
+export interface SplitInvoiceItemRequest {
+  allocationId: string
+  quantity: number
 }
 
+export interface SplitInvoiceGroupRequest {
+  items: SplitInvoiceItemRequest[]
+}
+
+/**
+ * Each group becomes one new child invoice peeled off the source. The source keeps whatever
+ * is not listed here and must retain at least one unit, so one group is a valid split.
+ */
 export interface SplitInvoiceRequest {
   groups: SplitInvoiceGroupRequest[]
 }
 
 export interface SplitInvoiceChildResponse {
   invoiceId: string
+  invoiceCode: string
   subtotal: number
   totalAmount: number
   sourceAllocationIds: string[]
@@ -65,6 +83,7 @@ export interface SplitInvoiceChildResponse {
 
 export interface SplitInvoiceResponse {
   sourceInvoiceId: string
+  sourceInvoiceCode: string
   sourceStatus: InvoiceStatus
   sourceSubtotal: number
   sourceTotal: number

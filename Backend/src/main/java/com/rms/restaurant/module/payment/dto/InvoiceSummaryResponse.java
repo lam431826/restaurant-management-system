@@ -7,7 +7,9 @@ import java.time.LocalDateTime;
 
 public record InvoiceSummaryResponse(
         String id,
+        String code,
         String orderId,
+        String orderCode,
         BigDecimal subtotal,
         BigDecimal discountAmount,
         BigDecimal totalAmount,
@@ -16,5 +18,7 @@ public record InvoiceSummaryResponse(
         LocalDateTime createdAt,
         InvoiceStatus status,
         String mergedIntoInvoiceId,
-        String splitFromInvoiceId
+        String mergedIntoInvoiceCode,
+        String splitFromInvoiceId,
+        String splitFromInvoiceCode
 ) {}

@@ -6,6 +6,7 @@ import java.util.Objects;
 
 public record SplitInvoiceChildResponse(
         String invoiceId,
+        String invoiceCode,
         BigDecimal subtotal,
         BigDecimal totalAmount,
         List<String> sourceAllocationIds,
@@ -13,6 +14,7 @@ public record SplitInvoiceChildResponse(
 ) {
     public SplitInvoiceChildResponse {
         Objects.requireNonNull(invoiceId);
+        Objects.requireNonNull(invoiceCode);
         Objects.requireNonNull(subtotal);
         Objects.requireNonNull(totalAmount);
         sourceAllocationIds = List.copyOf(sourceAllocationIds);

@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.payment.service.impl;
 
+import com.rms.restaurant.common.codegen.BusinessCodeGenerator;
 import com.rms.restaurant.common.utils.enums.CookingStatus;
 import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
@@ -87,10 +88,16 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final AuditService auditService;
     private final NotificationDispatcher notificationDispatcher;
     private final GmailService gmailService;
+    private final BusinessCodeGenerator businessCodeGenerator;
+
+    // A business code typed into a free-text search field ("DH000123"), case-insensitive.
+    private static final java.util.regex.Pattern ORDER_CODE_PATTERN =
+            java.util.regex.Pattern.compile("^DH\\d+$", java.util.regex.Pattern.CASE_INSENSITIVE);
 
     @Override
     @Transactional(readOnly = true)
     public List<InvoiceSummaryResponse> getAll(Boolean paid, String orderId, List<InvoiceStatus> statuses) {
+        orderId = resolveOrderIdFilter(orderId);
         boolean hasOrderId = orderId != null && !orderId.isBlank();
         // No lifecycle filter means "every status", preserving the existing contract for
         // the Cashier order view, which resolves ACTIVE/SPLIT/MERGED state itself.
@@ -113,12 +120,43 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
 
         resolveAllocationLines(invoices);
+        Map<String, String> lineageCodesById = resolveLineageCodes(invoices);
+        Map<String, String> orderCodesByOrderId = resolveOrderCodes(invoices);
 
         List<InvoiceSummaryResponse> responses = new ArrayList<>();
         for (Invoice invoice : invoices) {
-            responses.add(invoiceMapper.toSummaryResponse(invoice));
+            responses.add(invoiceMapper.toSummaryResponse(invoice, lineageCodesById, orderCodesByOrderId));
         }
         return responses;
+    }
+
+    /** Batch-resolves codes for every invoice referenced via mergedIntoInvoiceId/splitFromInvoiceId. */
+    private Map<String, String> resolveLineageCodes(List<Invoice> invoices) {
+        Set<String> referencedIds = new LinkedHashSet<>();
+        for (Invoice invoice : invoices) {
+            if (invoice.getMergedIntoInvoiceId() != null) referencedIds.add(invoice.getMergedIntoInvoiceId());
+            if (invoice.getSplitFromInvoiceId() != null) referencedIds.add(invoice.getSplitFromInvoiceId());
+        }
+        // Map.of() rejects a null key on get(), and mergedIntoInvoiceId/splitFromInvoiceId
+        // are null for most invoices — a plain LinkedHashMap tolerates that lookup and
+        // just returns null, which is exactly the "no lineage code" case callers expect.
+        if (referencedIds.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        return invoiceRepository.findAllById(referencedIds).stream()
+                .collect(Collectors.toMap(Invoice::getId, Invoice::getCode));
+    }
+
+    /** Batch-resolves the owning order's code for every invoice, keyed by orderId. */
+    private Map<String, String> resolveOrderCodes(List<Invoice> invoices) {
+        Set<String> orderIds = invoices.stream()
+                .map(Invoice::getOrderId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (orderIds.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        return orderRepository.findAllById(orderIds).stream()
+                .collect(Collectors.toMap(Order::getId, Order::getCode));
     }
 
     @Override
@@ -153,6 +191,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         validateInvoiceTotal(totalAmount);
 
         Invoice invoice = Invoice.builder()
+                .code(businessCodeGenerator.nextInvoiceCode())
                 .orderId(orderId)
                 .subtotal(subtotal)
                 .discountAmount(discountAmount)
@@ -271,9 +310,21 @@ public class InvoiceServiceImpl implements InvoiceService {
                     .orElse(null);
         }
 
+        List<Invoice> splitChildren = loadSplitChildren(invoice);
+        List<Invoice> mergedSources = loadMergedSources(invoice);
+        String mergedIntoInvoiceCode = invoice.getMergedIntoInvoiceId() == null
+                ? null
+                : invoiceRepository.findById(invoice.getMergedIntoInvoiceId()).map(Invoice::getCode).orElse(null);
+        String splitFromInvoiceCode = invoice.getSplitFromInvoiceId() == null
+                ? null
+                : invoiceRepository.findById(invoice.getSplitFromInvoiceId()).map(Invoice::getCode).orElse(null);
+        String orderCode = orderRepository.findById(invoice.getOrderId()).map(Order::getCode).orElse(null);
+
         return new InvoiceDetailResponse(
                 invoice.getId(),
+                invoice.getCode(),
                 invoice.getOrderId(),
+                orderCode,
                 invoice.getSubtotal(),
                 invoice.getDiscountAmount(),
                 invoice.getTotalAmount(),
@@ -284,32 +335,30 @@ public class InvoiceServiceImpl implements InvoiceService {
                 items,
                 invoice.getStatus(),
                 invoice.getMergedIntoInvoiceId(),
+                mergedIntoInvoiceCode,
                 invoice.getSplitFromInvoiceId(),
-                resolveSplitChildInvoiceIds(invoice),
-                resolveMergedSourceInvoiceIds(invoice)
+                splitFromInvoiceCode,
+                splitChildren.stream().map(Invoice::getId).toList(),
+                splitChildren.stream().map(Invoice::getCode).toList(),
+                mergedSources.stream().map(Invoice::getId).toList(),
+                mergedSources.stream().map(Invoice::getCode).toList()
         );
     }
 
     /** Children created when this invoice was split. Only queried for a SPLIT source. */
-    private List<String> resolveSplitChildInvoiceIds(Invoice invoice) {
+    private List<Invoice> loadSplitChildren(Invoice invoice) {
         if (invoice.getStatus() != InvoiceStatus.SPLIT) {
             return List.of();
         }
-        return invoiceRepository.findBySplitFromInvoiceIdOrderByCreatedAtAscIdAsc(invoice.getId())
-                .stream()
-                .map(Invoice::getId)
-                .toList();
+        return invoiceRepository.findBySplitFromInvoiceIdOrderByCreatedAtAscIdAsc(invoice.getId());
     }
 
     /** Sources merged into this invoice. Only queried for an ACTIVE merge target. */
-    private List<String> resolveMergedSourceInvoiceIds(Invoice invoice) {
+    private List<Invoice> loadMergedSources(Invoice invoice) {
         if (invoice.getStatus() != InvoiceStatus.ACTIVE) {
             return List.of();
         }
-        return invoiceRepository.findByMergedIntoInvoiceIdOrderByCreatedAtAscIdAsc(invoice.getId())
-                .stream()
-                .map(Invoice::getId)
-                .toList();
+        return invoiceRepository.findByMergedIntoInvoiceIdOrderByCreatedAtAscIdAsc(invoice.getId());
     }
 
     @Override
@@ -318,6 +367,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         List<SplitInvoiceChildResponse> children = result.children().stream()
                 .map(child -> new SplitInvoiceChildResponse(
                         child.childInvoiceId(),
+                        child.childInvoiceCode(),
                         child.subtotal(),
                         child.totalAmount(),
                         child.sourceAllocationIds(),
@@ -327,6 +377,7 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         return new SplitInvoiceResponse(
                 result.sourceInvoiceId(),
+                result.sourceInvoiceCode(),
                 result.sourceStatus(),
                 result.sourceSubtotal(),
                 result.sourceTotal(),
@@ -341,7 +392,9 @@ public class InvoiceServiceImpl implements InvoiceService {
         PersistedInvoiceMergeResult result = invoiceMergePersistenceService.mergeAtomically(plan);
         InvoiceSummaryResponse targetInvoice = new InvoiceSummaryResponse(
                 result.targetInvoiceId(),
+                result.targetInvoiceCode(),
                 result.orderId(),
+                result.orderCode(),
                 result.targetSubtotal(),
                 result.targetDiscountAmount(),
                 result.targetTotalAmount(),
@@ -350,7 +403,10 @@ public class InvoiceServiceImpl implements InvoiceService {
                 result.targetCreatedAt(),
                 result.targetStatus(),
                 result.targetMergedIntoInvoiceId(),
-                result.targetSplitFromInvoiceId()
+                // A freshly created merge target has no lineage of its own yet.
+                null,
+                result.targetSplitFromInvoiceId(),
+                null
         );
         return new MergeInvoiceResponse(
                 result.orderId(),
@@ -407,8 +463,8 @@ public class InvoiceServiceImpl implements InvoiceService {
         Map<String, Object> vars = new LinkedHashMap<>();
         vars.put("guestName", order.getCustomerName());
         vars.put("customerPhone", order.getCustomerPhone());
-        vars.put("invoiceId", invoice.getId());
-        vars.put("orderId", invoice.getOrderId());
+        vars.put("invoiceId", invoice.getCode());
+        vars.put("orderId", order.getCode());
         vars.put("tableName", tableName);
         vars.put("items", emailLines);
         vars.put("subtotal", invoice.getSubtotal());
@@ -469,7 +525,7 @@ public class InvoiceServiceImpl implements InvoiceService {
             String status = latest != null ? latest.getStatus() : (inv.isPaid() ? "PAID" : "PENDING");
 
             result.add(new InvoiceListItem(
-                    inv.getId(), inv.getCreatedAt(), tableName,
+                    inv.getId(), inv.getCode(), inv.getCreatedAt(), tableName,
                     inv.getSubtotal(), inv.getDiscountAmount(), inv.getTotalAmount(),
                     inv.isPaid(), method, status, note, cashierName, itemsText,
                     inv.getStatus(), inv.getMergedIntoInvoiceId(), inv.getSplitFromInvoiceId()));
@@ -506,7 +562,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .collect(Collectors.toList());
 
         return new InvoiceDetailItem(
-                inv.getId(), inv.getOrderId(), inv.getCreatedAt(), tableName,
+                inv.getId(), inv.getCode(), inv.getOrderId(), inv.getCreatedAt(), tableName,
                 inv.getSubtotal(), inv.getDiscountAmount(), inv.getTotalAmount(), inv.isPaid(),
                 lines, payments, inv.getStatus(), inv.getMergedIntoInvoiceId(), inv.getSplitFromInvoiceId());
     }
@@ -861,6 +917,28 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     private String normalizeCode(String promotionCode) {
         return promotionCode.trim().toUpperCase();
+    }
+
+    /**
+     * The "Mã đơn hàng" filter accepts either the raw order UUID (existing behavior, used
+     * programmatically e.g. from the Cashier screen) or a persisted business code typed by
+     * hand ("DH000123"). A code is resolved to its UUID before the existing exact-match
+     * repository queries run; an unknown code intentionally resolves to a value that
+     * matches nothing rather than throwing, consistent with "no results" for a search.
+     */
+    private String resolveOrderIdFilter(String orderId) {
+        if (orderId == null || orderId.isBlank()) {
+            return orderId;
+        }
+        String trimmed = orderId.trim();
+        if (!ORDER_CODE_PATTERN.matcher(trimmed).matches()) {
+            return trimmed;
+        }
+        // An unknown code intentionally resolves to a sentinel that cannot match any real
+        // order id, so the result is "no invoices" rather than "every invoice".
+        return orderRepository.findByCode(trimmed.toUpperCase())
+                .map(Order::getId)
+                .orElse("00000000-0000-0000-0000-000000000000");
     }
 
     private record LockedDiscountContext(Order order, Invoice invoice) {}

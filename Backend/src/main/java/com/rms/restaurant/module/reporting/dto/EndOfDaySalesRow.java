@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
  */
 public record EndOfDaySalesRow(
         String id,
-        String code, // no separate human-readable invoice code exists in this domain — same as id
+        String code, // invoice.code, e.g. "HD000001" — the persisted human-readable business code
         LocalDateTime time,
         String tableName,
         String areaName,
