@@ -42,6 +42,7 @@ public class InvoiceMergePersistenceService {
     private final InvoiceRepository invoiceRepository;
     private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
     private final PaymentRepository paymentRepository;
+    private final InvoiceAllocationQuantityGuard quantityGuard;
     private final EntityManager entityManager;
 
     @Transactional
@@ -112,6 +113,7 @@ public class InvoiceMergePersistenceService {
                 allocationSnapshots,
                 financials
         );
+        quantityGuard.assertNotOverAllocated(orderItems);
 
         return new PersistedInvoiceMergeResult(
                 plan.orderId(),
@@ -251,6 +253,21 @@ public class InvoiceMergePersistenceService {
             throw invalidAllocationData();
         }
 
+        // Replaces the old per-allocation equality: the units the sources collectively bill for
+        // an order item may never exceed the units actually ordered.
+        Map<String, Integer> quantityByOrderItemId = new LinkedHashMap<>();
+        for (InvoiceItemAllocation allocation : sourceAllocations) {
+            quantityByOrderItemId.merge(
+                    allocation.getOrderItemId(), allocation.getAllocatedQuantity(), Integer::sum
+            );
+        }
+        for (Map.Entry<String, Integer> entry : quantityByOrderItemId.entrySet()) {
+            OrderItem orderItem = orderItemById.get(entry.getKey());
+            if (orderItem == null || entry.getValue() > orderItem.getQuantity()) {
+                throw invalidAllocationData();
+            }
+        }
+
         BigDecimal sourceSubtotalSum = BigDecimal.ZERO;
         BigDecimal sourceTotalSum = BigDecimal.ZERO;
         for (Invoice sourceInvoice : sourceInvoices) {
@@ -290,7 +307,6 @@ public class InvoiceMergePersistenceService {
                 || !allocation.isActive()
                 || allocation.getOrderItemId() == null
                 || allocation.getOrderItemId().isBlank()
-                || !allocatedOrderItemIds.add(allocation.getOrderItemId())
                 || allocation.getAllocatedQuantity() <= 0
                 || allocation.getUnitPriceSnapshot() == null
                 || allocation.getUnitPriceSnapshot().compareTo(BigDecimal.ZERO) <= 0
@@ -299,13 +315,22 @@ public class InvoiceMergePersistenceService {
             throw invalidAllocationData();
         }
 
+        // Partial-quantity split means the same order item can legitimately arrive from more
+        // than one source invoice (a source that kept 2 units and its child that took 1).
+        // Those parts are combined into a single target allocation, so we only record which
+        // order items were seen rather than rejecting a repeat.
+        allocatedOrderItemIds.add(allocation.getOrderItemId());
+
         OrderItem orderItem = orderItemById.get(allocation.getOrderItemId());
         if (orderItem == null
                 || orderItem.getOrder() == null
                 || orderItem.getOrder().getId() == null
                 || !owningOrder.getId().equals(orderItem.getOrder().getId())
                 || orderItem.getQuantity() <= 0
-                || orderItem.getQuantity() != allocation.getAllocatedQuantity()
+                // A partially split allocation legitimately carries fewer units than the order
+                // item holds, so this is a bound rather than an equality. The exact total is
+                // checked per order item once all source allocations have been summed.
+                || allocation.getAllocatedQuantity() > orderItem.getQuantity()
                 || !isPayable(orderItem.getCookingStatus())) {
             throw invalidAllocationData();
         }
@@ -337,17 +362,35 @@ public class InvoiceMergePersistenceService {
             Invoice targetInvoice,
             List<InvoiceItemAllocation> sourceAllocations
     ) {
-        List<InvoiceItemAllocation> targetAllocations = new ArrayList<>();
+        // Since partial-quantity split exists, two merge sources can each hold part of the
+        // same order item (a source that kept 2 and its child that took 1). They must combine
+        // into a single target row: uq_iia_active_invoice_order_item allows only one active
+        // allocation per order item within an invoice, and two rows would also misrepresent
+        // the line. Quantities are summed; the unit price must agree across the parts.
+        Map<String, InvoiceItemAllocation> targetByOrderItemId = new LinkedHashMap<>();
         for (InvoiceItemAllocation sourceAllocation : sourceAllocations) {
-            targetAllocations.add(InvoiceItemAllocation.builder()
-                    .invoiceId(targetInvoice.getId())
-                    .orderItemId(sourceAllocation.getOrderItemId())
-                    .allocatedQuantity(sourceAllocation.getAllocatedQuantity())
-                    .unitPriceSnapshot(sourceAllocation.getUnitPriceSnapshot())
-                    .active(true)
-                    .build());
+            InvoiceItemAllocation existing = targetByOrderItemId.get(sourceAllocation.getOrderItemId());
+            if (existing == null) {
+                targetByOrderItemId.put(sourceAllocation.getOrderItemId(), InvoiceItemAllocation.builder()
+                        .invoiceId(targetInvoice.getId())
+                        .orderItemId(sourceAllocation.getOrderItemId())
+                        .allocatedQuantity(sourceAllocation.getAllocatedQuantity())
+                        .unitPriceSnapshot(sourceAllocation.getUnitPriceSnapshot())
+                        .active(true)
+                        .build());
+                continue;
+            }
+            if (existing.getUnitPriceSnapshot() == null
+                    || sourceAllocation.getUnitPriceSnapshot() == null
+                    || existing.getUnitPriceSnapshot()
+                            .compareTo(sourceAllocation.getUnitPriceSnapshot()) != 0) {
+                throw invalidAllocationData();
+            }
+            existing.setAllocatedQuantity(
+                    existing.getAllocatedQuantity() + sourceAllocation.getAllocatedQuantity()
+            );
         }
-        return targetAllocations;
+        return new ArrayList<>(targetByOrderItemId.values());
     }
 
     private void validateFinalState(
@@ -362,8 +405,14 @@ public class InvoiceMergePersistenceService {
             MergeFinancials financials
     ) {
         validateTargetInvoice(plan, owningOrder, targetInvoice, financials);
+        // Target rows are one per distinct order item, not one per source allocation: parts of
+        // the same item coming from different sources are combined into a single target row.
+        long distinctOrderItemCount = sourceAllocations.stream()
+                .map(InvoiceItemAllocation::getOrderItemId)
+                .distinct()
+                .count();
         if (sourceInvoices.size() != plan.sourceInvoiceIds().size()
-                || sourceAllocations.size() != targetAllocations.size()
+                || targetAllocations.size() != distinctOrderItemCount
                 || invoiceSnapshots.size() != sourceInvoices.size()
                 || allocationSnapshots.size() != sourceAllocations.size()) {
             throw invalidAllocationData();
@@ -404,6 +453,9 @@ public class InvoiceMergePersistenceService {
             );
         }
 
+        // Quantity conservation per order item: the units the sources gave up must equal the
+        // units the combined target row now carries.
+        Map<String, Integer> expectedQuantityByOrderItemId = new LinkedHashMap<>();
         for (InvoiceItemAllocation sourceAllocation : sourceAllocations) {
             SourceAllocationSnapshot snapshot = allocationSnapshots.get(sourceAllocation.getId());
             InvoiceItemAllocation targetAllocation = snapshot == null
@@ -413,7 +465,22 @@ public class InvoiceMergePersistenceService {
                     || sourceAllocation.isActive()
                     || !snapshot.matchesUnchangedFields(sourceAllocation)
                     || targetAllocation == null
-                    || !snapshot.matchesReplacement(targetAllocation)) {
+                    || !snapshot.matchesReplacementIdentity(targetAllocation)) {
+                throw invalidAllocationData();
+            }
+            expectedQuantityByOrderItemId.merge(
+                    snapshot.orderItemId(), snapshot.allocatedQuantity(), Integer::sum
+            );
+        }
+
+        if (expectedQuantityByOrderItemId.size() != targetAllocationByOrderItemId.size()) {
+            throw invalidAllocationData();
+        }
+        for (Map.Entry<String, Integer> expected : expectedQuantityByOrderItemId.entrySet()) {
+            InvoiceItemAllocation targetAllocation =
+                    targetAllocationByOrderItemId.get(expected.getKey());
+            if (targetAllocation == null
+                    || targetAllocation.getAllocatedQuantity() != expected.getValue()) {
                 throw invalidAllocationData();
             }
         }
@@ -606,9 +673,13 @@ public class InvoiceMergePersistenceService {
                     && Objects.equals(createdAt, allocation.getCreatedAt());
         }
 
-        private boolean matchesReplacement(InvoiceItemAllocation allocation) {
+        /**
+         * Identity of the replacement row. Quantity is deliberately excluded: several source
+         * parts of the same order item combine into one target row, so the target quantity is
+         * their sum. That sum is verified separately by the conservation check.
+         */
+        private boolean matchesReplacementIdentity(InvoiceItemAllocation allocation) {
             return orderItemId.equals(allocation.getOrderItemId())
-                    && allocatedQuantity == allocation.getAllocatedQuantity()
                     && sameAmount(unitPriceSnapshot, allocation.getUnitPriceSnapshot());
         }
     }

@@ -2107,13 +2107,6 @@ const CashierOrders = () => {
     }
   };
 
-  const handleRemoveItemFromPending = (
-    orderId: string,
-    orderItemId: string,
-  ) => {
-    setRejectModal({ open: true, orderId, itemId: orderItemId, text: "" });
-  };
-
   const filteredMenu = menuItems.filter((i) => {
     const matchesCategory =
       activeMenuCategory === "all" || i.categoryId === activeMenuCategory;

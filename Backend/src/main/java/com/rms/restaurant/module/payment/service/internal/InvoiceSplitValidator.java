@@ -11,6 +11,7 @@ import com.rms.restaurant.module.order.model.OrderItem;
 import com.rms.restaurant.module.order.repository.OrderItemRepository;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.payment.dto.SplitInvoiceGroupRequest;
+import com.rms.restaurant.module.payment.dto.SplitInvoiceItemRequest;
 import com.rms.restaurant.module.payment.dto.SplitInvoiceRequest;
 import com.rms.restaurant.module.payment.model.Invoice;
 import com.rms.restaurant.module.payment.model.InvoiceItemAllocation;
@@ -48,7 +49,7 @@ public class InvoiceSplitValidator {
             SplitInvoiceRequest request
     ) {
         String normalizedSourceInvoiceId = normalizeSourceInvoiceId(sourceInvoiceId);
-        List<List<String>> requestedGroups = validateRequestStructure(request);
+        List<List<RequestedSelection>> requestedGroups = validateRequestStructure(request);
 
         String projectedOrderId = invoiceRepository.findOrderIdById(normalizedSourceInvoiceId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
@@ -81,7 +82,13 @@ public class InvoiceSplitValidator {
         boolean hasPaymentHistory = paymentRepository.existsByInvoiceId(normalizedSourceInvoiceId);
 
         validateSourceEligibility(sourceInvoice, owningOrder, hasPaidPayment, hasPaymentHistory);
-        if (sourceAllocations.size() < 2) {
+        // Eligibility is measured in units, not allocation rows: a single line of quantity 3
+        // is splittable, while two lines would be required under the old row-count rule.
+        int totalActiveQuantity = 0;
+        for (InvoiceItemAllocation allocation : sourceAllocations) {
+            totalActiveQuantity += Math.max(allocation.getAllocatedQuantity(), 0);
+        }
+        if (totalActiveQuantity < 2) {
             throw new ApplicationException(ApplicationError.INVOICE_NOT_SPLITTABLE);
         }
 
@@ -111,35 +118,67 @@ public class InvoiceSplitValidator {
         return sourceInvoiceId.trim();
     }
 
-    private List<List<String>> validateRequestStructure(SplitInvoiceRequest request) {
-        if (request == null || request.groups() == null || request.groups().size() < 2) {
+    /**
+     * Normalizes both request shapes into explicit (allocationId, quantity) selections.
+     * A legacy {@code allocationIds} entry means "the whole allocation" and is resolved to a
+     * concrete quantity later, once the source allocations are known, using
+     * {@link #WHOLE_ALLOCATION}. The same allocation may appear in more than one group —
+     * that is how one line of quantity 3 is spread across two children — but never twice
+     * within a single group, which would be an ambiguous duplicate.
+     */
+    private List<List<RequestedSelection>> validateRequestStructure(SplitInvoiceRequest request) {
+        if (request == null || request.groups() == null || request.groups().isEmpty()) {
             throw invalidSplit();
         }
 
-        List<List<String>> normalizedGroups = new ArrayList<>();
-        Set<String> allAllocationIds = new LinkedHashSet<>();
+        List<List<RequestedSelection>> normalizedGroups = new ArrayList<>();
         for (SplitInvoiceGroupRequest group : request.groups()) {
-            if (group == null || group.allocationIds() == null || group.allocationIds().isEmpty()) {
+            if (group == null) {
+                throw invalidSplit();
+            }
+            // Both shapes at once is ambiguous; neither is empty.
+            if (group.hasItems() == group.hasAllocationIds()) {
                 throw invalidSplit();
             }
 
-            List<String> normalizedIds = new ArrayList<>();
+            List<RequestedSelection> selections = new ArrayList<>();
             Set<String> groupAllocationIds = new LinkedHashSet<>();
-            for (String allocationId : group.allocationIds()) {
-                if (allocationId == null || allocationId.isBlank()) {
-                    throw invalidSplit();
+            if (group.hasItems()) {
+                for (SplitInvoiceItemRequest item : group.items()) {
+                    if (item == null
+                            || item.allocationId() == null
+                            || item.allocationId().isBlank()
+                            || item.quantity() == null
+                            || item.quantity() < 1) {
+                        throw invalidSplit();
+                    }
+                    String normalizedId = item.allocationId().trim();
+                    if (!groupAllocationIds.add(normalizedId)) {
+                        throw invalidSplit();
+                    }
+                    selections.add(new RequestedSelection(normalizedId, item.quantity()));
                 }
-
-                String normalizedId = allocationId.trim();
-                if (!groupAllocationIds.add(normalizedId) || !allAllocationIds.add(normalizedId)) {
-                    throw invalidSplit();
+            } else {
+                for (String allocationId : group.allocationIds()) {
+                    if (allocationId == null || allocationId.isBlank()) {
+                        throw invalidSplit();
+                    }
+                    String normalizedId = allocationId.trim();
+                    if (!groupAllocationIds.add(normalizedId)) {
+                        throw invalidSplit();
+                    }
+                    selections.add(new RequestedSelection(normalizedId, WHOLE_ALLOCATION));
                 }
-                normalizedIds.add(normalizedId);
             }
-            normalizedGroups.add(List.copyOf(normalizedIds));
+            normalizedGroups.add(List.copyOf(selections));
         }
         return List.copyOf(normalizedGroups);
     }
+
+    /** Sentinel for the legacy shape: take the allocation's entire quantity. */
+    private static final int WHOLE_ALLOCATION = -1;
+
+    private record RequestedSelection(String allocationId, int quantity) {}
 
     private void validateLockedOwnership(
             String sourceInvoiceId,
@@ -261,45 +300,89 @@ public class InvoiceSplitValidator {
             Order owningOrder,
             List<InvoiceItemAllocation> sourceAllocations,
             List<OrderItem> orderItems,
-            List<List<String>> requestedGroups
+            List<List<RequestedSelection>> requestedGroups
     ) {
-        if (requestedGroups.size() > sourceAllocations.size()) {
-            throw invalidSplit();
-        }
-
         Map<String, InvoiceItemAllocation> allocationsById = new LinkedHashMap<>();
         for (InvoiceItemAllocation allocation : sourceAllocations) {
             allocationsById.put(allocation.getId(), allocation);
         }
 
+        // Units taken off each source allocation, accumulated across every child group.
+        Map<String, Integer> requestedByAllocationId = new LinkedHashMap<>();
         List<ValidatedInvoiceSplitPlan.ValidatedGroup> validatedGroups = new ArrayList<>();
-        Set<String> coveredAllocationIds = new LinkedHashSet<>();
-        BigDecimal plannedTotal = BigDecimal.ZERO;
-        for (List<String> requestedGroup : requestedGroups) {
-            List<InvoiceItemAllocation> groupAllocations = new ArrayList<>();
+        BigDecimal plannedChildSubtotal = BigDecimal.ZERO;
+
+        for (List<RequestedSelection> requestedGroup : requestedGroups) {
+            if (requestedGroup.isEmpty()) {
+                throw invalidSplit();
+            }
+
+            List<ValidatedInvoiceSplitPlan.ValidatedSelection> selections = new ArrayList<>();
             BigDecimal groupSubtotal = BigDecimal.ZERO;
-            for (String allocationId : requestedGroup) {
-                InvoiceItemAllocation allocation = allocationsById.get(allocationId);
-                if (allocation == null || !coveredAllocationIds.add(allocationId)) {
+            int groupQuantity = 0;
+
+            for (RequestedSelection requested : requestedGroup) {
+                InvoiceItemAllocation allocation = allocationsById.get(requested.allocationId());
+                if (allocation == null) {
                     throw invalidSplit();
                 }
-                groupAllocations.add(allocation);
+
+                int available = allocation.getAllocatedQuantity();
+                int quantity = requested.quantity() == WHOLE_ALLOCATION
+                        ? available
+                        : requested.quantity();
+                if (quantity < 1 || quantity > available) {
+                    throw invalidSplit();
+                }
+
+                int alreadyRequested = requestedByAllocationId.getOrDefault(allocation.getId(), 0);
+                int totalRequested = alreadyRequested + quantity;
+                if (totalRequested > available) {
+                    throw invalidSplit();
+                }
+                requestedByAllocationId.put(allocation.getId(), totalRequested);
+
+                selections.add(new ValidatedInvoiceSplitPlan.ValidatedSelection(allocation, quantity));
+                groupQuantity += quantity;
                 groupSubtotal = groupSubtotal.add(
-                        allocation.getUnitPriceSnapshot()
-                                .multiply(BigDecimal.valueOf(allocation.getAllocatedQuantity()))
+                        allocation.getUnitPriceSnapshot().multiply(BigDecimal.valueOf(quantity))
                 );
             }
 
-            if (groupAllocations.isEmpty() || groupSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            if (groupQuantity < 1 || groupSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
                 throw invalidSplit();
             }
-            validatedGroups.add(new ValidatedInvoiceSplitPlan.ValidatedGroup(groupAllocations, groupSubtotal));
-            plannedTotal = plannedTotal.add(groupSubtotal);
+            validatedGroups.add(
+                    new ValidatedInvoiceSplitPlan.ValidatedGroup(selections, groupSubtotal)
+            );
+            plannedChildSubtotal = plannedChildSubtotal.add(groupSubtotal);
         }
 
-        if (!coveredAllocationIds.equals(allocationsById.keySet())
-                || plannedTotal.compareTo(sourceInvoice.getSubtotal()) != 0
-                || plannedTotal.compareTo(sourceInvoice.getTotalAmount()) != 0) {
+        // What the source keeps. It stays ACTIVE, so it must retain at least one unit —
+        // moving everything would leave a zero-value invoice behind.
+        Map<String, Integer> remainingByAllocationId = new LinkedHashMap<>();
+        BigDecimal remainingSubtotal = BigDecimal.ZERO;
+        int remainingQuantity = 0;
+        for (InvoiceItemAllocation allocation : sourceAllocations) {
+            int remaining = allocation.getAllocatedQuantity()
+                    - requestedByAllocationId.getOrDefault(allocation.getId(), 0);
+            if (remaining < 0) {
+                throw invalidSplit();
+            }
+            remainingByAllocationId.put(allocation.getId(), remaining);
+            remainingQuantity += remaining;
+            remainingSubtotal = remainingSubtotal.add(
+                    allocation.getUnitPriceSnapshot().multiply(BigDecimal.valueOf(remaining))
+            );
+        }
+        if (remainingQuantity < 1 || remainingSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            throw invalidSplit();
+        }
+
+        // Money conservation: what the source keeps plus every child equals the original.
+        if (remainingSubtotal.add(plannedChildSubtotal).compareTo(sourceInvoice.getSubtotal()) != 0
+                || remainingSubtotal.add(plannedChildSubtotal)
+                        .compareTo(sourceInvoice.getTotalAmount()) != 0) {
             throw invalidSplit();
         }
 
@@ -314,7 +397,8 @@ public class InvoiceSplitValidator {
                 validatedGroups,
                 sourceInvoice.getSubtotal(),
                 sourceInvoice.getTotalAmount(),
-                coveredAllocationIds
+                remainingByAllocationId,
+                remainingSubtotal
         );
     }
 

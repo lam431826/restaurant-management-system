@@ -215,7 +215,10 @@ export const PaymentModal = ({
   const splitDisabledReason = (() => {
     if (!splitVisible) return "";
     if (detailLoading || !invoice) return "Đang tải chi tiết hóa đơn.";
-    if (invoice.items.length < 2) return "Cần ít nhất hai món để chia hóa đơn.";
+    // Eligibility is counted in units, not lines: a single line of quantity 2 can be split.
+    if (invoice.items.reduce((total, item) => total + item.quantity, 0) < 2) {
+      return "Cần ít nhất hai phần món để chia hóa đơn.";
+    }
     if (invoice.items.some((item) => !item.allocationId?.trim())) {
       return "Dữ liệu định danh món chưa đầy đủ.";
     }
