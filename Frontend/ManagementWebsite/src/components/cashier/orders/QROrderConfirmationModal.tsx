@@ -9,7 +9,7 @@ export interface QROrderConfirmationModalProps {
   onReject: (order: Order) => void;
 }
 
-type TabKey = "pending" | "confirmed" | "cancelled";
+type TabKey = "pending" | "confirmed";
 
 const timeAgo = (dateStr: string) => {
   const ms = Date.now() - new Date(dateStr).getTime();
@@ -36,10 +36,10 @@ const ClockIcon = () => (
 );
 
 /* ─── Chevron down icon ───────────────────────────────────────── */
-const ChevronDown = () => (
+const ChevronDown = ({ className = "" }: { className?: string }) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
-    className="w-4 h-4 text-gray-800"
+    className={`w-4 h-4 text-gray-800 ${className}`}
     fill="none"
     viewBox="0 0 24 24"
     stroke="currentColor"
@@ -77,6 +77,14 @@ export const QROrderConfirmationModal = ({
   const [activeTab, setActiveTab] = useState<TabKey>("pending");
   const [selectedArea, setSelectedArea] = useState("all");
   const [selectedTable, setSelectedTable] = useState("all");
+  const [collapsedOrders, setCollapsedOrders] = useState<Record<string, boolean>>({});
+
+  const toggleCollapse = (orderId: string) => {
+    setCollapsedOrders((prev) => ({
+      ...prev,
+      [orderId]: !prev[orderId],
+    }));
+  };
 
   /* ── Derive area list from tables ──────────────────────────── */
   const areas = useMemo(() => {
@@ -126,21 +134,6 @@ export const QROrderConfirmationModal = ({
     [orders],
   );
 
-  const cancelledOrders = useMemo(
-    () =>
-      orders.filter((o) => {
-        const isCancelled =
-          o.status === "CANCELLED" ||
-          (o.status !== "PENDING" &&
-            o.status !== "CLOSED" &&
-            o.items.every((i) => i.cookingStatus === "REJECTED"));
-        if (!isCancelled) return false;
-        const fourHoursInMs = 4 * 60 * 60 * 1000;
-        return Date.now() - new Date(o.createdAt).getTime() <= fourHoursInMs;
-      }),
-    [orders],
-  );
-
   /* ── Apply zone/table filter on top of active tab ──────────── */
   const applyFilter = (list: Order[]) =>
     list.filter((o) => {
@@ -156,9 +149,7 @@ export const QROrderConfirmationModal = ({
   const displayedOrders =
     activeTab === "pending"
       ? applyFilter(pendingOrders)
-      : activeTab === "confirmed"
-        ? applyFilter(confirmedOrders)
-        : applyFilter(cancelledOrders);
+      : applyFilter(confirmedOrders);
 
   /* ── Tab pill class ────────────────────────────────────────── */
   const tabCls = (key: TabKey) =>
@@ -180,9 +171,6 @@ export const QROrderConfirmationModal = ({
           i.cookingStatus === "SERVED") &&
         (i.isQrOrder || i.qrOrder),
     );
-    const rejectedItems = order.items.filter(
-      (i) => i.cookingStatus === "REJECTED" && (i.isQrOrder || i.qrOrder),
-    );
 
     // Decide which items to show as main list
     let mainItems: OrderItemLine[];
@@ -197,7 +185,7 @@ export const QROrderConfirmationModal = ({
       mainItems = order.items.filter((i) => i.isQrOrder || i.qrOrder);
     }
 
-    if (mainItems.length === 0 && rejectedItems.length === 0) return null;
+    if (mainItems.length === 0) return null;
 
     const table = tables.find((t) => t.id === order.tableId);
     const areaName = table ? table.area : "";
@@ -205,14 +193,21 @@ export const QROrderConfirmationModal = ({
       ? `${order.tableName} - ${areaName}`
       : order.tableName;
 
+    const isCollapsed = !!collapsedOrders[order.id];
+
     return (
       <div
         key={order.id}
         className="bg-white rounded-2xl border-l-[6px] border-l-[#2563eb] border border-gray-200 overflow-hidden shadow-sm"
       >
         {/* Card header */}
-        <div className="flex items-center gap-2 px-6 py-4">
-          <ChevronDown />
+        <div 
+          className="flex items-center gap-2 px-6 py-4 cursor-pointer select-none hover:bg-gray-50 transition-colors"
+          onClick={() => toggleCollapse(order.id)}
+        >
+          <div className={`transition-transform duration-200 ${isCollapsed ? "-rotate-90" : ""}`}>
+            <ChevronDown />
+          </div>
           <span className="font-bold text-gray-900 text-base">
             {headerTitle}
           </span>
@@ -222,58 +217,30 @@ export const QROrderConfirmationModal = ({
           </span>
         </div>
 
-        {/* Item rows */}
-        <div className="px-6 pb-2">
-          {mainItems.map((item) => (
-            <div
-              key={item.orderItemId}
-              className="flex items-center justify-between py-3 border-t border-gray-100"
-            >
-              <div className="flex items-center gap-2 min-w-0 text-gray-800 text-[15px] font-medium">
-                <span className="whitespace-nowrap">{item.quantity}</span>
-                <span className="text-gray-400">×</span>
-                <span className="truncate">{item.menuItemName}</span>
-              </div>
-              <div className="flex items-center gap-4 shrink-0 ml-4">
-                <span className="text-[15px] font-semibold text-gray-700">
-                  {(item.unitPrice * item.quantity).toLocaleString("vi-VN")}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Rejected items section (shown in "Đã xác nhận" tab) */}
-        {activeTab === "confirmed" && rejectedItems.length > 0 && (
-          <div className="mx-6 mb-4 bg-gray-50 rounded-xl p-4 border border-gray-100">
-            <p className="font-bold text-[15px] text-gray-900 mb-2">
-              Món đã hủy
-            </p>
-            {rejectedItems.map((item) => (
-              <div
-                key={item.orderItemId}
-                className="flex items-center justify-between py-1.5 text-gray-600 text-[15px]"
-              >
-                <div className="flex items-center gap-2">
-                  <span>{item.quantity}</span>
-                  <span className="text-gray-400">x</span>
-                  <span className="font-medium">{item.menuItemName}</span>
-                  {item.rejectionNote && (
-                    <span className="text-red-500 font-semibold text-sm">
-                      {" "}
-                      - Lý do: {item.rejectionNote}
+        {!isCollapsed && (
+          <>
+            {/* Item rows */}
+            <div className="px-6 pb-2">
+              {mainItems.map((item) => (
+                <div
+                  key={item.orderItemId}
+                  className="flex items-center justify-between py-3 border-t border-gray-100"
+                >
+                  <div className="flex items-center gap-2 min-w-0 text-gray-800 text-[15px] font-medium">
+                    <span className="whitespace-nowrap">{item.quantity}</span>
+                    <span className="text-gray-400">×</span>
+                    <span className="truncate">{item.menuItemName}</span>
+                  </div>
+                  <div className="flex items-center gap-4 shrink-0 ml-4">
+                    <span className="text-[15px] font-semibold text-gray-700">
+                      {(item.unitPrice * item.quantity).toLocaleString("vi-VN")}
                     </span>
-                  )}
+                  </div>
                 </div>
-                <span className="font-semibold text-gray-500">
-                  {(item.unitPrice * item.quantity).toLocaleString("vi-VN")}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
 
-        {/* Action buttons (only on pending tab) */}
+            {/* Action buttons (only on pending tab) */}
         {activeTab === "pending" && (
           <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
             <button
@@ -316,6 +283,8 @@ export const QROrderConfirmationModal = ({
             </button>
           </div>
         )}
+          </>
+        )}
       </div>
     );
   };
@@ -329,10 +298,6 @@ export const QROrderConfirmationModal = ({
     confirmed: {
       title: "Danh sách trống",
       sub: "Hiện chưa có lượt gọi món nào đã xác nhận",
-    },
-    cancelled: {
-      title: "Danh sách trống",
-      sub: "Hiện chưa có lượt gọi món nào đã huỷ",
     },
   };
 
@@ -378,12 +343,6 @@ export const QROrderConfirmationModal = ({
               onClick={() => setActiveTab("confirmed")}
             >
               Đã xác nhận ({confirmedOrders.length})
-            </button>
-            <button
-              className={tabCls("cancelled")}
-              onClick={() => setActiveTab("cancelled")}
-            >
-              Hủy gọi món ({cancelledOrders.length})
             </button>
           </div>
 

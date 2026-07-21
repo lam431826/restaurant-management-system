@@ -125,9 +125,10 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
         verifyOrderBelongsToTable(order, tableToken);
         ensureOrderItemsCanBeModified(order);
 
-        if (order.getStatus() != OrderStatus.PENDING) {
+        // Allow updates if the order is not closed/cancelled. We will only modify PENDING QR items.
+        if (order.getStatus() == OrderStatus.CLOSED || order.getStatus() == OrderStatus.CANCELLED) {
             throw new ApplicationException(ApplicationError.INVALID_STATUS_TRANSITION,
-                    "Chỉ có thể cập nhật món khi đơn chưa được xác nhận.");
+                    "Không thể cập nhật đơn đã đóng hoặc đã hủy.");
         }
 
         removePendingItemsFromLockedOrder(order);
@@ -246,7 +247,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
         List<OrderItem> lockedItems = orderItemRepository.findAllByOrderIdForUpdate(order.getId());
         Set<String> pendingItemIds = new HashSet<>();
         for (OrderItem item : lockedItems) {
-            if (item.getCookingStatus() == com.rms.restaurant.common.utils.enums.CookingStatus.PENDING) {
+            if (item.getCookingStatus() == com.rms.restaurant.common.utils.enums.CookingStatus.PENDING && item.isQrOrder()) {
                 pendingItemIds.add(item.getId());
             }
         }

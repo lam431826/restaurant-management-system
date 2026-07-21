@@ -285,6 +285,38 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    public OrderResponse purgeItem(String orderId, String itemId) {
+        String normalizedOrderId = normalizeOrderId(orderId);
+        Order order = orderRepository.findByIdForUpdate(normalizedOrderId)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        ensureOrderItemsCanBeModified(order);
+
+        OrderItem itemToRemove = findOwnedOrderItemForUpdate(order, itemId);
+        if (itemToRemove != null) {
+            validateItemCanBeRemoved(itemToRemove);
+            order.getItems().remove(itemToRemove);
+        }
+
+        if (order.getItems().isEmpty() && order.getStatus() == com.rms.restaurant.common.utils.enums.OrderStatus.PENDING) {
+            order.setStatus(com.rms.restaurant.common.utils.enums.OrderStatus.CANCELLED);
+
+            RestaurantTable table = tableRepository.findById(order.getTableId()).orElse(null);
+            if (table != null) {
+                Order activeOrder = orderRepository.findTopByTableIdOrderByCreatedAtDesc(table.getId())
+                        .filter(o -> o.getStatus() != com.rms.restaurant.common.utils.enums.OrderStatus.CLOSED && o.getStatus() != com.rms.restaurant.common.utils.enums.OrderStatus.CANCELLED)
+                        .orElse(null);
+                if (activeOrder == null || activeOrder.getId().equals(order.getId())) {
+                    table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.AVAILABLE);
+                    tableRepository.save(table);
+                    realtimeEventPublisher.publishTableStatus(table);
+                }
+            }
+        }
+
+        return orderMapper.toResponse(orderRepository.save(order));
+    }
+
+    @Override
     public OrderResponse create(CreateOrderRequest request) {
         String tableId = request.tableId().trim();
         List<String> tableIds = List.of(tableId);
