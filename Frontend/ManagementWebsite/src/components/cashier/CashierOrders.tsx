@@ -14,7 +14,11 @@ import type { ShiftSummary, OpenShiftBrief } from "../../services/shiftService";
 import { OpenShiftModal } from "./orders/OpenShiftModal";
 import { CloseShiftModal } from "./orders/CloseShiftModal";
 import { CashMovementModal } from "./orders/CashMovementModal";
-import { listTables } from "../../services/tableService";
+import {
+  listTables,
+  checkInWalkIn,
+  undoWalkInCheckIn,
+} from "../../services/tableService";
 import {
   checkInReservation,
   markNoShowReservation,
@@ -54,6 +58,7 @@ import {
   listOrders,
   listPendingAssistance,
   acceptOrder,
+  purgeOrderItem,
   removeOrderItem,
   respondAssistance,
   updateOrderItemStatus,
@@ -76,6 +81,7 @@ import type {
 import {
   toTableItem,
   ACTIVE_ORDER_STATUSES,
+  OCCUPIED_STATUSES,
   COOKING_STATUS_LABEL,
   COOKING_STATUS_FROM_LABEL,
   ROLE_LABEL,
@@ -99,6 +105,11 @@ const TABLE_FILTERS = [
   { id: "used", label: "Sử dụng" },
   { id: "empty", label: "Còn trống" },
 ];
+
+// Mirrors OrderServiceImpl.create()'s WALK_IN_ON_RESERVED_MIN_GAP_MINUTES: seating a walk-in on
+// a RESERVED table is only safe if the walk-in's dining+cleanup window fully clears before the
+// reservation is due.
+const WALK_IN_MIN_GAP_MINUTES = 120;
 
 const ORDER_ALREADY_INVOICED_MESSAGE =
   "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.";
@@ -572,6 +583,8 @@ const CashierOrders = () => {
   const selectedOrderIdRef = useRef("");
   const selectedTableIdRef = useRef("");
   const [createOrderSubmitting, setCreateOrderSubmitting] = useState(false);
+  const [checkInWalkInSubmitting, setCheckInWalkInSubmitting] = useState(false);
+  const [undoCheckInSubmitting, setUndoCheckInSubmitting] = useState(false);
   const [orderActionMessage, setOrderActionMessage] = useState<{
     type: "error";
     text: string;
@@ -580,6 +593,11 @@ const CashierOrders = () => {
   // ── Reservation panel state ───────────────────────────────────────────────
   const [reservationLoading, setReservationLoading] = useState(false);
   const [reservationError, setReservationError] = useState<string | null>(null);
+  // A table with an upcomingReservation still shows the reservation panel by default (check-in
+  // for that guest). If the reservation is far enough out (see WALK_IN_MIN_GAP_MINUTES, mirrors
+  // OrderServiceImpl.create()'s server-side rule), staff can opt into seating a walk-in instead —
+  // tracked per table id so switching tables resets it back to the reservation view.
+  const [walkInOverrideTableId, setWalkInOverrideTableId] = useState<string | null>(null);
 
   // ── Cash shift state ──────────────────────────────────────────────────────
   const [shift, setShift] = useState<ShiftSummary | null>(null);
@@ -660,10 +678,21 @@ const CashierOrders = () => {
     setActiveOrders(Array.from(orderById.values()));
     setTables((currentTables) => {
       const selectedId = currentTables.find((table) => table.selected)?.id;
-      return mappedTables.map((table) => ({
-        ...table,
-        selected: table.id === selectedId,
-      }));
+      return mappedTables.map((table) => {
+        const old = currentTables.find((p) => p.id === table.id);
+        const status = old?.status === "BILLING" ? "BILLING" : table.status;
+        return {
+          ...table,
+          selected: table.id === selectedId,
+          // See the matching fix in refreshTables() — derive occupied from fresh status instead
+          // of blindly preserving the old value.
+          occupied: OCCUPIED_STATUSES.includes(status) || Boolean(old?.orderId),
+          amount: old?.amount ?? 0,
+          items: old?.items ?? 0,
+          orderId: old?.orderId ?? null,
+          status,
+        };
+      });
     });
     setActiveArea((currentArea) => {
       if (
@@ -734,17 +763,36 @@ const CashierOrders = () => {
   // Called after reservation actions and order close/cancel so statuses
   // (RESERVED→OCCUPIED, OCCUPIED→AVAILABLE, etc.) reflect backend truth.
   const refreshTables = () => {
-    listTables()
+    return listTables()
       .then((res) => {
         const updated = res
           .filter((t) => t.active)
           .sort((a, b) => a.order - b.order)
           .map(toTableItem);
         setTables((prev) =>
-          updated.map((t) => ({
-            ...t,
-            selected: prev.find((p) => p.id === t.id)?.selected ?? false,
-          })),
+          updated.map((t) => {
+            const old = prev.find((p) => p.id === t.id);
+            const status = old?.status === "BILLING" ? "BILLING" : t.status;
+            return {
+              ...t,
+              selected: old?.selected ?? false,
+              // Bug fix: this used to always preserve the OLD occupied value instead of
+              // deriving it from the just-fetched status — combined with the activeOrders
+              // overlay effect's own occupied-when-no-order bug (also fixed), a table checked
+              // in with no order yet stayed permanently "not occupied" in the UI (ReservationPanel
+              // kept offering a "Check-In khách" that always failed with
+              // INVALID_STATUS_TRANSITION) until something unrelated nudged activeOrders.
+              // Trust status — now genuinely OCCUPIED/BILLING without requiring an order (see
+              // Check-in khách / reservation check-in) — amount/items/orderId still come from
+              // the activeOrders overlay below to avoid the polling jitter this preservation
+              // pattern was originally added for.
+              occupied: OCCUPIED_STATUSES.includes(status) || Boolean(old?.orderId),
+              amount: old?.amount ?? 0,
+              items: old?.items ?? 0,
+              orderId: old?.orderId ?? null,
+              status,
+            };
+          }),
         );
       })
       .catch(() => {});
@@ -826,36 +874,48 @@ const CashierOrders = () => {
 
   // Overlay live order totals onto the table grid (amount/guests/item count, orderId link).
   // Status is NOT overridden here — backend-provided statuses (RESERVED, CLEANING, etc.)
-  // are preserved. Only tables with active orders are marked OCCUPIED; refreshTables()
-  // is responsible for resetting OCCUPIED→AVAILABLE after orders close.
+  // are preserved.
   useEffect(() => {
     setTables((prevTables) =>
       prevTables.map((t) => {
         const tableOrders = activeOrders.filter(
           (order) =>
             order.tableId === t.id &&
-            ACTIVE_ORDER_STATUSES.includes(order.status) &&
-            (!t.orderId || order.id === t.orderId),
+            ACTIVE_ORDER_STATUSES.includes(order.status),
         );
         if (tableOrders.length === 0) {
           return {
             ...t,
             orderId: null,
-            occupied: false,
+            // Bug fix: this used to hardcode occupied: false whenever there was no matching
+            // active order — correct back when OCCUPIED always implied an order existed, but
+            // "Check-in khách"/reservation check-in now legitimately puts a table into OCCUPIED
+            // with zero orders. Forcing occupied: false here made the panel-selection logic in
+            // this file (which keys off `occupied`, not `status`) keep showing ReservationPanel
+            // for an already-checked-in table, offering a "Check-In khách" button that always
+            // failed with INVALID_STATUS_TRANSITION since the reservation was already CHECKED_IN.
+            occupied: OCCUPIED_STATUSES.includes(t.status),
             amount: 0,
             items: 0,
             // status intentionally not touched — keeps RESERVED/CLEANING/AVAILABLE from API
           };
         }
-        const itemsCount = tableOrders.reduce(
-          (total, order) =>
-            total + order.items.reduce((sum, item) => sum + item.quantity, 0),
-          0,
-        );
-        const totalAmount = tableOrders.reduce(
-          (total, order) => total + order.totalAmount,
-          0,
-        );
+        let itemsCount = 0;
+        let totalAmount = 0;
+
+        tableOrders.forEach((order) => {
+          order.items.forEach((item) => {
+            const isPendingQr =
+              item.cookingStatus === "PENDING" &&
+              (item.isQrOrder ?? item.qrOrder);
+            const isRejected = item.cookingStatus === "REJECTED";
+            
+            if (!isPendingQr && !isRejected) {
+              itemsCount += item.quantity;
+              totalAmount += item.unitPrice * item.quantity;
+            }
+          });
+        });
         return {
           ...t,
           occupied: true,
@@ -893,7 +953,6 @@ const CashierOrders = () => {
     const tableOrders = activeOrders.filter(
       (o) =>
         o.tableId === selectedTable.id &&
-        (!selectedTable.orderId || o.id === selectedTable.orderId) &&
         ACTIVE_ORDER_STATUSES.includes(o.status),
     );
     if (tableOrders.length === 0) {
@@ -901,17 +960,19 @@ const CashierOrders = () => {
       return;
     }
     const combinedItems: OrderItem[] = tableOrders.flatMap((order) =>
-      order.items.map((i) => ({
-        id: i.orderItemId,
-        name: i.menuItemName,
-        qty: i.quantity,
-        price: i.unitPrice,
-        status: COOKING_STATUS_LABEL[i.cookingStatus],
-        notes: i.note || "",
-        rejectionNote: i.rejectionNote,
-        orderId: order.id,
-        isQrOrder: i.isQrOrder ?? i.qrOrder,
-      })),
+      order.items
+        .filter((i) => !(i.cookingStatus === "PENDING" && (i.isQrOrder ?? i.qrOrder)))
+        .map((i) => ({
+          id: i.orderItemId,
+          name: i.menuItemName,
+          qty: i.quantity,
+          price: i.unitPrice,
+          status: COOKING_STATUS_LABEL[i.cookingStatus],
+          notes: i.note || "",
+          rejectionNote: i.rejectionNote,
+          orderId: order.id,
+          isQrOrder: i.isQrOrder ?? i.qrOrder,
+        })),
     );
     setOrderItems(combinedItems);
   }, [selectedTable?.id, selectedTable?.occupied, activeOrders]);
@@ -1543,6 +1604,7 @@ const CashierOrders = () => {
     if (previousTableId && previousTableId !== id) {
       setCart([]);
       setMenuItems((items) => items.map((item) => ({ ...item, qty: 0 })));
+      setWalkInOverrideTableId(null);
     }
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
     setOrderActionMessage(null);
@@ -1564,8 +1626,12 @@ const CashierOrders = () => {
     setReservationError(null);
     try {
       await checkInReservation(res.id);
-      // Backend set table→OCCUPIED; refresh so the panel switches to OrderPanel
-      refreshTables();
+      // Bug fix: refreshTables() used to be fire-and-forget here, so loading cleared (and the
+      // button re-enabled) before the table list actually reflected the check-in — a cashier
+      // clicking again in that window got a confusing INVALID_STATUS_TRANSITION for a check-in
+      // that had already succeeded. Await it so the panel only switches to OrderPanel once the
+      // fresh state has actually landed, and the button stays disabled until then.
+      await refreshTables();
     } catch (e) {
       setReservationError(
         e instanceof Error ? e.message : "Check-in thất bại, vui lòng thử lại",
@@ -1585,7 +1651,7 @@ const CashierOrders = () => {
       await markNoShowReservation(res.id);
       // Deselect table, then refresh to pick up AVAILABLE status
       setTables((ts) => ts.map((t) => ({ ...t, selected: false })));
-      refreshTables();
+      await refreshTables();
     } catch (e) {
       setReservationError(
         e instanceof Error ? e.message : "Thao tác thất bại, vui lòng thử lại",
@@ -1606,7 +1672,7 @@ const CashierOrders = () => {
       await cancelStaffReservation(res.id);
       // Deselect table, then refresh to pick up AVAILABLE status
       setTables((ts) => ts.map((t) => ({ ...t, selected: false })));
-      refreshTables();
+      await refreshTables();
     } catch (e) {
       setReservationError(
         e instanceof Error
@@ -1879,6 +1945,7 @@ const CashierOrders = () => {
             : table,
         ),
       );
+      setWalkInOverrideTableId((id) => (id === expectedTableId ? null : id));
       if (selectedTableIdRef.current === expectedTableId) {
         setCart([]);
         setMenuItems((items) => items.map((item) => ({ ...item, qty: 0 })));
@@ -1895,6 +1962,75 @@ const CashierOrders = () => {
     } finally {
       createOrderSubmissionRef.current = false;
       setCreateOrderSubmitting(false);
+    }
+  };
+
+  // Seats a walk-in guest (AVAILABLE → OCCUPIED, or RESERVED → OCCUPIED while in walk-in-seating
+  // mode) without creating an order yet — the "Tạo Order" button stays available right after for
+  // when the guest is actually ready to order. Distinct from handleCreateOrder, which seats the
+  // walk-in as an implicit side effect of adding items.
+  const handleCheckInWalkIn = async () => {
+    if (!selectedTable) return;
+    const expectedTableId = selectedTable.id;
+    setCheckInWalkInSubmitting(true);
+    setOrderActionMessage(null);
+    try {
+      const updated = await checkInWalkIn(expectedTableId);
+      setTables((currentTables) =>
+        currentTables.map((table) =>
+          table.id === expectedTableId
+            ? {
+                ...table,
+                status: updated.status,
+                occupied: true,
+                upcomingReservation: null,
+                occupiedSince: updated.occupiedSince,
+              }
+            : table,
+        ),
+      );
+      setWalkInOverrideTableId((id) => (id === expectedTableId ? null : id));
+    } catch (e) {
+      console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
+    } finally {
+      setCheckInWalkInSubmitting(false);
+    }
+  };
+
+  // Undoes a mistaken "Check-in khách" click — only ever reachable before an order exists for
+  // the table (see OrderPanel's canUndoWalkInCheckIn), so there's nothing else to unwind besides
+  // the table status itself.
+  const handleUndoWalkInCheckIn = async () => {
+    if (!selectedTable) return;
+    const expectedTableId = selectedTable.id;
+    setUndoCheckInSubmitting(true);
+    setOrderActionMessage(null);
+    try {
+      const updated = await undoWalkInCheckIn(expectedTableId);
+      setTables((currentTables) =>
+        currentTables.map((table) =>
+          table.id === expectedTableId
+            ? {
+                ...table,
+                status: updated.status,
+                occupied: false,
+                occupiedSince: updated.occupiedSince,
+              }
+            : table,
+        ),
+      );
+    } catch (e) {
+      console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
+    } finally {
+      setUndoCheckInSubmitting(false);
     }
   };
 
@@ -1948,11 +2084,26 @@ const CashierOrders = () => {
   };
 
   const handleRejectPendingOrder = async (order: Order) => {
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
     try {
-      await cancelOrder(order.id, "Thu ngân hủy (QR)");
+      const pendingItems = order.items.filter(
+        (i) => i.cookingStatus === "PENDING" && (i.isQrOrder ?? i.qrOrder)
+      );
+      await Promise.all(
+        pendingItems.map((i) => purgeOrderItem(order.id, i.orderItemId))
+      );
       setRefreshTrigger((t) => t + 1);
+      setShowQRModal(false);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
@@ -2087,43 +2238,12 @@ const CashierOrders = () => {
 
       <div className="flex flex-1 gap-3 lg:gap-4 p-3 lg:p-4 overflow-hidden">
         <div className="flex flex-col flex-1 gap-2.5 min-w-0 overflow-hidden">
-          {tab === "table" && (
-            <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 min-h-[38px]">
-              <div className="flex gap-2 flex-wrap">
-                {areas.map((area) => (
-                  <button
-                    key={area}
-                    onClick={() => setActiveArea(area)}
-                    className={`px-4 py-1.5 rounded-[8px] border border-[#e8e8e8] text-[14px] transition-colors ${activeArea === area ? "bg-white text-[#37383a]" : "bg-[#f5f5f5] text-[#797b7c] hover:bg-white"}`}
-                  >
-                    {area === "all" ? "Tất cả khu vực" : area}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-5">
-                {TABLE_FILTERS.map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={() => setFilter(f.id)}
-                    className="flex items-center gap-2 text-[14px]"
-                  >
-                    <div
-                      className={`w-[18px] h-[18px] rounded-full border flex items-center justify-center shrink-0 ${tableFilter === f.id ? "border-[#025cca]" : "border-[#37383a]"}`}
-                    >
-                      {tableFilter === f.id && (
-                        <div className="w-2.5 h-2.5 rounded-full bg-[#025cca]" />
-                      )}
-                    </div>
-                    <span className="text-black">
-                      {f.label} ({tableCounts[f.id]})
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between shrink-0">
+          {/* Bug fix: items-center used to re-center the toggle against the right column's
+              height, which grows in "Phòng bàn" mode (search box + QR button) vs "Menu" mode
+              (search box only) — the toggle visibly jumped position between the two tabs.
+              items-start pins both to the row's top edge regardless of the right column's
+              height. */}
+          <div className="flex items-start justify-between shrink-0">
             <div className="flex h-[52px] rounded-[12px] overflow-hidden border-2 border-[#e8e8e8]">
               {(
                 [
@@ -2174,6 +2294,42 @@ const CashierOrders = () => {
             </div>
           </div>
 
+          {tab === "table" && (
+            <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 min-h-[38px]">
+              <div className="flex gap-2 flex-wrap">
+                {areas.map((area) => (
+                  <button
+                    key={area}
+                    onClick={() => setActiveArea(area)}
+                    className={`px-4 py-1.5 rounded-[8px] border border-[#e8e8e8] text-[14px] transition-colors ${activeArea === area ? "bg-white text-[#37383a]" : "bg-[#f5f5f5] text-[#797b7c] hover:bg-white"}`}
+                  >
+                    {area === "all" ? "Tất cả khu vực" : area}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-5">
+                {TABLE_FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => setFilter(f.id)}
+                    className="flex items-center gap-2 text-[14px]"
+                  >
+                    <div
+                      className={`w-[18px] h-[18px] rounded-full border flex items-center justify-center shrink-0 ${tableFilter === f.id ? "border-[#025cca]" : "border-[#37383a]"}`}
+                    >
+                      {tableFilter === f.id && (
+                        <div className="w-2.5 h-2.5 rounded-full bg-[#025cca]" />
+                      )}
+                    </div>
+                    <span className="text-black">
+                      {f.label} ({tableCounts[f.id]})
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between shrink-0">
             <h2 className="text-[24px] font-semibold text-[#202325]">
               {tab === "menu" ? "Chọn món" : "Chọn bàn"}
@@ -2205,8 +2361,16 @@ const CashierOrders = () => {
         </div>
 
         {selectedTable &&
-        selectedTable.status === "RESERVED" &&
-        !selectedTable.occupied ? (
+        selectedTable.upcomingReservation &&
+        !selectedTable.occupied &&
+        walkInOverrideTableId !== selectedTable.id ? (
+          // Not gated on status === "RESERVED": a table also carries an upcomingReservation
+          // once it frees back to AVAILABLE with a later same-day guest still CONFIRMED on it
+          // (e.g. two reservations on one table — the first one's stay just closed). The
+          // cashier still needs the check-in/no-show/cancel actions for that next guest, not
+          // the walk-in order flow — unless they explicitly opt into seating a walk-in via
+          // canSeatWalkIn/onSeatWalkIn below (mirrors OrderServiceImpl.create()'s server-side
+          // >2h-away rule for a RESERVED table).
           <ReservationPanel
             table={selectedTable}
             onCheckIn={handleReservationCheckIn}
@@ -2214,6 +2378,12 @@ const CashierOrders = () => {
             onCancel={handleReservationCancel}
             loading={reservationLoading}
             error={reservationError}
+            canSeatWalkIn={
+              new Date(selectedTable.upcomingReservation.datetime).getTime() -
+                Date.now() >
+              WALK_IN_MIN_GAP_MINUTES * 60000
+            }
+            onSeatWalkIn={() => setWalkInOverrideTableId(selectedTable.id)}
           />
         ) : (
           <OrderPanel
@@ -2242,6 +2412,10 @@ const CashierOrders = () => {
               }
             }}
             onCreateOrder={handleCreateOrder}
+            onCheckInWalkIn={handleCheckInWalkIn}
+            checkInWalkInSubmitting={checkInWalkInSubmitting}
+            onUndoWalkInCheckIn={handleUndoWalkInCheckIn}
+            undoCheckInSubmitting={undoCheckInSubmitting}
             onAddItems={handleAddItems}
             onNote={handleOpenNote}
             onRemoveItem={handleRemoveItem}
@@ -2254,6 +2428,10 @@ const CashierOrders = () => {
             customerSaving={customerSaving}
             customerError={customerError}
             orderExists={Boolean(selectedOrderId)}
+            isWalkInSeating={
+              !!selectedTable && walkInOverrideTableId === selectedTable.id
+            }
+            onCancelWalkInSeating={() => setWalkInOverrideTableId(null)}
             checkoutDisabled={checkoutDisabled}
             checkoutLabel={checkoutLabel}
             shiftOpen={!!shift}

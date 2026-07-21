@@ -66,6 +66,7 @@ public enum ApplicationError {
     TABLE_IN_USE("Table is currently occupied and cannot be deleted", HttpStatus.CONFLICT),
     TABLE_TRANSFER_NOT_ALLOWED("Table transfer cannot be completed in the current state", HttpStatus.UNPROCESSABLE_ENTITY),
     TABLE_HAS_PENDING_ORDER("Table already has a pending order", HttpStatus.CONFLICT),
+    TABLE_RECENTLY_WALK_IN_OCCUPIED("Table was recently seated with a walk-in guest; wait for the dining and cleanup window to elapse before assigning a reservation", HttpStatus.CONFLICT),
     TABLE_HAS_ACTIVE_ORDER("Table already has an active order", HttpStatus.CONFLICT),
     INVALID_TABLE_TOKEN("Table token is invalid or expired", HttpStatus.UNAUTHORIZED),
     SHIFT_ALREADY_OPEN("A shift is already open", HttpStatus.CONFLICT),
@@ -158,6 +159,16 @@ public enum ApplicationError {
     AT_MERGE_DISABLED("Chế độ chấm 1 lượt Vào–Ra cho nhiều ca liên tục chưa được bật", HttpStatus.UNPROCESSABLE_ENTITY),
     AT_VIOLATION_TYPE_NOT_FOUND("Không tìm thấy loại vi phạm", HttpStatus.NOT_FOUND),
     AT_SETTING_INVALID("Thiết lập chấm công không hợp lệ", HttpStatus.BAD_REQUEST),
+
+    // Cash Book (Sổ quỹ)
+    CASHBOOK_CATEGORY_NOT_FOUND("Cash book category not found", HttpStatus.NOT_FOUND),
+    DUPLICATE_CASHBOOK_CATEGORY_NAME("A cash book category with this name already exists", HttpStatus.CONFLICT),
+    CASHBOOK_CATEGORY_IN_USE("Category is used by existing vouchers; it cannot be deleted", HttpStatus.CONFLICT),
+    CASHBOOK_CATEGORY_SYSTEM_RESERVED("This category is reserved by the system and cannot be deleted", HttpStatus.CONFLICT),
+    CASHBOOK_VOUCHER_NOT_FOUND("Cash book voucher not found", HttpStatus.NOT_FOUND),
+    CASHBOOK_VOUCHER_ALREADY_VOIDED("Voucher has already been voided", HttpStatus.CONFLICT),
+    CASHBOOK_VOUCHER_CATEGORY_TYPE_MISMATCH("Category type does not match the voucher type", HttpStatus.UNPROCESSABLE_ENTITY),
+    CASHBOOK_VOUCHER_PARTNER_GROUP_INVALID("Voucher partner group is invalid for this operation", HttpStatus.UNPROCESSABLE_ENTITY),
 
     // System
     INTERNAL_ERROR("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR);

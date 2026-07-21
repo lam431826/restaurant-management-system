@@ -1,4 +1,18 @@
 export default function SentTab({ statusData, handleStartEditing, getItemImage }) {
+  const STATUS_ORDER = {
+    'PENDING': 1,
+    'COOKING': 2,
+    'READY': 3,
+    'SERVED': 4,
+    'REJECTED': 5
+  };
+
+  const sortedItems = [...(statusData?.items || [])].sort((a, b) => {
+    const orderA = STATUS_ORDER[a.cookingStatus] || 99;
+    const orderB = STATUS_ORDER[b.cookingStatus] || 99;
+    return orderA - orderB;
+  });
+
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-4 pb-8">
       {statusData && (
@@ -16,7 +30,7 @@ export default function SentTab({ statusData, handleStartEditing, getItemImage }
               <p className="text-xs text-gray-600 mt-1">Dự kiến: <span className="font-bold text-gray-900">{statusData.estimatedWaitTimeMinutes} phút</span></p>
             )}
           </div>
-          {statusData.status === 'PENDING' && (
+          {statusData.items?.some(i => i.cookingStatus === 'PENDING' && (i.isQrOrder || i.qrOrder)) && (
             <button 
               onClick={handleStartEditing} 
               className="bg-orange-50 text-orange-600 border border-orange-200 font-bold py-1.5 px-4 rounded-xl text-sm hover:bg-orange-100 transition-colors shadow-sm"
@@ -27,12 +41,12 @@ export default function SentTab({ statusData, handleStartEditing, getItemImage }
         </div>
       )}
       
-      {(!statusData || !statusData.items || statusData.items.length === 0) ? (
+      {sortedItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center pt-10 text-gray-400">
           <p className="text-sm font-medium">Đơn hàng của bạn chưa có món nào.</p>
         </div>
       ) : (
-        statusData.items.map((item, idx) => (
+        sortedItems.map((item, idx) => (
           <div key={idx} className="bg-white rounded-2xl p-3 mb-3 shadow-sm border border-gray-100 flex gap-3 relative opacity-95">
             <img src={getItemImage(item.menuItemId)} className="w-16 h-16 rounded-xl object-cover grayscale-[20%] border border-gray-100" />
             <div className="flex-1">

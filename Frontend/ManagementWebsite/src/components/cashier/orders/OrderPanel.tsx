@@ -18,6 +18,10 @@ export const OrderPanel = ({
   onStatusChange,
   onCheckout,
   onCreateOrder,
+  onCheckInWalkIn,
+  checkInWalkInSubmitting,
+  onUndoWalkInCheckIn,
+  undoCheckInSubmitting,
   onAddItems,
   onNote,
   onRemoveItem,
@@ -42,6 +46,8 @@ export const OrderPanel = ({
   customerSaving,
   customerError,
   orderExists,
+  isWalkInSeating,
+  onCancelWalkInSeating,
 }: {
   items: OrderItem[];
   hasSelectedMenu: boolean;
@@ -52,6 +58,16 @@ export const OrderPanel = ({
   ) => void;
   onCheckout: () => void;
   onCreateOrder: () => void;
+  // Seats a walk-in (table → OCCUPIED) without creating an order yet — a separate step from
+  // "Tạo Order" for staff who want to claim the table for a guest before they're ready to order.
+  onCheckInWalkIn?: () => void;
+  checkInWalkInSubmitting?: boolean;
+  // Undoes a mistaken "Check-in khách" — reverts the table back to AVAILABLE. Only offered
+  // before an order exists (see canUndoWalkInCheckIn) and only for a walk-in check-in
+  // (occupiedSince set) — a reservation guest who's checked in has their own cancel/no-show
+  // flow in ReservationPanel, not this.
+  onUndoWalkInCheckIn?: () => void;
+  undoCheckInSubmitting?: boolean;
   onAddItems: () => void;
   onNote: (id: string, text: string) => void;
   onRemoveItem: (orderId: string, orderItemId: string) => void;
@@ -78,15 +94,39 @@ export const OrderPanel = ({
   customerSaving?: boolean;
   customerError?: string;
   orderExists: boolean;
+  // Staff deliberately seating a walk-in on a RESERVED table (>2h before that reservation) —
+  // suppress the reservation's guest name here so it's not shown as if it were the walk-in's
+  // own booking; they're unrelated parties sharing the table at different times.
+  isWalkInSeating?: boolean;
+  // Backs out of walk-in seating mode and returns to the reservation panel, without touching
+  // the reservation itself — only offered before an order actually exists for this table.
+  onCancelWalkInSeating?: () => void;
 }) => {
   const [customerOpen, setCustomerOpen] = useState(false);
-  const isTableEmpty = !!selectedTable && !selectedTable.occupied;
+  // Keyed off orderId (via the orderExists prop), not selectedTable.occupied — occupied flips to
+  // true the moment a reservation is checked in (table.status → OCCUPIED) even though no Order
+  // has been created yet. Keying off occupied instead previously fell through to the
+  // checkout/payment branch below with no order to check out (bug: "Tạo Order" unreachable for
+  // a just-checked-in reservation).
+  const isTableEmpty = !!selectedTable && !orderExists;
+  // Only a genuinely fresh table (AVAILABLE) or a RESERVED table the cashier explicitly opted
+  // to seat a walk-in on (isWalkInSeating) can be "checked in" this way — an already-OCCUPIED
+  // table (reservation check-in, or a prior walk-in check-in) is already seated.
+  const canCheckInWalkIn =
+    !!selectedTable &&
+    !orderExists &&
+    (selectedTable.status === "AVAILABLE" ||
+      (isWalkInSeating && selectedTable.status === "RESERVED"));
+  // Mistaken "Check-in khách" click — table is OCCUPIED from a walk-in (occupiedSince set, not a
+  // reservation) and nothing has been ordered yet, so reverting to AVAILABLE loses nothing.
+  const canUndoWalkInCheckIn =
+    !!selectedTable &&
+    !orderExists &&
+    selectedTable.status === "OCCUPIED" &&
+    !!selectedTable.occupiedSince;
   const hasItems = items.length > 0;
   const customerDisplayName = customer.customerName.trim() || "Khách lẻ";
-  // Driven by whether an Order row actually exists — not selectedTable.occupied, which flips to
-  // true the moment a reservation is checked in (table.status → OCCUPIED) even though no Order
-  // has been created yet. Keying off orderId keeps the "Tạo Order" button reachable in that gap.
-  const reservationInfo = selectedTable?.upcomingReservation ?? null;
+  const reservationInfo = isWalkInSeating ? null : (selectedTable?.upcomingReservation ?? null);
   const billableOrderItems = items.filter(
     (item) => item.status !== COOKING_STATUS_LABEL.REJECTED,
   );
@@ -104,6 +144,16 @@ export const OrderPanel = ({
 
   return (
     <div className="bg-white rounded-[12px] flex flex-col p-4 lg:p-6 w-[260px] md:w-[300px] lg:w-[360px] xl:w-[400px] shrink-0 h-full overflow-hidden">
+      {isWalkInSeating && !orderExists && onCancelWalkInSeating && (
+        <button
+          type="button"
+          onClick={onCancelWalkInSeating}
+          className="flex items-center gap-1.5 self-start mb-3 px-2.5 py-1.5 rounded-[8px] bg-[#fff4e5] text-[#b45309] text-[12px] font-semibold hover:bg-[#ffe8c2] transition-colors shrink-0"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+          Quay lại đặt bàn trước — không xếp khách vãng lai nữa
+        </button>
+      )}
       <div className="flex items-start justify-between shrink-0 mb-6">
         <div className="flex flex-col gap-1">
           <span className="text-[16px] font-medium text-[#202325]">
@@ -279,12 +329,42 @@ export const OrderPanel = ({
                 {visibleActionMessage}
               </div>
             )}
+            {canCheckInWalkIn && onCheckInWalkIn && (
+              <button
+                onClick={onCheckInWalkIn}
+                disabled={!shiftOpen || checkInWalkInSubmitting || createOrderSubmitting}
+                className="bg-white border-2 border-[#025cca] flex items-center justify-center h-[48px] rounded-[12px] w-full hover:bg-[#eaf3fd] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="text-[15px] font-semibold text-[#025cca]">
+                  {checkInWalkInSubmitting ? "Đang xếp bàn..." : "Check-in khách (chưa gọi món)"}
+                </span>
+              </button>
+            )}
+            {canUndoWalkInCheckIn && onUndoWalkInCheckIn && (
+              <button
+                onClick={onUndoWalkInCheckIn}
+                disabled={undoCheckInSubmitting}
+                className="bg-white border border-red-300 text-red-600 flex items-center justify-center h-10 rounded-[10px] w-full hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="text-[13px] font-medium">
+                  {undoCheckInSubmitting ? "Đang hủy..." : "Hủy check-in (nhầm bàn)"}
+                </span>
+              </button>
+            )}
             <button
               onClick={onCreateOrder}
               disabled={
                 !shiftOpen ||
                 createOrderSubmitting ||
-                selectedTable.status !== "AVAILABLE" ||
+                // Mirrors OrderServiceImpl.create(): a table can start an order from AVAILABLE
+                // (fresh walk-in), OCCUPIED (already checked in — reservation guest, or a
+                // walk-in check-in), or RESERVED (seating a walk-in ahead of a reservation
+                // that's still >2h away — the backend re-validates this on submit; getting here
+                // at all already implies the cashier opted in via the panel's "seat walk-in"
+                // button) — as long as it has no order yet (checked separately below).
+                (selectedTable.status !== "AVAILABLE" &&
+                  selectedTable.status !== "OCCUPIED" &&
+                  selectedTable.status !== "RESERVED") ||
                 Boolean(selectedTable.orderId)
               }
               className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

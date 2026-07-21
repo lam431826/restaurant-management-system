@@ -431,7 +431,7 @@ export const invoices: Invoice[] = [
 ];
 
 /* ─── Đặt bàn (Reception / Table reservations) ───────────────────────────── */
-export type ReservationStatus = 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'NO_SHOW' | 'CANCELLED';
+export type ReservationStatus = 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'NO_SHOW' | 'CANCELLED' | 'COMPLETED';
 
 export const reservationStatusMeta: Record<ReservationStatus, { label: string; color: string }> = {
   PENDING:    { label: 'Chờ xác nhận',       color: 'var(--kv-warning)' },
@@ -439,12 +439,14 @@ export const reservationStatusMeta: Record<ReservationStatus, { label: string; c
   CHECKED_IN: { label: 'Đã nhận bàn',        color: 'var(--kv-primary)' },
   NO_SHOW:    { label: 'Không đến',           color: 'var(--kv-neutral-400)' },
   CANCELLED:  { label: 'Đã hủy',             color: 'var(--kv-danger)' },
+  COMPLETED:  { label: 'Đã hoàn thành',      color: 'var(--kv-neutral-400)' },
 };
 
 export interface Reservation {
   id: string;          // UUID từ backend
   code: string;        // Mã hiển thị (viết tắt từ id)
-  arriveTime: string;  // Giờ đến định dạng dd/MM/yyyy HH:mm
+  arriveTime: string;  // Giờ đến định dạng dd/MM/yyyy HH:mm (chỉ để hiển thị)
+  datetimeIso: string; // Giờ đến dạng ISO (LocalDateTime từ backend) — dùng để lọc/so sánh
   customer: string;    // Tên khách
   phone: string;       // Điện thoại
   guestEmail: string | null;

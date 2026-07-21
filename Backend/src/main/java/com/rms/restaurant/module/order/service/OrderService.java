@@ -12,6 +12,7 @@ public interface OrderService {
     OrderResponse closeOrder(String id);
     OrderResponse addItem(String id, com.rms.restaurant.module.order.dto.AddOrderItemRequest request);
     OrderResponse removeItem(String orderId, String itemId);
+    OrderResponse purgeItem(String orderId, String itemId);
     OrderResponse updateItemStatus(String orderId, String itemId, com.rms.restaurant.module.order.dto.UpdateOrderItemStatusRequest request);
     OrderResponse updateItemNote(String orderId, String itemId, com.rms.restaurant.module.order.dto.UpdateOrderItemNoteRequest request);
     OrderResponse addItems(String id, AddOrderItemsRequest request);

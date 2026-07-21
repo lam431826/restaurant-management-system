@@ -23,6 +23,7 @@ import { listTables, type TableDto } from '../../api/tables'
 import { pollReservationNotifResult, getNotificationLogs, type NotificationLogDto } from '../../api/notifications'
 import ChangePasswordModal from '../auth/ChangePasswordModal'
 import { useRealtime } from '../../hooks/useRealtime'
+import { ROLE_LABEL } from '../cashier/orders/types'
 
 const toDisplay = (dto: ReservationDto): Res => {
   const dt = new Date(dto.datetime)
@@ -32,6 +33,7 @@ const toDisplay = (dto: ReservationDto): Res => {
     id: dto.id,
     code: dto.id,
     arriveTime,
+    datetimeIso: dto.datetime,
     customer: dto.guestName,
     phone: dto.phone,
     guestEmail: dto.guestEmail ?? null,
@@ -60,7 +62,7 @@ const exportCsv = (rows: Res[]) => {
 
 const Reservation = () => {
   const navigate = useNavigate()
-  const { signOut } = useAuth()
+  const { user, signOut } = useAuth()
 
   const [showChangePw, setShowChangePw] = useState(false)
   const [tab, setTab] = useState<ReservationTab>('calendar')
@@ -152,6 +154,10 @@ const Reservation = () => {
     }
   }, [])
 
+  const loadTables = useCallback(() => {
+    listTables().then(r => setTables(r.data.data)).catch(() => {})
+  }, [])
+
   const handleEdit = (id: string) => {
     const dto = dtos.find(d => d.id === id)
     if (dto) setEditingDto(dto)
@@ -159,18 +165,21 @@ const Reservation = () => {
 
   useEffect(() => { load() }, [load])
 
-  useEffect(() => {
-    listTables().then(r => setTables(r.data.data)).catch(() => {})
-  }, [])
+  useEffect(() => { loadTables() }, [loadTables])
 
-  // Live push on new bookings (online or staff-created) — refresh the list immediately instead
-  // of waiting for a manual reload, and surface online (PENDING) requests in the bell as they
-  // need staff review.
+  // Live push for reservation changes — new bookings (online or staff-created) AND status
+  // changes (confirm/check-in/no-show/cancel, or the automatic CHECKED_IN→COMPLETED once a
+  // table's order closes). Previously only 'CREATED' refreshed the list, so a status change
+  // made elsewhere (another waiter/cashier, or the BR-04 no-show cron) never showed up here
+  // without a manual page reload. Table statuses move in lockstep with reservation status
+  // (check-in/cancel/no-show/complete all flip a table too), so refresh both together — this
+  // keeps the "Xếp bàn" table-assignment dropdown from showing stale availability as well.
   useRealtime('/topic/reservations', (body) => {
     const evt = body as { eventType?: string; reservation?: ReservationDto } | null
-    if (evt?.eventType !== 'CREATED' || !evt.reservation) return
+    if (!evt?.eventType || !evt.reservation) return
     load()
-    if (evt.reservation.status === 'PENDING') {
+    loadTables()
+    if (evt.eventType === 'CREATED' && evt.reservation.status === 'PENDING') {
       setNewReservations(prev => [evt.reservation as ReservationDto, ...prev].slice(0, 20))
       showToast(`Có yêu cầu đặt bàn mới: ${evt.reservation.guestName} — ${evt.reservation.partySize} khách`, 'info', 6000)
     }
@@ -245,8 +254,6 @@ const Reservation = () => {
   return (
     <div className="fixed inset-0 flex flex-col bg-surface">
       <ReservationHeader
-        tab={tab}
-        onTab={setTab}
         onLogout={handleLogout}
         onChangePassword={() => setShowChangePw(true)}
         notifLogs={notifLogs}
@@ -260,57 +267,82 @@ const Reservation = () => {
         newReservations={newReservations}
         unseenNotifCount={unseenNotifCount}
         onOpenReservation={(dto) => setEditingDto(dto)}
+        employeeName={user?.fullName ?? user?.username ?? 'Nhân viên'}
+        roleLabel={ROLE_LABEL[user?.role ?? ''] ?? user?.role ?? 'Phục vụ'}
       />
 
       <div className="relative flex-1 min-h-0 flex flex-col">
-        {/* Floating action cluster */}
-        <div className="absolute top-3 right-5 z-30 flex items-center gap-2">
-          <button className="kv-btn kv-btn-outline-primary h-10 bg-card" onClick={() => exportCsv(items)}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-            </svg>
-            Xuất file
-          </button>
-          <button className="kv-btn kv-btn-primary h-10" onClick={() => setShowModal(true)}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
-            Đặt bàn (F1)
-          </button>
-        </div>
-
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/60 z-20">
             <span className="text-md text-ink-muted">Đang tải...</span>
           </div>
         )}
 
-        {tab === 'calendar' ? (
-          <CalendarView
-            reservations={items}
-            tables={tables}
-            selectedDate={selectedDate}
-            onSelectDate={setSelectedDate}
-            onAssignTable={handleAssignTable}
-            onTransferTable={handleTransferTable}
-            onConfirm={handleConfirm}
-            onCheckIn={handleCheckIn}
-            onCancel={handleCancel}
-            onNoShow={handleNoShow}
-            onEdit={handleEdit}
-          />
-        ) : (
-          <ListView
-            reservations={items}
-            tables={tables}
-            onConfirm={handleConfirm}
-            onCheckIn={handleCheckIn}
-            onNoShow={handleNoShow}
-            onCancel={handleCancel}
-            onAssignTable={handleAssignTable}
-            onEdit={handleEdit}
-          />
-        )}
+        <div className="flex flex-col flex-1 min-h-0 gap-2.5 p-3 lg:p-4 overflow-hidden">
+          {/* Tab toggle — moved out of the header to match the Cashier screen's
+              Phòng bàn/Menu toggle: same size/style, same row position (left side,
+              paired with the page's primary actions on the right), living in the
+              content area instead of the header. */}
+          <div className="flex items-center justify-between shrink-0">
+            <div className="flex h-[52px] rounded-[12px] overflow-hidden border-2 border-[#e8e8e8]">
+              {(
+                [
+                  ['calendar', 'Theo lịch'],
+                  ['list', 'Theo danh sách'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setTab(id)}
+                  className={`flex-1 min-w-[120px] text-[14px] lg:text-[15px] transition-colors ${tab === id ? 'bg-[#dceefe] text-[#025cca] font-semibold' : 'bg-[#f5f5f5] text-[#636566] font-medium'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button className="kv-btn kv-btn-outline-primary h-10 bg-card" onClick={() => exportCsv(items)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+                </svg>
+                Xuất file
+              </button>
+              <button className="kv-btn kv-btn-primary h-10" onClick={() => setShowModal(true)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+                Đặt bàn (F1)
+              </button>
+            </div>
+          </div>
+
+          {tab === 'calendar' ? (
+            <CalendarView
+              reservations={items}
+              tables={tables}
+              selectedDate={selectedDate}
+              onSelectDate={setSelectedDate}
+              onAssignTable={handleAssignTable}
+              onTransferTable={handleTransferTable}
+              onConfirm={handleConfirm}
+              onCheckIn={handleCheckIn}
+              onCancel={handleCancel}
+              onNoShow={handleNoShow}
+              onEdit={handleEdit}
+            />
+          ) : (
+            <ListView
+              reservations={items}
+              tables={tables}
+              onConfirm={handleConfirm}
+              onCheckIn={handleCheckIn}
+              onNoShow={handleNoShow}
+              onCancel={handleCancel}
+              onAssignTable={handleAssignTable}
+              onEdit={handleEdit}
+            />
+          )}
+        </div>
       </div>
 
       {/* Toast */}

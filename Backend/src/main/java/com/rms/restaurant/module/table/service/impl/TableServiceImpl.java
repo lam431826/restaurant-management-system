@@ -183,6 +183,15 @@ public class TableServiceImpl implements TableService {
                     ApplicationError.INVALID_STATUS_TRANSITION,
                     "Cannot transition table from " + current + " to " + next);
         }
+        // Walk-in check-in: staff seating a walk-in (no reservation) moves the table straight
+        // AVAILABLE -> OCCUPIED here. Stamp occupiedSince so ReservationServiceImpl can block
+        // assigning a new reservation to this table until the dining+cleanup window elapses.
+        // Any transition away from OCCUPIED clears it — the table is free again.
+        if (current == TableStatus.AVAILABLE && next == TableStatus.OCCUPIED) {
+            table.setOccupiedSince(java.time.LocalDateTime.now());
+        } else if (next != TableStatus.OCCUPIED) {
+            table.setOccupiedSince(null);
+        }
         table.setStatus(next);
         RestaurantTable saved = tableRepository.save(table);
         realtimeEventPublisher.publishTableStatus(saved);
@@ -528,8 +537,25 @@ public class TableServiceImpl implements TableService {
         return switch (table.getStatus()) {
             case RESERVED -> findReservationByStatus(table.getId(), ReservationStatus.CONFIRMED, true);
             case OCCUPIED, BILLING -> findReservationByStatus(table.getId(), ReservationStatus.CHECKED_IN, false);
+            // A table with two reservations (guest A earlier, guest B later) frees back to
+            // AVAILABLE once A's stay closes — nothing re-flips it to RESERVED for B. Without
+            // this, the table looked like it had no upcoming guest at all until a staff member
+            // manually re-assigned it. Only today's reservation counts: a future day's booking
+            // on this table shouldn't make it look currently spoken-for.
+            case AVAILABLE -> findNextReservationToday(table.getId());
             default -> null;
         };
+    }
+
+    private TableResponse.ReservationSummary findNextReservationToday(String tableId) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime endOfToday = now.toLocalDate().plusDays(1).atStartOfDay();
+        return reservationRepository
+                .findFirstByTableIdAndStatusAndDatetimeBetweenOrderByDatetimeAsc(
+                        tableId, ReservationStatus.CONFIRMED, now, endOfToday)
+                .map(r -> new TableResponse.ReservationSummary(
+                        r.getId(), r.getGuestName(), r.getPhone(), r.getPartySize(), r.getDatetime()))
+                .orElse(null);
     }
 
     private TableResponse.ReservationSummary findReservationByStatus(String tableId, ReservationStatus status, boolean earliest) {

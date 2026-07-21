@@ -23,6 +23,12 @@ public interface ReservationRepository extends JpaRepository<Reservation, String
     /** Most recent reservation in the given status for a table — used to attribute a currently-occupied table (post check-in) back to the guest who booked it. */
     Optional<Reservation> findFirstByTableIdAndStatusOrderByDatetimeDesc(String tableId, ReservationStatus status);
 
+    /** Earliest reservation in the given status for a table within a datetime range — used to
+     * surface the next guest due today on a table that's freed back up to AVAILABLE, without
+     * reaching into a later day's booking. */
+    Optional<Reservation> findFirstByTableIdAndStatusAndDatetimeBetweenOrderByDatetimeAsc(
+            String tableId, ReservationStatus status, LocalDateTime from, LocalDateTime to);
+
     // BE-TBL-05: guard deleteTable() with a clean error instead of a raw FK-constraint 500
     boolean existsByTableId(String tableId);
 

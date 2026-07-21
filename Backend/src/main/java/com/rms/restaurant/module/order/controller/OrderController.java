@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import jakarta.validation.Valid;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 
@@ -76,6 +75,11 @@ public class OrderController {
     @org.springframework.web.bind.annotation.DeleteMapping("/{id}/items/{itemId}")
     public ResponseEntity<OrderResponse> removeItem(@PathVariable String id, @PathVariable String itemId) {
         return ResponseEntity.ok(orderService.removeItem(id, itemId));
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/{id}/items/{itemId}/purge")
+    public ResponseEntity<OrderResponse> purgeItem(@PathVariable String id, @PathVariable String itemId) {
+        return ResponseEntity.ok(orderService.purgeItem(id, itemId));
     }
 
     @PutMapping("/{id}/items/{itemId}/note")
