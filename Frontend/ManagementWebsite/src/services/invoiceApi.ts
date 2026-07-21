@@ -47,10 +47,20 @@ export interface InvoiceMutationResponse {
   splitFromInvoiceId: string | null
 }
 
-export interface SplitInvoiceGroupRequest {
-  allocationIds: string[]
+/** Take `quantity` units off the source allocation. Whole units only. */
+export interface SplitInvoiceItemRequest {
+  allocationId: string
+  quantity: number
 }
 
+export interface SplitInvoiceGroupRequest {
+  items: SplitInvoiceItemRequest[]
+}
+
+/**
+ * Each group becomes one new child invoice peeled off the source. The source keeps whatever
+ * is not listed here and must retain at least one unit, so one group is a valid split.
+ */
 export interface SplitInvoiceRequest {
   groups: SplitInvoiceGroupRequest[]
 }

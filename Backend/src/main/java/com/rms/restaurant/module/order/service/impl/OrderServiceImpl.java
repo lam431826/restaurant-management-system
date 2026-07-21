@@ -622,29 +622,45 @@ public class OrderServiceImpl implements OrderService {
             Set<String> activeInvoiceIds
     ) {
         Set<String> payableItemIds = new HashSet<>();
-        Map<String, Integer> allocationCountByItemId = new HashMap<>();
+        Map<String, Integer> orderedQuantityByItemId = new HashMap<>();
+        Map<String, Integer> allocatedQuantityByItemId = new HashMap<>();
         for (OrderItem item : payableItems) {
             if (!payableItemIds.add(item.getId())) {
                 throw invalidAllocationData();
             }
-            allocationCountByItemId.put(item.getId(), 0);
+            orderedQuantityByItemId.put(item.getId(), item.getQuantity());
+            allocatedQuantityByItemId.put(item.getId(), 0);
         }
 
+        // Coverage is counted in units, not allocation rows. Since partial-quantity split
+        // (V41), one order item can legitimately be spread across several ACTIVE invoices —
+        // e.g. 2 units left on the source and 1 unit on a split child — so "exactly one active
+        // allocation per item" is no longer the invariant. What must hold is that every
+        // ordered unit is billed exactly once across the order's ACTIVE invoices.
+        //
+        // Per-invoice uniqueness is still enforced by uq_iia_active_invoice_order_item, and
+        // validateCloseAllocation already rejects any allocation pointing outside this order's
+        // ACTIVE invoices, so summing here cannot silently absorb a foreign allocation.
         List<InvoiceItemAllocation> allocations = invoiceItemAllocationRepository
                 .findActiveByOrderItemIdsForUpdate(payableItemIds);
         for (InvoiceItemAllocation allocation : allocations) {
             validateCloseAllocation(allocation, payableItemIds, activeInvoiceIds);
-            int allocationCount = allocationCountByItemId.merge(allocation.getOrderItemId(), 1, Integer::sum);
-            if (allocationCount > 1) {
-                throw invalidAllocationData();
-            }
+            allocatedQuantityByItemId.merge(
+                    allocation.getOrderItemId(), allocation.getAllocatedQuantity(), Integer::sum);
         }
 
-        if (allocationCountByItemId.values().stream().anyMatch(count -> count != 1)) {
-            throw new ApplicationException(
-                    ApplicationError.ORDER_NOT_CLOSEABLE,
-                    "Cannot close order before every payable item is invoiced"
-            );
+        for (Map.Entry<String, Integer> ordered : orderedQuantityByItemId.entrySet()) {
+            int allocated = allocatedQuantityByItemId.getOrDefault(ordered.getKey(), 0);
+            // Over-allocation is a data-integrity failure, not a "not ready to close" state.
+            if (allocated > ordered.getValue()) {
+                throw invalidAllocationData();
+            }
+            if (allocated < ordered.getValue()) {
+                throw new ApplicationException(
+                        ApplicationError.ORDER_NOT_CLOSEABLE,
+                        "Cannot close order before every payable item is invoiced"
+                );
+            }
         }
     }
 
