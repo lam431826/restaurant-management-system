@@ -15,7 +15,11 @@ public record TableResponse(
         TableStatus status,
         String qrToken,
         String activeOrderId,
-        ReservationSummary upcomingReservation
+        ReservationSummary upcomingReservation,
+        /** Set only when this table's OCCUPIED status came from a walk-in check-in (no
+         * reservation) — used by the frontend to disable/explain why a new reservation can't
+         * be assigned here yet. Null for reservation-driven occupancy. */
+        LocalDateTime occupiedSince
 ) {
     public record ReservationSummary(
             String id,

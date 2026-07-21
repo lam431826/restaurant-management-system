@@ -42,6 +42,8 @@ export const OrderPanel = ({
   customerSaving,
   customerError,
   orderExists,
+  isWalkInSeating,
+  onCancelWalkInSeating,
 }: {
   items: OrderItem[];
   hasSelectedMenu: boolean;
@@ -78,15 +80,24 @@ export const OrderPanel = ({
   customerSaving?: boolean;
   customerError?: string;
   orderExists: boolean;
+  // Staff deliberately seating a walk-in on a RESERVED table (>2h before that reservation) —
+  // suppress the reservation's guest name here so it's not shown as if it were the walk-in's
+  // own booking; they're unrelated parties sharing the table at different times.
+  isWalkInSeating?: boolean;
+  // Backs out of walk-in seating mode and returns to the reservation panel, without touching
+  // the reservation itself — only offered before an order actually exists for this table.
+  onCancelWalkInSeating?: () => void;
 }) => {
   const [customerOpen, setCustomerOpen] = useState(false);
-  const isTableEmpty = !!selectedTable && !selectedTable.occupied;
+  // Keyed off orderId (via the orderExists prop), not selectedTable.occupied — occupied flips to
+  // true the moment a reservation is checked in (table.status → OCCUPIED) even though no Order
+  // has been created yet. Keying off occupied instead previously fell through to the
+  // checkout/payment branch below with no order to check out (bug: "Tạo Order" unreachable for
+  // a just-checked-in reservation).
+  const isTableEmpty = !!selectedTable && !orderExists;
   const hasItems = items.length > 0;
   const customerDisplayName = customer.customerName.trim() || "Khách lẻ";
-  // Driven by whether an Order row actually exists — not selectedTable.occupied, which flips to
-  // true the moment a reservation is checked in (table.status → OCCUPIED) even though no Order
-  // has been created yet. Keying off orderId keeps the "Tạo Order" button reachable in that gap.
-  const reservationInfo = selectedTable?.upcomingReservation ?? null;
+  const reservationInfo = isWalkInSeating ? null : (selectedTable?.upcomingReservation ?? null);
   const billableOrderItems = items.filter(
     (item) => item.status !== COOKING_STATUS_LABEL.REJECTED,
   );
@@ -104,6 +115,16 @@ export const OrderPanel = ({
 
   return (
     <div className="bg-white rounded-[12px] flex flex-col p-4 lg:p-6 w-[260px] md:w-[300px] lg:w-[360px] xl:w-[400px] shrink-0 h-full overflow-hidden">
+      {isWalkInSeating && !orderExists && onCancelWalkInSeating && (
+        <button
+          type="button"
+          onClick={onCancelWalkInSeating}
+          className="flex items-center gap-1.5 self-start mb-3 px-2.5 py-1.5 rounded-[8px] bg-[#fff4e5] text-[#b45309] text-[12px] font-semibold hover:bg-[#ffe8c2] transition-colors shrink-0"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+          Quay lại đặt bàn trước — không xếp khách vãng lai nữa
+        </button>
+      )}
       <div className="flex items-start justify-between shrink-0 mb-6">
         <div className="flex flex-col gap-1">
           <span className="text-[16px] font-medium text-[#202325]">
@@ -284,7 +305,15 @@ export const OrderPanel = ({
               disabled={
                 !shiftOpen ||
                 createOrderSubmitting ||
-                selectedTable.status !== "AVAILABLE" ||
+                // Mirrors OrderServiceImpl.create(): a table can start an order from AVAILABLE
+                // (fresh walk-in), OCCUPIED (already checked in — reservation guest, or a
+                // walk-in check-in), or RESERVED (seating a walk-in ahead of a reservation
+                // that's still >2h away — the backend re-validates this on submit; getting here
+                // at all already implies the cashier opted in via the panel's "seat walk-in"
+                // button) — as long as it has no order yet (checked separately below).
+                (selectedTable.status !== "AVAILABLE" &&
+                  selectedTable.status !== "OCCUPIED" &&
+                  selectedTable.status !== "RESERVED") ||
                 Boolean(selectedTable.orderId)
               }
               className="bg-[#025cca] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

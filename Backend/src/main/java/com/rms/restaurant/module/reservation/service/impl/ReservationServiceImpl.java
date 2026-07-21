@@ -45,7 +45,12 @@ public class ReservationServiceImpl implements ReservationService {
             List.of(ReservationStatus.PENDING, ReservationStatus.CONFIRMED, ReservationStatus.CHECKED_IN);
 
     private static final EnumSet<ReservationStatus> TERMINAL_STATUSES =
-            EnumSet.of(ReservationStatus.CHECKED_IN, ReservationStatus.NO_SHOW, ReservationStatus.CANCELLED);
+            EnumSet.of(ReservationStatus.CHECKED_IN, ReservationStatus.NO_SHOW,
+                    ReservationStatus.CANCELLED, ReservationStatus.COMPLETED);
+
+    /** BR: a table freshly seated with a walk-in (no reservation) cannot be assigned to a new
+     * reservation until the walk-in's dining (90 min) + cleanup (30 min) window has elapsed. */
+    private static final int WALK_IN_COOLDOWN_MINUTES = 120;
 
     private final ReservationRepository reservationRepository;
     private final TableRepository tableRepository;
@@ -80,6 +85,7 @@ public class ReservationServiceImpl implements ReservationService {
             validateTableExists(request.tableId());
             validateTableCapacity(request.tableId(), request.partySize());
             checkTableAvailability(request.tableId(), request.datetime(), "");
+            validateWalkInCooldown(request.tableId());
         }
         Reservation reservation = Reservation.builder()
                 .guestName(request.guestName())
@@ -158,6 +164,7 @@ public class ReservationServiceImpl implements ReservationService {
             checkTableAvailability(request.tableId(),
                     request.datetime() != null ? request.datetime() : reservation.getDatetime(),
                     id);
+            validateWalkInCooldown(request.tableId());
             reservation.setTableId(request.tableId());
         } else if (reservation.getTableId() != null
                 && (request.partySize() != null || request.datetime() != null)) {
@@ -214,6 +221,7 @@ public class ReservationServiceImpl implements ReservationService {
                 case CHECKED_IN -> "RESERVATION_CHECK_IN";
                 case NO_SHOW -> "RESERVATION_NO_SHOW";
                 case CANCELLED -> "RESERVATION_CANCEL";
+                case COMPLETED -> "RESERVATION_COMPLETE";
                 default -> "RESERVATION_UPDATE";
             };
             auditDetail = "{\"to\":\"" + request.status() + "\",\"guestName\":\"" + esc(saved.getGuestName()) + "\"}";
@@ -276,6 +284,23 @@ public class ReservationServiceImpl implements ReservationService {
         ReservationResponse response = enrich(saved);
         realtimeEventPublisher.publishReservationEvent("UPDATED", response);
         return response;
+    }
+
+    /**
+     * Called once the table's order is closed/paid (OrderServiceImpl.closeOrder()) so a
+     * finished reservation stops permanently blocking the table for future orders/reservations
+     * — findBlockingForTablesForUpdate() treats any CHECKED_IN row as blocking indefinitely.
+     */
+    @Override
+    public void completeStayForTable(String tableId) {
+        List<Reservation> checkedIn = reservationRepository.findByTableIdAndStatus(tableId, ReservationStatus.CHECKED_IN);
+        for (Reservation reservation : checkedIn) {
+            reservation.setStatus(ReservationStatus.COMPLETED);
+            Reservation saved = reservationRepository.save(reservation);
+            audit("RESERVATION_COMPLETE", saved.getId(),
+                    "{\"guestName\":\"" + esc(saved.getGuestName()) + "\"}");
+            realtimeEventPublisher.publishReservationEvent("UPDATED", enrich(saved));
+        }
     }
 
     @Override
@@ -431,12 +456,27 @@ public class ReservationServiceImpl implements ReservationService {
         }
     }
 
+    /**
+     * BR: a table currently seated with a walk-in (no reservation, OrderServiceImpl sets
+     * RestaurantTable.occupiedSince) cannot be assigned to a new reservation until 90 min
+     * (dining) + 30 min (cleanup) have elapsed since the walk-in was seated.
+     */
+    private void validateWalkInCooldown(String tableId) {
+        tableRepository.findById(tableId).ifPresent(t -> {
+            LocalDateTime occupiedSince = t.getOccupiedSince();
+            if (occupiedSince != null && LocalDateTime.now().isBefore(occupiedSince.plusMinutes(WALK_IN_COOLDOWN_MINUTES))) {
+                throw new ApplicationException(ApplicationError.TABLE_RECENTLY_WALK_IN_OCCUPIED);
+            }
+        });
+    }
+
     private void validateTransition(ReservationStatus current, ReservationStatus next) {
         boolean valid = switch (current) {
             case PENDING -> next == ReservationStatus.CONFIRMED || next == ReservationStatus.CANCELLED;
             case CONFIRMED -> next == ReservationStatus.CHECKED_IN
                     || next == ReservationStatus.NO_SHOW
                     || next == ReservationStatus.CANCELLED;
+            case CHECKED_IN -> next == ReservationStatus.COMPLETED;
             default -> false;
         };
         if (!valid) {

@@ -50,7 +50,7 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
 
 /* ── Status filter chips ──────────────────────────────────────────────────── */
 const ACTIVE_STATUSES: ReservationStatus[] = ['PENDING', 'CONFIRMED']
-const TERMINAL_STATUSES: ReservationStatus[] = ['CHECKED_IN', 'CANCELLED', 'NO_SHOW']
+const TERMINAL_STATUSES: ReservationStatus[] = ['CHECKED_IN', 'CANCELLED', 'NO_SHOW', 'COMPLETED']
 
 const StatusChip = ({ status, checked, onChange }: { status: ReservationStatus; checked: boolean; onChange: () => void }) => {
   const meta = reservationStatusMeta[status]

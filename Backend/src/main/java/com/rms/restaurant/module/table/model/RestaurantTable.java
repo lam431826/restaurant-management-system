@@ -45,6 +45,11 @@ public class RestaurantTable {
     @Column(name = "qr_token", unique = true, length = 200)
     private String qrToken;
 
+    /** Set when this table becomes OCCUPIED without a reservation (walk-in); null otherwise.
+     * Cleared when the table frees up. See V41 migration. */
+    @Column(name = "occupied_since")
+    private LocalDateTime occupiedSince;
+
     @LastModifiedDate
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;

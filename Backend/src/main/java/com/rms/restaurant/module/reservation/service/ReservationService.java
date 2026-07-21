@@ -17,4 +17,5 @@ public interface ReservationService {
     ReservationResponse checkIn(String id);       // CONFIRMED → CHECKED_IN
     void markNoShow(String id);                   // CONFIRMED → NO_SHOW
     ReservationResponse transferTable(String id, String tableId); // CHECKED_IN: move to another table
+    void completeStayForTable(String tableId); // CHECKED_IN → COMPLETED, called when the table's order closes/pays
 }

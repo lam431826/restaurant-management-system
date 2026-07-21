@@ -32,6 +32,7 @@ import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
+import com.rms.restaurant.module.reservation.model.Reservation;
 import com.rms.restaurant.module.reservation.repository.ReservationRepository;
 import org.springframework.data.domain.Page;
 
@@ -55,6 +56,7 @@ public class OrderServiceImpl implements OrderService {
             List.of(ReservationStatus.PENDING, ReservationStatus.CONFIRMED);
     private static final int RESERVATION_WINDOW_BEFORE_MINUTES = 60;
     private static final int RESERVATION_WINDOW_AFTER_MINUTES = 120;
+    private static final int WALK_IN_ON_RESERVED_MIN_GAP_MINUTES = 120;
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
@@ -67,6 +69,7 @@ public class OrderServiceImpl implements OrderService {
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final ReservationRepository reservationRepository;
+    private final com.rms.restaurant.module.reservation.service.ReservationService reservationService;
     private final RealtimeEventPublisher realtimeEventPublisher;
 
     @Override
@@ -104,6 +107,11 @@ public class OrderServiceImpl implements OrderService {
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
     }
+
+    private String firstNonBlank(String preferred, String fallback) {
+        return preferred != null ? preferred : fallback;
+    }
+
     @Override
     public OrderResponse updateStatus(String id, OrderStatus status) {
         Order order = orderRepository.findByIdForUpdate(id)
@@ -204,8 +212,14 @@ public class OrderServiceImpl implements OrderService {
                     .orElse(null);
             if (activeOrder == null || activeOrder.getId().equals(order.getId())) {
                 table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.AVAILABLE);
+                table.setOccupiedSince(null);
                 tableRepository.save(table);
                 realtimeEventPublisher.publishTableStatus(table);
+                // Bug: a reservation's stay was left CHECKED_IN forever after payment, which
+                // permanently blocked the table for future orders/reservations (see
+                // ReservationRepository.findBlockingForTablesForUpdate — it treats any
+                // CHECKED_IN row as blocking with no time window).
+                reservationService.completeStayForTable(table.getId());
             }
         }
         // Auto-cancel any remaining PENDING orders for this table (BR-QR-09)
@@ -292,10 +306,17 @@ public class OrderServiceImpl implements OrderService {
         List<String> lockedOrderIds = lockedOrders.stream().map(Order::getId).sorted().toList();
         List<String> currentOrderIds = revalidatedOrderIds.stream().distinct().sorted().toList();
 
+        // A table can start an order from AVAILABLE (fresh walk-in), OCCUPIED (already checked
+        // in — reservation guest, or a walk-in check-in via PATCH /api/tables/{id}/status), or
+        // RESERVED (seating a walk-in ahead of an upcoming reservation, only if that reservation
+        // is far enough out — checked below). BILLING/CLEANING still block: the previous
+        // occupancy hasn't been fully wound down.
         if (!lockedOrderIds.equals(currentOrderIds)
                 || !lockedOrders.isEmpty()
                 || !table.isActive()
-                || table.getStatus() != TableStatus.AVAILABLE) {
+                || (table.getStatus() != TableStatus.AVAILABLE
+                    && table.getStatus() != TableStatus.OCCUPIED
+                    && table.getStatus() != TableStatus.RESERVED)) {
             throw new ApplicationException(
                     ApplicationError.TABLE_NOT_AVAILABLE,
                     "Table already has an active order or is no longer available"
@@ -303,19 +324,50 @@ public class OrderServiceImpl implements OrderService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        boolean hasBlockingReservation = !reservationRepository.findBlockingForTablesForUpdate(
-                tableIds,
-                ReservationStatus.CHECKED_IN,
-                SCHEDULED_BLOCKING_RESERVATION_STATUSES,
-                now.minusMinutes(RESERVATION_WINDOW_BEFORE_MINUTES),
-                now.plusMinutes(RESERVATION_WINDOW_AFTER_MINUTES)
-        ).isEmpty();
-        if (hasBlockingReservation) {
-            throw new ApplicationException(
-                    ApplicationError.TABLE_NOT_AVAILABLE,
-                    "Table has a blocking reservation for the current service time"
-            );
+        // Seating a walk-in on a RESERVED table is only safe if the walk-in's dining (90 min) +
+        // cleanup (30 min) window fully clears before the reservation is due — mirrors
+        // ReservationServiceImpl.validateWalkInCooldown()'s cooldown, applied in reverse.
+        if (table.getStatus() == TableStatus.RESERVED) {
+            Reservation nextReservation = reservationRepository
+                    .findFirstByTableIdAndStatusOrderByDatetimeAsc(tableId, ReservationStatus.CONFIRMED)
+                    .orElse(null);
+            if (nextReservation == null
+                    || nextReservation.getDatetime().isBefore(now.plusMinutes(WALK_IN_ON_RESERVED_MIN_GAP_MINUTES))) {
+                throw new ApplicationException(
+                        ApplicationError.TABLE_NOT_AVAILABLE,
+                        "Table's next reservation is too soon to seat a walk-in"
+                );
+            }
         }
+        // Only guard against a blocking PENDING/CONFIRMED/CHECKED_IN reservation when seating a
+        // fresh walk-in on an AVAILABLE table — this protects an upcoming reservation's table
+        // from being taken by an unrelated walk-in order. Once the table is already OCCUPIED,
+        // that occupancy already went through its own valid transition (reservation check-in or
+        // walk-in check-in), so this order belongs to whoever is already seated there; re-running
+        // the CHECKED_IN check here would incorrectly block a checked-in reservation's own first
+        // order (it always finds its own row).
+        if (table.getStatus() == TableStatus.AVAILABLE) {
+            boolean hasBlockingReservation = !reservationRepository.findBlockingForTablesForUpdate(
+                    tableIds,
+                    ReservationStatus.CHECKED_IN,
+                    SCHEDULED_BLOCKING_RESERVATION_STATUSES,
+                    now.minusMinutes(RESERVATION_WINDOW_BEFORE_MINUTES),
+                    now.plusMinutes(RESERVATION_WINDOW_AFTER_MINUTES)
+            ).isEmpty();
+            if (hasBlockingReservation) {
+                throw new ApplicationException(
+                        ApplicationError.TABLE_NOT_AVAILABLE,
+                        "Table has a blocking reservation for the current service time"
+                );
+            }
+        }
+
+        // If this table is already occupied by a checked-in reservation, default the order's
+        // customer contact to the reservation's guest info so the order/invoice stay linked to
+        // who actually booked — the cashier's explicit input (if any) still wins.
+        Reservation activeReservation = reservationRepository
+                .findFirstByTableIdAndStatusOrderByDatetimeDesc(table.getId(), ReservationStatus.CHECKED_IN)
+                .orElse(null);
 
         Order order = new Order();
         order.setTableId(table.getId());
@@ -323,9 +375,12 @@ public class OrderServiceImpl implements OrderService {
         order.setNote(request.note());
         // Optional contact the cashier typed before the order existed. Purely descriptive,
         // so it is applied after every table/reservation check has already passed.
-        order.setCustomerName(trimToNull(request.customerName()));
-        order.setCustomerPhone(trimToNull(request.customerPhone()));
-        order.setCustomerEmail(trimToNull(request.customerEmail()));
+        order.setCustomerName(firstNonBlank(trimToNull(request.customerName()),
+                activeReservation != null ? activeReservation.getGuestName() : null));
+        order.setCustomerPhone(firstNonBlank(trimToNull(request.customerPhone()),
+                activeReservation != null ? activeReservation.getPhone() : null));
+        order.setCustomerEmail(firstNonBlank(trimToNull(request.customerEmail()),
+                activeReservation != null ? activeReservation.getGuestEmail() : null));
         order.setItems(new java.util.ArrayList<>());
 
         if (request.items() != null) {
@@ -345,9 +400,15 @@ public class OrderServiceImpl implements OrderService {
             });
         }
 
-        table.setStatus(TableStatus.OCCUPIED);
-        tableRepository.save(table);
-        realtimeEventPublisher.publishTableStatus(table);
+        // Table may already be OCCUPIED (checked-in reservation, or a prior walk-in check-in) —
+        // only flip status/stamp occupiedSince when this order is the one seating a fresh walk-in
+        // (from AVAILABLE, or from RESERVED per the far-enough-gap check above).
+        if (table.getStatus() == TableStatus.AVAILABLE || table.getStatus() == TableStatus.RESERVED) {
+            table.setStatus(TableStatus.OCCUPIED);
+            table.setOccupiedSince(now);
+            tableRepository.save(table);
+            realtimeEventPublisher.publishTableStatus(table);
+        }
 
         Order savedOrder = orderRepository.save(order);
         OrderResponse response = orderMapper.toResponse(savedOrder);
@@ -528,8 +589,10 @@ public class OrderServiceImpl implements OrderService {
                     .orElse(null);
             if (activeOrder == null || activeOrder.getId().equals(order.getId())) {
                 table.setStatus(com.rms.restaurant.common.utils.enums.TableStatus.AVAILABLE);
+                table.setOccupiedSince(null);
                 tableRepository.save(table);
                 realtimeEventPublisher.publishTableStatus(table);
+                reservationService.completeStayForTable(table.getId());
             }
         }
 

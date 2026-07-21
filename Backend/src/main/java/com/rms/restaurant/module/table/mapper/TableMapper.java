@@ -29,7 +29,8 @@ public class TableMapper {
                 table.getStatus(),
                 table.getQrToken(),
                 activeOrderId,
-                reservation
+                reservation,
+                table.getOccupiedSince()
         );
     }
 

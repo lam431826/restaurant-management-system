@@ -1,7 +1,7 @@
 import { api } from './api'
 import type { ApiResponse } from './api'
 
-export type ReservationStatus = 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'NO_SHOW' | 'CANCELLED'
+export type ReservationStatus = 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'NO_SHOW' | 'CANCELLED' | 'COMPLETED'
 
 export interface ReservationDetail {
   id: string

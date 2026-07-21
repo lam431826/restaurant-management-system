@@ -17,6 +17,9 @@ export interface TableDto {
     partySize: number
     datetime: string
   } | null
+  /** Set only when this table's OCCUPIED status came from a walk-in check-in (no reservation).
+   * Null for reservation-driven occupancy. */
+  occupiedSince?: string | null
 }
 
 // size is large so callers that need the full table list (no UI pagination) get everything in one page.

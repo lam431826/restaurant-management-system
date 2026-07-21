@@ -100,6 +100,11 @@ const TABLE_FILTERS = [
   { id: "empty", label: "Còn trống" },
 ];
 
+// Mirrors OrderServiceImpl.create()'s WALK_IN_ON_RESERVED_MIN_GAP_MINUTES: seating a walk-in on
+// a RESERVED table is only safe if the walk-in's dining+cleanup window fully clears before the
+// reservation is due.
+const WALK_IN_MIN_GAP_MINUTES = 120;
+
 const ORDER_ALREADY_INVOICED_MESSAGE =
   "Đơn hàng đã có hóa đơn nên không thể chỉnh sửa món.";
 const ORDER_FINAL_ITEM_LOCK_MESSAGE =
@@ -580,6 +585,11 @@ const CashierOrders = () => {
   // ── Reservation panel state ───────────────────────────────────────────────
   const [reservationLoading, setReservationLoading] = useState(false);
   const [reservationError, setReservationError] = useState<string | null>(null);
+  // A table with an upcomingReservation still shows the reservation panel by default (check-in
+  // for that guest). If the reservation is far enough out (see WALK_IN_MIN_GAP_MINUTES, mirrors
+  // OrderServiceImpl.create()'s server-side rule), staff can opt into seating a walk-in instead —
+  // tracked per table id so switching tables resets it back to the reservation view.
+  const [walkInOverrideTableId, setWalkInOverrideTableId] = useState<string | null>(null);
 
   // ── Cash shift state ──────────────────────────────────────────────────────
   const [shift, setShift] = useState<ShiftSummary | null>(null);
@@ -1543,6 +1553,7 @@ const CashierOrders = () => {
     if (previousTableId && previousTableId !== id) {
       setCart([]);
       setMenuItems((items) => items.map((item) => ({ ...item, qty: 0 })));
+      setWalkInOverrideTableId(null);
     }
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
     setOrderActionMessage(null);
@@ -1879,6 +1890,7 @@ const CashierOrders = () => {
             : table,
         ),
       );
+      setWalkInOverrideTableId((id) => (id === expectedTableId ? null : id));
       if (selectedTableIdRef.current === expectedTableId) {
         setCart([]);
         setMenuItems((items) => items.map((item) => ({ ...item, qty: 0 })));
@@ -2212,8 +2224,16 @@ const CashierOrders = () => {
         </div>
 
         {selectedTable &&
-        selectedTable.status === "RESERVED" &&
-        !selectedTable.occupied ? (
+        selectedTable.upcomingReservation &&
+        !selectedTable.occupied &&
+        walkInOverrideTableId !== selectedTable.id ? (
+          // Not gated on status === "RESERVED": a table also carries an upcomingReservation
+          // once it frees back to AVAILABLE with a later same-day guest still CONFIRMED on it
+          // (e.g. two reservations on one table — the first one's stay just closed). The
+          // cashier still needs the check-in/no-show/cancel actions for that next guest, not
+          // the walk-in order flow — unless they explicitly opt into seating a walk-in via
+          // canSeatWalkIn/onSeatWalkIn below (mirrors OrderServiceImpl.create()'s server-side
+          // >2h-away rule for a RESERVED table).
           <ReservationPanel
             table={selectedTable}
             onCheckIn={handleReservationCheckIn}
@@ -2221,6 +2241,12 @@ const CashierOrders = () => {
             onCancel={handleReservationCancel}
             loading={reservationLoading}
             error={reservationError}
+            canSeatWalkIn={
+              new Date(selectedTable.upcomingReservation.datetime).getTime() -
+                Date.now() >
+              WALK_IN_MIN_GAP_MINUTES * 60000
+            }
+            onSeatWalkIn={() => setWalkInOverrideTableId(selectedTable.id)}
           />
         ) : (
           <OrderPanel
@@ -2261,6 +2287,10 @@ const CashierOrders = () => {
             customerSaving={customerSaving}
             customerError={customerError}
             orderExists={Boolean(selectedOrderId)}
+            isWalkInSeating={
+              !!selectedTable && walkInOverrideTableId === selectedTable.id
+            }
+            onCancelWalkInSeating={() => setWalkInOverrideTableId(null)}
             checkoutDisabled={checkoutDisabled}
             checkoutLabel={checkoutLabel}
             shiftOpen={!!shift}
