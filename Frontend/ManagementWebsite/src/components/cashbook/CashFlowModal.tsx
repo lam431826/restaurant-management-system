@@ -4,23 +4,20 @@ import CategoryModal from './CategoryModal'
 import { listEmployees } from '../../api/employees'
 import type { EmployeeDto } from '../../api/employees'
 import { useAuth } from '../../context/AuthContext'
-import {
-  METHOD_LABEL, nextVoucherCode,
-} from '../../data/cashBookMockData'
+import { METHOD_LABEL } from '../../api/cashbook'
 import type {
-  CashFlowCategory, CashFlowMethod, CashFlowType, CashFlowVoucher, PartnerGroup,
-} from '../../data/cashBookMockData'
+  CashFlowCategory, CashFlowMethod, CashFlowType, CreateVoucherPayload, PartnerGroup,
+} from '../../api/cashbook'
 
 interface Props {
   type: CashFlowType
   defaultMethod?: CashFlowMethod
   categories: CashFlowCategory[]
-  vouchers: CashFlowVoucher[]
   onClose: () => void
-  onSave: (voucher: CashFlowVoucher) => void
-  onAddCategory: (type: CashFlowType, data: { name: string; description: string; accountingToIncome: boolean }) => CashFlowCategory
-  onUpdateCategory: (id: string, data: { name: string; description: string; accountingToIncome: boolean }) => void
-  onDeleteCategory: (id: string) => void
+  onSave: (payload: CreateVoucherPayload) => Promise<void>
+  onAddCategory: (type: CashFlowType, data: { name: string; description: string; accountingToIncome: boolean }) => Promise<CashFlowCategory>
+  onUpdateCategory: (id: string, data: { name: string; description: string; accountingToIncome: boolean }) => Promise<void>
+  onDeleteCategory: (id: string) => Promise<void>
 }
 
 type CategoryModalState = { mode: 'create' } | { mode: 'edit'; category: CashFlowCategory }
@@ -58,12 +55,18 @@ const PlusCircleIcon = () => (
 
 const partnerGroupLabel: Record<PartnerGroup, string> = { EMPLOYEE: 'Nhân viên', OTHER: 'Khác' }
 
+const errMsg = (err: unknown, fallback: string) =>
+  (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
+
 const toDatetimeLocal = (isoValue: string) => {
   const d = new Date(isoValue)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
-const fromDatetimeLocal = (value: string) => new Date(value).toISOString()
+// The datetime-local input value is already "YYYY-MM-DDTHH:mm" wall-clock time — append
+// seconds directly instead of round-tripping through Date/toISOString (which shifts to UTC
+// and appends "Z", breaking the backend's LocalDateTime parsing that expects no offset).
+const toBackendDateTime = (value: string) => (value.length === 16 ? `${value}:00` : value)
 const formatAmount = (raw: string) => {
   const digits = raw.replace(/\D/g, '')
   if (digits === '') return ''
@@ -210,7 +213,7 @@ const CategoryPicker = ({
 }
 
 const CashFlowModal = ({
-  type, defaultMethod, categories, vouchers, onClose, onSave, onAddCategory, onUpdateCategory, onDeleteCategory,
+  type, defaultMethod, categories, onClose, onSave, onAddCategory, onUpdateCategory, onDeleteCategory,
 }: Props) => {
   const { user } = useAuth()
 
@@ -227,6 +230,7 @@ const CashFlowModal = ({
   const [collectorName, setCollectorName] = useState(user?.fullName ?? user?.username ?? 'manager')
   const [accountingToIncome, setAccountingToIncome] = useState(true)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
   const [categoryModal, setCategoryModal] = useState<CategoryModalState | null>(null)
 
   const [employees, setEmployees] = useState<EmployeeDto[]>([])
@@ -271,26 +275,34 @@ const CashFlowModal = ({
 
   const categoriesForType = categories.filter(c => c.type === type)
 
-  const handleCategorySave = (data: { name: string; description: string; accountingToIncome: boolean }) => {
-    if (categoryModal?.mode === 'edit') {
-      onUpdateCategory(categoryModal.category.id, data)
-      if (categoryModal.category.name === categoryName) setCategoryName(data.name)
-    } else {
-      const created = onAddCategory(type, data)
-      setCategoryName(created.name)
-      if (error) setError('')
+  const handleCategorySave = async (data: { name: string; description: string; accountingToIncome: boolean }) => {
+    try {
+      if (categoryModal?.mode === 'edit') {
+        await onUpdateCategory(categoryModal.category.id, data)
+        if (categoryModal.category.name === categoryName) setCategoryName(data.name)
+      } else {
+        const created = await onAddCategory(type, data)
+        setCategoryName(created.name)
+        if (error) setError('')
+      }
+      setCategoryModal(null)
+    } catch (err) {
+      window.alert(errMsg(err, 'Không thể lưu loại thu/chi'))
     }
-    setCategoryModal(null)
   }
-  const handleCategoryDelete = () => {
-    if (categoryModal?.mode === 'edit') {
-      onDeleteCategory(categoryModal.category.id)
-      if (categoryModal.category.name === categoryName) setCategoryName('')
+  const handleCategoryDelete = async () => {
+    try {
+      if (categoryModal?.mode === 'edit') {
+        await onDeleteCategory(categoryModal.category.id)
+        if (categoryModal.category.name === categoryName) setCategoryName('')
+      }
+      setCategoryModal(null)
+    } catch (err) {
+      window.alert(errMsg(err, 'Không thể xóa loại thu/chi'))
     }
-    setCategoryModal(null)
   }
 
-  const buildPayload = (): CashFlowVoucher | null => {
+  const buildPayload = (): CreateVoucherPayload | null => {
     if (!categoryName) { setError('Vui lòng chọn loại thu/chi'); return null }
     const amountValue = parseInt(amount.replace(/\D/g, '') || '0', 10)
     if (amountValue <= 0) { setError('Vui lòng nhập giá trị lớn hơn 0'); return null }
@@ -301,10 +313,8 @@ const CashFlowModal = ({
     if (!chosenCategory) { setError('Loại thu/chi không hợp lệ'); return null }
 
     return {
-      id: crypto.randomUUID(),
-      code: nextVoucherCode(vouchers, type),
       type,
-      createdAt: fromDatetimeLocal(dateTimeLocal),
+      occurredAt: toBackendDateTime(dateTimeLocal),
       categoryId: chosenCategory.id,
       method,
       partnerGroup,
@@ -313,22 +323,24 @@ const CashFlowModal = ({
       amount: amountValue,
       note: note.trim(),
       accountingToIncome,
-      createdBy: collectorName,
-      voided: false,
     }
   }
 
-  const handleSave = () => {
+  const submit = async (thenPrint: boolean) => {
     const payload = buildPayload()
-    if (payload) onSave(payload)
-  }
-  const handleSaveAndPrint = () => {
-    const payload = buildPayload()
-    if (payload) {
-      onSave(payload)
-      window.print()
+    if (!payload) return
+    setSaving(true)
+    try {
+      await onSave(payload)
+      if (thenPrint) window.print()
+    } catch (err) {
+      setError(errMsg(err, 'Không thể lưu phiếu'))
+    } finally {
+      setSaving(false)
     }
   }
+  const handleSave = () => { void submit(false) }
+  const handleSaveAndPrint = () => { void submit(true) }
 
   return (
     <div
@@ -392,12 +404,7 @@ const CashFlowModal = ({
                 />
               </Field>
               <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-md text-ink-subtle">{partnerNameFieldLabel}</label>
-                  {partnerGroup === 'OTHER' && (
-                    <span className="text-md text-primary cursor-pointer hover:underline">Tạo mới</span>
-                  )}
-                </div>
+                <label className="text-md text-ink-subtle">{partnerNameFieldLabel}</label>
                 {partnerGroup === 'EMPLOYEE' ? (
                   <EmployeePicker
                     value={employeeId}
@@ -452,9 +459,9 @@ const CashFlowModal = ({
         <div className="flex items-center justify-between gap-4 px-6 py-3 bg-card rounded-b-lg border-t border-line shrink-0">
           <span className="text-md text-danger">{error}</span>
           <div className="flex items-center gap-2">
-            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose}>Bỏ qua</button>
-            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={handleSaveAndPrint}>Lưu &amp; In</button>
-            <button className="kv-btn kv-btn-primary h-10" onClick={handleSave}>Lưu</button>
+            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose} disabled={saving}>Bỏ qua</button>
+            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={handleSaveAndPrint} disabled={saving}>Lưu &amp; In</button>
+            <button className="kv-btn kv-btn-primary h-10" onClick={handleSave} disabled={saving}>Lưu</button>
           </div>
         </div>
       </div>

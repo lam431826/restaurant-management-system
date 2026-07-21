@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { CASH_FLOW_METHODS, COLUMN_LABEL, METHOD_LABEL } from '../../data/cashBookMockData'
-import type { CashFlowMethod, CashFlowType, ColumnKey } from '../../data/cashBookMockData'
+import { CASH_FLOW_METHODS, COLUMN_LABEL, METHOD_LABEL } from '../../api/cashbook'
+import type { CashFlowMethod, CashFlowType, ColumnKey } from '../../api/cashbook'
 
 interface Props {
   title: string
