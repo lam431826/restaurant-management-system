@@ -40,7 +40,6 @@ import java.util.UUID;
 @Transactional
 public class AuthServiceImpl implements AuthService {
 
-    private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final int MAX_OTP_ATTEMPTS = 5;
     private static final int MAX_RESEND_RECORDS = 4; // 1 initial + 3 resends
     private static final int OTP_TTL_MINUTES = 5;
@@ -56,6 +55,7 @@ public class AuthServiceImpl implements AuthService {
     private final AuditService auditService;
     private final EmployeeService employeeService;
     private final EmployeeRepository employeeRepository;
+    private final AuthAttemptService authAttemptService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Value("${app.jwt.access-token-expiration}")
@@ -77,16 +77,10 @@ public class AuthServiceImpl implements AuthService {
         }
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            int attempts = user.getFailedLoginAttempts() + 1;
-            user.setFailedLoginAttempts(attempts);
-            if (attempts >= MAX_FAILED_ATTEMPTS) {
-                user.setStatus(UserStatus.LOCKED);
-                user.setLockedAt(LocalDateTime.now());
-                user.setTokenVersion(user.getTokenVersion() + 1);
-            }
-            userRepository.save(user);
-            audit(user.getId(), user.getUsername(), "AUTH_LOGIN_FAILED", "User", user.getId(),
-                    "{\"reason\":\"INVALID_CREDENTIALS\",\"attempts\":" + attempts + "}");
+            // Runs in its own REQUIRES_NEW transaction (including its own AUTH_LOGIN_FAILED audit
+            // entry) so both survive the UnauthorizedException below rolling back this method's
+            // own transaction — see AuthAttemptService's class javadoc.
+            authAttemptService.recordFailedLogin(user.getId());
             throw new UnauthorizedException(ApplicationError.INVALID_CREDENTIALS);
         }
 
@@ -176,8 +170,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         if (!record.getOtpCode().equals(request.otp())) {
-            record.setAttemptCount(record.getAttemptCount() + 1);
-            otpRecordRepository.save(record);
+            authAttemptService.recordFailedOtpAttempt(record.getId());
             throw new UnauthorizedException(ApplicationError.INVALID_OTP);
         }
 
@@ -365,8 +358,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         if (!record.getOtpCode().equals(request.otp())) {
-            record.setAttemptCount(record.getAttemptCount() + 1);
-            otpRecordRepository.save(record);
+            authAttemptService.recordFailedOtpAttempt(record.getId());
             throw new UnauthorizedException(ApplicationError.INVALID_OTP);
         }
 

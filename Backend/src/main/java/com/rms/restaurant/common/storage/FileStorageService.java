@@ -38,14 +38,14 @@ public class FileStorageService {
      */
     public String storeImage(MultipartFile file, String subfolder) {
         if (file == null || file.isEmpty()) {
-            throw new ApplicationException(ApplicationError.MENU_IMPORT_INVALID, "Image file is missing");
+            throw new ApplicationException(ApplicationError.IMAGE_UPLOAD_INVALID, "Image file is missing");
         }
         if (file.getSize() > MAX_IMAGE_BYTES) {
-            throw new ApplicationException(ApplicationError.MENU_IMPORT_INVALID, "Image exceeds the 5 MB limit");
+            throw new ApplicationException(ApplicationError.IMAGE_UPLOAD_INVALID, "Image exceeds the 5 MB limit");
         }
         String contentType = file.getContentType();
         if (contentType == null || !ALLOWED_IMAGE_TYPES.contains(contentType.toLowerCase())) {
-            throw new ApplicationException(ApplicationError.MENU_IMPORT_INVALID,
+            throw new ApplicationException(ApplicationError.IMAGE_UPLOAD_INVALID,
                     "Unsupported image type; allowed: JPEG, PNG, WEBP, GIF");
         }
 

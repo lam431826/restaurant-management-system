@@ -19,7 +19,7 @@ public class AuditLogController {
     private final AuditService auditService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasRole('MANAGER')")
     public PageResponse<AuditLogResponse> getLogs(
             @RequestParam(required = false) String actorUsername,
             @RequestParam(required = false) String action,

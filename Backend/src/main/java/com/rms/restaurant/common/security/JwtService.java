@@ -37,7 +37,12 @@ public class JwtService {
     }
 
     private String buildToken(UserDetails userDetails, Map<String, Object> extra, long ttl) {
+        // jti: without a unique claim here, two tokens issued for the same user within the same
+        // issuedAt second (e.g. a double-click login, or a refresh right after login) are
+        // byte-for-byte identical, which collides with refresh_tokens' UNIQUE KEY on `token` and
+        // surfaces as a 500 on an otherwise-valid request.
         return Jwts.builder()
+                .id(java.util.UUID.randomUUID().toString())
                 .claims(extra)
                 .subject(userDetails.getUsername())
                 .issuedAt(new Date())

@@ -160,6 +160,11 @@ public enum ApplicationError {
     AT_VIOLATION_TYPE_NOT_FOUND("Không tìm thấy loại vi phạm", HttpStatus.NOT_FOUND),
     AT_SETTING_INVALID("Thiết lập chấm công không hợp lệ", HttpStatus.BAD_REQUEST),
 
+    // File upload (common/storage/FileStorageService — shared by menu item images and employee
+    // avatars; not to be confused with MENU_IMPORT_INVALID, which is specifically about the
+    // menu CSV bulk-import feature)
+    IMAGE_UPLOAD_INVALID("The image file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
+
     // System
     INTERNAL_ERROR("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR);
 

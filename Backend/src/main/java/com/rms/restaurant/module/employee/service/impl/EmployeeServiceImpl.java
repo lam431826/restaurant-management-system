@@ -407,7 +407,13 @@ public class EmployeeServiceImpl implements EmployeeService {
                     boolean phoneTakenByOther = existing != null
                             ? employeeRepository.existsByPhoneAndIdNot(phone, existing.getId())
                             : employeeRepository.existsByPhone(phone);
-                    if (phoneTakenByOther || (phonesInBatch.contains(phone) && existing == null)) {
+                    // phonesInBatch must be checked regardless of new-vs-update: an update row
+                    // (existing != null) was previously exempt, so it was never compared against
+                    // phones claimed earlier in the SAME file — two rows could both "validate"
+                    // with the same phone and only collide later at save() time, against the
+                    // DB-level UNIQUE constraint, surfacing as a raw 500 instead of a clean
+                    // per-row import error.
+                    if (phoneTakenByOther || phonesInBatch.contains(phone)) {
                         errors.add(new EmployeeImportResultResponse.RowError((int) rowNumber, "Phone already in use: " + phone));
                         continue;
                     }

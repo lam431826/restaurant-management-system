@@ -57,7 +57,7 @@ const NewPasswordPage = () => {
       navigate('/login', { replace: true, state: { message: 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập.' } })
     } catch (err: any) {
       const status = err.response?.status
-      if (status === 401) setError('Mã OTP không đúng hoặc đã hết hạn.')
+      if (status === 400) setError('Mã OTP không đúng hoặc đã hết hạn.')
       else if (status === 429) setError('Đã nhập sai OTP quá nhiều lần.')
       else setError('Có lỗi xảy ra, vui lòng thử lại.')
     } finally {
