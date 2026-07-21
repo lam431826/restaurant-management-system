@@ -54,6 +54,7 @@ import {
   listOrders,
   listPendingAssistance,
   acceptOrder,
+  purgeOrderItem,
   removeOrderItem,
   respondAssistance,
   updateOrderItemStatus,
@@ -660,10 +661,18 @@ const CashierOrders = () => {
     setActiveOrders(Array.from(orderById.values()));
     setTables((currentTables) => {
       const selectedId = currentTables.find((table) => table.selected)?.id;
-      return mappedTables.map((table) => ({
-        ...table,
-        selected: table.id === selectedId,
-      }));
+      return mappedTables.map((table) => {
+        const old = currentTables.find((p) => p.id === table.id);
+        return {
+          ...table,
+          selected: table.id === selectedId,
+          occupied: old?.occupied ?? false,
+          amount: old?.amount ?? 0,
+          items: old?.items ?? 0,
+          orderId: old?.orderId ?? null,
+          status: old?.status === "BILLING" ? "BILLING" : table.status,
+        };
+      });
     });
     setActiveArea((currentArea) => {
       if (
@@ -741,10 +750,18 @@ const CashierOrders = () => {
           .sort((a, b) => a.order - b.order)
           .map(toTableItem);
         setTables((prev) =>
-          updated.map((t) => ({
-            ...t,
-            selected: prev.find((p) => p.id === t.id)?.selected ?? false,
-          })),
+          updated.map((t) => {
+            const old = prev.find((p) => p.id === t.id);
+            return {
+              ...t,
+              selected: old?.selected ?? false,
+              occupied: old?.occupied ?? false,
+              amount: old?.amount ?? 0,
+              items: old?.items ?? 0,
+              orderId: old?.orderId ?? null,
+              status: old?.status === "BILLING" ? "BILLING" : t.status,
+            };
+          }),
         );
       })
       .catch(() => {});
@@ -834,8 +851,7 @@ const CashierOrders = () => {
         const tableOrders = activeOrders.filter(
           (order) =>
             order.tableId === t.id &&
-            ACTIVE_ORDER_STATUSES.includes(order.status) &&
-            (!t.orderId || order.id === t.orderId),
+            ACTIVE_ORDER_STATUSES.includes(order.status),
         );
         if (tableOrders.length === 0) {
           return {
@@ -847,15 +863,22 @@ const CashierOrders = () => {
             // status intentionally not touched — keeps RESERVED/CLEANING/AVAILABLE from API
           };
         }
-        const itemsCount = tableOrders.reduce(
-          (total, order) =>
-            total + order.items.reduce((sum, item) => sum + item.quantity, 0),
-          0,
-        );
-        const totalAmount = tableOrders.reduce(
-          (total, order) => total + order.totalAmount,
-          0,
-        );
+        let itemsCount = 0;
+        let totalAmount = 0;
+
+        tableOrders.forEach((order) => {
+          order.items.forEach((item) => {
+            const isPendingQr =
+              item.cookingStatus === "PENDING" &&
+              (item.isQrOrder ?? item.qrOrder);
+            const isRejected = item.cookingStatus === "REJECTED";
+            
+            if (!isPendingQr && !isRejected) {
+              itemsCount += item.quantity;
+              totalAmount += item.unitPrice * item.quantity;
+            }
+          });
+        });
         return {
           ...t,
           occupied: true,
@@ -893,7 +916,6 @@ const CashierOrders = () => {
     const tableOrders = activeOrders.filter(
       (o) =>
         o.tableId === selectedTable.id &&
-        (!selectedTable.orderId || o.id === selectedTable.orderId) &&
         ACTIVE_ORDER_STATUSES.includes(o.status),
     );
     if (tableOrders.length === 0) {
@@ -901,17 +923,19 @@ const CashierOrders = () => {
       return;
     }
     const combinedItems: OrderItem[] = tableOrders.flatMap((order) =>
-      order.items.map((i) => ({
-        id: i.orderItemId,
-        name: i.menuItemName,
-        qty: i.quantity,
-        price: i.unitPrice,
-        status: COOKING_STATUS_LABEL[i.cookingStatus],
-        notes: i.note || "",
-        rejectionNote: i.rejectionNote,
-        orderId: order.id,
-        isQrOrder: i.isQrOrder ?? i.qrOrder,
-      })),
+      order.items
+        .filter((i) => !(i.cookingStatus === "PENDING" && (i.isQrOrder ?? i.qrOrder)))
+        .map((i) => ({
+          id: i.orderItemId,
+          name: i.menuItemName,
+          qty: i.quantity,
+          price: i.unitPrice,
+          status: COOKING_STATUS_LABEL[i.cookingStatus],
+          notes: i.note || "",
+          rejectionNote: i.rejectionNote,
+          orderId: order.id,
+          isQrOrder: i.isQrOrder ?? i.qrOrder,
+        })),
     );
     setOrderItems(combinedItems);
   }, [selectedTable?.id, selectedTable?.occupied, activeOrders]);
@@ -1948,11 +1972,26 @@ const CashierOrders = () => {
   };
 
   const handleRejectPendingOrder = async (order: Order) => {
+    if (disableItemMutation) {
+      showItemMutationBlockedMessage();
+      return;
+    }
+    setOrderActionMessage(null);
     try {
-      await cancelOrder(order.id, "Thu ngân hủy (QR)");
+      const pendingItems = order.items.filter(
+        (i) => i.cookingStatus === "PENDING" && (i.isQrOrder ?? i.qrOrder)
+      );
+      await Promise.all(
+        pendingItems.map((i) => purgeOrderItem(order.id, i.orderItemId))
+      );
       setRefreshTrigger((t) => t + 1);
+      setShowQRModal(false);
     } catch (e) {
       console.error(e);
+      setOrderActionMessage({
+        type: "error",
+        text: getOrderActionErrorMessage(e),
+      });
     }
   };
 
