@@ -202,15 +202,28 @@ export default function GuestOrderPage() {
 
   const handleStartEditing = () => {
     if (!statusData || !statusData.items) return
-    const newCart = statusData.items.map((item, index) => ({
-      cartItemId: `${Date.now()}-${index}`,
-      id: item.menuItemId,
-      name: item.menuItemName,
-      price: item.unitPrice,
-      note: item.note || '',
-      quantity: item.quantity
-    }))
-    setCart(newCart)
+    const pendingItems = statusData.items.filter(i => i.cookingStatus === 'PENDING' && (i.isQrOrder || i.qrOrder));
+    
+    setCart(prev => {
+      const merged = [...prev];
+      pendingItems.forEach((item, index) => {
+        const existingIdx = merged.findIndex(i => i.id === item.menuItemId && i.note === (item.note || ''));
+        if (existingIdx >= 0) {
+          merged[existingIdx] = { ...merged[existingIdx], quantity: merged[existingIdx].quantity + item.quantity };
+        } else {
+          merged.push({
+            cartItemId: `${Date.now()}-${index}`,
+            id: item.menuItemId,
+            name: item.menuItemName,
+            price: item.unitPrice,
+            note: item.note || '',
+            quantity: item.quantity
+          });
+        }
+      });
+      return merged;
+    });
+    
     setIsEditing(true)
     setActiveTab('draft')
   }
