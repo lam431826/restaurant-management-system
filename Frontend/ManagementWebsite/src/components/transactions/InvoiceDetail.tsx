@@ -90,6 +90,7 @@ const paymentMethodLabels: Record<PaymentMethod, string> = {
   CARD: "Thẻ",
   QR: "Mã QR",
   E_WALLET: "Ví điện tử",
+  VNPAY: "VNPAY Sandbox",
 };
 
 // PENDING/CANCELLED only occur for QR (simulated external payment); CASH is

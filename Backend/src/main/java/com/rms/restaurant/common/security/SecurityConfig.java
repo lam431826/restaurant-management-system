@@ -73,6 +73,9 @@ public class SecurityConfig {
                 .requestMatchers("/ws/**", "/ws-guest/**").permitAll()
                 // Public – Payment webhook (verified via HMAC-SHA256 in controller)
                 .requestMatchers(HttpMethod.POST, "/api/webhooks/**").permitAll()
+                // Public – VNPAY Return/IPN (VNPAY's own browser redirect/server call with no
+                // JWT; verified via HMAC-SHA512 checksum in the controller/service)
+                .requestMatchers(HttpMethod.GET, "/api/payments/vnpay/return", "/api/payments/vnpay/ipn").permitAll()
                 // Protected - Orders (controller-level roles apply via @PreAuthorize)
                 .requestMatchers("/api/orders/**").authenticated()
                 // Protected - Tables (controller-level roles apply via @PreAuthorize)

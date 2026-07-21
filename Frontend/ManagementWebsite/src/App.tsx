@@ -26,6 +26,7 @@ import ForgotPasswordPage from "./components/auth/ForgotPasswordPage";
 import NewPasswordPage from "./components/auth/NewPasswordPage";
 import PromotionManagement from "./components/promotions/PromotionManagement";
 import CashBook from "./components/cashbook/CashBook";
+import VnpayResultPage from "./components/payment/VnpayResultPage";
 
 //import { ProtectedRoute } from './contexts/AuthContext'
 
@@ -55,6 +56,16 @@ function App() {
           element={
             <ProtectedRoute roles={["CASHIER", "MANAGER"]}>
               <CashierOrders />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── VNPAY Sandbox result (lands here after the backend's Return redirect) ── */}
+        <Route
+          path="/payment/vnpay-result"
+          element={
+            <ProtectedRoute roles={["CASHIER", "MANAGER", "ADMIN"]}>
+              <VnpayResultPage />
             </ProtectedRoute>
           }
         />

@@ -50,9 +50,32 @@ public class Payment {
     @Column(name = "change_amount", precision = 12, scale = 0)
     private BigDecimal changeAmount;
 
-    // QR only: when the simulated external payment window expires (informational).
+    // QR/VNPAY: when the payment window expires. For VNPAY, a still-PENDING attempt past
+    // this point is reported as EXPIRED without ever mutating the invoice.
     @Column(name = "expires_at")
     private LocalDateTime expiresAt;
+
+    // VNPAY only: the exact yyyyMMddHHmmss (GMT+7) string sent as vnp_CreateDate when the
+    // payment URL was signed. QueryDR's vnp_TransactionDate must match it byte-for-byte,
+    // and neither createdAt nor a recomputed "now" can reproduce it (see V47).
+    @Column(name = "vnp_create_date", length = 14)
+    private String vnpCreateDate;
+
+    // VNPAY only — persisted straight from the gateway response, never invented.
+    @Column(name = "vnp_transaction_no", length = 50)
+    private String vnpTransactionNo;
+
+    @Column(name = "vnp_response_code", length = 10)
+    private String vnpResponseCode;
+
+    @Column(name = "vnp_transaction_status", length = 10)
+    private String vnpTransactionStatus;
+
+    @Column(name = "vnp_bank_code", length = 50)
+    private String vnpBankCode;
+
+    @Column(name = "vnp_card_type", length = 50)
+    private String vnpCardType;
 
     // When the payment actually reached PAID (immediate for CASH, on simulated
     // gateway confirmation for QR) — distinct from createdAt for QR, where the

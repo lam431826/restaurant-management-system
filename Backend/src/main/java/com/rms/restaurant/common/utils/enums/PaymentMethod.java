@@ -4,5 +4,6 @@ public enum PaymentMethod {
     CASH,
     CARD,
     QR,
-    E_WALLET
+    E_WALLET,
+    VNPAY
 }

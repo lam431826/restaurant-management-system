@@ -18,7 +18,12 @@ public class PaymentMapper {
                 payment.getChangeAmount(),
                 payment.getExpiresAt(),
                 payment.getPaidAt(),
-                payment.getCreatedAt()
+                payment.getCreatedAt(),
+                payment.getVnpTransactionNo(),
+                payment.getVnpResponseCode(),
+                payment.getVnpTransactionStatus(),
+                payment.getVnpBankCode(),
+                payment.getVnpCardType()
         );
     }
 }
