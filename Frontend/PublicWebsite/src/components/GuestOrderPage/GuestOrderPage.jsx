@@ -77,7 +77,7 @@ export default function GuestOrderPage() {
       }
     }
     fetchStatus()
-    const interval = setInterval(fetchStatus, 15000)
+    const interval = setInterval(fetchStatus, 5000)
     return () => clearInterval(interval)
   }, [currentOrderId])
 
@@ -202,6 +202,13 @@ export default function GuestOrderPage() {
 
   const handleStartEditing = () => {
     if (!statusData || !statusData.items) return
+
+    // If already editing, just switch to the draft tab, don't duplicate items
+    if (isEditing) {
+      setActiveTab('draft')
+      return
+    }
+
     const pendingItems = statusData.items.filter(i => i.cookingStatus === 'PENDING' && (i.isQrOrder || i.qrOrder));
     
     setCart(prev => {
