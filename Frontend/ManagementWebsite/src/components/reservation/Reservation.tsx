@@ -358,6 +358,8 @@ const Reservation = () => {
       {editingDto && (
         <EditReservationModal
           dto={editingDto}
+          tables={tables}
+          reservations={dtos}
           onClose={() => setEditingDto(null)}
           onSaved={() => { setEditingDto(null); void load() }}
         />
