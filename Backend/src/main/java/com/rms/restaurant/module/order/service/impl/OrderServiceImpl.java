@@ -319,7 +319,9 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderResponse create(CreateOrderRequest request) {
+    public OrderResponse create(CreateOrderRequest request, String username) {
+        var cashier = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ApplicationException(ApplicationError.USER_NOT_FOUND));
         String tableId = request.tableId().trim();
         List<String> tableIds = List.of(tableId);
 
@@ -406,6 +408,7 @@ public class OrderServiceImpl implements OrderService {
         Order order = new Order();
         order.setCode(businessCodeGenerator.nextOrderCode());
         order.setTableId(table.getId());
+        order.setCashierId(cashier.getId());
         order.setStatus(OrderStatus.ACCEPTED); // Cashier creates order, it's already accepted
         order.setNote(request.note());
         // Optional contact the cashier typed before the order existed. Purely descriptive,

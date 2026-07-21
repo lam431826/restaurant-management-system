@@ -16,6 +16,7 @@ public record InvoiceDetailResponse(
         BigDecimal totalAmount,
         boolean paid,
         LocalDateTime createdAt,
+        String createdBy,
         String promotionId,
         String promotionCode,
         List<InvoiceItemResponse> items,

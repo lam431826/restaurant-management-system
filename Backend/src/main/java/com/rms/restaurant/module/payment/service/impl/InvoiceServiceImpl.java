@@ -15,6 +15,8 @@ import com.rms.restaurant.module.order.repository.OrderItemRepository;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.notification.service.NotificationDispatcher;
 import com.rms.restaurant.common.utils.mail.GmailService;
+import com.rms.restaurant.module.menu.model.MenuItem;
+import com.rms.restaurant.module.menu.repository.MenuItemRepository;
 import com.rms.restaurant.module.payment.dto.*;
 import com.rms.restaurant.module.payment.mapper.InvoiceMapper;
 import com.rms.restaurant.module.payment.model.Invoice;
@@ -81,6 +83,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final PaymentRepository paymentRepository;
     private final TableRepository tableRepository;
     private final UserRepository userRepository;
+    private final MenuItemRepository menuItemRepository;
     private final InvoiceMapper invoiceMapper;
     private final InvoiceSplitPersistenceService invoiceSplitPersistenceService;
     private final InvoiceMergeValidator invoiceMergeValidator;
@@ -160,7 +163,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     @Override
-    public InvoiceResponse generate(GenerateInvoiceRequest request) {
+    public InvoiceResponse generate(GenerateInvoiceRequest request, String username) {
         String orderId = request.orderId().trim();
 
         Order order = orderRepository.findByIdForUpdate(orderId)
@@ -201,6 +204,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .status(InvoiceStatus.ACTIVE)
                 .mergedIntoInvoiceId(null)
                 .splitFromInvoiceId(null)
+                .createdBy(username)
                 .build();
 
         Invoice savedInvoice = invoiceRepository.save(invoice);
@@ -299,8 +303,10 @@ public class InvoiceServiceImpl implements InvoiceService {
         Invoice invoice = invoiceRepository.findById(invoiceId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
 
-        List<InvoiceItemResponse> items = resolveAllocationLines(invoice).stream()
-                .map(this::toInvoiceItemResponse)
+        List<ResolvedAllocationLine> allocationLines = resolveAllocationLines(invoice);
+        Map<String, String> menuItemCodesById = menuItemCodesById(allocationLines);
+        List<InvoiceItemResponse> items = allocationLines.stream()
+                .map(line -> toInvoiceItemResponse(line, menuItemCodesById))
                 .collect(Collectors.toList());
 
         String promotionCode = null;
@@ -319,6 +325,9 @@ public class InvoiceServiceImpl implements InvoiceService {
                 ? null
                 : invoiceRepository.findById(invoice.getSplitFromInvoiceId()).map(Invoice::getCode).orElse(null);
         String orderCode = orderRepository.findById(invoice.getOrderId()).map(Order::getCode).orElse(null);
+        String createdByName = invoice.getCreatedBy() == null
+                ? null
+                : userRepository.findByUsername(invoice.getCreatedBy()).map(User::getFullName).orElse(invoice.getCreatedBy());
 
         return new InvoiceDetailResponse(
                 invoice.getId(),
@@ -330,6 +339,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 invoice.getTotalAmount(),
                 invoice.isPaid(),
                 invoice.getCreatedAt(),
+                createdByName,
                 invoice.getPromotionId(),
                 promotionCode,
                 items,
@@ -362,8 +372,8 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     @Override
-    public SplitInvoiceResponse split(String invoiceId, SplitInvoiceRequest request) {
-        PersistedInvoiceSplitResult result = invoiceSplitPersistenceService.splitAtomically(invoiceId, request);
+    public SplitInvoiceResponse split(String invoiceId, SplitInvoiceRequest request, String username) {
+        PersistedInvoiceSplitResult result = invoiceSplitPersistenceService.splitAtomically(invoiceId, request, username);
         List<SplitInvoiceChildResponse> children = result.children().stream()
                 .map(child -> new SplitInvoiceChildResponse(
                         child.childInvoiceId(),
@@ -387,9 +397,9 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public MergeInvoiceResponse merge(MergeInvoiceRequest request) {
+    public MergeInvoiceResponse merge(MergeInvoiceRequest request, String username) {
         ValidatedInvoiceMergePlan plan = invoiceMergeValidator.validate(request);
-        PersistedInvoiceMergeResult result = invoiceMergePersistenceService.mergeAtomically(plan);
+        PersistedInvoiceMergeResult result = invoiceMergePersistenceService.mergeAtomically(plan, username);
         InvoiceSummaryResponse targetInvoice = new InvoiceSummaryResponse(
                 result.targetInvoiceId(),
                 result.targetInvoiceCode(),
@@ -709,9 +719,24 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
     }
 
-    private InvoiceItemResponse toInvoiceItemResponse(ResolvedAllocationLine line) {
+    private Map<String, String> menuItemCodesById(List<ResolvedAllocationLine> lines) {
+        List<String> menuItemIds = lines.stream()
+                .map(line -> line.orderItem().getMenuItemId())
+                .distinct()
+                .toList();
+        if (menuItemIds.isEmpty()) return Map.of();
+        // MenuItem.code is optional (manager-assigned SKU-style code, not every item has one) —
+        // Collectors.toMap rejects null values, so items without a code are simply left out; a
+        // missing map entry and a present-but-null value both read back as null via Map.get.
+        return menuItemRepository.findAllById(menuItemIds).stream()
+                .filter(item -> item.getCode() != null)
+                .collect(Collectors.toMap(MenuItem::getId, MenuItem::getCode));
+    }
+
+    private InvoiceItemResponse toInvoiceItemResponse(ResolvedAllocationLine line, Map<String, String> menuItemCodesById) {
         return new InvoiceItemResponse(
                 line.orderItem().getMenuItemId(),
+                menuItemCodesById.get(line.orderItem().getMenuItemId()),
                 line.orderItem().getMenuItemName(),
                 line.allocation().getAllocatedQuantity(),
                 line.allocation().getUnitPriceSnapshot(),

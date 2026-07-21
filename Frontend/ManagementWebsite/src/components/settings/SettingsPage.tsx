@@ -3,6 +3,8 @@ import type { AttendanceSettingsDto, ManualTimeMode, ShiftDto } from '../../api/
 import { deleteShift, formatTime, getSettings, listShifts, updateSettings, updateShift } from '../../api/attendance'
 import type { SalaryTemplateDto } from '../../api/salaryTemplates'
 import { listSalaryTemplates } from '../../api/salaryTemplates'
+import type { PayrollSettingsDto } from '../../api/payroll'
+import { getPayrollSettings, updatePayrollSettings } from '../../api/payroll'
 import type { FinancialCustomLineRow, FinancialLineGroupParam } from '../../api/reports'
 import { deleteFinancialCustomLine, listFinancialCustomLines } from '../../api/reports'
 import { ApiError } from '../../services/api'
@@ -155,10 +157,9 @@ const SettingsPage = () => {
   const [loadError, setLoadError] = useState('')
   const [saveError, setSaveError] = useState('')
 
-  // payroll toggles (out of AT scope — display-only, no persistence)
-  const [autoCreate, setAutoCreate] = useState(true)
-  const [autoUpdate, setAutoUpdate] = useState(true)
-  const [pit, setPit] = useState(false)
+  const [payrollSettings, setPayrollSettings] = useState<PayrollSettingsDto | null>(null)
+  const [payrollLoadError, setPayrollLoadError] = useState('')
+  const [payrollSaveError, setPayrollSaveError] = useState('')
 
   // reports toggles — display-only, no backend support yet
   const [customRevenueWindow, setCustomRevenueWindow] = useState(true)
@@ -183,6 +184,9 @@ const SettingsPage = () => {
     getSettings()
       .then(res => setSettings(res.data.data))
       .catch(err => setLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập chấm công.'))
+    getPayrollSettings()
+      .then(res => setPayrollSettings(res.data.data))
+      .catch(err => setPayrollLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập tính lương.'))
   }, [])
 
   const commit = async (next: AttendanceSettingsDto) => {
@@ -192,6 +196,16 @@ const SettingsPage = () => {
       setSaveError('')
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.message : 'Không thể lưu thiết lập chấm công.')
+    }
+  }
+
+  const commitPayroll = async (next: PayrollSettingsDto) => {
+    setPayrollSettings(next) // optimistic
+    try {
+      await updatePayrollSettings(next)
+      setPayrollSaveError('')
+    } catch (err) {
+      setPayrollSaveError(err instanceof ApiError ? err.message : 'Không thể lưu thiết lập tính lương.')
     }
   }
 
@@ -254,9 +268,11 @@ const SettingsPage = () => {
             {tab === 'attendance' && shiftListOpen && (
               <ShiftList shifts={shifts} onBack={() => setShiftListOpen(false)} onChanged={loadShifts} />
             )}
-            {tab === 'payroll' && !salaryTemplateListOpen && (
+            {tab === 'payroll' && !salaryTemplateListOpen && payrollSettings && (
               <PayrollSettings
-                state={{ autoCreate, setAutoCreate, autoUpdate, setAutoUpdate, pit, setPit }}
+                settings={payrollSettings}
+                commit={commitPayroll}
+                saveError={payrollLoadError || payrollSaveError}
                 salaryTemplateCount={salaryTemplates.length}
                 onOpenSalaryTemplateList={() => setSalaryTemplateListOpen(true)}
               />
@@ -508,45 +524,49 @@ const ShiftList = ({ shifts, onBack, onChanged }: { shifts: ShiftDto[]; onBack: 
 }
 
 /* ── Tính lương tab ────────────────────────────────────────────────────────── */
-interface PayrollState {
-  autoCreate: boolean; setAutoCreate: (v: boolean) => void
-  autoUpdate: boolean; setAutoUpdate: (v: boolean) => void
-  pit: boolean; setPit: (v: boolean) => void
-}
-const PayrollSettings = ({ state, salaryTemplateCount, onOpenSalaryTemplateList }: {
-  state: PayrollState
+const PayrollSettings = ({ settings, commit, saveError, salaryTemplateCount, onOpenSalaryTemplateList }: {
+  settings: PayrollSettingsDto
+  commit: (next: PayrollSettingsDto) => void
+  saveError: string
   salaryTemplateCount: number
   onOpenSalaryTemplateList: () => void
-}) => (
-  <div>
-    <h2 className="text-lg font-bold text-ink mb-2">Thiết lập tính lương</h2>
+}) => {
+  const set = <K extends keyof PayrollSettingsDto>(key: K, value: PayrollSettingsDto[K]) =>
+    commit({ ...settings, [key]: value })
 
-    <Block title="Ngày tính lương" desc="Ngày bắt đầu tính công cho nhân viên có kỳ lương hàng tháng">
-      <div className="flex items-center gap-3">
-        <span className="text-md text-ink">Chọn ngày bắt đầu kỳ lương hàng tháng</span>
-        <div className="relative">
-          <select className="h-9 pl-3 pr-8 bg-card border border-line-default rounded-md text-md text-ink appearance-none cursor-pointer outline-none focus:border-primary">
-            {Array.from({ length: 28 }, (_, i) => <option key={i}>Ngày {i + 1}</option>)}
-          </select>
-          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rotate-90"><ChevronRight /></span>
+  return (
+    <div>
+      <h2 className="text-lg font-bold text-ink mb-2">Thiết lập tính lương</h2>
+      {saveError && <div className="mb-3 px-4 py-2 rounded-md bg-danger-50 text-danger text-md border border-danger/30">{saveError}</div>}
+
+      <Block title="Ngày tính lương" desc="Ngày bắt đầu tính công cho nhân viên có kỳ lương hàng tháng">
+        <div className="flex items-center gap-3">
+          <span className="text-md text-ink">Chọn ngày bắt đầu kỳ lương hàng tháng</span>
+          <div className="relative">
+            <select value={settings.payrollCutoffDay} onChange={e => set('payrollCutoffDay', Number(e.target.value))}
+              className="h-9 pl-3 pr-8 bg-card border border-line-default rounded-md text-md text-ink appearance-none cursor-pointer outline-none focus:border-primary">
+              {Array.from({ length: 28 }, (_, i) => <option key={i} value={i + 1}>Ngày {i + 1}</option>)}
+            </select>
+            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rotate-90"><ChevronRight /></span>
+          </div>
+          <InfoIcon />
         </div>
-        <InfoIcon />
-      </div>
-    </Block>
+      </Block>
 
-    <Block title="Tự động tạo bảng tính lương" desc="Bảng tính lương sẽ được tự động tạo mới vào mỗi kỳ lương"
-      right={<Toggle on={state.autoCreate} onChange={state.setAutoCreate} />} />
+      <Block title="Tự động tạo bảng tính lương" desc="Bảng tính lương sẽ được tự động tạo mới vào mỗi kỳ lương"
+        right={<Toggle on={settings.autoCreateEnabled} onChange={v => set('autoCreateEnabled', v)} />} />
 
-    <Block title="Tự động cập nhật bảng tính lương" desc="Bảng tính lương sẽ được tự động cập nhật mỗi ngày"
-      right={<Toggle on={state.autoUpdate} onChange={state.setAutoUpdate} />} />
+      <Block title="Tự động cập nhật bảng tính lương" desc="Bảng tính lương sẽ được tự động cập nhật mỗi ngày"
+        right={<Toggle on={settings.autoUpdateEnabled} onChange={v => set('autoUpdateEnabled', v)} />} />
 
-    <Block title="Thiết lập Mẫu lương" desc="Thiết lập mẫu lương chung có thể dùng cho nhiều nhân viên"
-      right={<button onClick={onOpenSalaryTemplateList} className="flex items-center gap-1 text-md text-ink hover:text-primary cursor-pointer">{salaryTemplateCount} mẫu lương <ChevronRight /></button>} />
+      <Block title="Thiết lập Mẫu lương" desc="Thiết lập mẫu lương chung có thể dùng cho nhiều nhân viên"
+        right={<button onClick={onOpenSalaryTemplateList} className="flex items-center gap-1 text-md text-ink hover:text-primary cursor-pointer">{salaryTemplateCount} mẫu lương <ChevronRight /></button>} />
 
-    <Block title="Thuế TNCN cho nhân viên" desc="Thiết lập quy định tính thuế TNCN cho nhân viên"
-      right={<Toggle on={state.pit} onChange={state.setPit} />} last />
-  </div>
-)
+      <Block title="Thuế TNCN cho nhân viên" desc="Thiết lập quy định tính thuế TNCN cho nhân viên"
+        right={<Toggle on={settings.personalIncomeTaxEnabled} onChange={v => set('personalIncomeTaxEnabled', v)} />} last />
+    </div>
+  )
+}
 
 /* ── Tài chính tab ─────────────────────────────────────────────────────────── */
 const FinancialLineSettings = ({ lines, onChanged }: { lines: FinancialCustomLineRow[]; onChanged: () => void }) => {

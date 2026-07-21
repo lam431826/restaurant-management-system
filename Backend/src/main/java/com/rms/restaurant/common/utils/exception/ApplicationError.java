@@ -138,6 +138,7 @@ public enum ApplicationError {
     PAYSLIP_CANCELLED("Phiếu lương đã bị hủy", HttpStatus.UNPROCESSABLE_ENTITY),
     SALARY_TEMPLATE_NOT_FOUND("Không tìm thấy mẫu lương", HttpStatus.NOT_FOUND),
     SALARY_TEMPLATE_NAME_DUPLICATE("Tên mẫu lương đã tồn tại", HttpStatus.CONFLICT),
+    PAYROLL_SETTING_INVALID("Thiết lập tính lương không hợp lệ", HttpStatus.BAD_REQUEST),
 
     // Attendance & Shift (SRS_AT) — UC-AT-01..07, BR-AT-*
     AT_SHIFT_NOT_FOUND("Không tìm thấy ca làm việc", HttpStatus.NOT_FOUND),

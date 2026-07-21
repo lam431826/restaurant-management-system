@@ -38,7 +38,8 @@ public class InvoiceSplitPersistenceService {
     @Transactional
     public PersistedInvoiceSplitResult splitAtomically(
             String sourceInvoiceId,
-            SplitInvoiceRequest request
+            SplitInvoiceRequest request,
+            String username
     ) {
         ValidatedInvoiceSplitPlan plan = invoiceSplitValidator.validateForUpdate(sourceInvoiceId, request);
         Invoice sourceInvoice = plan.sourceInvoice();
@@ -48,7 +49,7 @@ public class InvoiceSplitPersistenceService {
         );
         validateManagedPlan(plan, sourceSnapshot, allocationSnapshots);
 
-        List<Invoice> childInvoices = buildChildInvoices(plan);
+        List<Invoice> childInvoices = buildChildInvoices(plan, username);
         List<Invoice> savedChildren = invoiceRepository.saveAll(childInvoices);
         invoiceRepository.flush();
         validatePersistedChildIdentities(savedChildren, plan.groups().size());
@@ -128,7 +129,7 @@ public class InvoiceSplitPersistenceService {
         validateSourceUnchanged(plan.sourceInvoice(), sourceSnapshot, InvoiceStatus.ACTIVE);
     }
 
-    private List<Invoice> buildChildInvoices(ValidatedInvoiceSplitPlan plan) {
+    private List<Invoice> buildChildInvoices(ValidatedInvoiceSplitPlan plan, String username) {
         List<Invoice> children = new ArrayList<>();
         for (ValidatedInvoiceSplitPlan.ValidatedGroup group : plan.groups()) {
             children.add(Invoice.builder()
@@ -142,6 +143,7 @@ public class InvoiceSplitPersistenceService {
                     .status(InvoiceStatus.ACTIVE)
                     .mergedIntoInvoiceId(null)
                     .splitFromInvoiceId(plan.sourceInvoice().getId())
+                    .createdBy(username)
                     .build());
         }
         return children;
