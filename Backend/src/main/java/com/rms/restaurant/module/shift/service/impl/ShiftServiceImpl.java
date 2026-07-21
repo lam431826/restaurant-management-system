@@ -7,13 +7,9 @@ import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
-import com.rms.restaurant.common.utils.enums.AttendanceStatus;
-import com.rms.restaurant.module.attendance.repository.WorkScheduleRepository;
-import com.rms.restaurant.module.employee.repository.EmployeeRepository;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.payment.model.Payment;
 import com.rms.restaurant.module.payment.repository.PaymentRepository;
-import com.rms.restaurant.module.roster.repository.RosterAttendanceRepository;
 import com.rms.restaurant.module.shift.dto.*;
 import com.rms.restaurant.module.shift.mapper.ShiftMapper;
 import com.rms.restaurant.module.shift.model.Shift;
@@ -79,9 +75,6 @@ public class ShiftServiceImpl implements ShiftService {
     private final PaymentRepository paymentRepo;
     private final OrderRepository orderRepo;
     private final UserRepository userRepo;
-    private final RosterAttendanceRepository attendanceRepo;
-    private final EmployeeRepository employeeRepo;
-    private final WorkScheduleRepository workScheduleRepo;
     private final ShiftMapper shiftMapper;
     private final AuditService auditService;
 
@@ -90,16 +83,6 @@ public class ShiftServiceImpl implements ShiftService {
     @Override
     public ShiftSummaryResponse open(OpenShiftRequest request, String cashierUsername) {
         User cashier = resolveUser(cashierUsername);
-
-        // BR-X-01: cashier must be CHECKED_IN on today's work shift (legacy roster
-        // clock-in), OR have a work schedule for today in the newer attendance module
-        // (module/attendance has no self-service clock-in step of its own, so a
-        // same-day WorkSchedule occurrence is treated as sufficient evidence).
-        boolean isClockedIn = attendanceRepo.existsByEmployeeIdAndWorkDateAndStatus(
-                cashier.getId(), LocalDate.now(), AttendanceStatus.CHECKED_IN);
-        if (!isClockedIn && !isScheduledInAttendanceModule(cashier)) {
-            throw new ApplicationException(ApplicationError.CASHIER_NOT_CHECKED_IN);
-        }
 
         // BR-CS-01: each cashier may have at most one OPEN shift at a time
         shiftRepo.findByCashierIdAndStatus(cashier.getId(), STATUS_OPEN).ifPresent(existing -> {
@@ -634,18 +617,6 @@ public class ShiftServiceImpl implements ShiftService {
     private User resolveUser(String username) {
         return userRepo.findByUsername(username)
                 .orElseThrow(() -> new ApplicationException(ApplicationError.USER_NOT_FOUND));
-    }
-
-    // BR-X-01 fallback: module/attendance schedules staff by Employee.id (module/employee),
-    // not User.id, so a cashier scheduled only through the newer Manager "Lịch làm việc"
-    // screen would never satisfy the legacy roster CHECKED_IN check above. A linked
-    // Employee with a WorkSchedule occurrence for today is accepted as equivalent proof.
-    private boolean isScheduledInAttendanceModule(User cashier) {
-        return employeeRepo.findByUserId(cashier.getId())
-                .map(employee -> !workScheduleRepo
-                        .findByEmployeeIdAndWorkDate(employee.getId(), LocalDate.now())
-                        .isEmpty())
-                .orElse(false);
     }
 
     private Shift requireOpenShift(String shiftId) {

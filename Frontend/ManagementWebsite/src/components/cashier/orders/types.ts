@@ -46,6 +46,7 @@ export interface OrderItem {
   price: number;
   orderId: string;
   rejectionNote?: string | null;
+  isQrOrder?: boolean;
 }
 
 export interface CartItem {
@@ -79,7 +80,6 @@ export const toTableItem = (dto: TableServiceItem): TableItem => {
 };
 
 export const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
-  "PENDING",
   "ACCEPTED",
   "PREPARING",
   "SERVED",

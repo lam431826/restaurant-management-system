@@ -137,6 +137,22 @@ const LoginPage = () => {
   const [error, setError] = useState("");
   const [resendMsg, setResendMsg] = useState("");
 
+  /* first-login profile form (step "send-otp") — full profile (User + Employee fields) is
+     collected up front here; verify/otp creates the linked Employee row on success, so
+     "Hồ sơ của tôi" afterward is purely an edit screen for most users. */
+  const [profileFullName, setProfileFullName] = useState("");
+  const [profileEmail, setProfileEmail] = useState("");
+  const [profilePhone, setProfilePhone] = useState("");
+  const [profileStartDate, setProfileStartDate] = useState("");
+  const [profileNote, setProfileNote] = useState("");
+  const [profileIdNumber, setProfileIdNumber] = useState("");
+  const [profileBirthday, setProfileBirthday] = useState("");
+  const [profileGender, setProfileGender] = useState("");
+  const [profileAddress, setProfileAddress] = useState("");
+  const [profileErrors, setProfileErrors] = useState<Record<string, string>>(
+    {},
+  );
+
   /* step 1: username + password */
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,16 +183,46 @@ const LoginPage = () => {
     }
   };
 
-  /* step 2: send OTP to email */
-  const handleSendOtp = async () => {
+  /* step 2: fill the full profile (User fields + Employee fields) then send OTP to it */
+  const validateProfile = (): boolean => {
+    const e: Record<string, string> = {};
+    if (!profileFullName.trim()) e.fullName = "Bắt buộc";
+    if (!profileEmail.trim()) e.email = "Bắt buộc";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileEmail.trim()))
+      e.email = "Email không hợp lệ";
+    if (!profilePhone.trim()) e.phone = "Bắt buộc";
+    else if (!/^0\d{9,10}$/.test(profilePhone.trim()))
+      e.phone = "SĐT phải bắt đầu bằng 0, 10-11 chữ số";
+    setProfileErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError("");
+    if (!validateProfile()) return;
     setLoading(true);
     try {
-      const res = await verifyInfo(verifyToken);
+      const res = await verifyInfo(verifyToken, {
+        fullName: profileFullName.trim(),
+        email: profileEmail.trim(),
+        phone: profilePhone.trim(),
+        startDate: profileStartDate || undefined,
+        note: profileNote.trim() || undefined,
+        idNumber: profileIdNumber.trim() || undefined,
+        birthday: profileBirthday || undefined,
+        gender: profileGender || undefined,
+        address: profileAddress.trim() || undefined,
+      });
       setMaskedEmail(res.data.data.maskedEmail);
       setStep("enter-otp");
-    } catch {
-      setError("Không thể gửi OTP. Vui lòng thử lại.");
+    } catch (err: any) {
+      const code = err.response?.data?.error;
+      if (code === "DUPLICATE_EMAIL")
+        setProfileErrors({ email: "Email đã được sử dụng bởi tài khoản khác" });
+      else if (code === "DUPLICATE_PHONE" || code === "DUPLICATE_EMPLOYEE_PHONE")
+        setProfileErrors({ phone: "Số điện thoại đã được sử dụng" });
+      else setError("Không thể gửi OTP. Vui lòng thử lại.");
     } finally {
       setLoading(false);
     }
@@ -212,7 +258,10 @@ const LoginPage = () => {
     setResendMsg("");
     setError("");
     try {
-      await resendOtp(verifyToken);
+      const res = await resendOtp(verifyToken);
+      // resendOtp() invalidates the old verify_token server-side and issues a new one — without
+      // updating state here, the next verifyOtp() call would 401 on the now-used old token.
+      setVerifyToken(res.data.data.verifyToken);
       setResendMsg("Đã gửi lại OTP.");
     } catch (err: any) {
       const status = err.response?.status;
@@ -291,25 +340,141 @@ const LoginPage = () => {
     return (
       <AuthLayout
         title="Xác thực tài khoản"
-        subtitle="Đây là lần đầu bạn đăng nhập. Vui lòng xác thực email."
+        subtitle="Đây là lần đầu bạn đăng nhập. Vui lòng hoàn thiện hồ sơ và xác thực email."
       >
-        <div className="flex flex-col gap-4">
+        <form onSubmit={handleSendOtp} className="flex flex-col gap-[10px]">
           <p className="text-[14px] text-[#636566] leading-[1.5]">
-            Chúng tôi sẽ gửi mã OTP đến email đã đăng ký của bạn để kích hoạt
-            tài khoản.
+            Điền thông tin cá nhân — chúng tôi sẽ gửi mã OTP đến email bạn
+            nhập để kích hoạt tài khoản.
           </p>
+          <div className="flex flex-col gap-1">
+            <InputField
+              label="Họ và tên"
+              icon={<PersonIcon />}
+              placeholder="Nguyễn Văn A"
+              value={profileFullName}
+              onChange={(e) => {
+                setProfileFullName(e.target.value);
+                if (profileErrors.fullName)
+                  setProfileErrors((p) => ({ ...p, fullName: "" }));
+              }}
+            />
+            {profileErrors.fullName && (
+              <p className="text-[13px] text-red-500 leading-[1.5]">
+                {profileErrors.fullName}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1">
+            <InputField
+              label="Email"
+              icon={<PersonIcon />}
+              placeholder="ban@example.com"
+              type="email"
+              value={profileEmail}
+              onChange={(e) => {
+                setProfileEmail(e.target.value);
+                if (profileErrors.email)
+                  setProfileErrors((p) => ({ ...p, email: "" }));
+              }}
+            />
+            {profileErrors.email && (
+              <p className="text-[13px] text-red-500 leading-[1.5]">
+                {profileErrors.email}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1">
+            <InputField
+              label="Số điện thoại"
+              icon={<PersonIcon />}
+              placeholder="0901234567"
+              value={profilePhone}
+              onChange={(e) => {
+                setProfilePhone(e.target.value);
+                if (profileErrors.phone)
+                  setProfileErrors((p) => ({ ...p, phone: "" }));
+              }}
+            />
+            {profileErrors.phone && (
+              <p className="text-[13px] text-red-500 leading-[1.5]">
+                {profileErrors.phone}
+              </p>
+            )}
+          </div>
+          <InputField
+            label="Ngày bắt đầu làm việc"
+            icon={<PersonIcon />}
+            placeholder=""
+            type="date"
+            value={profileStartDate}
+            onChange={(e) => setProfileStartDate(e.target.value)}
+          />
+          <InputField
+            label="Số CMND/CCCD"
+            icon={<PersonIcon />}
+            placeholder="012345678901"
+            value={profileIdNumber}
+            onChange={(e) => setProfileIdNumber(e.target.value)}
+          />
+          <InputField
+            label="Ngày sinh"
+            icon={<PersonIcon />}
+            placeholder=""
+            type="date"
+            value={profileBirthday}
+            onChange={(e) => setProfileBirthday(e.target.value)}
+          />
+          <div className="flex flex-col gap-3">
+            <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">
+              Giới tính
+            </label>
+            <div className="flex items-center gap-6 h-[44px] px-1">
+              {["Nam", "Nữ"].map((g) => (
+                <label
+                  key={g}
+                  className="flex items-center gap-2 cursor-pointer text-[14px] text-[#202325]"
+                >
+                  <input
+                    type="radio"
+                    name="profileGender"
+                    className="accent-[#025cca] w-4 h-4"
+                    checked={profileGender === g}
+                    onChange={() => setProfileGender(g)}
+                  />
+                  {g}
+                </label>
+              ))}
+            </div>
+          </div>
+          <InputField
+            label="Địa chỉ"
+            icon={<PersonIcon />}
+            placeholder="Số nhà, đường, phường/xã..."
+            value={profileAddress}
+            onChange={(e) => setProfileAddress(e.target.value)}
+          />
+          <InputField
+            label="Ghi chú"
+            icon={<PersonIcon />}
+            placeholder="Không bắt buộc"
+            value={profileNote}
+            onChange={(e) => setProfileNote(e.target.value)}
+          />
           {error && (
             <p className="text-[13px] text-red-500 leading-[1.5]">{error}</p>
           )}
           <button
-            onClick={handleSendOtp}
+            type="submit"
             disabled={loading}
-            className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full hover:bg-[#0250b0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-[#025cca] flex items-center justify-center h-[60px] rounded-[12px] w-full mt-1 hover:bg-[#0250b0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="text-[20px] font-semibold text-white leading-[1.5]">
               {loading ? "Đang gửi..." : "Gửi OTP qua Email"}
             </span>
           </button>
+        </form>
+        <div className="flex flex-col gap-4 mt-2">
           <button
             onClick={() => setStep("login")}
             className="text-[14px] text-[#636566] hover:underline text-center"

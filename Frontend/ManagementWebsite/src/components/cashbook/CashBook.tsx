@@ -104,15 +104,21 @@ const CashBook = () => {
     )
   }, [filteredVouchers])
 
-  const addCategory = (name: string, type: CashFlowType): CashFlowCategory => {
-    const created: CashFlowCategory = { id: crypto.randomUUID(), name, type }
-    setCategories(list => [...list, created])
-    return created
-  }
-
   const saveVoucher = (voucher: CashFlowVoucher) => {
     setVouchers(list => [voucher, ...list])
     setModal(null)
+  }
+
+  const addCategory = (type: CashFlowType, data: { name: string; description: string; accountingToIncome: boolean }): CashFlowCategory => {
+    const created: CashFlowCategory = { id: crypto.randomUUID(), type, ...data }
+    setCategories(list => [...list, created])
+    return created
+  }
+  const updateCategory = (id: string, data: { name: string; description: string; accountingToIncome: boolean }) => {
+    setCategories(list => list.map(c => (c.id === id ? { ...c, ...data } : c)))
+  }
+  const deleteCategory = (id: string) => {
+    setCategories(list => list.filter(c => c.id !== id))
   }
 
   const voidVoucher = (voucherId: string) => {
@@ -159,6 +165,8 @@ const CashBook = () => {
           onClose={() => setModal(null)}
           onSave={saveVoucher}
           onAddCategory={addCategory}
+          onUpdateCategory={updateCategory}
+          onDeleteCategory={deleteCategory}
         />
       )}
     </div>

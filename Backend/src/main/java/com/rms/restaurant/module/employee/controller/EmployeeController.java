@@ -13,6 +13,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -41,6 +43,26 @@ public class EmployeeController {
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<EmployeeResponse>> get(@PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success(employeeService.get(id)));
+    }
+
+    // ── Self-service ("Hồ sơ của tôi") — method-level @PreAuthorize overrides the class-level
+    // MANAGER/ADMIN restriction; Spring Security resolves the nearest annotation, method wins. ──
+
+    @GetMapping("/me")
+    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER')")
+    public ResponseEntity<ApiResponse<EmployeeResponse>> getMyProfile(@AuthenticationPrincipal UserDetails principal) {
+        return ResponseEntity.ok(ApiResponse.success(employeeService.getMyProfile(principal.getUsername())));
+    }
+
+    // Single upsert endpoint by design: "my profile" always exists conceptually from the
+    // client's perspective, only its persisted-or-not state differs server-side — a POST/PUT
+    // split would just push that branch onto the frontend for no real benefit.
+    @PostMapping("/me")
+    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER')")
+    public ResponseEntity<ApiResponse<EmployeeResponse>> saveMyProfile(
+            @AuthenticationPrincipal UserDetails principal,
+            @Valid @RequestBody SelfEmployeeProfileRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(employeeService.saveMyProfile(principal.getUsername(), request)));
     }
 
     @PostMapping

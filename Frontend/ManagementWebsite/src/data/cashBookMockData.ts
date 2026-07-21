@@ -4,12 +4,28 @@
 
 export type CashFlowType = 'RECEIPT' | 'PAYMENT'
 export type CashFlowMethod = 'CASH' | 'BANK' | 'EWALLET'
+// Manual creation (CashFlowModal) only ever assigns EMPLOYEE/OTHER; CUSTOMER is
+// reserved for receipts auto-generated from paid invoices (see SourceInvoice below).
 export type PartnerGroup = 'EMPLOYEE' | 'OTHER'
+export type VoucherPartnerGroup = PartnerGroup | 'CUSTOMER'
 
 export interface CashFlowCategory {
   id: string
   name: string
   type: CashFlowType
+  description?: string
+  accountingToIncome?: boolean
+}
+
+// Present on RECEIPT vouchers that were auto-created when an invoice got paid,
+// instead of manually entered through CashFlowModal.
+export interface SourceInvoice {
+  invoiceCode: string
+  invoiceTime: string // ISO datetime
+  voucherValue: number
+  prePaid: number
+  collected: number
+  status: string
 }
 
 export interface CashFlowVoucher {
@@ -19,7 +35,7 @@ export interface CashFlowVoucher {
   createdAt: string // ISO datetime
   categoryId: string
   method: CashFlowMethod
-  partnerGroup: PartnerGroup
+  partnerGroup: VoucherPartnerGroup
   partnerId: string | null
   partnerName: string
   amount: number
@@ -27,6 +43,7 @@ export interface CashFlowVoucher {
   accountingToIncome: boolean
   createdBy: string
   voided: boolean
+  sourceInvoice?: SourceInvoice
 }
 
 export const METHOD_LABEL: Record<CashFlowMethod, string> = {
@@ -45,7 +62,7 @@ export type FundFilter = 'ALL' | CashFlowMethod
 export type TimePreset = 'THIS_MONTH' | 'CUSTOM'
 export type StatusFilter = 'PAID' | 'VOIDED'
 export type AccountingFilter = 'ALL' | 'YES' | 'NO'
-export type PartnerScope = 'ALL' | PartnerGroup
+export type PartnerScope = 'ALL' | VoucherPartnerGroup
 
 export interface CashBookFilterState {
   fund: FundFilter
@@ -93,6 +110,7 @@ export const COLUMN_LABEL: Record<ColumnKey, string> = {
 
 export const initialCategories: CashFlowCategory[] = [
   { id: 'cat-thu-khach', name: 'Thu tiền khách trả', type: 'RECEIPT' },
+  { id: 'cat-thu-khach-hd', name: 'Tiền khách trả', type: 'RECEIPT' },
   { id: 'cat-thu-khac', name: 'Thu khác', type: 'RECEIPT' },
   { id: 'cat-chi-nguyen-lieu', name: 'Chi phí nguyên liệu', type: 'PAYMENT' },
   { id: 'cat-chi-dien-nuoc', name: 'Chi phí điện nước', type: 'PAYMENT' },
@@ -178,14 +196,39 @@ export const initialVouchers: CashFlowVoucher[] = [
     note: 'Mua hoá đơn, giấy in bill', accountingToIncome: true,
     createdBy: 'manager01', voided: true,
   },
+  // Auto-generated receipts: created by the (future) invoice-payment flow, not
+  // through CashFlowModal. Code is "TT" + the invoice code, not the PT sequence.
+  {
+    id: 'v-11', code: 'TTHD000051', type: 'RECEIPT', createdAt: iso(0, 17, 21),
+    categoryId: 'cat-thu-khach-hd', method: 'CASH', partnerGroup: 'CUSTOMER',
+    partnerId: null, partnerName: '', amount: 310_000,
+    note: '', accountingToIncome: true,
+    createdBy: 'manager01', voided: false,
+    sourceInvoice: {
+      invoiceCode: 'HD000051', invoiceTime: iso(0, 17, 21),
+      voucherValue: 310_000, prePaid: 0, collected: 310_000, status: 'Đã thanh toán',
+    },
+  },
+  {
+    id: 'v-12', code: 'TT000001', type: 'RECEIPT', createdAt: iso(0, 17, 19),
+    categoryId: 'cat-thu-khach-hd', method: 'CASH', partnerGroup: 'CUSTOMER',
+    partnerId: null, partnerName: 'Anh Giang - Kim Mã', amount: 5_000_000,
+    note: '', accountingToIncome: true,
+    createdBy: 'manager01', voided: false,
+    sourceInvoice: {
+      invoiceCode: 'HD000050', invoiceTime: iso(0, 17, 19),
+      voucherValue: 5_000_000, prePaid: 0, collected: 5_000_000, status: 'Đã thanh toán',
+    },
+  },
 ]
 
 export const nextVoucherCode = (vouchers: CashFlowVoucher[], type: CashFlowType) => {
   const prefix = type === 'RECEIPT' ? 'PT' : 'PC'
+  const re = new RegExp(`^${prefix}(\\d+)$`)
   const maxNo = vouchers
     .filter(v => v.type === type)
     .reduce((max, v) => {
-      const m = /^\D+(\d+)$/.exec(v.code)
+      const m = re.exec(v.code)
       return m ? Math.max(max, parseInt(m[1], 10)) : max
     }, 0)
   return `${prefix}${String(maxNo + 1).padStart(6, '0')}`

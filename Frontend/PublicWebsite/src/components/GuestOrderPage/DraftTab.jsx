@@ -13,7 +13,7 @@ export default function DraftTab({
   handleSubmitOrder
 }) {
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex-1 flex flex-col min-h-0">
       <div className="flex-1 overflow-y-auto p-4 pb-24">
         {cart.length === 0 ? (
           <div className="flex flex-col items-center justify-center pt-20 text-gray-400">

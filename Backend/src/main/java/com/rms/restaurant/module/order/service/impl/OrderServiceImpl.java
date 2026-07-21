@@ -31,6 +31,7 @@ import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
+import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.reservation.repository.ReservationRepository;
 import org.springframework.data.domain.Page;
 
@@ -64,6 +65,7 @@ public class OrderServiceImpl implements OrderService {
     private final InvoiceRepository invoiceRepository;
     private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
     private final PaymentRepository paymentRepository;
+    private final UserRepository userRepository;
     private final ReservationRepository reservationRepository;
     private final RealtimeEventPublisher realtimeEventPublisher;
 

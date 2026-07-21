@@ -9,8 +9,20 @@ export const logout = () =>
 export const changePassword = (currentPassword: string, newPassword: string) =>
   apiClient.post('/auth/change-password', { currentPassword, newPassword })
 
-export const verifyInfo = (verifyToken: string) =>
-  apiClient.post('/auth/verify/info', null, {
+export interface FirstLoginProfile {
+  fullName: string
+  email: string
+  phone: string
+  startDate?: string
+  note?: string
+  idNumber?: string
+  birthday?: string
+  gender?: string
+  address?: string
+}
+
+export const verifyInfo = (verifyToken: string, profile: FirstLoginProfile) =>
+  apiClient.post('/auth/verify/info', profile, {
     headers: { 'X-Verify-Token': verifyToken },
   })
 

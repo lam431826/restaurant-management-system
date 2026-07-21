@@ -42,8 +42,9 @@ public class AuthController {
 
     @PostMapping("/verify/info")
     public ResponseEntity<ApiResponse<VerifyInfoResponse>> verifyInfo(
-            @RequestHeader("X-Verify-Token") String verifyToken) {
-        return ResponseEntity.ok(ApiResponse.success(authService.verifyInfo(verifyToken)));
+            @RequestHeader("X-Verify-Token") String verifyToken,
+            @Valid @RequestBody VerifyInfoRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(authService.verifyInfo(verifyToken, request)));
     }
 
     @PostMapping("/verify/otp")

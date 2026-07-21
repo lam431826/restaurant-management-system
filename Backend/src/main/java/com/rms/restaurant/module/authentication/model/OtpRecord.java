@@ -3,6 +3,7 @@ package com.rms.restaurant.module.authentication.model;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -43,4 +44,36 @@ public class OtpRecord {
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
+
+    // Profile the user submitted at verify/info (first-login flow only) — committed onto
+    // User once verify/otp confirms the OTP, so an unverified email is never live on the account.
+    @Column(name = "pending_full_name", length = 150)
+    private String pendingFullName;
+
+    @Column(name = "pending_email", length = 150)
+    private String pendingEmail;
+
+    @Column(name = "pending_phone", length = 20)
+    private String pendingPhone;
+
+    // Full employee-profile fields collected alongside name/email/phone at verify/info —
+    // committed onto a linked Employee row (via EmployeeService.saveMyProfile) once verify/otp
+    // confirms the OTP. See EmployeeServiceImpl for the target field shapes.
+    @Column(name = "pending_start_date")
+    private LocalDate pendingStartDate;
+
+    @Column(name = "pending_note", length = 1000)
+    private String pendingNote;
+
+    @Column(name = "pending_id_number", length = 30)
+    private String pendingIdNumber;
+
+    @Column(name = "pending_birthday")
+    private LocalDate pendingBirthday;
+
+    @Column(name = "pending_gender", length = 10)
+    private String pendingGender;
+
+    @Column(name = "pending_address", length = 300)
+    private String pendingAddress;
 }

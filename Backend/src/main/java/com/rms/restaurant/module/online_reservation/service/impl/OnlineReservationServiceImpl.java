@@ -109,7 +109,8 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         // tier instead, regardless of whether a table has been assigned yet.
         long bookedInTier = reservationRepository.countActiveInWindowByPartySizeRange(
                 ACTIVE_STATUSES, windowStart, windowEnd, tier[0], tier[1]);
-        if (bookedInTier >= tierTableIds.size()) {
+        long adHocOccupiedInTier = countAdHocOccupiedInTier(tierTableIds, request.datetime());
+        if (bookedInTier + adHocOccupiedInTier >= tierTableIds.size()) {
             throw new ApplicationException(ApplicationError.TABLE_FULLY_BOOKED);
         }
 
@@ -275,6 +276,28 @@ public class OnlineReservationServiceImpl implements OnlineReservationService {
         if (partySize <= 10) return new int[]{9,  10};
         if (partySize <= 12) return new int[]{11, 12};
         return                      new int[]{13, 20};
+    }
+
+    /**
+     * Walk-ins seated without a reservation row are invisible to bookedInTier, so a table that's
+     * physically OCCUPIED/BILLING/CLEANING right now can look "free" to the tier count even though
+     * no online guest could actually be seated there. Only meaningful for near-term requests — a
+     * table's live status says nothing about availability days out — so this only applies when the
+     * requested slot starts within MAX_DINING_MINUTES of now. Tables occupied because of a
+     * CHECKED_IN reservation are excluded — that reservation is already counted in bookedInTier.
+     */
+    private long countAdHocOccupiedInTier(List<String> tierTableIds, LocalDateTime requestedDatetime) {
+        if (requestedDatetime.isAfter(LocalDateTime.now().plusMinutes(MAX_DINING_MINUTES))) {
+            return 0;
+        }
+        List<String> physicallyOccupied = tableRepository.findIdsByIdInAndStatusIn(
+                tierTableIds, List.of(TableStatus.OCCUPIED, TableStatus.BILLING, TableStatus.CLEANING));
+        if (physicallyOccupied.isEmpty()) {
+            return 0;
+        }
+        List<String> checkedInTableIds = reservationRepository.findTableIdsByTableIdInAndStatus(
+                physicallyOccupied, ReservationStatus.CHECKED_IN);
+        return physicallyOccupied.stream().filter(id -> !checkedInTableIds.contains(id)).count();
     }
 
     private void audit(String action, String id, String detail) {

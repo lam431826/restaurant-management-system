@@ -15,6 +15,7 @@ import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<Payment, String> {
     List<Payment> findByInvoiceId(String invoiceId);
+    List<Payment> findByInvoiceIdIn(List<String> invoiceIds);
     boolean existsByInvoiceId(String invoiceId);
     boolean existsByInvoiceIdIn(Collection<String> invoiceIds);
     boolean existsByInvoiceIdAndStatus(String invoiceId, String status);

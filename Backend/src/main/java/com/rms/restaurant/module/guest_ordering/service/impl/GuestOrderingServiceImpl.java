@@ -78,6 +78,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
                 orderItem.setQuantity(itemRequest.quantity());
                 orderItem.setUnitPrice(menuItem.getPrice());
                 orderItem.setNote(itemRequest.note());
+                orderItem.setQrOrder(true);
 
                 order.getItems().add(orderItem);
             });
@@ -215,6 +216,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
             orderItem.setQuantity(itemRequest.quantity());
             orderItem.setUnitPrice(menuItem.getPrice());
             orderItem.setNote(itemRequest.note());
+            orderItem.setQrOrder(true);
 
             order.getItems().add(orderItem);
         });

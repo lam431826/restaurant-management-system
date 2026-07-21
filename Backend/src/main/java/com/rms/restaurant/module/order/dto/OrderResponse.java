@@ -18,5 +18,5 @@ public record OrderResponse(
         String customerPhone,
         String customerEmail
 ) {
-    public record ItemLine(String orderItemId, String menuItemId, String menuItemName, int quantity, BigDecimal unitPrice, String note, com.rms.restaurant.common.utils.enums.CookingStatus cookingStatus, String rejectionNote) {}
+    public record ItemLine(String orderItemId, String menuItemId, String menuItemName, int quantity, BigDecimal unitPrice, String note, com.rms.restaurant.common.utils.enums.CookingStatus cookingStatus, String rejectionNote, boolean isQrOrder) {}
 }

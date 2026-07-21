@@ -11,8 +11,10 @@ const GUEST_ORDER_ALREADY_INVOICED_MESSAGE =
 
 export default function GuestOrderPage() {
   const [searchParams] = useSearchParams()
-  const tableToken = searchParams.get('token') || 'token-ban-01'
-  
+  // FE-PUB-02 fix: no fallback token — a missing ?token= renders an explicit
+  // error state instead of silently routing an unrecognized guest onto a real table.
+  const tableToken = searchParams.get('token')
+
   const [tableInfo, setTableInfo] = useState({ id: '', name: 'Đang tải...' })
   const [menuData, setMenuData] = useState([])
   const [loading, setLoading] = useState(true)
@@ -27,6 +29,8 @@ export default function GuestOrderPage() {
   const [alertMessage, setAlertMessage] = useState(null)
 
   useEffect(() => {
+    if (!tableToken) return
+
     // Fetch Table Info
     fetch(`/api/guest/orders/table-info?token=${tableToken}`)
       .then(res => res.json())
@@ -61,7 +65,9 @@ export default function GuestOrderPage() {
     }
     const fetchStatus = async () => {
       try {
-        const res = await fetch(`/api/guest/orders/${currentOrderId}/status`)
+        const res = await fetch(`/api/guest/orders/${currentOrderId}/status`, {
+          headers: { 'X-Table-Token': tableToken }
+        })
         if (res.ok) {
           const data = await res.json()
           setStatusData(data)
@@ -158,7 +164,7 @@ export default function GuestOrderPage() {
       
       const res = await fetch(url, {
         method: method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Table-Token': tableToken },
         body: JSON.stringify(payload)
       })
       
@@ -211,6 +217,19 @@ export default function GuestOrderPage() {
 
   function scrollToCategory(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  if (!tableToken) {
+    return (
+      <div className="bg-[#f5f5f5] min-h-screen font-sans flex items-center justify-center px-6">
+        <div className="text-center max-w-sm">
+          <p className="text-lg font-semibold text-gray-800 mb-2">Liên kết không hợp lệ</p>
+          <p className="text-sm text-gray-500">
+            Không tìm thấy mã bàn. Vui lòng quét lại mã QR trên bàn để đặt món.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   // Removed common QuantityInput Component, imported from file

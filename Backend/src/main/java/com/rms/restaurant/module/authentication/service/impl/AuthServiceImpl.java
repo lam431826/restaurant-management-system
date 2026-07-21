@@ -3,6 +3,7 @@ package com.rms.restaurant.module.authentication.service.impl;
 import com.rms.restaurant.common.security.JwtService;
 import com.rms.restaurant.common.utils.enums.UserStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
+import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ForbiddenException;
 import com.rms.restaurant.common.utils.exception.RateLimitException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
@@ -16,6 +17,9 @@ import com.rms.restaurant.module.authentication.repository.OtpRecordRepository;
 import com.rms.restaurant.module.authentication.repository.RefreshTokenRepository;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.authentication.service.AuthService;
+import com.rms.restaurant.module.employee.dto.SelfEmployeeProfileRequest;
+import com.rms.restaurant.module.employee.repository.EmployeeRepository;
+import com.rms.restaurant.module.employee.service.EmployeeService;
 import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +54,8 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final GmailService gmailService;
     private final AuditService auditService;
+    private final EmployeeService employeeService;
+    private final EmployeeRepository employeeRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Value("${app.jwt.access-token-expiration}")
@@ -97,7 +103,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public VerifyInfoResponse verifyInfo(String verifyToken) {
+    public VerifyInfoResponse verifyInfo(String verifyToken, VerifyInfoRequest request) {
         OtpRecord record = otpRecordRepository.findByVerifyTokenAndUsedFalse(verifyToken)
                 .orElseThrow(() -> new UnauthorizedException(ApplicationError.INVALID_VERIFY_TOKEN));
 
@@ -106,8 +112,39 @@ public class AuthServiceImpl implements AuthService {
         if (record.getInfoRequestCount() >= MAX_RESEND_RECORDS) {
             throw new RateLimitException(ApplicationError.RESEND_LIMIT_EXCEEDED);
         }
-        record.setInfoRequestCount(record.getInfoRequestCount() + 1);
 
+        User user = record.getUser();
+        // B1: duplicate email/phone checks — excludes the user's own row(s) so resubmitting the
+        // same values (e.g. after an expired OTP) doesn't falsely conflict with itself. Checked
+        // here (not just at verifyOtp's saveMyProfile call) so a conflict surfaces immediately
+        // while the user is still filling the form, not silently swallowed after OTP succeeds.
+        if (userRepository.existsByEmailAndIdNot(request.email(), user.getId())) {
+            throw new ConflictException(ApplicationError.DUPLICATE_EMAIL);
+        }
+        if (userRepository.existsByPhoneAndIdNot(request.phone(), user.getId())) {
+            throw new ConflictException(ApplicationError.DUPLICATE_PHONE);
+        }
+        boolean phoneTakenByEmployee = employeeRepository.findByUserId(user.getId())
+                .map(e -> employeeRepository.existsByPhoneAndIdNot(request.phone(), e.getId()))
+                .orElseGet(() -> employeeRepository.existsByPhone(request.phone()));
+        if (phoneTakenByEmployee) {
+            throw new ConflictException(ApplicationError.DUPLICATE_EMPLOYEE_PHONE);
+        }
+        // B2 (required fields / formats) is enforced by @Valid on VerifyInfoRequest already.
+
+        record.setInfoRequestCount(record.getInfoRequestCount() + 1);
+        record.setPendingFullName(request.fullName());
+        record.setPendingEmail(request.email());
+        record.setPendingPhone(request.phone());
+        record.setPendingStartDate(request.startDate());
+        record.setPendingNote(request.note());
+        record.setPendingIdNumber(request.idNumber());
+        record.setPendingBirthday(request.birthday());
+        record.setPendingGender(request.gender());
+        record.setPendingAddress(request.address());
+
+        // B3: send OTP to the email just submitted, not user.getEmail() — the account may not
+        // have one on file yet, which is exactly the gap this form exists to close.
         String otp = generateOtp();
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(OTP_TTL_MINUTES);
         record.setOtpCode(otp);
@@ -115,14 +152,13 @@ public class AuthServiceImpl implements AuthService {
         record.setAttemptCount(0);
         otpRecordRepository.save(record);
 
-        User user = record.getUser();
         try {
-            gmailService.sendOtpEmail(user.getEmail(), user.getFullName(), otp);
+            gmailService.sendOtpEmail(request.email(), request.fullName(), otp);
         } catch (Exception e) {
             log.warn("OTP email failed for user '{}': {}", user.getUsername(), e.getMessage());
         }
 
-        return new VerifyInfoResponse(maskEmail(user.getEmail()), expiresAt);
+        return new VerifyInfoResponse(maskEmail(request.email()), expiresAt);
     }
 
     @Override
@@ -155,6 +191,30 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(user);
         audit(user.getId(), user.getUsername(), "AUTH_ACCOUNT_ACTIVATED", "User", user.getId(), "{}");
 
+        // B4: OTP confirmed — commit the full profile submitted at verify/info, both onto User
+        // (name/email/phone) and a newly linked Employee row, by reusing the exact self-service
+        // upsert path ("Hồ sơ của tôi" / EmployeeService.saveMyProfile) so the two never drift.
+        // Best-effort: a conflict here (e.g. the phone got taken by someone else in the few
+        // minutes between verify/info and verify/otp) must NOT block account activation — the
+        // account is already ACTIVE above regardless; the user can fix/finish their profile
+        // later from "Hồ sơ của tôi".
+        if (record.getPendingFullName() != null && record.getPendingPhone() != null) {
+            try {
+                employeeService.saveMyProfile(user.getUsername(), new SelfEmployeeProfileRequest(
+                        record.getPendingFullName(),
+                        record.getPendingPhone(),
+                        record.getPendingStartDate(),
+                        record.getPendingNote(),
+                        record.getPendingIdNumber(),
+                        record.getPendingBirthday(),
+                        record.getPendingGender(),
+                        record.getPendingAddress(),
+                        record.getPendingEmail()));
+            } catch (Exception e) {
+                log.warn("Auto-creating employee profile failed for user '{}': {}", user.getUsername(), e.getMessage());
+            }
+        }
+
         refreshTokenRepository.revokeAllByUserId(user.getId());
         return issueTokenPair(user);
     }
@@ -178,17 +238,30 @@ public class AuthServiceImpl implements AuthService {
         String otp = generateOtp();
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(OTP_TTL_MINUTES);
 
+        // Carry the pending profile (submitted at verify/info) over to the new record — otherwise
+        // a resend would lose it and verify/otp would have nothing to commit onto the user.
         OtpRecord newRecord = OtpRecord.builder()
                 .user(user)
                 .verifyToken(newVerifyToken)
                 .otpCode(otp)
                 .expiresAt(expiresAt)
                 .createdAt(LocalDateTime.now())
+                .pendingFullName(oldRecord.getPendingFullName())
+                .pendingEmail(oldRecord.getPendingEmail())
+                .pendingPhone(oldRecord.getPendingPhone())
+                .pendingStartDate(oldRecord.getPendingStartDate())
+                .pendingNote(oldRecord.getPendingNote())
+                .pendingIdNumber(oldRecord.getPendingIdNumber())
+                .pendingBirthday(oldRecord.getPendingBirthday())
+                .pendingGender(oldRecord.getPendingGender())
+                .pendingAddress(oldRecord.getPendingAddress())
                 .build();
         otpRecordRepository.save(newRecord);
 
+        String targetEmail = oldRecord.getPendingEmail() != null ? oldRecord.getPendingEmail() : user.getEmail();
+        String targetName = oldRecord.getPendingFullName() != null ? oldRecord.getPendingFullName() : user.getFullName();
         try {
-            gmailService.sendOtpEmail(user.getEmail(), user.getFullName(), otp);
+            gmailService.sendOtpEmail(targetEmail, targetName, otp);
         } catch (Exception e) {
             log.warn("Resend OTP email failed for user '{}': {}", user.getUsername(), e.getMessage());
         }

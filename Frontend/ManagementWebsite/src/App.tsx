@@ -12,10 +12,10 @@ import Timesheet from "./components/staff/schedule/Timesheet";
 import EmployeeSettings from "./components/staff/settings/EmployeeSettings";
 import Payroll from "./components/staff/payroll/Payroll";
 import PayrollUpdate from "./components/staff/payroll/PayrollUpdate";
-import MySchedule from "./components/staff/schedule/MySchedule";
-import AttendanceReport from "./components/staff/schedule/AttendanceReport";
+import MyProfile from "./components/staff/MyProfile";
 import ShiftReconciliation from "./components/reports/ShiftReconciliation";
 import EndOfDayReport from "./components/reports/EndOfDayReport";
+import FinancialReport from "./components/reports/FinancialReport";
 import Reservation from "./components/reservation/Reservation";
 import CashierOrders from "./components/cashier/CashierOrders";
 import AdminDashboard from "./components/admin/AdminDashboard";
@@ -69,12 +69,12 @@ function App() {
           }
         />
 
-        {/* ── Staff: own schedule + clock in/out (WS-04/07/08) ── */}
+        {/* ── Staff: self-service employee profile ── */}
         <Route
-          path="/my-schedule"
+          path="/my-profile"
           element={
             <ProtectedRoute roles={["WAITER", "CASHIER", "MANAGER"]}>
-              <MySchedule />
+              <MyProfile />
             </ProtectedRoute>
           }
         />
@@ -101,9 +101,12 @@ function App() {
           <Route path="payroll" element={<Payroll />} />
           <Route path="payroll/update" element={<PayrollUpdate />} />
           <Route path="cash-book" element={<CashBook />} />
-          <Route path="reports/attendance" element={<AttendanceReport />} />
           <Route path="reports/daily-summary" element={<EndOfDayReport />} />
-          <Route path="reports/shift-reconciliation" element={<ShiftReconciliation />} />
+          <Route
+            path="reports/shift-reconciliation"
+            element={<ShiftReconciliation />}
+          />
+          <Route path="reports/financial" element={<FinancialReport />} />
           <Route path="audit-logs" element={<AuditLogPage />} />
         </Route>
 
