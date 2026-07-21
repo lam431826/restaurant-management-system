@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.guest_ordering.service.impl;
 
+import com.rms.restaurant.common.codegen.BusinessCodeGenerator;
 import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.enums.TableStatus;
@@ -51,6 +52,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
     private final InvoiceRepository invoiceRepository;
     private final ReservationRepository reservationRepository;
     private final RealtimeEventPublisher realtimeEventPublisher;
+    private final BusinessCodeGenerator businessCodeGenerator;
 
     // ── GO-03: Khách quét QR → gọi món ──────────────────────────────────────
 
@@ -71,6 +73,7 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
                 .orElse(null);
 
         Order order = new Order();
+        order.setCode(businessCodeGenerator.nextOrderCode());
         order.setTableId(table.getId());
         order.setStatus(OrderStatus.PENDING);
         order.setNote(request.note());

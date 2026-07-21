@@ -9,8 +9,10 @@ import java.util.Objects;
 
 public record PersistedInvoiceMergeResult(
         String orderId,
+        String orderCode,
         List<String> sourceInvoiceIds,
         String targetInvoiceId,
+        String targetInvoiceCode,
         BigDecimal targetSubtotal,
         BigDecimal targetDiscountAmount,
         BigDecimal targetTotalAmount,
@@ -23,8 +25,10 @@ public record PersistedInvoiceMergeResult(
 ) {
     public PersistedInvoiceMergeResult {
         Objects.requireNonNull(orderId);
+        Objects.requireNonNull(orderCode);
         sourceInvoiceIds = List.copyOf(sourceInvoiceIds);
         Objects.requireNonNull(targetInvoiceId);
+        Objects.requireNonNull(targetInvoiceCode);
         Objects.requireNonNull(targetSubtotal);
         Objects.requireNonNull(targetDiscountAmount);
         Objects.requireNonNull(targetTotalAmount);

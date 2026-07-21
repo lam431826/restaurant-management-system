@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.payment.service.internal;
 
+import com.rms.restaurant.common.codegen.BusinessCodeGenerator;
 import com.rms.restaurant.common.utils.enums.CookingStatus;
 import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.enums.OrderStatus;
@@ -43,6 +44,7 @@ public class InvoiceMergePersistenceService {
     private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
     private final PaymentRepository paymentRepository;
     private final InvoiceAllocationQuantityGuard quantityGuard;
+    private final BusinessCodeGenerator businessCodeGenerator;
     private final EntityManager entityManager;
 
     @Transactional
@@ -117,8 +119,10 @@ public class InvoiceMergePersistenceService {
 
         return new PersistedInvoiceMergeResult(
                 plan.orderId(),
+                owningOrder.getCode(),
                 plan.sourceInvoiceIds(),
                 targetInvoice.getId(),
+                targetInvoice.getCode(),
                 targetInvoice.getSubtotal(),
                 targetInvoice.getDiscountAmount(),
                 targetInvoice.getTotalAmount(),
@@ -338,6 +342,7 @@ public class InvoiceMergePersistenceService {
 
     private Invoice createTargetInvoice(String orderId, BigDecimal targetSubtotal) {
         Invoice target = Invoice.builder()
+                .code(businessCodeGenerator.nextInvoiceCode())
                 .orderId(orderId)
                 .subtotal(targetSubtotal)
                 .discountAmount(BigDecimal.ZERO)
@@ -513,6 +518,8 @@ public class InvoiceMergePersistenceService {
         if (!entityManager.contains(targetInvoice)
                 || targetInvoice.getId() == null
                 || targetInvoice.getId().isBlank()
+                || targetInvoice.getCode() == null
+                || targetInvoice.getCode().isBlank()
                 || plan.sourceInvoiceIds().contains(targetInvoice.getId())
                 || !owningOrder.getId().equals(targetInvoice.getOrderId())
                 || targetInvoice.getStatus() != InvoiceStatus.ACTIVE

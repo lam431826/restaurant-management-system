@@ -15,7 +15,6 @@ import {
   isActiveInvoice,
 } from "./invoiceLifecycle";
 import type { InvoiceViewTab } from "./invoiceLifecycle";
-import { formatInvoiceCode, formatOrderCode } from "../../utils/displayCodes";
 
 interface Props {
   invoices: InvoiceSummary[];
@@ -241,13 +240,13 @@ const InvoiceTable = ({
                         className={`${td} font-medium font-mono whitespace-nowrap ${isOpen ? "text-primary" : ""}`}
                         title={invoice.id}
                       >
-                        {formatInvoiceCode(invoice.id)}
+                        {invoice.code}
                       </td>
                       <td
                         className={`${td} font-mono whitespace-nowrap text-ink-subtle`}
                         title={invoice.orderId}
                       >
-                        {formatOrderCode(invoice.orderId)}
+                        {invoice.orderCode}
                       </td>
                       <td className={td}>
                         {formatDateTime(invoice.createdAt)}

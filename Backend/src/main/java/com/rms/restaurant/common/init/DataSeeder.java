@@ -271,6 +271,7 @@ public class DataSeeder implements ApplicationRunner {
         if (table1 == null || table2 == null || table3 == null || table4 == null || table5 == null) return;
 
         Order order1 = Order.builder()
+                .code("DH000001")
                 .tableId(table1.getId())
                 .status(OrderStatus.PENDING)
                 .note("Khách yêu cầu không hành")
@@ -279,6 +280,7 @@ public class DataSeeder implements ApplicationRunner {
         addOrderItem(order1, menuItems, "Coca Cola", 2, CookingStatus.PENDING);
 
         Order order2 = Order.builder()
+                .code("DH000002")
                 .tableId(table2.getId())
                 .cashierId(cashierId)
                 .status(OrderStatus.ACCEPTED)
@@ -287,6 +289,7 @@ public class DataSeeder implements ApplicationRunner {
         addOrderItem(order2, menuItems, "Nước Cam Ép", 2, CookingStatus.PENDING);
 
         Order order3 = Order.builder()
+                .code("DH000003")
                 .tableId(table3.getId())
                 .cashierId(cashierId)
                 .status(OrderStatus.PREPARING)
@@ -295,6 +298,7 @@ public class DataSeeder implements ApplicationRunner {
         addOrderItem(order3, menuItems, "Cá Chẽm Sốt Cam", 1, CookingStatus.COOKING);
 
         Order order4 = Order.builder()
+                .code("DH000004")
                 .tableId(table4.getId())
                 .cashierId(cashierId)
                 .status(OrderStatus.SERVED)
@@ -303,6 +307,7 @@ public class DataSeeder implements ApplicationRunner {
         addOrderItem(order4, menuItems, "Pizza Hải Sản", 1, CookingStatus.SERVED);
 
         Order order5 = Order.builder()
+                .code("DH000005")
                 .tableId(table5.getId())
                 .cashierId(cashierId)
                 .status(OrderStatus.CLOSED)
@@ -311,6 +316,7 @@ public class DataSeeder implements ApplicationRunner {
         addOrderItem(order5, menuItems, "Dĩa Trái Cây Thập Cẩm", 1, CookingStatus.SERVED);
 
         Order order6 = Order.builder()
+                .code("DH000006")
                 .tableId(table1.getId())
                 .status(OrderStatus.CANCELLED)
                 .note("Khách đổi ý hủy đơn")

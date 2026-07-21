@@ -5,7 +5,6 @@ import type {
 } from "../../../services/invoiceApi";
 import { XIcon } from "./icons";
 import { getLifecycleLabel } from "../../transactions/invoiceLifecycle";
-import { formatInvoiceCode } from "../../../utils/displayCodes";
 
 interface MergeInvoiceModalProps {
   open: boolean;
@@ -280,7 +279,7 @@ export const MergeInvoiceModal = ({
                         className="font-mono text-[13px] font-semibold"
                         title={invoice.id}
                       >
-                        {formatInvoiceCode(invoice.id)}
+                        {invoice.code}
                       </span>
                       <span className="text-[12px] font-medium">
                         {formatCurrency(invoice.totalAmount)}
@@ -310,7 +309,7 @@ export const MergeInvoiceModal = ({
             {selectedInvoices.map((invoice) => (
               <div key={invoice.id} className="mt-2 flex justify-between gap-3 text-[12px] text-[#636566]">
                 <span className="font-mono" title={invoice.id}>
-                  {formatInvoiceCode(invoice.id)}
+                  {invoice.code}
                 </span>
                 <span>{formatCurrency(invoice.totalAmount)}</span>
               </div>

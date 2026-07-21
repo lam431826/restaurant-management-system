@@ -25,11 +25,7 @@ import {
   getLifecycleBadgeClass,
   getLifecycleLabel,
 } from "../../transactions/invoiceLifecycle";
-import {
-  formatInvoiceCode,
-  formatOrderCode,
-  formatTransactionCode,
-} from "../../../utils/displayCodes";
+import { formatTransactionCode } from "../../../utils/displayCodes";
 
 /* ─── Payment modal ──────────────────────────────────────────────────────── */
 interface NonPayableReceiptItem {
@@ -298,7 +294,7 @@ export const PaymentModal = ({
               >
                 {invoices.map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
-                    {formatInvoiceCode(candidate.id)} ·{" "}
+                    {candidate.code} ·{" "}
                     {getLifecycleLabel(candidate.status)} ·{" "}
                     {candidate.status === "ACTIVE"
                       ? candidate.paid
@@ -352,7 +348,7 @@ export const PaymentModal = ({
                 className="text-[14px] font-bold tracking-wider text-black"
                 title={invoice.orderId}
               >
-                {formatOrderCode(invoice.orderId)}
+                {invoice.orderCode}
               </p>
             </div>
             <div className="flex flex-col gap-3 text-[10px]">

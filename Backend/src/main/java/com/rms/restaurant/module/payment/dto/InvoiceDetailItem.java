@@ -8,6 +8,7 @@ import java.util.List;
 
 public record InvoiceDetailItem(
         String id,
+        String code,
         String orderId,
         LocalDateTime createdAt,
         String tableName,

@@ -36,6 +36,8 @@ public interface OrderRepository extends JpaRepository<Order, String> {
             @Param("terminalStatuses") Collection<OrderStatus> terminalStatuses
     );
 
+    Optional<Order> findByCode(String code);
+
     List<Order> findByTableIdAndStatus(String tableId, OrderStatus status);
     Optional<Order> findTopByTableIdOrderByCreatedAtDesc(String tableId);
     Optional<Order> findTopByTableIdAndStatusNotInOrderByCreatedAtDesc(

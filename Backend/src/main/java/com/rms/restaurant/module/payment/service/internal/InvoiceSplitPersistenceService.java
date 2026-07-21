@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.payment.service.internal;
 
+import com.rms.restaurant.common.codegen.BusinessCodeGenerator;
 import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
@@ -31,6 +32,7 @@ public class InvoiceSplitPersistenceService {
     private final InvoiceRepository invoiceRepository;
     private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
     private final InvoiceAllocationQuantityGuard quantityGuard;
+    private final BusinessCodeGenerator businessCodeGenerator;
     private final EntityManager entityManager;
 
     @Transactional
@@ -130,6 +132,7 @@ public class InvoiceSplitPersistenceService {
         List<Invoice> children = new ArrayList<>();
         for (ValidatedInvoiceSplitPlan.ValidatedGroup group : plan.groups()) {
             children.add(Invoice.builder()
+                    .code(businessCodeGenerator.nextInvoiceCode())
                     .orderId(plan.owningOrder().getId())
                     .subtotal(group.subtotal())
                     .discountAmount(BigDecimal.ZERO)
@@ -251,6 +254,8 @@ public class InvoiceSplitPersistenceService {
         if (child == null
                 || child.getId() == null
                 || child.getId().isBlank()
+                || child.getCode() == null
+                || child.getCode().isBlank()
                 || child.getCreatedAt() == null
                 || !plan.owningOrder().getId().equals(child.getOrderId())
                 || child.getStatus() != InvoiceStatus.ACTIVE
@@ -335,6 +340,7 @@ public class InvoiceSplitPersistenceService {
             }
             childResults.add(new PersistedInvoiceSplitResult.PersistedChildInvoice(
                     children.get(groupIndex).getId(),
+                    children.get(groupIndex).getCode(),
                     group.subtotal(),
                     group.subtotal(),
                     sourceAllocationIds,
@@ -343,6 +349,7 @@ public class InvoiceSplitPersistenceService {
         }
         return new PersistedInvoiceSplitResult(
                 plan.sourceInvoice().getId(),
+                plan.sourceInvoice().getCode(),
                 plan.sourceInvoice().getStatus(),
                 // What the source actually kept, not its pre-split total — the source stays
                 // ACTIVE and this is the amount now displayed/charged on it.
