@@ -34,6 +34,7 @@ import com.rms.restaurant.module.payment.service.internal.InvoiceSplitPersistenc
 import com.rms.restaurant.module.payment.service.internal.PersistedInvoiceMergeResult;
 import com.rms.restaurant.module.payment.service.internal.PersistedInvoiceSplitResult;
 import com.rms.restaurant.module.payment.service.internal.ValidatedInvoiceMergePlan;
+import com.rms.restaurant.module.shift.repository.ShiftRepository;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import com.rms.restaurant.module.user.service.AuditService;
@@ -47,6 +48,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -54,6 +56,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -83,6 +86,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final PaymentRepository paymentRepository;
     private final TableRepository tableRepository;
     private final UserRepository userRepository;
+    private final ShiftRepository shiftRepository;
     private final MenuItemRepository menuItemRepository;
     private final InvoiceMapper invoiceMapper;
     private final InvoiceSplitPersistenceService invoiceSplitPersistenceService;
@@ -460,6 +464,14 @@ public class InvoiceServiceImpl implements InvoiceService {
                         line.lineTotal()))
                 .toList();
 
+        // Rejected/non-payable items never make it into an allocation line, so they have to
+        // be re-derived from the order directly — mirrors the receipt's own filter.
+        List<GmailService.NonPayableEmailLine> nonPayableEmailLines = order.getItems().stream()
+                .filter(item -> item.getCookingStatus() == CookingStatus.REJECTED)
+                .map(item -> new GmailService.NonPayableEmailLine(
+                        item.getMenuItemName(), item.getQuantity(), item.getRejectionNote()))
+                .toList();
+
         // Most recent PAID payment on this invoice, if any — used only to show the method
         // the customer actually paid with. Omitted from the email when none exists rather
         // than guessed.
@@ -470,19 +482,33 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .map(payment -> PAYMENT_METHOD_LABELS.getOrDefault(payment.getMethod(), null))
                 .orElse(null);
 
+        // Same person/shift the receipt shows during checkout: the user who actually
+        // generated this invoice (Invoice.createdBy), and whichever shift of theirs was
+        // open at that instant — resolved historically, not "whoever is logged in now".
+        Optional<User> invoiceCreator = invoice.getCreatedBy() == null
+                ? Optional.empty()
+                : userRepository.findByUsername(invoice.getCreatedBy());
+        String cashierName = invoiceCreator.map(User::getFullName).orElse(invoice.getCreatedBy());
+        String shiftLabel = invoiceCreator
+                .map(user -> resolveShiftLabel(user.getId(), invoice.getCreatedAt()))
+                .orElse(null);
+
         Map<String, Object> vars = new LinkedHashMap<>();
         vars.put("guestName", order.getCustomerName());
         vars.put("customerPhone", order.getCustomerPhone());
         vars.put("invoiceId", invoice.getCode());
         vars.put("orderId", order.getCode());
         vars.put("tableName", tableName);
+        vars.put("cashierName", cashierName);
+        vars.put("shiftLabel", shiftLabel);
         vars.put("items", emailLines);
+        vars.put("nonPayableItems", nonPayableEmailLines);
         vars.put("subtotal", invoice.getSubtotal());
         vars.put("discountAmount", invoice.getDiscountAmount());
         vars.put("totalAmount", invoice.getTotalAmount());
         vars.put("paid", invoice.isPaid());
         vars.put("paymentMethodLabel", paymentMethodLabel);
-        vars.put("sentAt", LocalDateTime.now());
+        vars.put("invoiceTime", invoice.getCreatedAt());
 
         boolean sent = notificationDispatcher.dispatchNow(
                 recipient, "INVOICE_DELIVERY", vars, invoice.getId(), "INVOICE");
@@ -846,6 +872,25 @@ public class InvoiceServiceImpl implements InvoiceService {
     private boolean isPayableItem(OrderItem item) {
         return item.getCookingStatus() == CookingStatus.READY
                 || item.getCookingStatus() == CookingStatus.SERVED;
+    }
+
+    private static final DateTimeFormatter SHIFT_LABEL_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
+
+    /**
+     * Formats the shift open for {@code cashierUserId} at {@code at}, the same "HH:mm - HH:mm"
+     * / "Đang mở từ HH:mm" shape the cashier UI uses for the live shift — but resolved
+     * historically, since by the time this runs the shift may already be closed or merged.
+     * Returns null when no shift covers that instant (e.g. legacy data predating shift tracking).
+     */
+    private String resolveShiftLabel(String cashierUserId, LocalDateTime at) {
+        if (cashierUserId == null || at == null) return null;
+        return shiftRepository.findActiveForCashierAt(cashierUserId, at).stream()
+                .findFirst()
+                .map(shift -> shift.getClosedAt() == null
+                        ? "Đang mở từ " + shift.getOpenedAt().format(SHIFT_LABEL_TIME_FORMATTER)
+                        : shift.getOpenedAt().format(SHIFT_LABEL_TIME_FORMATTER) + " - "
+                                + shift.getClosedAt().format(SHIFT_LABEL_TIME_FORMATTER))
+                .orElse(null);
     }
 
     private void validateInvoiceSubtotal(BigDecimal subtotal) {

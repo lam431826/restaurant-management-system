@@ -194,6 +194,11 @@ public class GmailService {
     public record InvoiceEmailLine(
             String name, int quantity, BigDecimal unitPrice, BigDecimal lineTotal) {}
 
+    /** A rejected/non-payable item — mirrors the receipt's "Món đã hủy bởi nhà hàng" row. */
+    public record NonPayableEmailLine(String name, int quantity, String note) {}
+
+    private static final String NON_PAYABLE_FALLBACK_NOTE = "Nhà hàng không thể phục vụ món này.";
+
     private static String money(BigDecimal amount) {
         return String.format("%,.0f VNĐ", amount == null ? BigDecimal.ZERO : amount);
     }
@@ -216,16 +221,19 @@ public class GmailService {
             String invoiceCode,
             String orderCode,
             String tableName,
+            String cashierName,
+            String shiftLabel,
             List<InvoiceEmailLine> items,
+            List<NonPayableEmailLine> nonPayableItems,
             BigDecimal subtotal,
             BigDecimal discountAmount,
             BigDecimal totalAmount,
             boolean paid,
             String paymentMethodLabel,
-            LocalDateTime sentAt
+            LocalDateTime invoiceTime
     ) {
         String displayName = (guestName == null || guestName.isBlank()) ? "Khách lẻ" : guestName;
-        String sentAtText = sentAt.format(DATETIME_FORMATTER);
+        String invoiceTimeText = invoiceTime.format(DATETIME_FORMATTER);
         String statusLabel = paid ? "Đã thanh toán" : "Chưa thanh toán";
 
         try {
@@ -236,11 +244,13 @@ public class GmailService {
             helper.setSubject(RESTAURANT_NAME + " - Hóa đơn " + invoiceCode);
             helper.setText(
                     buildInvoicePlainText(displayName, customerPhone, toEmail, tableName,
-                            invoiceCode, orderCode, sentAtText, items, subtotal,
-                            discountAmount, totalAmount, statusLabel, paymentMethodLabel),
+                            invoiceCode, orderCode, invoiceTimeText, cashierName, shiftLabel,
+                            items, nonPayableItems, subtotal, discountAmount, totalAmount,
+                            statusLabel, paymentMethodLabel),
                     buildInvoiceHtml(displayName, customerPhone, toEmail, tableName,
-                            invoiceCode, orderCode, sentAtText, items, subtotal,
-                            discountAmount, totalAmount, statusLabel, paymentMethodLabel)
+                            invoiceCode, orderCode, invoiceTimeText, cashierName, shiftLabel,
+                            items, nonPayableItems, subtotal, discountAmount, totalAmount,
+                            statusLabel, paymentMethodLabel)
             );
             mailSender.send(mimeMessage);
         } catch (MessagingException e) {
@@ -253,15 +263,24 @@ public class GmailService {
 
     private String buildInvoicePlainText(
             String displayName, String customerPhone, String customerEmail, String tableName,
-            String invoiceCode, String orderCode, String sentAtText,
-            List<InvoiceEmailLine> items, BigDecimal subtotal, BigDecimal discountAmount,
+            String invoiceCode, String orderCode, String invoiceTimeText,
+            String cashierName, String shiftLabel,
+            List<InvoiceEmailLine> items, List<NonPayableEmailLine> nonPayableItems,
+            BigDecimal subtotal, BigDecimal discountAmount,
             BigDecimal totalAmount, String statusLabel, String paymentMethodLabel
     ) {
         StringBuilder sb = new StringBuilder();
         sb.append(RESTAURANT_NAME).append("\nHóa đơn thanh toán\n\n");
         sb.append("Mã hóa đơn : ").append(invoiceCode).append('\n');
         sb.append("Mã đơn hàng: ").append(orderCode).append('\n');
-        sb.append("Thời gian  : ").append(sentAtText).append("\n\n");
+        sb.append("Thời gian  : ").append(invoiceTimeText).append('\n');
+        if (cashierName != null && !cashierName.isBlank()) {
+            sb.append("Thu ngân   : ").append(cashierName).append('\n');
+        }
+        if (shiftLabel != null && !shiftLabel.isBlank()) {
+            sb.append("Ca làm     : ").append(shiftLabel).append('\n');
+        }
+        sb.append('\n');
 
         sb.append("Khách hàng : ").append(displayName).append('\n');
         if (customerPhone != null && !customerPhone.isBlank()) {
@@ -281,6 +300,17 @@ public class GmailService {
               .append(" = ").append(money(line.lineTotal())).append('\n');
         }
 
+        if (nonPayableItems != null && !nonPayableItems.isEmpty()) {
+            sb.append("\nMón đã hủy bởi nhà hàng:\n");
+            for (NonPayableEmailLine line : nonPayableItems) {
+                String note = (line.note() == null || line.note().isBlank())
+                        ? NON_PAYABLE_FALLBACK_NOTE : line.note();
+                sb.append("  - ").append(line.name())
+                  .append(" x").append(line.quantity())
+                  .append(" (Không tính tiền) — Ghi chú: ").append(note).append('\n');
+            }
+        }
+
         sb.append("\nTạm tính     : ").append(money(subtotal)).append('\n');
         sb.append("Giảm giá     : ").append(money(discountAmount)).append('\n');
         sb.append("Tổng thanh toán: ").append(money(totalAmount)).append("\n\n");
@@ -298,8 +328,10 @@ public class GmailService {
 
     private String buildInvoiceHtml(
             String displayName, String customerPhone, String customerEmail, String tableName,
-            String invoiceCode, String orderCode, String sentAtText,
-            List<InvoiceEmailLine> items, BigDecimal subtotal, BigDecimal discountAmount,
+            String invoiceCode, String orderCode, String invoiceTimeText,
+            String cashierName, String shiftLabel,
+            List<InvoiceEmailLine> items, List<NonPayableEmailLine> nonPayableItems,
+            BigDecimal subtotal, BigDecimal discountAmount,
             BigDecimal totalAmount, String statusLabel, String paymentMethodLabel
     ) {
         StringBuilder rows = new StringBuilder();
@@ -318,6 +350,29 @@ public class GmailService {
                 ? "" : "<tr><td style=\"color:#636566;padding:2px 0;\">Bàn</td><td style=\"padding:2px 0;\">" + htmlEscape(tableName) + "</td></tr>";
         String methodRow = (paymentMethodLabel == null || paymentMethodLabel.isBlank())
                 ? "" : "<tr><td style=\"color:#636566;padding:6px 0;\">Phương thức</td><td style=\"padding:6px 0;font-weight:600;\">" + htmlEscape(paymentMethodLabel) + "</td></tr>";
+        String cashierRow = (cashierName == null || cashierName.isBlank())
+                ? "" : "<tr><td style=\"color:#636566;padding:2px 0;\">Thu ngân</td><td style=\"padding:2px 0;\">" + htmlEscape(cashierName) + "</td></tr>";
+        String shiftRow = (shiftLabel == null || shiftLabel.isBlank())
+                ? "" : "<tr><td style=\"color:#636566;padding:2px 0;\">Ca làm</td><td style=\"padding:2px 0;\">" + htmlEscape(shiftLabel) + "</td></tr>";
+
+        StringBuilder nonPayableSection = new StringBuilder();
+        if (nonPayableItems != null && !nonPayableItems.isEmpty()) {
+            StringBuilder nonPayableRows = new StringBuilder();
+            for (NonPayableEmailLine line : nonPayableItems) {
+                String note = (line.note() == null || line.note().isBlank())
+                        ? NON_PAYABLE_FALLBACK_NOTE : line.note();
+                nonPayableRows.append("<tr>")
+                    .append("<td style=\"padding:6px 8px;border-bottom:1px solid #eee;\">").append(htmlEscape(line.name()))
+                    .append("<br/><span style=\"color:#a2a4a4;font-size:12px;\">Ghi chú: ").append(htmlEscape(note)).append("</span></td>")
+                    .append("<td style=\"padding:6px 8px;border-bottom:1px solid #eee;text-align:center;\">").append(line.quantity()).append("</td>")
+                    .append("<td style=\"padding:6px 8px;border-bottom:1px solid #eee;text-align:right;\">Không tính tiền</td>")
+                    .append("</tr>");
+            }
+            nonPayableSection
+                .append("<p style=\"font-size:13px;font-weight:700;margin:0 0 6px;\">Món đã hủy bởi nhà hàng</p>")
+                .append("<table style=\"width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;\">")
+                .append("<tbody>").append(nonPayableRows).append("</tbody></table>");
+        }
 
         return "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#202325;max-width:560px;margin:0 auto;\">"
             + "<h2 style=\"margin:0 0 2px;\">" + RESTAURANT_NAME + "</h2>"
@@ -325,7 +380,9 @@ public class GmailService {
             + "<table style=\"width:100%;font-size:14px;margin-bottom:16px;\">"
             + "<tr><td style=\"color:#636566;padding:2px 0;\">Mã hóa đơn</td><td style=\"padding:2px 0;font-weight:600;\">" + invoiceCode + "</td></tr>"
             + "<tr><td style=\"color:#636566;padding:2px 0;\">Mã đơn hàng</td><td style=\"padding:2px 0;\">" + orderCode + "</td></tr>"
-            + "<tr><td style=\"color:#636566;padding:2px 0;\">Thời gian</td><td style=\"padding:2px 0;\">" + sentAtText + "</td></tr>"
+            + "<tr><td style=\"color:#636566;padding:2px 0;\">Thời gian</td><td style=\"padding:2px 0;\">" + invoiceTimeText + "</td></tr>"
+            + cashierRow
+            + shiftRow
             + "</table>"
             + "<table style=\"width:100%;font-size:14px;margin-bottom:16px;\">"
             + "<tr><td style=\"color:#636566;padding:2px 0;\">Khách hàng</td><td style=\"padding:2px 0;font-weight:600;\">" + htmlEscape(displayName) + "</td></tr>"
@@ -341,6 +398,7 @@ public class GmailService {
             + "<th style=\"text-align:right;padding:6px 8px;border-bottom:2px solid #202325;\">Đơn giá</th>"
             + "<th style=\"text-align:right;padding:6px 8px;border-bottom:2px solid #202325;\">Thành tiền</th>"
             + "</tr></thead><tbody>" + rows + "</tbody></table>"
+            + nonPayableSection
             + "<table style=\"width:100%;font-size:14px;margin-bottom:16px;\">"
             + "<tr><td style=\"color:#636566;padding:2px 0;\">Tạm tính</td><td style=\"padding:2px 0;text-align:right;\">" + money(subtotal) + "</td></tr>"
             + "<tr><td style=\"color:#636566;padding:2px 0;\">Giảm giá</td><td style=\"padding:2px 0;text-align:right;\">" + money(discountAmount) + "</td></tr>"

@@ -4,6 +4,8 @@ import com.rms.restaurant.module.shift.model.Shift;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -34,4 +36,11 @@ public interface ShiftRepository extends JpaRepository<Shift, String> {
 
     // CS-07: the open NORMAL shifts a floating shift can be merged into.
     List<Shift> findByStatusAndShiftType(String status, String shiftType);
+
+    // Historical lookup for the invoice-email "shift" line: the shift that was open for
+    // this cashier at a past instant, regardless of whether it has since closed. Ordered
+    // newest-first so a caller can just take the first result.
+    @Query("SELECT s FROM Shift s WHERE s.cashierId = :cashierId AND s.openedAt <= :at "
+            + "AND (s.closedAt IS NULL OR s.closedAt >= :at) ORDER BY s.openedAt DESC")
+    List<Shift> findActiveForCashierAt(@Param("cashierId") String cashierId, @Param("at") LocalDateTime at);
 }

@@ -159,13 +159,16 @@ public class NotificationDispatcher {
                     (String) vars.get("invoiceId"),
                     (String) vars.get("orderId"),
                     (String) vars.get("tableName"),
+                    (String) vars.get("cashierName"),
+                    (String) vars.get("shiftLabel"),
                     (java.util.List<GmailService.InvoiceEmailLine>) vars.get("items"),
+                    (java.util.List<GmailService.NonPayableEmailLine>) vars.get("nonPayableItems"),
                     (BigDecimal) vars.get("subtotal"),
                     (BigDecimal) vars.get("discountAmount"),
                     (BigDecimal) vars.get("totalAmount"),
                     (boolean) vars.get("paid"),
                     (String) vars.get("paymentMethodLabel"),
-                    (LocalDateTime) vars.get("sentAt")
+                    (LocalDateTime) vars.get("invoiceTime")
             );
             case "MANUAL" -> gmailService.sendManualEmail(recipient, (String) vars.get("message"));
             default -> throw new IllegalArgumentException("Unknown email template: " + template);
