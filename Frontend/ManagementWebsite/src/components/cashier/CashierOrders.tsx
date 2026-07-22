@@ -21,7 +21,6 @@ import {
 } from "../../services/tableService";
 import {
   checkInReservation,
-  markNoShowReservation,
   cancelStaffReservation,
 } from "../../services/reservationApi";
 import ChangePasswordModal from "../auth/ChangePasswordModal";
@@ -88,7 +87,6 @@ import {
 } from "./orders/types";
 import { printCashierInvoice } from "./orders/printInvoice";
 import { Header } from "./orders/Header";
-import { BottomNav } from "./orders/BottomNav";
 import { MenuView } from "./orders/MenuView";
 import { TableView } from "./orders/TableView";
 import { ReservationPanel } from "./orders/ReservationPanel";
@@ -537,6 +535,8 @@ const CashierOrders = () => {
     open: boolean;
     orderIds: string[];
   }>({ open: false, orderIds: [] });
+  const [reservationCancelConfirmOpen, setReservationCancelConfirmOpen] =
+    useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [successTotal, setSuccessTotal] = useState<number | null>(null);
   const [showChangePw, setShowChangePw] = useState(false);
@@ -575,6 +575,7 @@ const CashierOrders = () => {
   const [qrPayment, setQrPayment] = useState<Payment | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState("");
+  const loadCashierStateRequestRef = useRef(0);
   const invoiceListRequestRef = useRef(0);
   const invoiceDetailRequestRef = useRef(0);
   const splitSubmissionRef = useRef(false);
@@ -644,6 +645,7 @@ const CashierOrders = () => {
   };
 
   const loadCashierState = useCallback(async () => {
+    const requestId = ++loadCashierStateRequestRef.current;
     const [tableRows, orderPage] = await Promise.all([
       listTables(),
       listOrders(0, 100),
@@ -674,6 +676,16 @@ const CashierOrders = () => {
         orderById.set(result.value.id, result.value);
       }
     });
+
+    // Bug fix: a newer refresh (e.g. the WS-triggered one right after handleCreateOrder's own
+    // POST resolves) can start and finish before this one, if this fetch's listOrders() read
+    // landed on the DB mid-transaction — OrderServiceImpl.create() broadcasts to /topic/orders
+    // synchronously, inside its own @Transactional method, before commit. Applying this response
+    // after a newer one has already landed would silently wipe out the just-created order from
+    // activeOrders (and, via the table-overlay effect below, null out the table's orderId right
+    // after handleCreateOrder set it), making "Thêm món vào Đơn" disappear and revert to
+    // "Tạo Order" even though the order exists server-side.
+    if (requestId !== loadCashierStateRequestRef.current) return;
 
     setActiveOrders(Array.from(orderById.values()));
     setTables((currentTables) => {
@@ -936,8 +948,9 @@ const CashierOrders = () => {
   }, [successTotal]);
 
   const areas = ["all", ...Array.from(new Set(tables.map((t) => t.area)))];
-  const tablesInArea =
-    activeArea === "all" ? tables : tables.filter((t) => t.area === activeArea);
+  const tablesInArea = (
+    activeArea === "all" ? tables : tables.filter((t) => t.area === activeArea)
+  ).filter((t) => !search || t.name.toLowerCase().includes(search.toLowerCase()));
   const selectedTable = tables.find((t) => t.selected) ?? null;
 
   // Build the order panel's item list for the selected table from the live orders feed.
@@ -1637,31 +1650,15 @@ const CashierOrders = () => {
     }
   };
 
-  const handleReservationNoShow = async () => {
-    const res = selectedTable?.upcomingReservation;
-    if (!res) return;
-    if (!window.confirm(`Xác nhận khách "${res.guestName}" không đến?`)) return;
-    setReservationLoading(true);
-    setReservationError(null);
-    try {
-      await markNoShowReservation(res.id);
-      // Deselect table, then refresh to pick up AVAILABLE status
-      setTables((ts) => ts.map((t) => ({ ...t, selected: false })));
-      await refreshTables();
-    } catch (e) {
-      setReservationError(
-        e instanceof Error ? e.message : "Thao tác thất bại, vui lòng thử lại",
-      );
-    } finally {
-      setReservationLoading(false);
-    }
+  const handleReservationCancel = () => {
+    if (!selectedTable?.upcomingReservation) return;
+    setReservationCancelConfirmOpen(true);
   };
 
-  const handleReservationCancel = async () => {
+  const executeReservationCancel = async () => {
     const res = selectedTable?.upcomingReservation;
+    setReservationCancelConfirmOpen(false);
     if (!res) return;
-    if (!window.confirm(`Xác nhận hủy đặt bàn của khách "${res.guestName}"?`))
-      return;
     setReservationLoading(true);
     setReservationError(null);
     try {
@@ -2112,11 +2109,9 @@ const CashierOrders = () => {
   });
   const menuCategoryPills: Category[] = [
     { id: "all", label: "Tất Cả", count: menuItems.length },
-    ...menuCategories.map((c) => ({
-      id: c.id,
-      label: c.name,
-      count: c.itemCount,
-    })),
+    ...menuCategories
+      .map((c) => ({ id: c.id, label: c.name, count: c.itemCount }))
+      .sort((a, b) => b.count - a.count),
   ];
   const BUSY_TABLE_STATUSES = ["OCCUPIED", "BILLING", "RESERVED"];
   const tableCounts: Record<string, number> = {
@@ -2370,7 +2365,6 @@ const CashierOrders = () => {
           <ReservationPanel
             table={selectedTable}
             onCheckIn={handleReservationCheckIn}
-            onNoShow={handleReservationNoShow}
             onCancel={handleReservationCancel}
             loading={reservationLoading}
             error={reservationError}
@@ -2552,6 +2546,49 @@ const CashierOrders = () => {
         </div>
       )}
 
+      {reservationCancelConfirmOpen && selectedTable?.upcomingReservation && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-[#dc2f02] flex items-center justify-center mb-4">
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">
+              Hủy đặt bàn
+            </h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Xác nhận hủy đặt bàn của khách "
+              {selectedTable.upcomingReservation.guestName}"?
+            </p>
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setReservationCancelConfirmOpen(false)}
+                className="flex-1 border border-gray-300 text-gray-700 font-bold py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Đóng
+              </button>
+              <button
+                onClick={() => void executeReservationCancel()}
+                className="flex-1 bg-[#dc2f02] text-white font-bold py-2.5 rounded-xl hover:bg-[#9d0208] transition-colors"
+              >
+                Xác nhận
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {orderActionMessage && orderActionMessage.type === "error" && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
@@ -2583,8 +2620,6 @@ const CashierOrders = () => {
           </div>
         </div>
       )}
-
-      <BottomNav active="orders" />
 
       {paymentOpen && selectedOrderId && (
         <PaymentModal

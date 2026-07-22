@@ -306,17 +306,17 @@ export const OrderPanel = ({
 
       <div className="shrink-0 mt-4 flex flex-col gap-3">
         <div className="h-px bg-[#e8e8e8]" />
-        <div className="flex justify-between text-[14px]">
-          <span className="font-medium text-[#636566]">Số món</span>
-          <span className="font-semibold text-[#202325]">
-            {billableOrderItems.length} món
+        <div className="flex justify-between items-baseline gap-2 text-[14px]">
+          <span className="font-medium text-[#636566] shrink-0">Số món</span>
+          <span className="font-semibold text-[#202325] whitespace-nowrap">
+            {billableOrderItems.reduce((s, i) => s + i.qty, 0)} món
           </span>
         </div>
         <div className="h-px bg-[#202325]" />
-        <div className="flex justify-between text-[20px]">
-          <span className="font-medium text-[#202325]">Tạm tính</span>
-          <span className="font-semibold text-[#202325]">
-            {subtotal ? `${subtotal.toLocaleString("vi-VN")} đ` : "0 đ"}
+        <div className="flex justify-between items-baseline gap-2 text-[18px]">
+          <span className="font-medium text-[#202325] shrink-0">Tạm tính</span>
+          <span className="font-semibold text-[#202325] whitespace-nowrap">
+            {subtotal ? `${subtotal.toLocaleString("vi-VN")}đ` : "0đ"}
           </span>
         </div>
         {isTableEmpty ? (

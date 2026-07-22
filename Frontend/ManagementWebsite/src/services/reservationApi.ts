@@ -21,8 +21,5 @@ export interface ReservationDetail {
 export const checkInReservation = (id: string): Promise<ReservationDetail> =>
   api.put<ApiResponse<ReservationDetail>>(`/api/reservations/${id}/check-in`).then(r => r.data)
 
-export const markNoShowReservation = (id: string): Promise<void> =>
-  api.put<void>(`/api/reservations/${id}/no-show`)
-
 export const cancelStaffReservation = (id: string): Promise<void> =>
   api.del<void>(`/api/reservations/${id}`)

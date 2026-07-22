@@ -23,7 +23,6 @@ const Row = ({ label, value }: { label: string; value: string }) => (
 export const ReservationPanel = ({
   table,
   onCheckIn,
-  onNoShow,
   onCancel,
   loading,
   error,
@@ -32,7 +31,6 @@ export const ReservationPanel = ({
 }: {
   table: TableItem;
   onCheckIn: () => void;
-  onNoShow: () => void;
   onCancel: () => void;
   loading: boolean;
   error: string | null;
@@ -96,22 +94,13 @@ export const ReservationPanel = ({
             >
               {loading ? "Đang xử lý..." : "Check-In khách"}
             </button>
-            <div className="flex gap-2">
-              <button
-                disabled={loading}
-                onClick={onNoShow}
-                className="flex-1 h-10 rounded-[10px] bg-amber-50 border border-amber-300 text-amber-700 text-[13px] font-medium hover:bg-amber-100 disabled:opacity-50 transition-colors"
-              >
-                Không đến
-              </button>
-              <button
-                disabled={loading}
-                onClick={onCancel}
-                className="flex-1 h-10 rounded-[10px] bg-red-50 border border-red-300 text-red-600 text-[13px] font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
-              >
-                Hủy đặt bàn
-              </button>
-            </div>
+            <button
+              disabled={loading}
+              onClick={onCancel}
+              className="w-full h-10 rounded-[10px] bg-red-50 border border-red-300 text-red-600 text-[13px] font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
+            >
+              Hủy đặt bàn
+            </button>
             {canSeatWalkIn && onSeatWalkIn && (
               <button
                 disabled={loading}

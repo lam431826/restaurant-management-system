@@ -33,11 +33,11 @@ const MenuItemCard = ({
         {item.description}
       </p>
     </div>
-    <div className="flex items-end justify-between">
-      <p className="text-[20px] font-semibold text-[#202325]">
-        {item.price.toLocaleString("vi-VN")} đ
+    <div className="flex items-end justify-between gap-2">
+      <p className="text-[16px] font-semibold text-[#202325] whitespace-nowrap">
+        {item.price.toLocaleString("vi-VN")}đ
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         <button
           onClick={() => onQtyChange(item.id, -1)}
           disabled={!item.available}
@@ -77,7 +77,7 @@ export const MenuView = ({
 }) => {
   return (
     <div className="flex flex-col gap-2.5 h-full overflow-hidden">
-      <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide shrink-0">
+      <div className="flex items-center gap-2 overflow-x-auto shrink-0">
         {categories.map((cat) => (
           <button
             key={cat.id}
