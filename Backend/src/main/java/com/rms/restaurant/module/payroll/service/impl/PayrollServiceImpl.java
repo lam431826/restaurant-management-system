@@ -218,7 +218,9 @@ public class PayrollServiceImpl implements PayrollService {
     @Override
     public PayrollSheetResponse reload(String sheetId, ReloadRequest.ReloadMode mode) {
         PayrollSheet sheet = requireSheet(sheetId);
-        requireStatus(sheet, PayrollSheetStatus.DRAFT, ApplicationError.PAYROLL_SHEET_NOT_DRAFT);
+        if (sheet.getStatus() != PayrollSheetStatus.DRAFT && sheet.getStatus() != PayrollSheetStatus.GENERATING) {
+            throw new ApplicationException(ApplicationError.PAYROLL_SHEET_NOT_DRAFT);
+        }
         Map<String, Employee> employees = employeeRepository
                 .findByIdIn(payslipRepository.findByPayrollSheetIdOrderByEmployeeCode(sheetId).stream()
                         .map(Payslip::getEmployeeId).toList())

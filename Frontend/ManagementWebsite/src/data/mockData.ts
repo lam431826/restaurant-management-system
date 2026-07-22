@@ -539,9 +539,6 @@ export const navItems = [
     label: 'Thực đơn',
     children: [
       { label: 'Món', href: '#/manager/products' },
-      { label: 'Ghi chú món (Tùy chọn)', href: '#' },
-      { divider: true },
-      { label: 'Thiết lập giá', href: '#' },
     ],
   },
   {
@@ -549,7 +546,6 @@ export const navItems = [
     label: 'Phòng/Bàn',
     children: [
       { label: 'Danh sách phòng bàn', href: '#/manager/rooms' },
-      { label: 'Gọi món qua mã QR', href: '#' },
     ],
   },
   {
@@ -558,7 +554,6 @@ export const navItems = [
     children: [
       { label: 'Hóa đơn', href: '#/manager/invoices' },
       { label: 'Khuyến mãi', href: '#/manager/promotions' },
-      { label: 'Trả hàng', href: '#' },
     ],
   },
   {
@@ -570,7 +565,6 @@ export const navItems = [
       { label: 'Lịch làm việc', href: '#/manager/schedule' },
       { label: 'Bảng chấm công', href: '#/manager/timesheet' },
       { label: 'Bảng lương', href: '#/manager/payroll' },
-      { label: 'Bảng hoa hồng', href: '#' },
     ],
   },
   {
@@ -584,12 +578,6 @@ export const navItems = [
     label: 'Báo cáo',
     children: [
       { label: 'Cuối ngày', href: '#/manager/reports/daily-summary' },
-      { label: 'Đối soát ca thu ngân', href: '#/manager/reports/shift-reconciliation' },
-      { label: 'Bán hàng', href: '#' },
-      { label: 'Hàng hóa', href: '#' },
-      { label: 'Khách hàng', href: '#' },
-      { label: 'Nhà cung cấp', href: '#' },
-      { label: 'Kênh bán hàng', href: '#' },
       { label: 'Tài chính', href: '#/manager/reports/financial' },
     ],
   },

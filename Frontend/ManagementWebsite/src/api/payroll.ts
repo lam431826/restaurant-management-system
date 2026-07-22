@@ -159,6 +159,7 @@ export const listSheets = (params: {
   statuses?: PayrollSheetStatus[]
   page?: number
   size?: number
+  sort?: string
 } = {}) =>
   apiClient.get<SheetsPage>('/payroll/sheets', {
     params: { page: 0, size: 15, sort: 'createdAt,desc', ...params },

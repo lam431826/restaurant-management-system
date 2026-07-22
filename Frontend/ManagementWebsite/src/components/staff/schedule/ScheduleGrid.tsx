@@ -32,9 +32,9 @@ const XIcon = () => (
  * `shiftName`/times always describe the underlying shift, which the tooltip surfaces regardless
  * of which one the pill itself is showing.
  */
-const ShiftPill = ({ label, shiftName, startTime, endTime, colorCls, onOpen, onDelete }: {
+const ShiftPill = ({ label, shiftName, startTime, endTime, colorCls, openDown, onOpen, onDelete }: {
   label: string; shiftName: string; startTime: string | null | undefined; endTime: string | null | undefined
-  colorCls: string; onOpen: () => void; onDelete: () => void
+  colorCls: string; openDown?: boolean; onOpen: () => void; onDelete: () => void
 }) => (
   <div
     onClick={onOpen}
@@ -50,7 +50,9 @@ const ShiftPill = ({ label, shiftName, startTime, endTime, colorCls, onOpen, onD
       <XIcon />
     </button>
     {startTime && endTime && (
-      <div className="pointer-events-none absolute left-1/2 bottom-[calc(100%+0.4rem)] -translate-x-1/2 z-20 whitespace-nowrap rounded-lg border border-line bg-card px-4 py-2 text-md font-normal text-ink shadow-lg opacity-0 transition-opacity group-hover/pill:opacity-100">
+      <div
+        className={`pointer-events-none absolute left-1/2 -translate-x-1/2 z-[var(--kv-z-tooltip)] whitespace-nowrap rounded-lg border border-line bg-card px-4 py-2 text-md font-normal text-ink shadow-lg opacity-0 transition-opacity group-hover/pill:opacity-100 ${openDown ? 'top-[calc(100%+0.4rem)]' : 'bottom-[calc(100%+0.4rem)]'}`}
+      >
         {shiftName} ({formatTime(startTime)} - {formatTime(endTime)})
       </div>
     )}
@@ -108,7 +110,7 @@ const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, expe
               {weekDays.map(d => <td key={d.toISOString()} className="px-3 py-3 border-l border-line" />)}
               <td className="px-3 py-3 border-l border-line text-right text-md font-bold text-ink">{money(totalExpectedSalary)}</td>
             </tr>
-            {employees.map(emp => (
+            {employees.map((emp, rowIndex) => (
               <tr key={emp.id} className="border-b border-line align-top">
                 <td className="px-3 py-3">
                   <div className="text-md font-semibold text-ink">{emp.fullName}</div>
@@ -131,6 +133,7 @@ const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, expe
                               startTime={st?.startTime ?? entry.shiftStartTime}
                               endTime={st?.endTime ?? entry.shiftEndTime}
                               colorCls={shiftPillCls(shiftTypes, entry.shiftId)}
+                              openDown={rowIndex === 0}
                               onOpen={() => onEditClick(emp, d, entry)}
                               onDelete={() => onQuickDelete(entry)}
                             />
@@ -166,7 +169,7 @@ const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, expe
           </tbody>
         ) : (
           <tbody>
-            {shiftTypes.map(st => (
+            {shiftTypes.map((st, rowIndex) => (
               <tr key={st.id} className="border-b border-line align-top">
                 <td className="px-3 py-3">
                   <div className="text-md font-semibold text-ink">{st.name}</div>
@@ -187,6 +190,7 @@ const ScheduleGrid = ({ employees, weekDays, entries, shiftTypes, viewMode, expe
                               startTime={st.startTime}
                               endTime={st.endTime}
                               colorCls="text-primary-700 bg-primary-50"
+                              openDown={rowIndex === 0}
                               onOpen={() => onEditClick(emp, d, entry)}
                               onDelete={() => onQuickDelete(entry)}
                             />

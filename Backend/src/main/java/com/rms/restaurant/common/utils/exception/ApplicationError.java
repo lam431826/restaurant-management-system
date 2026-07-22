@@ -154,6 +154,7 @@ public enum ApplicationError {
     AT_EMPLOYEE_INACTIVE("Nhân viên đã ngừng làm việc, không thể xếp lịch mới", HttpStatus.UNPROCESSABLE_ENTITY),
     AT_RECORD_NOT_FOUND("Không tìm thấy bản ghi chấm công", HttpStatus.NOT_FOUND),
     AT_RECORD_TIME_INVALID("Giờ ra phải sau giờ vào", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_RECORD_DATE_INVALID("Ngày chấm công không hợp lệ", HttpStatus.UNPROCESSABLE_ENTITY),
     AT_SUBSTITUTE_SINGLE_ONLY("Chỉ có thể chỉ định người làm thay khi chọn đúng một lịch làm việc", HttpStatus.BAD_REQUEST),
     AT_SUBSTITUTE_SELF("Người làm thay phải khác nhân viên được xếp ca", HttpStatus.BAD_REQUEST),
     AT_MERGE_LIMIT_EXCEEDED("Vượt giới hạn gộp ca liên tục", HttpStatus.UNPROCESSABLE_ENTITY),
