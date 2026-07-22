@@ -2,6 +2,8 @@ import { Fragment, useState } from 'react'
 import type { TableItem } from '../../services/tableService'
 import RoomDetail from './RoomDetail'
 
+type SortDir = 'asc' | 'desc' | null
+
 interface Props {
   rooms: TableItem[]
   total: number
@@ -10,6 +12,8 @@ interface Props {
   totalPages: number
   onPage: (page: number) => void
   loading: boolean
+  sortDir: SortDir
+  onSortByName: () => void
   onViewQr: (room: TableItem) => void
   onEdit: (room: TableItem) => void
   onToggleActive: (room: TableItem) => void
@@ -19,7 +23,14 @@ interface Props {
 const th = 'sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-4 py-3 whitespace-nowrap'
 const td = 'text-md text-ink px-4 py-3 border-b border-line align-middle'
 
-const RoomTable = ({ rooms, total, page, pageSize, totalPages, onPage, loading, onViewQr, onEdit, onToggleActive, onDelete }: Props) => {
+const SortArrow = ({ active, dir }: { active: boolean; dir: SortDir }) => (
+  <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+    className={`inline shrink-0 transition-transform ${active ? 'text-primary' : 'opacity-35'} ${active && dir === 'desc' ? 'rotate-180' : ''}`}>
+    <path d="M8 3v10M4.5 6.5L8 3l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
+
+const RoomTable = ({ rooms, total, page, pageSize, totalPages, onPage, loading, sortDir, onSortByName, onViewQr, onEdit, onToggleActive, onDelete }: Props) => {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1
@@ -31,19 +42,22 @@ const RoomTable = ({ rooms, total, page, pageSize, totalPages, onPage, loading, 
         <table className="w-full border-collapse table-fixed">
           <thead>
             <tr>
-              <th className={th}>Tên phòng/bàn</th>
+              <th className={th}>
+                <button className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-primary" onClick={onSortByName}>
+                  Tên phòng/bàn <SortArrow active={sortDir !== null} dir={sortDir} />
+                </button>
+              </th>
               <th className={th}>Ghi chú</th>
               <th className={`${th} w-[18rem]`}>Khu vực</th>
               <th className={`${th} w-[10rem]`}>Số ghế</th>
               <th className={`${th} w-[16rem]`}>Trạng thái</th>
-              <th className={`${th} w-[11rem]`}>Số thứ tự</th>
               <th className={`${th} w-[13rem]`}>Xem mã QR</th>
             </tr>
           </thead>
           <tbody>
             {rooms.length === 0 ? (
               <tr>
-                <td className={`${td} text-center text-ink-muted`} colSpan={7}>
+                <td className={`${td} text-center text-ink-muted`} colSpan={6}>
                   {loading ? 'Đang tải…' : 'Không tìm thấy phòng/bàn nào'}
                 </td>
               </tr>
@@ -65,7 +79,6 @@ const RoomTable = ({ rooms, total, page, pageSize, totalPages, onPage, loading, 
                         <span className="text-ink-muted">Ngừng hoạt động</span>
                       )}
                     </td>
-                    <td className={td}>{r.order}</td>
                     <td className={td}>
                       <button
                         className="text-primary cursor-pointer hover:underline"
@@ -77,7 +90,7 @@ const RoomTable = ({ rooms, total, page, pageSize, totalPages, onPage, loading, 
                   </tr>
                   {expandedId === r.id && (
                     <tr>
-                      <td colSpan={7} className="p-0 border-b border-line" onClick={e => e.stopPropagation()}>
+                      <td colSpan={6} className="p-0 border-b border-line" onClick={e => e.stopPropagation()}>
                         <RoomDetail
                           room={r}
                           onEdit={onEdit}

@@ -7,11 +7,12 @@ import RoomModal from './RoomModal'
 import AreaModal from './AreaModal'
 import QrModal from './QrModal'
 import ConfirmDialog from '../menu/ConfirmDialog'
-import { searchTables, listAreas, setTableActive, deleteTable } from '../../services/tableService'
+import { searchTables, listAreas, setTableActive, deleteTable, deleteArea } from '../../services/tableService'
 import type { TableItem, TableArea } from '../../services/tableService'
 import { ApiError } from '../../services/api'
 
 const PAGE_SIZE = 15
+type SortDir = 'asc' | 'desc' | null
 
 const Rooms = () => {
   const [items, setItems] = useState<TableItem[]>([])
@@ -25,6 +26,7 @@ const Rooms = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [area, setArea] = useState<AreaFilter>('all')
   const [status, setStatus] = useState<StatusFilter>('all')
+  const [sortDir, setSortDir] = useState<SortDir>(null)
 
   // modal state
   const [showAdd, setShowAdd] = useState(false)
@@ -33,6 +35,8 @@ const Rooms = () => {
   const [showAddArea, setShowAddArea] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<TableItem | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [deleteAreaTarget, setDeleteAreaTarget] = useState<TableArea | null>(null)
+  const [deletingArea, setDeletingArea] = useState(false)
 
   const areaNames = useMemo(() => areas.map(a => a.name), [areas])
 
@@ -53,6 +57,7 @@ const Rooms = () => {
         q: debouncedSearch || undefined,
         area: area === 'all' ? undefined : area,
         active,
+        sort: sortDir ? `name,${sortDir}` : undefined,
         page,
         size: PAGE_SIZE,
       })
@@ -65,14 +70,16 @@ const Rooms = () => {
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, area, status, page])
+  }, [debouncedSearch, area, status, sortDir, page])
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
     return () => clearTimeout(t)
   }, [search])
 
-  useEffect(() => { setPage(1) }, [debouncedSearch, area, status])
+  useEffect(() => { setPage(1) }, [debouncedSearch, area, status, sortDir])
+
+  const handleSortByName = () => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
 
   useEffect(() => { void loadAreas() }, [loadAreas])
   useEffect(() => { void loadTables() }, [loadTables])
@@ -104,17 +111,36 @@ const Rooms = () => {
     }
   }
 
+  const confirmDeleteArea = async () => {
+    if (!deleteAreaTarget) return
+    setDeletingArea(true)
+    setError('')
+    try {
+      await deleteArea(deleteAreaTarget.id)
+      // The deleted area may be the one currently selected in the sidebar filter.
+      if (area === deleteAreaTarget.name) setArea('all')
+      setDeleteAreaTarget(null)
+      void loadAreas()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không xóa được khu vực.')
+      setDeleteAreaTarget(null)
+    } finally {
+      setDeletingArea(false)
+    }
+  }
+
   return (
     <div className="flex h-[calc(100vh-var(--kv-header-height))] bg-surface overflow-hidden">
       <aside className="w-[26rem] shrink-0 flex flex-col px-5 pt-5 pb-4 overflow-y-auto">
         <h1 className="text-h2 font-extrabold text-ink mb-5">Phòng/Bàn</h1>
         <RoomFilters
-          areas={areaNames}
+          areas={areas}
           area={area}
           status={status}
           onArea={setArea}
           onStatus={setStatus}
           onCreateArea={() => setShowAddArea(true)}
+          onDeleteArea={setDeleteAreaTarget}
         />
       </aside>
 
@@ -123,7 +149,6 @@ const Rooms = () => {
           search={search}
           onSearch={setSearch}
           onAdd={() => setShowAdd(true)}
-          onImported={() => { void loadTables(); void loadAreas() }}
           onError={setError}
         />
 
@@ -139,6 +164,8 @@ const Rooms = () => {
           totalPages={totalPages}
           onPage={setPage}
           loading={loading}
+          sortDir={sortDir}
+          onSortByName={handleSortByName}
           onViewQr={setQrTable}
           onEdit={setEditTable}
           onToggleActive={handleToggleActive}
@@ -182,6 +209,18 @@ const Rooms = () => {
           loading={deleting}
           onConfirm={confirmDelete}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {deleteAreaTarget && (
+        <ConfirmDialog
+          title="Xóa khu vực"
+          message={<>Bạn có chắc muốn xóa khu vực <b className="text-ink">{deleteAreaTarget.name}</b>? Hành động này không thể hoàn tác.</>}
+          confirmLabel="Xóa"
+          cancelLabel="Hủy"
+          loading={deletingArea}
+          onConfirm={confirmDeleteArea}
+          onCancel={() => setDeleteAreaTarget(null)}
         />
       )}
     </div>

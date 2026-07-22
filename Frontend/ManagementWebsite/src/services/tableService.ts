@@ -93,6 +93,7 @@ export interface TableSearchParams {
   q?: string
   area?: string
   active?: boolean
+  sort?: string // Spring format: "field,asc" | "field,desc"
   page?: number // 1-based
   size?: number
 }
@@ -102,6 +103,7 @@ export const searchTables = (params: TableSearchParams = {}): Promise<PageRespon
     q: params.q,
     area: params.area,
     active: params.active,
+    sort: params.sort,
     // backend Pageable is 0-based
     page: params.page ? params.page - 1 : 0,
     size: params.size ?? 20,

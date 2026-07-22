@@ -17,6 +17,8 @@ import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.payment.model.Promotion;
 import com.rms.restaurant.module.payment.repository.PromotionRepository;
 import com.rms.restaurant.module.table.model.RestaurantTable;
+import com.rms.restaurant.module.table.model.TableArea;
+import com.rms.restaurant.module.table.repository.TableAreaRepository;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +40,7 @@ public class DataSeeder implements ApplicationRunner {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final TableRepository tableRepository;
+    private final TableAreaRepository tableAreaRepository;
     private final MenuCategoryRepository menuCategoryRepository;
     private final MenuItemRepository menuItemRepository;
     private final PromotionRepository promotionRepository;
@@ -57,6 +60,7 @@ public class DataSeeder implements ApplicationRunner {
     @Transactional
     public void run(ApplicationArguments args) {
         seedUsers();
+        seedTableAreas();
         seedTables();
         seedMenu();
         seedPromotions();
@@ -97,6 +101,21 @@ public class DataSeeder implements ApplicationRunner {
      *
      *  Tổng: 26 bàn
      */
+    // Separate guard from seedTables() (not nested inside it): the two are seeded independently
+    // so that an environment which already has tables but is missing its TableArea rows (e.g. an
+    // existing dev DB from before TableArea CRUD existed — RestaurantTable.area has always been a
+    // plain free-text column, never an FK) still gets backfilled on the next startup instead of
+    // being skipped forever by seedTables()'s own early-return.
+    private void seedTableAreas() {
+        if (tableAreaRepository.count() > 0) return;
+        tableAreaRepository.saveAll(List.of(
+            TableArea.builder().name("Tầng 1").displayOrder(0).build(),
+            TableArea.builder().name("Tầng 2").displayOrder(1).build(),
+            TableArea.builder().name("Phòng VIP").displayOrder(2).build()
+        ));
+        log.info("DataSeeder: seeded 3 table areas (Tầng 1 / Tầng 2 / Phòng VIP)");
+    }
+
     private void seedTables() {
         if (tableRepository.count() > 0) {
             logTableList();
