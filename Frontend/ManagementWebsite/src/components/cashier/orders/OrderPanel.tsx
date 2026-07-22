@@ -125,7 +125,8 @@ export const OrderPanel = ({
     selectedTable.status === "OCCUPIED" &&
     !!selectedTable.occupiedSince;
   const hasItems = items.length > 0;
-  const customerDisplayName = customer.customerName.trim() || "Khách lẻ";
+  const typedCustomerName = customer.customerName.trim();
+  const customerDisplayName = typedCustomerName || "Khách lẻ";
   const reservationInfo = isWalkInSeating ? null : (selectedTable?.upcomingReservation ?? null);
   const billableOrderItems = items.filter(
     (item) => item.status !== COOKING_STATUS_LABEL.REJECTED,
@@ -159,9 +160,11 @@ export const OrderPanel = ({
           <span className="text-[16px] font-medium text-[#202325]">
             {reservationInfo
               ? reservationInfo.guestName
-              : isTableEmpty
-                ? "Customer Name"
-                : "Walk-in Customer"}
+              : typedCustomerName
+                ? typedCustomerName
+                : isTableEmpty
+                  ? "Customer Name"
+                  : "Walk-in Customer"}
           </span>
           <span className="text-[14px] text-[#636566]">
             {selectedTable ? selectedTable.name : "–"}
