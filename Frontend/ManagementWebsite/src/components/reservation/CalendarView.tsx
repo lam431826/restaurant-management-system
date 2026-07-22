@@ -24,7 +24,7 @@ const LABEL_W = 280
 const ROW_H = 43
 const NOW = new Date().getHours() + new Date().getMinutes() / 60
 
-const TIMELINE_STATUSES: ReservationStatus[] = ['PENDING', 'CONFIRMED', 'CHECKED_IN', 'NO_SHOW', 'CANCELLED']
+const TIMELINE_STATUSES: ReservationStatus[] = ['CONFIRMED', 'CHECKED_IN', 'COMPLETED', 'NO_SHOW', 'CANCELLED']
 
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() &&
@@ -43,21 +43,20 @@ const Chevron = ({ open }: { open: boolean }) => (
   </svg>
 )
 
-const StatusCheck = ({ status, checked, onChange }: { status: ReservationStatus; checked: boolean; onChange: () => void }) => {
+const StatusChip = ({ status, checked, onChange }: { status: ReservationStatus; checked: boolean; onChange: () => void }) => {
   const meta = reservationStatusMeta[status]
   return (
-    <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-      <input type="checkbox" checked={checked} onChange={onChange} className="absolute opacity-0 w-0 h-0 peer" />
-      <span
-        className="w-[1.7rem] h-[1.7rem] rounded-xxs border-2 flex items-center justify-center transition-colors"
-        style={{ borderColor: meta.color, background: checked ? meta.color : 'transparent' }}
-      >
-        {checked && (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-        )}
-      </span>
-      <span className="text-md text-ink">{meta.label}</span>
-    </label>
+    <button
+      onClick={onChange}
+      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors cursor-pointer select-none"
+      style={checked
+        ? { background: meta.color + '20', borderColor: meta.color, color: meta.color }
+        : { background: 'transparent', borderColor: 'var(--kv-border-default)', color: 'var(--kv-text-muted)' }
+      }
+    >
+      <span className="w-2 h-2 rounded-full" style={{ background: checked ? meta.color : 'var(--kv-text-muted)' }} />
+      {meta.label}
+    </button>
   )
 }
 
@@ -184,8 +183,7 @@ const CalendarView = ({
   reservations, tables, selectedDate, onSelectDate, onAssignTable, onTransferTable,
   onConfirm, onCheckIn, onCancel, onEdit,
 }: Props) => {
-  const [view, setView] = useState<'day' | 'week' | 'month'>('day')
-  const [statuses, setStatuses] = useState<Set<ReservationStatus>>(new Set(['PENDING', 'CONFIRMED', 'CHECKED_IN']))
+  const [statuses, setStatuses] = useState<Set<ReservationStatus>>(new Set(['CONFIRMED', 'CHECKED_IN']))
   const [openAreas, setOpenAreas] = useState<Set<string>>(new Set())
   const [roomsOpen, setRoomsOpen] = useState(false)
   const [waitOpen, setWaitOpen] = useState(true)
@@ -348,24 +346,19 @@ const CalendarView = ({
 
       {/* Main timeline */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Sub-tabs */}
+        {/* View label */}
         <div className="flex items-center gap-6 px-5 pt-3 border-b border-line shrink-0">
-          {([['day', 'Ngày'], ['week', 'Tuần'], ['month', 'Tháng']] as const).map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => setView(id)}
-              className={`relative h-9 text-md font-semibold cursor-pointer transition-colors ${view === id ? 'text-primary' : 'text-ink-subtle hover:text-ink'}`}
-            >
-              {label}
-              {view === id && <span className="absolute left-0 right-0 -bottom-px h-[0.25rem] bg-primary rounded-full" />}
-            </button>
-          ))}
+          <span className="relative h-9 text-md font-semibold text-primary">
+            Ngày
+            <span className="absolute left-0 right-0 -bottom-px h-[0.25rem] bg-primary rounded-full" />
+          </span>
         </div>
 
         {/* Status filters */}
-        <div className="flex items-center gap-6 px-5 py-3 shrink-0">
+        <div className="flex items-center gap-2 px-5 py-2.5 border-b border-line flex-wrap bg-card shrink-0">
+          <span className="text-[12px] text-ink-muted font-medium mr-1">Trạng thái:</span>
           {TIMELINE_STATUSES.map(s => (
-            <StatusCheck key={s} status={s} checked={statuses.has(s)} onChange={() => toggleStatus(s)} />
+            <StatusChip key={s} status={s} checked={statuses.has(s)} onChange={() => toggleStatus(s)} />
           ))}
         </div>
 

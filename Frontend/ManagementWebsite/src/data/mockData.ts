@@ -439,7 +439,7 @@ export const reservationStatusMeta: Record<ReservationStatus, { label: string; c
   CHECKED_IN: { label: 'Đã nhận bàn',        color: 'var(--kv-primary)' },
   NO_SHOW:    { label: 'Không đến',           color: 'var(--kv-neutral-400)' },
   CANCELLED:  { label: 'Đã hủy',             color: 'var(--kv-danger)' },
-  COMPLETED:  { label: 'Đã hoàn thành',      color: 'var(--kv-neutral-400)' },
+  COMPLETED:  { label: 'Đã hoàn thành',      color: 'var(--kv-success-700)' },
 };
 
 export interface Reservation {

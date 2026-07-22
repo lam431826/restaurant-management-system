@@ -59,10 +59,10 @@ const StatusChip = ({ status, checked, onChange }: { status: ReservationStatus; 
       className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors cursor-pointer select-none"
       style={checked
         ? { background: meta.color + '20', borderColor: meta.color, color: meta.color }
-        : { background: 'transparent', borderColor: 'var(--kv-line-default)', color: 'var(--kv-ink-muted)' }
+        : { background: 'transparent', borderColor: 'var(--kv-border-default)', color: 'var(--kv-text-muted)' }
       }
     >
-      <span className="w-2 h-2 rounded-full" style={{ background: checked ? meta.color : 'var(--kv-ink-muted)' }} />
+      <span className="w-2 h-2 rounded-full" style={{ background: checked ? meta.color : 'var(--kv-text-muted)' }} />
       {meta.label}
     </button>
   )
