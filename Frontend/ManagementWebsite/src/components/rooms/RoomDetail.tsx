@@ -44,18 +44,7 @@ const RoomDetail = ({ room, onEdit, onToggleActive, onDelete }: Props) => (
     <div className="grid grid-cols-2 gap-x-8 gap-y-3">
       <ReadOnlyField label="Số ghế" value={room.seats > 0 ? room.seats : <span className="text-ink-muted">Chưa có</span>} />
       <ReadOnlyField label="Khu vực" value={room.area || <span className="text-ink-muted">Chưa có</span>} />
-      <ReadOnlyField label="Số thứ tự" value={room.order} />
       <ReadOnlyField label="Ghi chú" value={room.note || <span className="text-ink-muted">Chưa có</span>} />
-    </div>
-
-    {/* Transaction history */}
-    <div className="border border-line rounded-lg overflow-hidden">
-      <div className="px-4 py-3 border-b border-line">
-        <h4 className="text-md font-bold text-ink">Lịch sử giao dịch</h4>
-      </div>
-      <div className="px-4 py-8 text-center text-md text-ink-muted">
-        Chưa có giao dịch cho phòng/bàn này.
-      </div>
     </div>
 
     {/* Actions */}

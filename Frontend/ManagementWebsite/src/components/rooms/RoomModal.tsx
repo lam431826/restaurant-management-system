@@ -93,7 +93,6 @@ const RoomModal = ({ table, areas, onClose, onSaved, onCreateArea }: Props) => {
   const [name, setName] = useState(table?.name ?? '')
   const [area, setArea] = useState(table?.area ?? '')
   const [seats, setSeats] = useState(table ? String(table.seats) : '')
-  const [order, setOrder] = useState(table ? String(table.order) : '')
   const [note, setNote] = useState(table?.note ?? '')
   const [active, setActive] = useState(table?.active ?? true)
   const [error, setError] = useState('')
@@ -113,7 +112,7 @@ const RoomModal = ({ table, areas, onClose, onSaved, onCreateArea }: Props) => {
     }
   }, [onClose])
 
-  const handleSave = async (addAnother: boolean) => {
+  const handleSave = async () => {
     if (!name.trim()) {
       setError('Vui lòng nhập tên phòng/bàn')
       nameRef.current?.focus()
@@ -126,19 +125,13 @@ const RoomModal = ({ table, areas, onClose, onSaved, onCreateArea }: Props) => {
       note: note.trim() || undefined,
       area: area || undefined,
       seats: Number(seats || 0),
-      order: Number(order || 0),
       active,
     }
     try {
       if (isEdit && table) await updateTable(table.id, input)
       else await createTable(input)
       onSaved()
-      if (addAnother && !isEdit) {
-        setName(''); setSeats(''); setOrder(''); setNote(''); setActive(true); setError('')
-        nameRef.current?.focus()
-      } else {
-        onClose()
-      }
+      onClose()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Lưu phòng/bàn thất bại.')
     } finally {
@@ -191,26 +184,15 @@ const RoomModal = ({ table, areas, onClose, onSaved, onCreateArea }: Props) => {
             />
           </Field>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Số thứ tự">
-              <input
-                className={inputCls}
-                inputMode="numeric"
-                placeholder="Nhập vị trí"
-                value={order}
-                onChange={e => setOrder(e.target.value.replace(/[^\d]/g, ''))}
-              />
-            </Field>
-            <Field label="Số ghế">
-              <input
-                className={inputCls}
-                inputMode="numeric"
-                placeholder="Nhập số ghế"
-                value={seats}
-                onChange={e => setSeats(e.target.value.replace(/[^\d]/g, ''))}
-              />
-            </Field>
-          </div>
+          <Field label="Số ghế">
+            <input
+              className={inputCls}
+              inputMode="numeric"
+              placeholder="Nhập số ghế"
+              value={seats}
+              onChange={e => setSeats(e.target.value.replace(/[^\d]/g, ''))}
+            />
+          </Field>
 
           <Field label="Ghi chú">
             <textarea
@@ -232,10 +214,7 @@ const RoomModal = ({ table, areas, onClose, onSaved, onCreateArea }: Props) => {
           <span className="text-md text-danger">{error}</span>
           <div className="flex items-center gap-2">
             <button className="kv-btn kv-btn-outline-neutral h-10" disabled={saving} onClick={onClose}>Bỏ qua</button>
-            {!isEdit && (
-              <button className="kv-btn kv-btn-outline-primary h-10" disabled={saving} onClick={() => handleSave(true)}>Lưu &amp; Thêm mới</button>
-            )}
-            <button className="kv-btn kv-btn-primary h-10" disabled={saving} onClick={() => handleSave(false)}>{saving ? 'Đang lưu…' : 'Lưu'}</button>
+            <button className="kv-btn kv-btn-primary h-10" disabled={saving} onClick={handleSave}>{saving ? 'Đang lưu…' : 'Lưu'}</button>
           </div>
         </div>
       </div>
