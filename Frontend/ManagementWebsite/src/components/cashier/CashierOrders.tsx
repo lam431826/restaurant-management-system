@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useRealtime } from "../../hooks/useRealtime";
 import { useAuth } from "../../context/AuthContext";
 import { logout } from "../../api/auth";
@@ -41,11 +41,10 @@ import type {
 } from "../../services/invoiceApi";
 import {
   processCashPayment,
-  initiateQrPayment as initiateQrPaymentApi,
-  simulateQrPaymentSuccess,
-  cancelQrPayment as cancelQrPaymentApi,
+  createVnpayPayment,
+  getPayments,
+  reconcileVnpayPayment,
 } from "../../services/paymentApi";
-import type { Payment } from "../../services/paymentApi";
 import { listCategories, searchItems } from "../../services/menuService";
 import type { MenuCategory } from "../../services/menuService";
 import {
@@ -306,9 +305,13 @@ const PAYMENT_PROCESS_ERROR_MESSAGES: Record<string, string> = {
   PAYMENT_RECEIVED_AMOUNT_INVALID:
     "Số tiền khách đưa phải lớn hơn hoặc bằng số tiền cần thanh toán.",
   PAYMENT_NOT_FOUND: "Không tìm thấy giao dịch thanh toán.",
-  PAYMENT_NOT_PENDING: "Giao dịch QR này không còn ở trạng thái chờ xử lý.",
+  PAYMENT_NOT_PENDING: "Giao dịch này không còn ở trạng thái chờ xử lý.",
   PAYMENT_METHOD_MISMATCH:
     "Thao tác không phù hợp với phương thức thanh toán này.",
+  PAYMENT_ATTEMPT_PENDING:
+    "Đã có giao dịch đang chờ xử lý cho hóa đơn này. Vui lòng chờ hoặc thử lại sau.",
+  PAYMENT_GATEWAY_NOT_CONFIGURED:
+    "Cổng thanh toán VNPAY chưa được cấu hình trên máy chủ.",
 };
 
 const PAYMENT_PROCESS_MESSAGE_FALLBACKS: Record<string, string> = {
@@ -332,6 +335,15 @@ const PAYMENT_PROCESS_MESSAGE_FALLBACKS: Record<string, string> = {
 
 const PAYMENT_PROCESS_FALLBACK_ERROR =
   "Không thể xử lý thanh toán. Vui lòng thử lại.";
+
+// Shown after a QueryDR reconciliation that did not end in PAID, so the cashier knows
+// whether they may now take cash / start a new attempt.
+const VNPAY_STATUS_MESSAGES: Record<string, string> = {
+  PENDING: "Giao dịch vẫn đang chờ xác nhận từ VNPAY. Vui lòng thử lại sau ít phút.",
+  FAILED: "Giao dịch VNPAY thất bại. Bạn có thể thu tiền mặt hoặc tạo giao dịch mới.",
+  CANCELLED: "Khách đã hủy giao dịch VNPAY. Bạn có thể thu tiền mặt hoặc tạo giao dịch mới.",
+  EXPIRED: "Giao dịch VNPAY đã hết hạn. Bạn có thể thu tiền mặt hoặc tạo giao dịch mới.",
+};
 
 const getPaymentProcessErrorMessage = (error: unknown): string => {
   if (error instanceof ApiClientError && error.code) {
@@ -498,6 +510,7 @@ const chooseInvoiceId = (
 
 const CashierOrders = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, signOut } = useAuth();
   const [tab, setTab] = useState<"menu" | "table">("menu");
   const [activeArea, setActiveArea] = useState<string>("all");
@@ -539,6 +552,10 @@ const CashierOrders = () => {
     useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [successTotal, setSuccessTotal] = useState<number | null>(null);
+  const [vnpayReturnNotice, setVnpayReturnNotice] = useState<{
+    message: string;
+    variant: "success" | "error";
+  } | null>(null);
   const [showChangePw, setShowChangePw] = useState(false);
   const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
   const [invoiceListOrderId, setInvoiceListOrderId] = useState<string | null>(
@@ -572,9 +589,8 @@ const CashierOrders = () => {
   } | null>(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
-  const [qrPayment, setQrPayment] = useState<Payment | null>(null);
-  const [qrLoading, setQrLoading] = useState(false);
-  const [qrError, setQrError] = useState("");
+  const [vnpayLoading, setVnpayLoading] = useState(false);
+  const [vnpayError, setVnpayError] = useState("");
   const loadCashierStateRequestRef = useRef(0);
   const invoiceListRequestRef = useRef(0);
   const invoiceDetailRequestRef = useRef(0);
@@ -583,6 +599,7 @@ const CashierOrders = () => {
   const createOrderSubmissionRef = useRef(false);
   const selectedOrderIdRef = useRef("");
   const selectedTableIdRef = useRef("");
+  const vnpayReturnHandledRef = useRef<string | null>(null);
   const [createOrderSubmitting, setCreateOrderSubmitting] = useState(false);
   const [checkInWalkInSubmitting, setCheckInWalkInSubmitting] = useState(false);
   const [undoCheckInSubmitting, setUndoCheckInSubmitting] = useState(false);
@@ -946,6 +963,56 @@ const CashierOrders = () => {
       return () => clearTimeout(t);
     }
   }, [successTotal]);
+
+  useEffect(() => {
+    if (vnpayReturnNotice !== null) {
+      const t = setTimeout(() => setVnpayReturnNotice(null), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [vnpayReturnNotice]);
+
+  // Restore the cashier's table/order/payment context after a VNPAY redirect round-trip.
+  // The navigation state only selects UI — payment status always comes from the fresh
+  // invoice/order data reloaded below, never from the router state itself.
+  useEffect(() => {
+    const state = location.state as {
+      tableId?: string;
+      orderId?: string;
+      invoiceId?: string;
+      txnRef?: string;
+      paymentResult?: string;
+    } | null;
+    if (!state?.txnRef || !state.tableId || !state.orderId) return;
+    if (vnpayReturnHandledRef.current === state.txnRef) return;
+    vnpayReturnHandledRef.current = state.txnRef;
+
+    const noticeByResult: Record<
+      string,
+      { message: string; variant: "success" | "error" }
+    > = {
+      PAID: { message: "Thanh toán VNPAY thành công.", variant: "success" },
+      FAILED: { message: "Thanh toán VNPAY thất bại.", variant: "error" },
+      CANCELLED: { message: "Giao dịch VNPAY đã bị hủy.", variant: "error" },
+      EXPIRED: { message: "Giao dịch VNPAY đã hết hạn.", variant: "error" },
+    };
+    const notice = state.paymentResult
+      ? noticeByResult[state.paymentResult]
+      : undefined;
+    if (notice) setVnpayReturnNotice(notice);
+
+    const { tableId, orderId, invoiceId, paymentResult } = state;
+    void (async () => {
+      await loadCashierState();
+      handleTableSelect(tableId);
+      await refreshInvoices(orderId, invoiceId ?? null);
+      if (paymentResult !== "PAID") {
+        setPaymentOpen(true);
+      }
+    })();
+
+    navigate(location.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   const areas = ["all", ...Array.from(new Set(tables.map((t) => t.area)))];
   const tablesInArea = (
@@ -1379,64 +1446,69 @@ const CashierOrders = () => {
     }
   };
 
-  const handleResetQrState = () => {
-    setQrPayment(null);
-    setQrError("");
+  const handleResetVnpayState = () => {
+    setVnpayError("");
   };
 
-  const handleInitiateQr = async () => {
+  // Creates (or reuses) a PENDING VNPAY attempt and redirects the browser to VNPAY
+  // Sandbox. There is no in-app "confirm" step — IPN finalizes the payment, and the
+  // browser eventually lands back on /payment/vnpay-result via the backend's Return
+  // endpoint.
+  const handleInitiateVnpay = async () => {
     if (!selectedInvoice) {
-      setQrError("Không xác định được hóa đơn cần thanh toán");
+      setVnpayError("Không xác định được hóa đơn cần thanh toán");
       return;
     }
-    setQrLoading(true);
-    setQrError("");
+    setVnpayLoading(true);
+    setVnpayError("");
     try {
-      const payment = await initiateQrPaymentApi(selectedInvoice.id);
-      setQrPayment(payment);
+      const result = await createVnpayPayment(selectedInvoice.id);
+      window.location.href = result.paymentUrl;
     } catch (initiateError) {
-      setQrError(getPaymentProcessErrorMessage(initiateError));
-    } finally {
-      setQrLoading(false);
+      setVnpayError(getPaymentProcessErrorMessage(initiateError));
+      setVnpayLoading(false);
     }
   };
 
-  const handleSimulateQrSuccess = async () => {
-    if (!qrPayment || !selectedInvoice) return;
-    setPaymentProcessing(true);
-    setQrError("");
+  // Escape hatch when VNPAY has the money but this machine never received the IPN: ask the
+  // backend to query VNPAY directly (QueryDR) and settle whatever it reports. Also covers a
+  // stale PENDING attempt that is blocking a new payment.
+  const handleCheckVnpayStatus = async () => {
+    if (!selectedInvoice) return;
+    setVnpayLoading(true);
+    setVnpayError("");
     try {
-      const confirmedPayment = await simulateQrPaymentSuccess(qrPayment.id);
-      setQrPayment(confirmedPayment);
-      setPaymentOpen(false);
-      setSuccessTotal(confirmedPayment.amount);
-      await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
-      setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
-    } catch (confirmError) {
-      setQrError(getPaymentProcessErrorMessage(confirmError));
-      if (
-        confirmError instanceof ApiClientError &&
-        confirmError.code &&
-        STALE_INVOICE_ERROR_CODES.has(confirmError.code)
-      ) {
+      const payments = await getPayments(selectedInvoice.id);
+      const pending = payments.find(
+        (payment) =>
+          payment.method === "VNPAY" &&
+          payment.status === "PENDING" &&
+          Boolean(payment.gatewayRef),
+      );
+
+      if (!pending?.gatewayRef) {
         await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
+        setVnpayError("Không có giao dịch VNPAY nào đang chờ xử lý cho hóa đơn này.");
+        return;
       }
-    } finally {
-      setPaymentProcessing(false);
-    }
-  };
 
-  const handleCancelQr = async () => {
-    if (!qrPayment) return;
-    setPaymentProcessing(true);
-    setQrError("");
-    try {
-      await cancelQrPaymentApi(qrPayment.id);
-      setQrPayment(null);
-    } catch (cancelError) {
-      setQrError(getPaymentProcessErrorMessage(cancelError));
+      const status = await reconcileVnpayPayment(pending.gatewayRef);
+      await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
+
+      if (status.status === "PAID") {
+        setPaymentOpen(false);
+        setSuccessTotal(status.amount);
+        setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
+        return;
+      }
+      setVnpayError(
+        VNPAY_STATUS_MESSAGES[status.status] ??
+          "Giao dịch vẫn đang chờ xác nhận từ VNPAY.",
+      );
+    } catch (checkError) {
+      setVnpayError(getPaymentProcessErrorMessage(checkError));
     } finally {
-      setPaymentProcessing(false);
+      setVnpayLoading(false);
     }
   };
 
@@ -1449,7 +1521,7 @@ const CashierOrders = () => {
     setPaymentError("");
     setSplitError("");
     setPromotionCode("");
-    handleResetQrState();
+    handleResetVnpayState();
     void loadInvoiceDetail(invoiceId, selectedOrderId);
   };
 
@@ -2147,6 +2219,17 @@ const CashierOrders = () => {
 
   return (
     <div className="flex flex-col h-screen bg-[#f5f5f5] overflow-hidden font-sans">
+      {vnpayReturnNotice && (
+        <div
+          className={`fixed top-6 left-1/2 -translate-x-1/2 z-[9999] px-5 py-3 rounded-[10px] text-white text-[14px] font-semibold shadow-lg ${
+            vnpayReturnNotice.variant === "success"
+              ? "bg-[var(--kv-success)]"
+              : "bg-danger"
+          }`}
+        >
+          {vnpayReturnNotice.message}
+        </div>
+      )}
       {!shift && shiftModalOpen && (
         <OpenShiftModal
           employeeName={user?.fullName ?? user?.username ?? "Nhân viên"}
@@ -2640,9 +2723,8 @@ const CashierOrders = () => {
           role={user?.role}
           invoiceMessage={invoiceMessage}
           nonPayableItems={nonPayableRejectedItems}
-          qrPayment={qrPayment}
-          qrLoading={qrLoading}
-          qrError={qrError}
+          vnpayLoading={vnpayLoading}
+          vnpayError={vnpayError}
           cashierName={cashierDisplayName}
           shiftLabel={shiftDisplayLabel}
           customer={{
@@ -2661,10 +2743,9 @@ const CashierOrders = () => {
           onConfirmCash={(receivedAmount) =>
             void handleConfirmCash(receivedAmount)
           }
-          onInitiateQr={() => void handleInitiateQr()}
-          onSimulateQrSuccess={() => void handleSimulateQrSuccess()}
-          onCancelQr={() => void handleCancelQr()}
-          onResetQrState={handleResetQrState}
+          onInitiateVnpay={() => void handleInitiateVnpay()}
+          onCheckVnpayStatus={() => void handleCheckVnpayStatus()}
+          onResetVnpayState={handleResetVnpayState}
           onPromotionCodeChange={setPromotionCode}
           onApplyDiscount={() => void handleApplyDiscount()}
           onPrint={handlePrintInvoice}

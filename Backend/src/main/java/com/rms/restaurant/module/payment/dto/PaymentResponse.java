@@ -18,5 +18,11 @@ public record PaymentResponse(
         BigDecimal changeAmount,
         LocalDateTime expiresAt,
         LocalDateTime paidAt,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        // VNPAY only — null for every other method.
+        String vnpTransactionNo,
+        String vnpResponseCode,
+        String vnpTransactionStatus,
+        String vnpBankCode,
+        String vnpCardType
 ) {}

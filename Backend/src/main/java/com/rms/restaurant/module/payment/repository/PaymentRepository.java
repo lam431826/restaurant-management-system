@@ -33,8 +33,27 @@ public interface PaymentRepository extends JpaRepository<Payment, String> {
     @Query("SELECT p FROM Payment p WHERE p.id = :id")
     Optional<Payment> findByIdForUpdate(@Param("id") String id);
 
-    // QR initiate idempotency: reuse an already-open PENDING transaction instead of
+    // QR/VNPAY initiate idempotency: reuse an already-open PENDING transaction instead of
     // creating unlimited duplicates for the same invoice.
     Optional<Payment> findFirstByInvoiceIdAndMethodAndStatus(
             String invoiceId, PaymentMethod method, String status);
+
+    // VNPAY Return/IPN idempotency: look up the attempt by its merchant transaction
+    // reference and lock the row so concurrent/duplicate callbacks serialize.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Payment p WHERE p.gatewayRef = :gatewayRef")
+    Optional<Payment> findByGatewayRefForUpdate(@Param("gatewayRef") String gatewayRef);
+
+    // Plain (non-locking) lookup for the status-polling endpoint — must not contend with
+    // IPN's row lock just to read current state.
+    Optional<Payment> findByGatewayRef(String gatewayRef);
+
+    // Cross-method conflict guard: an unexpired PENDING attempt of any method (VNPAY or
+    // legacy QR) must block a conflicting new attempt on the same invoice.
+    Optional<Payment> findFirstByInvoiceIdAndStatusAndExpiresAtAfter(
+            String invoiceId, String status, LocalDateTime now);
+
+    // Stale-attempt cleanup: every PENDING attempt on an invoice, for QueryDR
+    // reconciliation and lazy expiry before a new payment is allowed.
+    List<Payment> findByInvoiceIdAndStatus(String invoiceId, String status);
 }

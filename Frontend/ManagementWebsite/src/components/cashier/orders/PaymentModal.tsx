@@ -6,7 +6,7 @@ import type {
   MergeInvoiceRequest,
   SplitInvoiceRequest,
 } from "../../../services/invoiceApi";
-import type { Payment, SelectablePaymentMethod } from "../../../services/paymentApi";
+import type { SelectablePaymentMethod } from "../../../services/paymentApi";
 import type { UserRole } from "../../../context/AuthContext";
 import type { TableItem } from "./types";
 import { SplitInvoiceModal } from "./SplitInvoiceModal";
@@ -25,7 +25,6 @@ import {
   getLifecycleBadgeClass,
   getLifecycleLabel,
 } from "../../transactions/invoiceLifecycle";
-import { formatTransactionCode } from "../../../utils/displayCodes";
 
 /* ─── Payment modal ──────────────────────────────────────────────────────── */
 interface NonPayableReceiptItem {
@@ -35,10 +34,10 @@ interface NonPayableReceiptItem {
   note?: string | null;
 }
 
-// Only CASH and QR are supported; CARD/E_WALLET are intentionally not offered.
+// Only CASH and VNPAY Sandbox are supported; CARD/E_WALLET are intentionally not offered.
 const PAYMENT_METHODS = [
   { id: "CASH" as const, label: "Tiền mặt" },
-  { id: "QR" as const, label: "Mã QR" },
+  { id: "VNPAY" as const, label: "VNPAY Sandbox" },
 ];
 
 export const PaymentModal = ({
@@ -59,9 +58,8 @@ export const PaymentModal = ({
   role,
   invoiceMessage,
   nonPayableItems = [],
-  qrPayment,
-  qrLoading,
-  qrError,
+  vnpayLoading,
+  vnpayError,
   cashierName,
   shiftLabel,
   customer,
@@ -72,10 +70,9 @@ export const PaymentModal = ({
   onSelectInvoice,
   onRefreshInvoices,
   onConfirmCash,
-  onInitiateQr,
-  onSimulateQrSuccess,
-  onCancelQr,
-  onResetQrState,
+  onInitiateVnpay,
+  onCheckVnpayStatus,
+  onResetVnpayState,
   onPromotionCodeChange,
   onApplyDiscount,
   onPrint,
@@ -101,10 +98,9 @@ export const PaymentModal = ({
   role?: UserRole;
   invoiceMessage: { type: "success" | "error"; text: string } | null;
   nonPayableItems?: NonPayableReceiptItem[];
-  // Current simulated QR transaction for the selected invoice, if any.
-  qrPayment: Payment | null;
-  qrLoading: boolean;
-  qrError: string;
+  // True while a VNPAY payment URL is being created (POST /vnpay/create in flight).
+  vnpayLoading: boolean;
+  vnpayError: string;
   // Real signed-in cashier and real current shift — never a fixed placeholder.
   cashierName: string;
   shiftLabel: string;
@@ -120,10 +116,12 @@ export const PaymentModal = ({
   onSelectInvoice: (invoiceId: string) => void;
   onRefreshInvoices: () => void;
   onConfirmCash: (receivedAmount: number) => void;
-  onInitiateQr: () => void;
-  onSimulateQrSuccess: () => void;
-  onCancelQr: () => void;
-  onResetQrState: () => void;
+  // Creates (or reuses) a PENDING VNPAY attempt and redirects the browser to VNPAY.
+  onInitiateVnpay: () => void;
+  // Asks VNPAY (server-side QueryDR) what happened to an attempt still stuck PENDING
+  // locally, so a missed IPN cannot block this invoice indefinitely.
+  onCheckVnpayStatus: () => void;
+  onResetVnpayState: () => void;
   onPromotionCodeChange: (value: string) => void;
   onApplyDiscount: () => void;
   onPrint: () => void;
@@ -159,8 +157,8 @@ export const PaymentModal = ({
     setDropdownOpen(false);
     setCashInput("");
     setMethod("CASH");
-    onResetQrState();
-    // onResetQrState is stable from the parent (useState setter); omitting it from
+    onResetVnpayState();
+    // onResetVnpayState is stable from the parent (useState setter); omitting it from
     // deps avoids re-running this reset whenever the parent re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedInvoiceId]);
@@ -186,7 +184,7 @@ export const PaymentModal = ({
 
   const methodIcons: Record<SelectablePaymentMethod, ReactNode> = {
     CASH: <CashMethodIcon />,
-    QR: <QRMethodIcon />,
+    VNPAY: <QRMethodIcon />,
   };
 
   const handleDigit = (key: string) => {
@@ -692,7 +690,6 @@ export const PaymentModal = ({
                       onClick={() => {
                         setMethod(pm.id);
                         setDropdownOpen(false);
-                        if (pm.id === "QR" && !qrPayment) onInitiateQr();
                       }}
                       className={`flex items-center gap-2 px-3 py-2.5 rounded-[12px] w-full text-left transition-colors ${method === pm.id ? "bg-[#f0f8ff]" : "bg-white hover:bg-[#f5f5f5]"}`}
                     >
@@ -761,67 +758,24 @@ export const PaymentModal = ({
                 </div>
               )}
 
-              {method === "QR" && (
+              {method === "VNPAY" && (
                 <div className="flex flex-col items-center gap-4 pb-2">
-                  <div className="w-[160px] h-[160px] bg-white overflow-hidden flex items-center justify-center shrink-0 border border-dashed border-[#d9d9d9] rounded-[12px]">
-                    <img
-                      src="/images/qr-code.png"
-                      alt="QR mô phỏng"
-                      className="w-full h-full object-contain p-4"
-                    />
+                  <div className="w-[160px] h-[160px] bg-white overflow-hidden flex items-center justify-center shrink-0 border border-dashed border-[#d9d9d9] rounded-[12px] text-[#025cca] [&_svg]:w-16 [&_svg]:h-16">
+                    <QRMethodIcon />
                   </div>
                   <p className="text-[11px] text-center text-[#a2a4a4] px-4 -mt-2">
-                    Đây là cổng thanh toán QR mô phỏng (không kết nối ngân hàng
-                    thật). Dùng để giả lập callback từ hệ thống thanh toán bên
-                    ngoài.
+                    Bạn sẽ được chuyển đến cổng thanh toán VNPAY Sandbox để hoàn
+                    tất giao dịch. Sau khi thanh toán, hệ thống sẽ tự động cập
+                    nhật trạng thái hóa đơn.
+                  </p>
+                  <p className="text-[13px] text-[#797b7c]">
+                    Cần thanh toán: {total.toLocaleString("vi-VN")} đ
                   </p>
 
-                  {qrLoading && (
-                    <p className="text-[13px] text-[#636566]">
-                      Đang tạo giao dịch QR...
+                  {vnpayError && (
+                    <p className="text-[13px] text-[#d92d20] text-center">
+                      {vnpayError}
                     </p>
-                  )}
-
-                  {!qrLoading && qrError && (
-                    <div className="w-full flex flex-col items-center gap-2">
-                      <p className="text-[13px] text-[#d92d20] text-center">
-                        {qrError}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={onInitiateQr}
-                        className="h-9 px-4 rounded-[8px] border border-[#025cca] text-[13px] font-medium text-[#025cca]"
-                      >
-                        Thử tạo lại giao dịch QR
-                      </button>
-                    </div>
-                  )}
-
-                  {!qrLoading && !qrError && qrPayment && (
-                    <div className="w-full border-t border-[#e8e8e8] px-3 pt-4 flex flex-col gap-2 items-center">
-                      <p className="text-[14px] text-[#636566]">
-                        <span className="text-[#a2a4a4]">Số tiền:</span>{" "}
-                        <span className="text-[#202325] font-medium">
-                          {qrPayment.amount.toLocaleString("vi-VN")} đ
-                        </span>
-                      </p>
-                      <p className="text-[14px] text-[#636566] text-center">
-                        <span className="text-[#a2a4a4]">Mã giao dịch:</span>{" "}
-                        <span
-                          className="text-[#202325] font-medium font-mono"
-                          title={qrPayment.gatewayRef ?? undefined}
-                        >
-                          {formatTransactionCode(qrPayment.gatewayRef)}
-                        </span>
-                      </p>
-                      <span
-                        className={`kv-badge ${qrPayment.status === "PAID" ? "kv-badge-success" : "kv-badge-warning"}`}
-                      >
-                        {qrPayment.status === "PAID"
-                          ? "Đã thanh toán"
-                          : "Đang chờ thanh toán"}
-                      </span>
-                    </div>
                   )}
                 </div>
               )}
@@ -848,32 +802,32 @@ export const PaymentModal = ({
                   {confirmLabel}
                 </button>
               )}
-              {method === "QR" &&
-                !qrLoading &&
-                !qrError &&
-                qrPayment &&
-                qrPayment.status === "PENDING" && (
-                  <div className="w-full flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={onSimulateQrSuccess}
-                      disabled={processing || actionBusy}
-                      className="w-full h-[44px] bg-[#025cca] rounded-[10px] text-[14px] font-semibold text-white disabled:opacity-60"
-                    >
-                      {processing
-                        ? "Đang xác nhận..."
-                        : "Giả lập thanh toán thành công"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onCancelQr}
-                      disabled={processing || actionBusy}
-                      className="w-full h-[38px] rounded-[10px] border border-[#d1d5db] text-[13px] text-[#636566] disabled:opacity-60"
-                    >
-                      Hủy giao dịch QR
-                    </button>
-                  </div>
-                )}
+              {method === "VNPAY" && (
+                <div className="w-full flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={onInitiateVnpay}
+                    disabled={processing || actionBusy || vnpayLoading || invoice.paid}
+                    className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60"
+                  >
+                    {vnpayLoading
+                      ? "Đang xử lý..."
+                      : invoice.paid
+                        ? "Đã thanh toán"
+                        : "Thanh toán qua VNPAY Sandbox"}
+                  </button>
+                  {/* Escape hatch for a transaction paid at VNPAY whose IPN never reached
+                      this machine: asks VNPAY directly instead of trusting local state. */}
+                  <button
+                    type="button"
+                    onClick={onCheckVnpayStatus}
+                    disabled={processing || actionBusy || vnpayLoading || invoice.paid}
+                    className="w-full h-[38px] rounded-[10px] border border-[#d1d5db] text-[13px] text-[#636566] disabled:opacity-60"
+                  >
+                    Kiểm tra trạng thái VNPAY
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
