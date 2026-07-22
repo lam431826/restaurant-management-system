@@ -1,6 +1,7 @@
 package com.rms.restaurant.module.reporting.service.impl;
 
 import com.rms.restaurant.common.utils.enums.CookingStatus;
+import com.rms.restaurant.common.utils.enums.DashboardGranularity;
 import com.rms.restaurant.common.utils.enums.FinancialGranularity;
 import com.rms.restaurant.common.utils.enums.PaymentMethod;
 import com.rms.restaurant.common.utils.enums.PayslipStatus;
@@ -13,13 +14,16 @@ import com.rms.restaurant.module.order.model.OrderItem;
 import com.rms.restaurant.module.order.repository.OrderItemRepository;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.payment.model.Invoice;
+import com.rms.restaurant.module.payment.model.InvoiceItemAllocation;
 import com.rms.restaurant.module.payment.model.Payment;
+import com.rms.restaurant.module.payment.repository.InvoiceItemAllocationRepository;
 import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.payment.repository.PaymentRepository;
 import com.rms.restaurant.module.payroll.model.PayrollSheet;
 import com.rms.restaurant.module.payroll.model.Payslip;
 import com.rms.restaurant.module.payroll.repository.PayrollSheetRepository;
 import com.rms.restaurant.module.payroll.repository.PayslipRepository;
+import com.rms.restaurant.module.reporting.dto.DashboardOverviewResponse;
 import com.rms.restaurant.module.reporting.dto.EndOfDaySalesRow;
 import com.rms.restaurant.module.reporting.dto.FinancialPeriodResponse;
 import com.rms.restaurant.module.reporting.dto.MenuPerformanceResponse;
@@ -32,12 +36,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -53,6 +61,7 @@ public class ReportServiceImpl implements ReportService {
     private final InvoiceRepository invoiceRepository;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
+    private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final TableRepository tableRepository;
@@ -231,6 +240,209 @@ public class ReportServiceImpl implements ReportService {
 
     @Override public TrafficReportResponse getTrafficReport(LocalDate from, LocalDate to) { return null; }
     @Override public MenuPerformanceResponse getMenuPerformance(LocalDate from, LocalDate to) { return null; }
+
+    @Override
+    public DashboardOverviewResponse getDashboardOverview(
+            LocalDateTime from, LocalDateTime to, DashboardGranularity granularity) {
+
+        // Anchored on the authoritative SETTLEMENT instant (Payment.paidAt) — set exactly once,
+        // in the same transaction as invoice.setPaid(true), by whichever path actually confirms
+        // the money (CASH's immediate settlement, QR confirm, or VNPAY's settleVnpaySuccess,
+        // shared by Return/IPN and any later QueryDR catch-up). An invoice created on one day can
+        // settle on another (VNPAY left PENDING overnight, reconciled the next morning); revenue
+        // must land in the period the money actually arrived in, not when the invoice was opened.
+        // This deliberately diverges from the Financial/P&L and End-of-day reports, which bucket
+        // by invoice.createdAt — that is pre-existing behavior of those two reports, audited but
+        // intentionally left unchanged here (no shared query was touched; see PaymentRepository
+        // .findSettledPaidBetween). PENDING/FAILED/CANCELLED/EXPIRED attempts are excluded by the
+        // status filter in that query, and duplicate IPN/QueryDR processing can never surface more
+        // than one PAID row per invoice (enforced by PaymentServiceImpl's stale-invoice guard) —
+        // the dedupe below is a deterministic defensive backstop, not the primary safeguard.
+        List<Payment> settledPayments = paymentRepository.findSettledPaidBetween(from, to);
+        Map<String, Payment> settledPaymentByInvoiceId = dedupeToAuthoritativePaymentPerInvoice(settledPayments);
+
+        List<String> invoiceIds = List.copyOf(settledPaymentByInvoiceId.keySet());
+        Map<String, Invoice> invoicesById = invoiceIds.isEmpty()
+                ? Map.of()
+                : invoiceRepository.findAllById(invoiceIds).stream()
+                        .collect(Collectors.toMap(Invoice::getId, i -> i));
+        List<Invoice> invoices = List.copyOf(invoicesById.values());
+
+        // Revenue summary. Deliberately NOT gated on order completion: a paid split invoice's
+        // money was genuinely collected even before the rest of its order is closed.
+        BigDecimal grossRevenue = invoices.stream()
+                .map(Invoice::getSubtotal).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalDiscount = invoices.stream()
+                .map(i -> i.getDiscountAmount() == null ? BigDecimal.ZERO : i.getDiscountAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal netRevenue = invoices.stream()
+                .map(Invoice::getTotalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        int paidInvoiceCount = invoices.size();
+
+        // No order-level "completed" count: Order has no authoritative closedAt timestamp, and
+        // OrderStatus is a mutable, current-state field. Counting "orders whose current status
+        // is CLOSED, among those with a settled invoice in this window" double-attributes a split
+        // order across periods — e.g. invoice A settles day 1, invoice B settles (and closes the
+        // order) day 2: day 1's window would find invoice A (settled in-window) and the order
+        // *currently* CLOSED, and day 2 would independently find the same thing for invoice B —
+        // "completed" in both periods from one completion event. Reporting strictly on invoices
+        // actually settled in [from, to) avoids this; see DashboardOverviewResponse.Revenue.
+        BigDecimal averageInvoiceValue = paidInvoiceCount == 0
+                ? BigDecimal.ZERO
+                : netRevenue.divide(BigDecimal.valueOf(paidInvoiceCount), 0, RoundingMode.HALF_UP);
+
+        DashboardOverviewResponse.Revenue revenue = new DashboardOverviewResponse.Revenue(
+                grossRevenue, totalDiscount, netRevenue, paidInvoiceCount, averageInvoiceValue);
+
+        List<DashboardOverviewResponse.RevenuePoint> revenueSeries =
+                buildRevenueSeries(settledPaymentByInvoiceId, invoicesById, from, to, granularity);
+        List<DashboardOverviewResponse.PaymentBreakdownRow> paymentBreakdown =
+                buildPaymentBreakdown(settledPaymentByInvoiceId.values());
+        List<DashboardOverviewResponse.MenuItemStat> topItems = buildTopItems(invoiceIds);
+
+        return new DashboardOverviewResponse(revenue, revenueSeries, paymentBreakdown, topItems);
+    }
+
+    /** Resolves at most one authoritative PAID payment per invoice. The business invariant
+     *  (PaymentServiceImpl) is that at most one payment per invoice ever reaches PAID; this
+     *  tie-break (latest paidAt, then id) only guards against that invariant being violated by
+     *  stale/anomalous data, so an invoice is never counted — or revenue-summed — twice. */
+    private Map<String, Payment> dedupeToAuthoritativePaymentPerInvoice(List<Payment> payments) {
+        Comparator<Payment> mostAuthoritative = Comparator
+                .comparing((Payment p) -> p.getPaidAt() == null ? LocalDateTime.MIN : p.getPaidAt())
+                .thenComparing(Payment::getId, Comparator.nullsLast(Comparator.naturalOrder()));
+        return payments.stream().collect(Collectors.toMap(Payment::getInvoiceId, p -> p,
+                (a, b) -> mostAuthoritative.compare(a, b) >= 0 ? a : b));
+    }
+
+    /** Every bucket across the half-open [from, to) range is emitted (continuous axis); empty
+     *  buckets carry a real 0. Both ends are half-open by construction here: `from` is the first
+     *  instant a bucket can start at, `to` is an exclusive upper bound the loop never reaches
+     *  (`bucket.isBefore(to)`) — the frontend period resolver always passes "start of the
+     *  day/period after the one intended" as `to`, so no payment near a boundary is ever silently
+     *  dropped by second/millisecond truncation, and it can never land in two adjacent periods.
+     *  Buckets by Payment.paidAt (settlement time), matching getDashboardOverview's revenue
+     *  anchor — NOT invoice.createdAt. */
+    private List<DashboardOverviewResponse.RevenuePoint> buildRevenueSeries(
+            Map<String, Payment> settledPaymentByInvoiceId, Map<String, Invoice> invoicesById,
+            LocalDateTime from, LocalDateTime to, DashboardGranularity granularity) {
+        if (!from.isBefore(to)) return List.of();
+
+        Map<LocalDateTime, BigDecimal> revenueByBucket = new TreeMap<>();
+        Map<LocalDateTime, Integer> countByBucket = new TreeMap<>();
+        for (LocalDateTime bucket = firstBucket(from, granularity);
+             bucket.isBefore(to);
+             bucket = nextBucket(bucket, granularity)) {
+            revenueByBucket.put(bucket, BigDecimal.ZERO);
+            countByBucket.put(bucket, 0);
+        }
+
+        for (Payment payment : settledPaymentByInvoiceId.values()) {
+            if (payment.getPaidAt() == null) continue; // defensive — PAID always sets paidAt
+            Invoice invoice = invoicesById.get(payment.getInvoiceId());
+            if (invoice == null) continue;
+            LocalDateTime bucket = bucketOf(payment.getPaidAt(), granularity);
+            if (!revenueByBucket.containsKey(bucket)) continue; // outside the pre-filled range
+            revenueByBucket.merge(bucket, invoice.getTotalAmount(), BigDecimal::add);
+            countByBucket.merge(bucket, 1, Integer::sum);
+        }
+
+        return revenueByBucket.entrySet().stream()
+                .map(e -> new DashboardOverviewResponse.RevenuePoint(
+                        e.getKey(), e.getValue(), countByBucket.getOrDefault(e.getKey(), 0)))
+                .toList();
+    }
+
+    private LocalDateTime firstBucket(LocalDateTime from, DashboardGranularity granularity) {
+        return granularity == DashboardGranularity.HOUR
+                ? from.truncatedTo(ChronoUnit.HOURS)
+                : from.toLocalDate().atStartOfDay();
+    }
+
+    private LocalDateTime nextBucket(LocalDateTime bucket, DashboardGranularity granularity) {
+        return granularity == DashboardGranularity.HOUR ? bucket.plusHours(1) : bucket.plusDays(1);
+    }
+
+    private LocalDateTime bucketOf(LocalDateTime time, DashboardGranularity granularity) {
+        return granularity == DashboardGranularity.HOUR
+                ? time.truncatedTo(ChronoUnit.HOURS)
+                : time.toLocalDate().atStartOfDay();
+    }
+
+    /** Aggregates by method from the payments the caller already resolved to one authoritative,
+     *  settled (status == PAID) row per invoice — see dedupeToAuthoritativePaymentPerInvoice.
+     *  Because that same collection is what revenue is summed from, sum(amount) here reconciles
+     *  to dashboard paid revenue by construction (payment.amount is always a snapshot of
+     *  invoice.totalAmount at settlement — see PaymentServiceImpl). */
+    private List<DashboardOverviewResponse.PaymentBreakdownRow> buildPaymentBreakdown(
+            Collection<Payment> settledPayments) {
+        if (settledPayments.isEmpty()) return List.of();
+
+        Map<PaymentMethod, BigDecimal> amountByMethod = new EnumMap<>(PaymentMethod.class);
+        Map<PaymentMethod, Integer> countByMethod = new EnumMap<>(PaymentMethod.class);
+        for (Payment payment : settledPayments) {
+            if (payment.getMethod() == null) continue;
+            amountByMethod.merge(payment.getMethod(),
+                    payment.getAmount() == null ? BigDecimal.ZERO : payment.getAmount(), BigDecimal::add);
+            countByMethod.merge(payment.getMethod(), 1, Integer::sum);
+        }
+        return amountByMethod.entrySet().stream()
+                .map(e -> new DashboardOverviewResponse.PaymentBreakdownRow(
+                        e.getKey(), e.getValue(), countByMethod.getOrDefault(e.getKey(), 0)))
+                .sorted(Comparator.comparing(DashboardOverviewResponse.PaymentBreakdownRow::amount).reversed())
+                .toList();
+    }
+
+    /** Top 5 items by settled revenue, aggregated from InvoiceItemAllocation rows — NOT from
+     *  "every payable item of an order that has some paid invoice". One order can have multiple
+     *  invoices (split); joining paid-invoice → orderId → all of that order's items would credit
+     *  quantity/revenue still sitting on a still-unpaid sibling invoice, and would silently
+     *  duplicate nothing only by luck. Allocation rows are the authoritative, quantity-conserving
+     *  link from an invoice to exactly the order-item quantity it covers: every invoice
+     *  (split or not) gets them at generation time, a partial split shrinks the source's row and
+     *  creates a new one on the child with the exact remainder (no quantity created or lost), and
+     *  a merge combines source rows into one target row under a DB uniqueness constraint — so
+     *  `active = true` rows scoped to this window's *paid invoice ids* can never double-count.
+     *  unitPriceSnapshot is used (not the live OrderItem price) so a later menu price change can
+     *  never retroactively change historical revenue. */
+    private List<DashboardOverviewResponse.MenuItemStat> buildTopItems(List<String> invoiceIds) {
+        if (invoiceIds.isEmpty()) return List.of();
+        List<InvoiceItemAllocation> allocations = invoiceItemAllocationRepository.findAllByInvoiceIds(invoiceIds)
+                .stream()
+                .filter(InvoiceItemAllocation::isActive)
+                .toList();
+        if (allocations.isEmpty()) return List.of();
+
+        Set<String> orderItemIds = allocations.stream()
+                .map(InvoiceItemAllocation::getOrderItemId).collect(Collectors.toSet());
+        Map<String, OrderItem> orderItemsById = orderItemRepository.findAllById(orderItemIds).stream()
+                .collect(Collectors.toMap(OrderItem::getId, oi -> oi));
+
+        Map<String, ItemAccumulator> byMenuItem = new java.util.LinkedHashMap<>();
+        for (InvoiceItemAllocation allocation : allocations) {
+            OrderItem orderItem = orderItemsById.get(allocation.getOrderItemId());
+            if (orderItem == null) continue; // defensive — should always resolve
+            ItemAccumulator acc = byMenuItem.computeIfAbsent(
+                    orderItem.getMenuItemId(), k -> new ItemAccumulator(orderItem.getMenuItemName()));
+            acc.quantity += allocation.getAllocatedQuantity();
+            acc.revenue = acc.revenue.add(
+                    allocation.getUnitPriceSnapshot().multiply(BigDecimal.valueOf(allocation.getAllocatedQuantity())));
+        }
+
+        return byMenuItem.entrySet().stream()
+                .map(e -> new DashboardOverviewResponse.MenuItemStat(
+                        e.getKey(), e.getValue().name, e.getValue().quantity, e.getValue().revenue))
+                .sorted(Comparator.comparing(DashboardOverviewResponse.MenuItemStat::revenue).reversed())
+                .limit(5)
+                .toList();
+    }
+
+    private static class ItemAccumulator {
+        final String name;
+        int quantity = 0;
+        BigDecimal revenue = BigDecimal.ZERO;
+        ItemAccumulator(String name) { this.name = name; }
+    }
 
     @Override
     public List<EndOfDaySalesRow> getEndOfDaySales(

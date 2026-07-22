@@ -1,8 +1,10 @@
 package com.rms.restaurant.module.reporting.controller;
 
+import com.rms.restaurant.common.utils.enums.DashboardGranularity;
 import com.rms.restaurant.common.utils.enums.FinancialGranularity;
 import com.rms.restaurant.common.utils.enums.PaymentMethod;
 import com.rms.restaurant.common.utils.wrapper.ApiResponse;
+import com.rms.restaurant.module.reporting.dto.DashboardOverviewResponse;
 import com.rms.restaurant.module.reporting.dto.EndOfDaySalesRow;
 import com.rms.restaurant.module.reporting.dto.FinancialPeriodResponse;
 import com.rms.restaurant.module.reporting.service.ReportService;
@@ -37,6 +39,18 @@ public class ReportController {
             @RequestParam(required = false) String tableName) {
         return ResponseEntity.ok(ApiResponse.success(
                 reportService.getEndOfDaySales(from, to, staffIds, paymentMethod, areaName, tableName)));
+    }
+
+    // Bức tranh kinh doanh — aggregated manager dashboard snapshot for [from, to]. granularity
+    // controls the revenue series bucket width (HOUR for a single day, DAY for multi-day ranges).
+    @GetMapping("/dashboard")
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    public ResponseEntity<ApiResponse<DashboardOverviewResponse>> getDashboardOverview(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
+            @RequestParam DashboardGranularity granularity) {
+        return ResponseEntity.ok(ApiResponse.success(
+                reportService.getDashboardOverview(from, to, granularity)));
     }
 
     // Báo cáo tài chính (P&L) — one row per month/quarter/year within the given year.

@@ -29,6 +29,16 @@ public interface PaymentRepository extends JpaRepository<Payment, String> {
     @Query("SELECT p FROM Payment p WHERE p.status = 'PAID' AND p.createdAt >= :from AND p.createdAt <= :to")
     List<Payment> findPaidPaymentsBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
+    // Manager dashboard only — anchored on the authoritative SETTLEMENT instant (paidAt), not
+    // attempt creation time: a VNPAY payment can be created on one day and settle (Return/IPN,
+    // or a later QueryDR catch-up) on another, and revenue belongs to when the money actually
+    // landed. Half-open [from, to): `to` is exclusive so a period boundary can never double-count
+    // or omit a payment settled at that exact instant — unlike findPaidPaymentsBetween above
+    // (creation-time, inclusive-both-ends, currently unused) or InvoiceRepository.findPaidBetween
+    // (creation-time, inclusive-both-ends, shared by the Financial/EOD reports — left untouched).
+    @Query("SELECT p FROM Payment p WHERE p.status = 'PAID' AND p.paidAt >= :from AND p.paidAt < :to ORDER BY p.paidAt ASC")
+    List<Payment> findSettledPaidBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Payment p WHERE p.id = :id")
     Optional<Payment> findByIdForUpdate(@Param("id") String id);

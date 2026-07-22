@@ -1,48 +1,135 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
 import DashboardHeader from './DashboardHeader'
 import KPICards from './KPICards'
-import NetRevenueChart from './NetRevenueChart'
-import CustomerChart from './CustomerChart'
-import MenuEffectiveness from './MenuEffectiveness'
-import CancellationStatus from './CancellationStatus'
-import EmployeeTracking from './EmployeeTracking'
-import SalesChannel from './SalesChannel'
-import SidebarPromo from './SidebarPromo'
+import RevenueChart from './RevenueChart'
+import OrderActivityChart from './OrderActivityChart'
+import PaymentBreakdown from './PaymentBreakdown'
+import MenuPerformance from './MenuPerformance'
+import TableOperations from './TableOperations'
 import RecentActivities from './RecentActivities'
+import { resolvePeriod, type PeriodId, type ResolvedPeriod } from './dashboardUtils'
+import { getDashboardOverview, type DashboardOverview, type DashboardRevenue } from '../../api/dashboard'
+import { listTables, type TableItem } from '../../services/tableService'
 
-const Dashboard = () => (
-  <div className="flex flex-col min-h-full relative z-[1]">
-    <DashboardHeader />
-    <div className="flex gap-4 items-start mb-4 max-xl:flex-col">
-      {/* ── Left: main content ── */}
-      <div className="flex-1 min-w-0 flex flex-col gap-4">
-        <KPICards />
+export interface OverviewState {
+  data: DashboardOverview | null
+  previousRevenue: DashboardRevenue | null
+  loading: boolean
+  error: boolean
+}
 
-        {/* Row: net revenue + customer volume */}
-        <div className="flex gap-4 items-stretch [&>*]:flex-1 [&>*]:min-w-0 max-[900px]:flex-col">
-          <NetRevenueChart />
-          <CustomerChart />
-        </div>
+export interface TablesState {
+  data: TableItem[] | null
+  loading: boolean
+  error: boolean
+}
 
-        {/* Menu effectiveness (full width) */}
-        <MenuEffectiveness />
+const Dashboard = () => {
+  const [period, setPeriod] = useState<PeriodId>('today')
+  const [resolved, setResolved] = useState<ResolvedPeriod>(() => resolvePeriod('today'))
 
-        {/* Row: cancellation + employee tracking */}
-        <div className="flex gap-4 items-stretch [&>*]:flex-1 [&>*]:min-w-0 [&>*]:flex max-[900px]:flex-col">
-          <CancellationStatus />
-          <EmployeeTracking />
-        </div>
+  const [overview, setOverview] = useState<OverviewState>({
+    data: null,
+    previousRevenue: null,
+    loading: true,
+    error: false,
+  })
+  const [tables, setTables] = useState<TablesState>({ data: null, loading: true, error: false })
 
-        {/* Sales channel (full width) */}
-        <SalesChannel />
+  // Last-request-wins guard so a slow response for an old period can never overwrite a newer one.
+  const overviewReqId = useRef(0)
+  const tablesReqId = useRef(0)
+
+  const loadOverview = useCallback((r: ResolvedPeriod) => {
+    const reqId = ++overviewReqId.current
+    setOverview(s => ({ ...s, loading: true, error: false }))
+    Promise.all([
+      getDashboardOverview(r.current),
+      // Previous equal-length window — used only for an accurate trend, never for the main figures.
+      getDashboardOverview(r.previous).catch(() => null),
+    ])
+      .then(([data, prev]) => {
+        if (reqId !== overviewReqId.current) return
+        setOverview({
+          data,
+          previousRevenue: prev?.revenue ?? null,
+          loading: false,
+          error: false,
+        })
+      })
+      .catch(() => {
+        if (reqId !== overviewReqId.current) return
+        setOverview({ data: null, previousRevenue: null, loading: false, error: true })
+      })
+  }, [])
+
+  const loadTables = useCallback(() => {
+    const reqId = ++tablesReqId.current
+    setTables(s => ({ ...s, loading: true, error: false }))
+    listTables()
+      .then(data => {
+        if (reqId !== tablesReqId.current) return
+        setTables({ data, loading: false, error: false })
+      })
+      .catch(() => {
+        if (reqId !== tablesReqId.current) return
+        setTables({ data: null, loading: false, error: true })
+      })
+  }, [])
+
+  // Re-resolve concrete date windows whenever the period changes, then fetch that period's overview.
+  useEffect(() => {
+    const r = resolvePeriod(period)
+    setResolved(r)
+    loadOverview(r)
+  }, [period, loadOverview])
+
+  // Live table occupancy is point-in-time, independent of the reporting period — fetched once.
+  useEffect(() => {
+    loadTables()
+  }, [loadTables])
+
+  return (
+    <div className="flex flex-col gap-4 min-h-full">
+      <DashboardHeader period={period} onPeriodChange={setPeriod} />
+
+      <KPICards
+        overview={overview}
+        tables={tables}
+        onRetry={() => {
+          loadOverview(resolved)
+          loadTables()
+        }}
+      />
+
+      {/* Revenue (wide) + live table operations (narrow) */}
+      <div className="grid grid-cols-[1.9fr_1fr] max-[1100px]:grid-cols-1 gap-4 items-stretch">
+        <RevenueChart
+          overview={overview}
+          granularity={resolved.current.granularity}
+          periodLabel={resolved.label}
+          onRetry={() => loadOverview(resolved)}
+        />
+        <TableOperations tables={tables} onRetry={loadTables} />
       </div>
 
-      {/* ── Right: sidebar ── */}
-      <div className="w-[31rem] shrink-0 flex flex-col gap-4 max-xl:w-full">
-        <SidebarPromo />
+      {/* Order volume + payment method breakdown */}
+      <div className="grid grid-cols-2 max-[900px]:grid-cols-1 gap-4 items-stretch">
+        <OrderActivityChart
+          overview={overview}
+          granularity={resolved.current.granularity}
+          onRetry={() => loadOverview(resolved)}
+        />
+        <PaymentBreakdown overview={overview} onRetry={() => loadOverview(resolved)} />
+      </div>
+
+      {/* Menu performance (wide) + recent activity (narrow) */}
+      <div className="grid grid-cols-[1.6fr_1fr] max-[1100px]:grid-cols-1 gap-4 items-stretch">
+        <MenuPerformance overview={overview} onRetry={() => loadOverview(resolved)} />
         <RecentActivities />
       </div>
     </div>
-  </div>
-)
+  )
+}
 
 export default Dashboard
