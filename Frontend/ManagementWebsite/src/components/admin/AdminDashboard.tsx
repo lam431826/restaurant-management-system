@@ -16,23 +16,11 @@ const STATUS_LABEL: Record<string, string> = {
   LOCKED: 'Bị khóa',
   INACTIVE: 'Vô hiệu',
 }
-const STATUS_CLS: Record<string, string> = {
-  UN_ACTIVE: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  ACTIVE: 'bg-green-100 text-green-700 border-green-200',
-  LOCKED: 'bg-red-100 text-red-700 border-red-200',
-  INACTIVE: 'bg-gray-100 text-gray-500 border-gray-200',
-}
 const ROLE_LABEL: Record<string, string> = {
   WAITER: 'Phục vụ',
   CASHIER: 'Thu ngân',
   MANAGER: 'Quản lý',
   ADMIN: 'Quản trị viên',
-}
-const ROLE_CLS: Record<string, string> = {
-  WAITER: 'bg-blue-100 text-blue-700',
-  CASHIER: 'bg-purple-100 text-purple-700',
-  MANAGER: 'bg-orange-100 text-orange-700',
-  ADMIN: 'bg-red-100 text-red-600',
 }
 const ALL_ROLES = ['WAITER', 'CASHIER', 'MANAGER', 'ADMIN']
 const ALL_STATUSES = ['UN_ACTIVE', 'ACTIVE', 'LOCKED', 'INACTIVE']
@@ -95,12 +83,12 @@ const CopyIcon = () => (
 
 /* ── Badge ────────────────────────────────────────────────────────────────── */
 const StatusBadge = ({ status }: { status: string }) => (
-  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium border ${STATUS_CLS[status] ?? 'bg-gray-100 text-gray-500'}`}>
+  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium border bg-gray-100 text-gray-700 border-gray-200">
     {STATUS_LABEL[status] ?? status}
   </span>
 )
 const RoleBadge = ({ role }: { role: string }) => (
-  <span className={`inline-flex items-center px-2 py-0.5 rounded-[6px] text-[12px] font-medium ${ROLE_CLS[role] ?? 'bg-gray-100 text-gray-600'}`}>
+  <span className="inline-flex items-center px-2 py-0.5 rounded-[6px] text-[12px] font-medium bg-gray-100 text-gray-700">
     {ROLE_LABEL[role] ?? role}
   </span>
 )
