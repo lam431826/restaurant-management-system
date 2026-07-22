@@ -6,61 +6,79 @@ import { useRealtime } from '../../hooks/useRealtime'
 
 interface ActionMeta { label: string; color: string; bg: string }
 
+// Every action string ever emitted, including ones from now-removed modules
+// (ROSTER_*, see CLAUDE.md) — kept so historic rows still render a readable
+// label instead of a raw backend string. FILTERABLE_ACTIONS below is the
+// reachable subset offered in the "Hành động" dropdown.
 const ACTION_META: Record<string, ActionMeta> = {
-  RESERVATION_CREATE:       { label: 'Tạo đặt bàn',       color: '#025cca', bg: '#025cca18' },
-  RESERVATION_CONFIRM:      { label: 'Xác nhận đặt bàn',  color: '#025cca', bg: '#025cca18' },
-  RESERVATION_ASSIGN_TABLE: { label: 'Xếp bàn',           color: '#025cca', bg: '#025cca18' },
-  RESERVATION_CHECK_IN:     { label: 'Check-in',           color: '#0d9e6e', bg: '#0d9e6e18' },
-  RESERVATION_NO_SHOW:      { label: 'Không đến',          color: '#888',    bg: '#88888818' },
-  RESERVATION_CANCEL:       { label: 'Hủy đặt bàn',       color: '#e53935', bg: '#e5393518' },
-  RESERVATION_UPDATE:       { label: 'Sửa đặt bàn',       color: '#025cca', bg: '#025cca18' },
-  USER_CREATE:              { label: 'Tạo nhân viên',      color: '#7c3aed', bg: '#7c3aed18' },
-  USER_UPDATE:              { label: 'Sửa nhân viên',      color: '#7c3aed', bg: '#7c3aed18' },
-  USER_DELETE:              { label: 'Xóa nhân viên',      color: '#e53935', bg: '#e5393518' },
-  USER_UNLOCK:              { label: 'Mở khóa TK',         color: '#0d9e6e', bg: '#0d9e6e18' },
-  AUTH_LOGIN:               { label: 'Đăng nhập',          color: '#e67e00', bg: '#e67e0018' },
-  AUTH_LOGIN_FAILED:        { label: 'Đăng nhập thất bại', color: '#e53935', bg: '#e5393518' },
-  AUTH_LOGOUT:              { label: 'Đăng xuất',          color: '#e67e00', bg: '#e67e0018' },
-  AUTH_PASSWORD_CHANGED:    { label: 'Đổi mật khẩu',      color: '#e67e00', bg: '#e67e0018' },
-  AUTH_PASSWORD_RESET:      { label: 'Reset mật khẩu',    color: '#e67e00', bg: '#e67e0018' },
-  AUTH_ACCOUNT_ACTIVATED:   { label: 'Kích hoạt TK',      color: '#0d9e6e', bg: '#0d9e6e18' },
-  PAYMENT_PROCESS:          { label: 'Thanh toán',         color: '#0891b2', bg: '#0891b218' },
-  INVOICE_GENERATE:         { label: 'Tạo hóa đơn',       color: '#0891b2', bg: '#0891b218' },
-  INVOICE_APPLY_DISCOUNT:   { label: 'Áp mã giảm giá',    color: '#0891b2', bg: '#0891b218' },
-  PROMOTION_CREATE:         { label: 'Tạo khuyến mãi',     color: '#c026d3', bg: '#c026d318' },
-  PROMOTION_UPDATE:         { label: 'Sửa khuyến mãi',     color: '#c026d3', bg: '#c026d318' },
-  PROMOTION_DELETE:         { label: 'Xóa khuyến mãi',     color: '#e53935', bg: '#e5393518' },
-  MENU_ITEM_CREATE:         { label: 'Tạo món',            color: '#4f46e5', bg: '#4f46e518' },
-  MENU_ITEM_UPDATE:         { label: 'Sửa món',            color: '#4f46e5', bg: '#4f46e518' },
-  MENU_ITEM_DELETE:         { label: 'Xóa món',            color: '#e53935', bg: '#e5393518' },
-  MENU_CATEGORY_CREATE:     { label: 'Tạo danh mục',       color: '#4f46e5', bg: '#4f46e518' },
-  MENU_CATEGORY_UPDATE:     { label: 'Sửa danh mục',       color: '#4f46e5', bg: '#4f46e518' },
-  MENU_CATEGORY_DELETE:     { label: 'Xóa danh mục',       color: '#e53935', bg: '#e5393518' },
-  MENU_CATEGORY_REORDER:    { label: 'Sắp xếp danh mục',   color: '#4f46e5', bg: '#4f46e518' },
-  MENU_IMPORT:              { label: 'Nhập thực đơn',      color: '#4f46e5', bg: '#4f46e518' },
-  TABLE_CREATE:             { label: 'Tạo bàn',            color: '#0ea5e9', bg: '#0ea5e918' },
-  TABLE_UPDATE:             { label: 'Sửa bàn',            color: '#0ea5e9', bg: '#0ea5e918' },
-  TABLE_DELETE:             { label: 'Xóa bàn',            color: '#e53935', bg: '#e5393518' },
-  TABLE_IMPORT:             { label: 'Nhập danh sách bàn', color: '#0ea5e9', bg: '#0ea5e918' },
-  AREA_CREATE:              { label: 'Tạo khu vực',        color: '#0ea5e9', bg: '#0ea5e918' },
-  AREA_DELETE:              { label: 'Xóa khu vực',        color: '#e53935', bg: '#e5393518' },
-  SHIFT_OPEN:               { label: 'Mở ca',               color: '#ca8a04', bg: '#ca8a0418' },
-  SHIFT_CLOSE:              { label: 'Đóng ca',             color: '#ca8a04', bg: '#ca8a0418' },
-  SHIFT_CASH_MOVEMENT:      { label: 'Thu/chi tiền mặt',    color: '#ca8a04', bg: '#ca8a0418' },
-  ROSTER_ASSIGNMENT_CREATE: { label: 'Xếp lịch làm việc',   color: '#0f766e', bg: '#0f766e18' },
-  ROSTER_ASSIGNMENT_UPDATE: { label: 'Sửa lịch làm việc',   color: '#0f766e', bg: '#0f766e18' },
-  ROSTER_ASSIGNMENT_DELETE: { label: 'Xóa lịch làm việc',   color: '#e53935', bg: '#e5393518' },
-  ROSTER_WEEK_PUBLISH:      { label: 'Công bố lịch tuần',   color: '#0f766e', bg: '#0f766e18' },
-  ROSTER_REQUEST_APPROVE:   { label: 'Duyệt yêu cầu ca',    color: '#0d9e6e', bg: '#0d9e6e18' },
-  ROSTER_REQUEST_REJECT:    { label: 'Từ chối yêu cầu ca',  color: '#e53935', bg: '#e5393518' },
+  RESERVATION_CREATE:         { label: 'Tạo đặt bàn',          color: '#025cca', bg: '#025cca18' },
+  RESERVATION_CONFIRM:        { label: 'Xác nhận đặt bàn',     color: '#025cca', bg: '#025cca18' },
+  RESERVATION_ASSIGN_TABLE:   { label: 'Xếp bàn',              color: '#025cca', bg: '#025cca18' },
+  RESERVATION_CHECK_IN:       { label: 'Check-in',              color: '#0d9e6e', bg: '#0d9e6e18' },
+  RESERVATION_COMPLETE:       { label: 'Hoàn tất lượt khách',   color: '#0d9e6e', bg: '#0d9e6e18' },
+  RESERVATION_TRANSFER_TABLE: { label: 'Chuyển bàn đặt trước',  color: '#025cca', bg: '#025cca18' },
+  RESERVATION_NO_SHOW:        { label: 'Không đến',             color: '#888',    bg: '#88888818' },
+  RESERVATION_CANCEL:         { label: 'Hủy đặt bàn',          color: '#e53935', bg: '#e5393518' },
+  RESERVATION_UPDATE:         { label: 'Sửa đặt bàn',          color: '#025cca', bg: '#025cca18' },
+  USER_CREATE:                { label: 'Tạo tài khoản',         color: '#7c3aed', bg: '#7c3aed18' },
+  USER_UPDATE:                { label: 'Sửa tài khoản',         color: '#7c3aed', bg: '#7c3aed18' },
+  USER_DELETE:                { label: 'Xóa tài khoản',         color: '#e53935', bg: '#e5393518' },
+  USER_UNLOCK:                { label: 'Mở khóa tài khoản',     color: '#0d9e6e', bg: '#0d9e6e18' },
+  EMPLOYEE_CREATE:              { label: 'Tạo hồ sơ nhân viên',   color: '#9333ea', bg: '#9333ea18' },
+  EMPLOYEE_UPDATE:              { label: 'Sửa hồ sơ nhân viên',   color: '#9333ea', bg: '#9333ea18' },
+  EMPLOYEE_DEACTIVATE:          { label: 'Vô hiệu hóa nhân viên', color: '#e53935', bg: '#e5393518' },
+  EMPLOYEE_SELF_UPDATE:         { label: 'Tự cập nhật hồ sơ',     color: '#9333ea', bg: '#9333ea18' },
+  EMPLOYEE_SELF_CREATE:         { label: 'Tự tạo hồ sơ',          color: '#9333ea', bg: '#9333ea18' },
+  EMPLOYEE_SALARY_SETTING_SAVE: { label: 'Cập nhật lương',        color: '#9333ea', bg: '#9333ea18' },
+  AUTH_LOGIN:                 { label: 'Đăng nhập',             color: '#e67e00', bg: '#e67e0018' },
+  AUTH_LOGIN_FAILED:          { label: 'Đăng nhập thất bại',    color: '#e53935', bg: '#e5393518' },
+  AUTH_LOGOUT:                { label: 'Đăng xuất',             color: '#e67e00', bg: '#e67e0018' },
+  AUTH_PASSWORD_CHANGED:      { label: 'Đổi mật khẩu',         color: '#e67e00', bg: '#e67e0018' },
+  AUTH_PASSWORD_RESET:        { label: 'Reset mật khẩu',       color: '#e67e00', bg: '#e67e0018' },
+  AUTH_ACCOUNT_ACTIVATED:     { label: 'Kích hoạt tài khoản',   color: '#0d9e6e', bg: '#0d9e6e18' },
+  PAYMENT_PROCESS:            { label: 'Thanh toán',            color: '#0891b2', bg: '#0891b218' },
+  PAYMENT_QR_INITIATE:        { label: 'Khởi tạo thanh toán QR', color: '#0891b2', bg: '#0891b218' },
+  PAYMENT_QR_CONFIRM:         { label: 'Xác nhận thanh toán QR', color: '#0891b2', bg: '#0891b218' },
+  PAYMENT_QR_CANCEL:          { label: 'Hủy thanh toán QR',     color: '#e53935', bg: '#e5393518' },
+  INVOICE_GENERATE:           { label: 'Tạo hóa đơn',          color: '#0891b2', bg: '#0891b218' },
+  INVOICE_APPLY_DISCOUNT:     { label: 'Áp mã giảm giá',       color: '#0891b2', bg: '#0891b218' },
+  PROMOTION_CREATE:           { label: 'Tạo khuyến mãi',        color: '#c026d3', bg: '#c026d318' },
+  PROMOTION_UPDATE:           { label: 'Sửa khuyến mãi',        color: '#c026d3', bg: '#c026d318' },
+  PROMOTION_DELETE:           { label: 'Xóa khuyến mãi',        color: '#e53935', bg: '#e5393518' },
+  MENU_ITEM_CREATE:           { label: 'Tạo món',               color: '#4f46e5', bg: '#4f46e518' },
+  MENU_ITEM_UPDATE:           { label: 'Sửa món',               color: '#4f46e5', bg: '#4f46e518' },
+  MENU_ITEM_DELETE:           { label: 'Xóa món',               color: '#e53935', bg: '#e5393518' },
+  MENU_CATEGORY_CREATE:       { label: 'Tạo danh mục',          color: '#4f46e5', bg: '#4f46e518' },
+  MENU_CATEGORY_UPDATE:       { label: 'Sửa danh mục',          color: '#4f46e5', bg: '#4f46e518' },
+  MENU_CATEGORY_DELETE:       { label: 'Xóa danh mục',          color: '#e53935', bg: '#e5393518' },
+  MENU_CATEGORY_REORDER:      { label: 'Sắp xếp danh mục',      color: '#4f46e5', bg: '#4f46e518' },
+  MENU_IMPORT:                { label: 'Nhập thực đơn',         color: '#4f46e5', bg: '#4f46e518' },
+  TABLE_CREATE:                { label: 'Tạo bàn',               color: '#0ea5e9', bg: '#0ea5e918' },
+  TABLE_UPDATE:                { label: 'Sửa bàn',               color: '#0ea5e9', bg: '#0ea5e918' },
+  TABLE_DELETE:                { label: 'Xóa bàn',               color: '#e53935', bg: '#e5393518' },
+  TABLE_IMPORT:                { label: 'Nhập danh sách bàn',    color: '#0ea5e9', bg: '#0ea5e918' },
+  AREA_CREATE:                 { label: 'Tạo khu vực',           color: '#0ea5e9', bg: '#0ea5e918' },
+  AREA_DELETE:                 { label: 'Xóa khu vực',           color: '#e53935', bg: '#e5393518' },
+  SHIFT_OPEN:                  { label: 'Mở ca',                  color: '#ca8a04', bg: '#ca8a0418' },
+  SHIFT_CLOSE:                  { label: 'Đóng ca',                color: '#ca8a04', bg: '#ca8a0418' },
+  SHIFT_CASH_MOVEMENT:          { label: 'Thu/chi tiền mặt',       color: '#ca8a04', bg: '#ca8a0418' },
+  // Legacy — emitted by the roster/ module before it was removed. No longer
+  // reachable via the filter dropdown (see FILTERABLE_ACTIONS), kept only so
+  // pre-existing rows still render a readable label instead of a raw string.
+  ROSTER_ASSIGNMENT_CREATE:    { label: 'Xếp lịch làm việc',      color: '#0f766e', bg: '#0f766e18' },
+  ROSTER_ASSIGNMENT_UPDATE:    { label: 'Sửa lịch làm việc',      color: '#0f766e', bg: '#0f766e18' },
+  ROSTER_ASSIGNMENT_DELETE:    { label: 'Xóa lịch làm việc',      color: '#e53935', bg: '#e5393518' },
+  ROSTER_WEEK_PUBLISH:         { label: 'Công bố lịch tuần',      color: '#0f766e', bg: '#0f766e18' },
+  ROSTER_REQUEST_APPROVE:      { label: 'Duyệt yêu cầu ca',       color: '#0d9e6e', bg: '#0d9e6e18' },
+  ROSTER_REQUEST_REJECT:       { label: 'Từ chối yêu cầu ca',     color: '#e53935', bg: '#e5393518' },
 }
 
-const ENTITY_OPTIONS = ['', 'Reservation', 'User', 'Payment', 'Invoice', 'Promotion', 'MenuItem', 'MenuCategory', 'Table', 'Area', 'Shift', 'RosterAssignment', 'RosterRequest', 'RosterWeek']
-const ACTION_OPTIONS = ['', ...Object.keys(ACTION_META)]
+const FILTERABLE_ACTIONS = Object.keys(ACTION_META).filter(a => !a.startsWith('ROSTER_'))
 
 const ENTITY_LABELS: Record<string, string> = {
   Reservation: 'Đặt bàn',
-  User: 'Nhân viên',
+  User: 'Tài khoản',
+  Employee: 'Nhân viên',
   Payment: 'Thanh toán',
   Invoice: 'Hóa đơn',
   Promotion: 'Khuyến mãi',
@@ -69,10 +87,13 @@ const ENTITY_LABELS: Record<string, string> = {
   Table: 'Bàn',
   Area: 'Khu vực',
   Shift: 'Ca làm việc',
+  // Legacy, same reasoning as the ROSTER_* actions above.
   RosterAssignment: 'Lịch làm việc',
   RosterRequest: 'Yêu cầu đổi/nghỉ ca',
   RosterWeek: 'Công bố lịch tuần',
 }
+
+const FILTERABLE_ENTITIES = Object.keys(ENTITY_LABELS).filter(e => !e.startsWith('Roster'))
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -82,9 +103,87 @@ const fmtDate = (iso: string) => {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-const parseDetail = (raw: string | null): Record<string, string> => {
+type DetailValue = string | number | boolean
+
+const parseDetail = (raw: string | null): Record<string, DetailValue> => {
   if (!raw) return {}
   try { return JSON.parse(raw) } catch { return { raw } }
+}
+
+const th = 'sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-3 py-3 whitespace-nowrap'
+const td = 'px-3 py-3 border-b border-line align-middle text-md'
+
+// ── Detail-column formatting ─────────────────────────────────────────────────
+// The `detail` JSON is hand-built per module (see CLAUDE.md's audit() helper
+// convention) — plain field names like `reason`/`code`/`status` mean different
+// things depending on the row's action/entity, so labels are resolved with
+// that context rather than from a flat key→label map alone.
+
+const MONEY_KEYS = new Set(['amount', 'totalAmount', 'discountAmount', 'openingCash', 'closingCash', 'cashVariance', 'totalRevenue'])
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = { CASH: 'Tiền mặt', CARD: 'Thẻ', QR: 'QR', E_WALLET: 'Ví điện tử' }
+const CASH_MOVEMENT_TYPE_LABELS: Record<string, string> = { CASH_IN: 'Thu tiền', CASH_OUT: 'Chi tiền' }
+const ROLE_LABELS: Record<string, string> = { WAITER: 'Phục vụ', CASHIER: 'Thu ngân', MANAGER: 'Quản lý', ADMIN: 'Quản trị viên' }
+const USER_STATUS_LABELS: Record<string, string> = { ACTIVE: 'Hoạt động', UN_ACTIVE: 'Chưa kích hoạt', INACTIVE: 'Ngừng hoạt động', LOCKED: 'Bị khóa' }
+const SHIFT_STATUS_LABELS: Record<string, string> = { OPEN: 'Đang mở', CLOSED: 'Đã đóng', PENDING_RECON: 'Chờ đối soát' }
+const RESERVATION_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Chờ xác nhận', CONFIRMED: 'Đã xác nhận', CHECKED_IN: 'Đã check-in',
+  NO_SHOW: 'Không đến', CANCELLED: 'Đã hủy', COMPLETED: 'Hoàn tất',
+}
+
+const DETAIL_KEY_LABELS: Record<string, string> = {
+  guestName: 'Tên khách', tableId: 'Mã bàn', channel: 'Kênh đặt', invoiceId: 'Hóa đơn',
+  amount: 'Số tiền', method: 'Phương thức', transactionRef: 'Mã giao dịch', orderId: 'Đơn hàng',
+  totalAmount: 'Tổng tiền', promotionCode: 'Mã khuyến mãi', discountAmount: 'Số tiền giảm',
+  active: 'Kích hoạt', available: 'Còn hàng', bulk: 'Thao tác hàng loạt', count: 'Số lượng',
+  created: 'Số bản ghi tạo mới', updated: 'Số bản ghi cập nhật', errors: 'Số dòng lỗi',
+  cashierId: 'Thu ngân', openingCash: 'Tiền đầu ca', closingCash: 'Tiền cuối ca',
+  cashVariance: 'Chênh lệch tiền mặt', totalRevenue: 'Tổng doanh thu', type: 'Loại giao dịch',
+  username: 'Tài khoản', role: 'Vai trò', reason: 'Lý do', locked: 'Tài khoản bị khóa',
+  name: 'Tên', code: 'Mã', status: 'Trạng thái', from: 'Trước', to: 'Sau', raw: 'Nội dung',
+}
+
+// Fallback for any key not covered above: someNewField -> "Some New Field".
+const humanize = (key: string) => {
+  const spaced = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
+const resolveDetailField = (
+  key: string, value: DetailValue, action: string, targetEntity: string | null,
+): { label: string; text: string } => {
+  let label = DETAIL_KEY_LABELS[key] ?? humanize(key)
+  let text = typeof value === 'boolean'
+    ? (value ? 'Có' : 'Không')
+    : typeof value === 'number'
+      ? (MONEY_KEYS.has(key) ? `${value.toLocaleString('vi-VN')}đ` : value.toLocaleString('vi-VN'))
+      : String(value)
+
+  if (key === 'code' && targetEntity) {
+    label = targetEntity === 'Employee' ? 'Mã nhân viên' : targetEntity === 'Promotion' ? 'Mã khuyến mãi' : label
+  } else if (key === 'status') {
+    if (targetEntity === 'Shift') { label = 'Trạng thái ca'; text = SHIFT_STATUS_LABELS[String(value)] ?? text }
+    else if (targetEntity === 'User') { label = 'Trạng thái tài khoản'; text = USER_STATUS_LABELS[String(value)] ?? text }
+  } else if (key === 'from' || key === 'to') {
+    if (action === 'RESERVATION_TRANSFER_TABLE') {
+      label = key === 'from' ? 'Bàn cũ' : 'Bàn mới'
+    } else if (action.startsWith('RESERVATION_')) {
+      label = key === 'from' ? 'Trạng thái trước' : 'Trạng thái sau'
+      text = RESERVATION_STATUS_LABELS[String(value)] ?? text
+    }
+  } else if (key === 'method') {
+    text = PAYMENT_METHOD_LABELS[String(value)] ?? text
+  } else if (key === 'type') {
+    text = CASH_MOVEMENT_TYPE_LABELS[String(value)] ?? text
+  } else if (key === 'role') {
+    text = ROLE_LABELS[String(value)] ?? text
+  } else if (key === 'reason' && action === 'AUTH_LOGIN_FAILED') {
+    text = value === 'INVALID_CREDENTIALS' ? 'Sai tên đăng nhập hoặc mật khẩu' : text
+  } else if (key === 'channel' && value === 'ONLINE') {
+    text = 'Đặt online'
+  }
+
+  return { label, text }
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────────
@@ -99,32 +198,140 @@ const ActionBadge = ({ action }: { action: string }) => {
   )
 }
 
-const DetailCell = ({ raw }: { raw: string | null }) => {
-  const [open, setOpen] = useState(false)
+const DetailCell = ({ raw, action, targetEntity }: { raw: string | null; action: string; targetEntity: string | null }) => {
   const obj = parseDetail(raw)
   const keys = Object.keys(obj)
   if (!keys.length) return <span className="text-ink-muted">—</span>
 
-  const preview = keys.slice(0, 2).map(k => `${k}: ${obj[k]}`).join(', ')
+  return (
+    <div className="flex flex-col gap-0.5">
+      {keys.map(k => {
+        const { label, text } = resolveDetailField(k, obj[k], action, targetEntity)
+        return (
+          <div key={k} className="text-xs text-ink">
+            <span className="font-medium text-ink-muted">{label}:</span> {text}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+interface FilterState {
+  actorUsername: string
+  action: string
+  targetEntity: string
+  from: string
+  to: string
+}
+
+const EMPTY_FILTERS: FilterState = { actorUsername: '', action: '', targetEntity: '', from: '', to: '' }
+
+const fieldCls =
+  'w-full h-10 px-3 bg-field border border-line-default rounded-md text-md text-ink transition-colors ' +
+  'placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary'
+const selectCls = fieldCls + ' cursor-pointer'
+
+const AuditLogFilters = ({ initialState, onApply }: { initialState: FilterState; onApply: (f: FilterState) => void }) => {
+  const [draft, setDraft] = useState<FilterState>(initialState)
+
+  // yyyy-MM-dd strings compare correctly as plain strings.
+  const dateRangeInvalid = Boolean(draft.from && draft.to && draft.to < draft.from)
+
+  const applyFilters = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (dateRangeInvalid) return
+    onApply({ ...draft, actorUsername: draft.actorUsername.trim() })
+  }
+
+  const resetFilters = () => {
+    setDraft(EMPTY_FILTERS)
+    onApply(EMPTY_FILTERS)
+  }
 
   return (
-    <div>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="text-xs text-primary underline cursor-pointer"
-      >
-        {open ? 'Thu gọn' : preview + (keys.length > 2 ? '...' : '')}
-      </button>
-      {open && (
-        <div className="mt-1 flex flex-col gap-0.5">
-          {keys.map(k => (
-            <div key={k} className="text-xs text-ink">
-              <span className="font-medium text-ink-muted">{k}:</span> {obj[k]}
-            </div>
+    <form onSubmit={applyFilters} className="flex flex-col gap-5">
+      <div>
+        <h2 className="text-h3 font-bold text-ink">Lọc nhật ký</h2>
+        <p className="text-sm text-ink-subtle mt-1">
+          Tìm theo nhân viên, hành động, đối tượng và khoảng thời gian
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2 border-b border-line pb-5">
+        <label className="text-md font-semibold text-ink">Nhân viên</label>
+        <input
+          className={fieldCls}
+          placeholder="Nhập một phần tên đăng nhập..."
+          value={draft.actorUsername}
+          onChange={e => setDraft(d => ({ ...d, actorUsername: e.target.value }))}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2 border-b border-line pb-5">
+        <label className="text-md font-semibold text-ink">Hành động</label>
+        <select
+          className={selectCls}
+          value={draft.action}
+          onChange={e => setDraft(d => ({ ...d, action: e.target.value }))}
+        >
+          <option value="">Tất cả hành động</option>
+          {FILTERABLE_ACTIONS.map(a => (
+            <option key={a} value={a}>{ACTION_META[a]?.label ?? a}</option>
           ))}
+        </select>
+      </div>
+
+      <div className="flex flex-col gap-2 border-b border-line pb-5">
+        <label className="text-md font-semibold text-ink">Đối tượng</label>
+        <select
+          className={selectCls}
+          value={draft.targetEntity}
+          onChange={e => setDraft(d => ({ ...d, targetEntity: e.target.value }))}
+        >
+          <option value="">Tất cả</option>
+          {FILTERABLE_ENTITIES.map(en => (
+            <option key={en} value={en}>{ENTITY_LABELS[en] ?? en}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex flex-col gap-2 border-b border-line pb-5">
+        <span className="text-md font-semibold text-ink">Khoảng thời gian</span>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-ink-muted">Từ ngày</label>
+          <input
+            type="date"
+            className={fieldCls}
+            value={draft.from}
+            max={draft.to || undefined}
+            onChange={e => setDraft(d => ({ ...d, from: e.target.value }))}
+          />
         </div>
-      )}
-    </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-ink-muted">Đến ngày</label>
+          <input
+            type="date"
+            className={fieldCls}
+            value={draft.to}
+            min={draft.from || undefined}
+            onChange={e => setDraft(d => ({ ...d, to: e.target.value }))}
+          />
+        </div>
+        {dateRangeInvalid && (
+          <p className="text-sm text-danger-700">Đến ngày phải sau hoặc bằng Từ ngày.</p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <button type="submit" className="kv-btn kv-btn-primary h-10 w-full" disabled={dateRangeInvalid}>
+          Áp dụng bộ lọc
+        </button>
+        <button type="button" className="kv-btn kv-btn-outline-neutral h-10 w-full" onClick={resetFilters}>
+          Đặt lại
+        </button>
+      </div>
+    </form>
   )
 }
 
@@ -133,32 +340,31 @@ const DetailCell = ({ raw }: { raw: string | null }) => {
 const AuditLogPage = () => {
   const [logs, setLogs] = useState<AuditLogDto[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [pagination, setPagination] = useState({ page: 0, total: 0, totalPages: 0 })
-
-  const [actorUsername, setActorUsername] = useState('')
-  const [action, setAction] = useState('')
-  const [targetEntity, setTargetEntity] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS)
 
   const load = useCallback(async (page = 0) => {
     setLoading(true)
+    setError('')
     try {
       const res = await listAuditLogs({
-        actorUsername: actorUsername || undefined,
-        action: action || undefined,
-        targetEntity: targetEntity || undefined,
-        from: from || undefined,
-        to: to || undefined,
+        actorUsername: filters.actorUsername || undefined,
+        action: filters.action || undefined,
+        targetEntity: filters.targetEntity || undefined,
+        from: filters.from || undefined,
+        to: filters.to || undefined,
         page,
         size: 30,
       })
       setLogs(res.data.data)
       setPagination({ page, total: res.data.pagination.total, totalPages: res.data.pagination.totalPages })
-    } catch { /* ignore */ } finally {
+    } catch {
+      setError('Không thể tải nhật ký thao tác.')
+    } finally {
       setLoading(false)
     }
-  }, [actorUsername, action, targetEntity, from, to])
+  }, [filters])
 
   useEffect(() => { load(0) }, [load])
 
@@ -166,106 +372,79 @@ const AuditLogPage = () => {
   // polling of its own today, so this is the only thing that keeps it live.
   useRealtime('/topic/audit', () => { load(pagination.page) })
 
-  const inputCls = 'h-9 px-3 bg-field border border-line-default rounded-md text-md text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary'
-  const selectCls = inputCls + ' cursor-pointer'
-
   return (
-    <div className="flex flex-col h-full min-h-0 bg-surface">
-      {/* Header */}
-      <div className="px-6 py-4 border-b border-line bg-card shrink-0">
-        <h1 className="text-lg font-bold text-ink-strong">Nhật ký thao tác</h1>
-      </div>
+    <div className="flex h-full min-h-0 bg-surface overflow-hidden">
+      <aside className="w-96 shrink-0 flex flex-col px-4 pt-5 pb-4 overflow-y-auto border-r border-line bg-card">
+        <AuditLogFilters initialState={filters} onApply={setFilters} />
+      </aside>
 
-      {/* Filters */}
-      <div className="px-6 py-3 bg-card border-b border-line shrink-0 flex flex-wrap gap-3 items-end">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-ink-muted font-medium">Nhân viên</label>
-          <input
-            className={inputCls + ' w-44'}
-            placeholder="username..."
-            value={actorUsername}
-            onChange={e => setActorUsername(e.target.value)}
-          />
+      <section className="flex-1 min-w-0 flex flex-col p-5 gap-4 overflow-hidden">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 shrink-0">
+          <div>
+            <h1 className="text-h3 font-bold text-ink">Nhật ký thao tác</h1>
+            <p className="text-md text-ink-subtle mt-1">Theo dõi lịch sử thao tác của nhân viên trên hệ thống</p>
+          </div>
+          <button
+            type="button"
+            className="kv-btn kv-btn-outline-neutral h-10 bg-card shrink-0"
+            onClick={() => load(pagination.page)}
+            disabled={loading}
+          >
+            Làm mới
+          </button>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-ink-muted font-medium">Hành động</label>
-          <select className={selectCls + ' w-52'} value={action} onChange={e => setAction(e.target.value)}>
-            <option value="">Tất cả hành động</option>
-            {ACTION_OPTIONS.filter(a => a).map(a => (
-              <option key={a} value={a}>{ACTION_META[a]?.label ?? a}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-ink-muted font-medium">Đối tượng</label>
-          <select className={selectCls + ' w-40'} value={targetEntity} onChange={e => setTargetEntity(e.target.value)}>
-            <option value="">Tất cả</option>
-            {ENTITY_OPTIONS.filter(e => e).map(e => (
-              <option key={e} value={e}>{ENTITY_LABELS[e] ?? e}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-ink-muted font-medium">Từ ngày</label>
-          <input type="date" className={inputCls + ' w-40'} value={from} onChange={e => setFrom(e.target.value)} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-ink-muted font-medium">Đến ngày</label>
-          <input type="date" className={inputCls + ' w-40'} value={to} onChange={e => setTo(e.target.value)} />
-        </div>
-        <button
-          className="kv-btn kv-btn-outline-neutral h-9 self-end"
-          onClick={() => { setActorUsername(''); setAction(''); setTargetEntity(''); setFrom(''); setTo('') }}
-        >
-          Xóa bộ lọc
-        </button>
-      </div>
 
-      {/* Table */}
-      <div className="flex-1 min-h-0 overflow-auto px-6 py-4">
-        {loading ? (
-          <div className="flex items-center justify-center h-32 text-ink-muted">Đang tải...</div>
-        ) : (
+        {error && (
+          <div
+            className="flex items-center justify-between gap-4 px-4 py-3 rounded-md bg-danger-50 text-danger-700 text-md shrink-0"
+            role="alert"
+          >
+            <span>{error}</span>
+            <button type="button" className="font-semibold hover:underline" onClick={() => load(pagination.page)}>
+              Thử lại
+            </button>
+          </div>
+        )}
+
+        <div className="flex-1 min-h-0 overflow-auto rounded-md border border-line">
           <table className="w-full text-md border-collapse">
             <thead>
-              <tr className="border-b border-line text-left">
-                <th className="pb-2 pr-4 text-xs font-semibold text-ink-muted whitespace-nowrap">Thời gian</th>
-                <th className="pb-2 pr-4 text-xs font-semibold text-ink-muted">Nhân viên</th>
-                <th className="pb-2 pr-4 text-xs font-semibold text-ink-muted">Hành động</th>
-                <th className="pb-2 pr-4 text-xs font-semibold text-ink-muted">Đối tượng</th>
-                <th className="pb-2 pr-4 text-xs font-semibold text-ink-muted">ID</th>
-                <th className="pb-2 text-xs font-semibold text-ink-muted">Chi tiết</th>
+              <tr>
+                <th className={th}>Thời gian</th>
+                <th className={th}>Nhân viên</th>
+                <th className={th}>Hành động</th>
+                <th className={th}>Đối tượng</th>
+                <th className={th}>Chi tiết</th>
               </tr>
             </thead>
             <tbody>
-              {logs.length === 0 && (
+              {loading && (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-ink-muted">Không có dữ liệu</td>
+                  <td colSpan={5} className="py-10 text-center text-ink-muted">Đang tải...</td>
                 </tr>
               )}
-              {logs.map(log => (
-                <tr key={log.id} className="border-b border-line hover:bg-primary-25">
-                  <td className="py-2.5 pr-4 text-ink-muted whitespace-nowrap font-mono text-xs">
-                    {fmtDate(log.createdAt)}
-                  </td>
-                  <td className="py-2.5 pr-4 font-medium text-ink">{log.actorUsername}</td>
-                  <td className="py-2.5 pr-4"><ActionBadge action={log.action} /></td>
-                  <td className="py-2.5 pr-4 text-ink-muted">
+              {!loading && logs.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-10 text-center text-ink-muted">Không có dữ liệu</td>
+                </tr>
+              )}
+              {!loading && logs.map(log => (
+                <tr key={log.id} className="hover:bg-primary-25">
+                  <td className={td + ' text-ink-muted whitespace-nowrap font-mono text-xs'}>{fmtDate(log.createdAt)}</td>
+                  <td className={td + ' text-ink font-medium'}>{log.actorUsername}</td>
+                  <td className={td}><ActionBadge action={log.action} /></td>
+                  <td className={td + ' text-ink-muted'}>
                     {log.targetEntity ? (ENTITY_LABELS[log.targetEntity] ?? log.targetEntity) : '—'}
                   </td>
-                  <td className="py-2.5 pr-4 font-mono text-xs text-ink-muted" title={log.targetId ?? ''}>
-                    {log.targetId ? log.targetId.slice(0, 8) + '…' : '—'}
-                  </td>
-                  <td className="py-2.5"><DetailCell raw={log.detail} /></td>
+                  <td className={td}><DetailCell raw={log.detail} action={log.action} targetEntity={log.targetEntity} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
-        )}
+        </div>
 
-        {/* Pagination */}
         {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between mt-4">
+          <div className="flex items-center justify-between shrink-0">
             <span className="text-sm text-ink-muted">
               Tổng {pagination.total} bản ghi
             </span>
@@ -290,7 +469,7 @@ const AuditLogPage = () => {
             </div>
           </div>
         )}
-      </div>
+      </section>
     </div>
   )
 }
