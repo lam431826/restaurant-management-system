@@ -35,6 +35,12 @@ const STATUS_HINTS: Record<string, string> = {
 
 const money = (value: number) => `${value.toLocaleString("vi-VN")} đ`;
 
+// One-time cashier-return context, read by CashierOrders to restore the exact table/order.
+// Router state is the primary channel; sessionStorage is a fallback for when a hard reload
+// (or anything else that drops in-memory router state) happens between here and there —
+// both are written from the same verified backend `result`, never from raw URL parameters.
+const VNPAY_RETURN_STORAGE_KEY = "vnpay_return_context";
+
 /**
  * Landing page after the VNPAY redirect round-trip.
  *
@@ -201,19 +207,30 @@ const VnpayResultPage = () => {
           </button>
           <button
             type="button"
-            onClick={() =>
-              navigate("/cashier", {
-                state: result
-                  ? {
-                      tableId: result.tableId,
-                      orderId: result.orderId,
-                      invoiceId: result.invoiceId,
-                      txnRef: result.txnRef,
-                      paymentResult: result.status,
-                    }
-                  : undefined,
-              })
-            }
+            onClick={() => {
+              const returnContext = result
+                ? {
+                    tableId: result.tableId,
+                    orderId: result.orderId,
+                    invoiceId: result.invoiceId,
+                    txnRef: result.txnRef,
+                    paymentResult: result.status,
+                    amount: result.amount,
+                  }
+                : undefined;
+              if (returnContext) {
+                try {
+                  sessionStorage.setItem(
+                    VNPAY_RETURN_STORAGE_KEY,
+                    JSON.stringify(returnContext),
+                  );
+                } catch {
+                  // sessionStorage unavailable (private mode, quota, etc.) — router state
+                  // alone still carries the context for the common in-app navigation case.
+                }
+              }
+              navigate("/cashier", { state: returnContext });
+            }}
             className={`h-10 rounded-[10px] text-[13px] font-semibold text-white ${
               isPaid ? "bg-[#286b4a]" : "bg-[#025cca]"
             }`}

@@ -508,6 +508,86 @@ const chooseInvoiceId = (
   );
 };
 
+// One-time cashier-return context written by VnpayResultPage (router state, with this
+// sessionStorage key as a fallback for when a hard reload drops in-memory router state).
+// All fields originate from the verified backend VnpayStatusResponse, never from raw VNPAY
+// URL/query parameters.
+interface VnpayReturnContext {
+  tableId?: string;
+  orderId?: string;
+  invoiceId?: string;
+  txnRef?: string;
+  paymentResult?: string;
+  amount?: number;
+}
+
+const VNPAY_RETURN_STORAGE_KEY = "vnpay_return_context";
+
+const readStoredVnpayReturnContext = (): VnpayReturnContext | null => {
+  try {
+    const raw = sessionStorage.getItem(VNPAY_RETURN_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as VnpayReturnContext) : null;
+  } catch {
+    return null;
+  }
+};
+
+const clearStoredVnpayReturnContext = () => {
+  try {
+    sessionStorage.removeItem(VNPAY_RETURN_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+};
+
+// Cross-references one table against the live active-orders list to compute its
+// order-linked fields (orderId/amount/items/occupied/status). Shared by the
+// [activeOrders]-driven table overlay effect below and loadCashierState's returned
+// snapshot, so a caller that needs this correctly-linked data immediately (VNPAY
+// restoration) doesn't have to wait for that effect's own extra render cycle to converge —
+// loadCashierState's own setTables call deliberately preserves the table's *previous*
+// orderId (old?.orderId ?? null) rather than the fresh one, since this overlay is what's
+// meant to be authoritative for that field.
+const applyActiveOrdersToTable = (
+  table: TableItem,
+  activeOrders: Order[],
+): TableItem => {
+  const tableOrders = activeOrders.filter(
+    (order) =>
+      order.tableId === table.id && ACTIVE_ORDER_STATUSES.includes(order.status),
+  );
+  if (tableOrders.length === 0) {
+    return {
+      ...table,
+      orderId: null,
+      occupied: OCCUPIED_STATUSES.includes(table.status),
+      amount: 0,
+      items: 0,
+    };
+  }
+  let itemsCount = 0;
+  let totalAmount = 0;
+  tableOrders.forEach((order) => {
+    order.items.forEach((item) => {
+      const isPendingQr =
+        item.cookingStatus === "PENDING" && (item.isQrOrder ?? item.qrOrder);
+      const isRejected = item.cookingStatus === "REJECTED";
+      if (!isPendingQr && !isRejected) {
+        itemsCount += item.quantity;
+        totalAmount += item.unitPrice * item.quantity;
+      }
+    });
+  });
+  return {
+    ...table,
+    occupied: true,
+    status: table.status === "BILLING" ? "BILLING" : "OCCUPIED",
+    amount: totalAmount,
+    items: itemsCount,
+    orderId: tableOrders[0].id,
+  };
+};
+
 const CashierOrders = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -600,6 +680,12 @@ const CashierOrders = () => {
   const selectedOrderIdRef = useRef("");
   const selectedTableIdRef = useRef("");
   const vnpayReturnHandledRef = useRef<string | null>(null);
+  // Set right before handleTableSelect() during VNPAY restoration so the reactive
+  // selectedOrderId-driven refreshInvoices effect below (which always reruns after any
+  // table selection, own its own null invoice preference) skips its own call once for that
+  // order — otherwise it fires after our own explicit, invoiceId-aware refreshInvoices call
+  // and clobbers the specific invoice we're restoring with its default (null) choice.
+  const suppressAutoInvoiceRefreshForOrderRef = useRef<string | null>(null);
   const [createOrderSubmitting, setCreateOrderSubmitting] = useState(false);
   const [checkInWalkInSubmitting, setCheckInWalkInSubmitting] = useState(false);
   const [undoCheckInSubmitting, setUndoCheckInSubmitting] = useState(false);
@@ -661,7 +747,18 @@ const CashierOrders = () => {
     navigate("/login", { replace: true });
   };
 
-  const loadCashierState = useCallback(async () => {
+  // Returns the freshly fetched snapshot (in addition to its usual setState calls) so a
+  // caller that needs correctly order-linked table data *immediately* — e.g. VNPAY
+  // restoration — doesn't have to read back potentially stale/batched React state or wait
+  // for the [activeOrders] overlay effect's own follow-up render to converge. The returned
+  // tables already have orderId/amount/items resolved via applyActiveOrdersToTable, unlike
+  // this function's own setTables call below, which deliberately preserves the *previous*
+  // orderId (see the comment on that call) since the overlay effect is what's authoritative
+  // for that field once the state settles.
+  const loadCashierState = useCallback(async (): Promise<{
+    tables: TableItem[];
+    activeOrders: Order[];
+  } | null> => {
     const requestId = ++loadCashierStateRequestRef.current;
     const [tableRows, orderPage] = await Promise.all([
       listTables(),
@@ -702,9 +799,10 @@ const CashierOrders = () => {
     // activeOrders (and, via the table-overlay effect below, null out the table's orderId right
     // after handleCreateOrder set it), making "Thêm món vào Đơn" disappear and revert to
     // "Tạo Order" even though the order exists server-side.
-    if (requestId !== loadCashierStateRequestRef.current) return;
+    if (requestId !== loadCashierStateRequestRef.current) return null;
 
-    setActiveOrders(Array.from(orderById.values()));
+    const freshActiveOrders = Array.from(orderById.values());
+    setActiveOrders(freshActiveOrders);
     setTables((currentTables) => {
       const selectedId = currentTables.find((table) => table.selected)?.id;
       return mappedTables.map((table) => {
@@ -732,6 +830,13 @@ const CashierOrders = () => {
       }
       return mappedTables[0]?.area ?? "all";
     });
+
+    return {
+      tables: mappedTables.map((table) =>
+        applyActiveOrdersToTable(table, freshActiveOrders),
+      ),
+      activeOrders: freshActiveOrders,
+    };
   }, []);
 
   // BR-CS-19: open the merge dialog and load candidate main shifts.
@@ -902,58 +1007,7 @@ const CashierOrders = () => {
   // are preserved.
   useEffect(() => {
     setTables((prevTables) =>
-      prevTables.map((t) => {
-        const tableOrders = activeOrders.filter(
-          (order) =>
-            order.tableId === t.id &&
-            ACTIVE_ORDER_STATUSES.includes(order.status),
-        );
-        if (tableOrders.length === 0) {
-          return {
-            ...t,
-            orderId: null,
-            // Bug fix: this used to hardcode occupied: false whenever there was no matching
-            // active order — correct back when OCCUPIED always implied an order existed, but
-            // "Check-in khách"/reservation check-in now legitimately puts a table into OCCUPIED
-            // with zero orders. Forcing occupied: false here made the panel-selection logic in
-            // this file (which keys off `occupied`, not `status`) keep showing ReservationPanel
-            // for an already-checked-in table, offering a "Check-In khách" button that always
-            // failed with INVALID_STATUS_TRANSITION since the reservation was already CHECKED_IN.
-            occupied: OCCUPIED_STATUSES.includes(t.status),
-            amount: 0,
-            items: 0,
-            // status intentionally not touched — keeps RESERVED/CLEANING/AVAILABLE from API
-          };
-        }
-        let itemsCount = 0;
-        let totalAmount = 0;
-
-        tableOrders.forEach((order) => {
-          order.items.forEach((item) => {
-            const isPendingQr =
-              item.cookingStatus === "PENDING" &&
-              (item.isQrOrder ?? item.qrOrder);
-            const isRejected = item.cookingStatus === "REJECTED";
-            
-            if (!isPendingQr && !isRejected) {
-              itemsCount += item.quantity;
-              totalAmount += item.unitPrice * item.quantity;
-            }
-          });
-        });
-        return {
-          ...t,
-          occupied: true,
-          // BE-MGMT-03 fix: this previously forced OCCUPIED unconditionally, clobbering a
-          // cashier-set BILLING status back to OCCUPIED on the next poll/WS tick while the
-          // order itself is still ACTIVE (e.g. SERVED) during payment. Preserve BILLING the
-          // same way the empty-orders branch above already preserves RESERVED/CLEANING.
-          status: t.status === "BILLING" ? "BILLING" : "OCCUPIED",
-          amount: totalAmount,
-          items: itemsCount,
-          orderId: tableOrders[0].id,
-        };
-      }),
+      prevTables.map((t) => applyActiveOrdersToTable(t, activeOrders)),
     );
   }, [activeOrders]);
 
@@ -972,45 +1026,133 @@ const CashierOrders = () => {
   }, [vnpayReturnNotice]);
 
   // Restore the cashier's table/order/payment context after a VNPAY redirect round-trip.
-  // The navigation state only selects UI — payment status always comes from the fresh
-  // invoice/order data reloaded below, never from the router state itself.
+  // The navigation state (or its sessionStorage fallback) only selects UI — payment status
+  // always comes from the fresh invoice/order data reloaded below, never from the stored
+  // context itself.
   useEffect(() => {
-    const state = location.state as {
-      tableId?: string;
-      orderId?: string;
-      invoiceId?: string;
-      txnRef?: string;
-      paymentResult?: string;
-    } | null;
-    if (!state?.txnRef || !state.tableId || !state.orderId) return;
+    let state = location.state as VnpayReturnContext | null;
+    if (!state?.txnRef) {
+      state = readStoredVnpayReturnContext();
+    }
+    if (!state?.txnRef || !state.orderId) return;
+    // Guards against React re-running this effect (e.g. StrictMode's double-invoke, or any
+    // other location.state-triggered rerender) from reprocessing the same VNPAY return more
+    // than once on this component instance; a genuinely new return always carries a
+    // different txnRef. A fresh mount (e.g. a page refresh while restoration keeps failing)
+    // gets a fresh ref and will retry, as long as the stored context hasn't been cleared.
     if (vnpayReturnHandledRef.current === state.txnRef) return;
     vnpayReturnHandledRef.current = state.txnRef;
 
-    const noticeByResult: Record<
-      string,
-      { message: string; variant: "success" | "error" }
-    > = {
-      PAID: { message: "Thanh toán VNPAY thành công.", variant: "success" },
-      FAILED: { message: "Thanh toán VNPAY thất bại.", variant: "error" },
-      CANCELLED: { message: "Giao dịch VNPAY đã bị hủy.", variant: "error" },
-      EXPIRED: { message: "Giao dịch VNPAY đã hết hạn.", variant: "error" },
-    };
-    const notice = state.paymentResult
-      ? noticeByResult[state.paymentResult]
-      : undefined;
+    const notice =
+      state.paymentResult === "PAID"
+        ? {
+            message: `Thanh toán VNPAY thành công: ${(state.amount ?? 0).toLocaleString("vi-VN")} đ`,
+            variant: "success" as const,
+          }
+        : state.paymentResult === "FAILED"
+          ? { message: "Thanh toán VNPAY thất bại.", variant: "error" as const }
+          : state.paymentResult === "CANCELLED"
+            ? { message: "Giao dịch VNPAY đã bị hủy.", variant: "error" as const }
+            : state.paymentResult === "EXPIRED"
+              ? { message: "Giao dịch VNPAY đã hết hạn.", variant: "error" as const }
+              : undefined;
     if (notice) setVnpayReturnNotice(notice);
 
     const { tableId, orderId, invoiceId, paymentResult } = state;
     void (async () => {
-      await loadCashierState();
-      handleTableSelect(tableId);
-      await refreshInvoices(orderId, invoiceId ?? null);
-      if (paymentResult !== "PAID") {
-        setPaymentOpen(true);
+      let restored = false;
+      try {
+        // loadCashierState() returns the freshly fetched, fully order-linked snapshot
+        // directly — restoration reads that returned value, not React state, so it can't
+        // be tripped up by batching/timing of the setState calls loadCashierState also
+        // makes. A single retry covers the (normally unreachable, since this is always the
+        // last-issued call right after mount) case where its own requestId race guard
+        // discarded the first attempt because something else refreshed concurrently.
+        let snapshot = await loadCashierState();
+        if (!snapshot) {
+          snapshot = await loadCashierState();
+        }
+        if (!snapshot) {
+          throw new Error("Không thể tải dữ liệu bàn/đơn hàng mới nhất.");
+        }
+
+        let table = tableId
+          ? (snapshot.tables.find((t) => t.id === tableId) ?? null)
+          : null;
+        if (!table) {
+          const order =
+            snapshot.activeOrders.find((o) => o.id === orderId) ?? null;
+          if (order) {
+            table = snapshot.tables.find((t) => t.id === order.tableId) ?? null;
+          }
+        }
+        if (!table) {
+          setVnpayReturnNotice({
+            message:
+              "Không tìm thấy bàn hoặc đơn hàng để khôi phục. Vui lòng thử lại.",
+            variant: "error",
+          });
+          return;
+        }
+
+        // Select the exact table with its already-resolved orderId/amount/items — no need
+        // to wait for the separate [activeOrders] overlay effect to converge on a later
+        // render, which is what left the screen looking unrestored before. This also
+        // changes selectedOrderId, which the reactive refreshInvoices effect further below
+        // reacts to with its own null-invoice-preference call; suppress it once for this
+        // order so it doesn't clobber the specific invoiceId refreshed explicitly below.
+        const resolvedTable = table;
+        suppressAutoInvoiceRefreshForOrderRef.current = orderId;
+        setTables((ts) =>
+          ts.map((t) =>
+            t.id === resolvedTable.id
+              ? { ...resolvedTable, selected: true }
+              : { ...t, selected: false },
+          ),
+        );
+        setActiveArea(resolvedTable.area);
+        setOrderActionMessage(null);
+        resetInvoiceLink();
+
+        // Await the full invoice refresh and read its returned snapshot directly — not
+        // React state — to decide whether to reopen PaymentModal, so that decision can't be
+        // made against not-yet-settled invoiceListLoading/invoiceListOrderId. One retry
+        // covers the (now normally unreachable, since the reactive effect above no longer
+        // interferes while suppressed) case of the request being discarded as stale.
+        let invoiceSnapshot = await refreshInvoices(orderId, invoiceId ?? null);
+        if (!invoiceSnapshot) {
+          invoiceSnapshot = await refreshInvoices(orderId, invoiceId ?? null);
+        }
+        if (!invoiceSnapshot) {
+          throw new Error("Không thể tải hóa đơn để khôi phục.");
+        }
+
+        if (paymentResult === "PAID" || invoiceSnapshot.allActiveInvoicesPaid) {
+          setPaymentOpen(false);
+        } else {
+          setPaymentOpen(true);
+        }
+        restored = true;
+      } catch (err) {
+        console.error(err);
+        setVnpayReturnNotice({
+          message:
+            "Không thể khôi phục bàn/đơn hàng sau khi thanh toán VNPAY. Vui lòng thử lại.",
+          variant: "error",
+        });
+      } finally {
+        if (suppressAutoInvoiceRefreshForOrderRef.current === orderId) {
+          suppressAutoInvoiceRefreshForOrderRef.current = null;
+        }
+        if (restored) {
+          // Clear the one-time context only after restoration has actually succeeded —
+          // never before, and never on failure, so a refresh can retry from the same
+          // stored context instead of silently falling back to the generic screen.
+          clearStoredVnpayReturnContext();
+          navigate(location.pathname, { replace: true, state: null });
+        }
       }
     })();
-
-    navigate(location.pathname, { replace: true, state: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
 
@@ -1228,8 +1370,20 @@ const CashierOrders = () => {
     [],
   );
 
+  // Returns a snapshot of the refresh's outcome (not just the selected invoice id) so a
+  // caller — e.g. VNPAY restoration — can determine paid/payable/close-eligibility right
+  // away from the value it awaited, instead of re-deriving it from React state that may not
+  // have settled (or may have been reset again by something else) by the next line.
   const refreshInvoices = useCallback(
-    async (orderId: string, preferredInvoiceId: string | null = null) => {
+    async (
+      orderId: string,
+      preferredInvoiceId: string | null = null,
+    ): Promise<{
+      invoices: InvoiceSummary[];
+      selectedInvoiceId: string | null;
+      activeInvoices: InvoiceSummary[];
+      allActiveInvoicesPaid: boolean;
+    } | null> => {
       const normalizedOrderId = orderId.trim();
       if (!normalizedOrderId) return null;
 
@@ -1254,7 +1408,17 @@ const CashierOrders = () => {
           invoiceDetailRequestRef.current += 1;
           setInvoiceDetailLoading(false);
         }
-        return nextSelectedId;
+        const activeInvoices = foundInvoices.filter(
+          (candidate) => candidate.status === "ACTIVE",
+        );
+        return {
+          invoices: foundInvoices,
+          selectedInvoiceId: nextSelectedId,
+          activeInvoices,
+          allActiveInvoicesPaid:
+            activeInvoices.length > 0 &&
+            activeInvoices.every((candidate) => candidate.paid),
+        };
       } catch (loadError) {
         if (requestId !== invoiceListRequestRef.current) return null;
         setInvoices([]);
@@ -1752,6 +1916,18 @@ const CashierOrders = () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // While a VNPAY restoration is explicitly managing invoice state for this exact order
+    // (see the restoration effect above), this effect must not run at all — not even
+    // resetInvoiceLink(). resetInvoiceLink() unconditionally bumps invoiceListRequestRef,
+    // which is the same counter refreshInvoices() uses to detect a stale/superseded call;
+    // firing it while the restoration's own refreshInvoices() call is still in flight
+    // invalidated that call's results once they came back, leaving invoiceListOrderId stuck
+    // at null (checkoutLabel stuck on "Đang kiểm tra hóa đơn") until an unrelated table
+    // switch happened to run this effect again uncontested.
+    if (selectedOrderId && suppressAutoInvoiceRefreshForOrderRef.current === selectedOrderId) {
+      suppressAutoInvoiceRefreshForOrderRef.current = null;
+      return;
+    }
     resetInvoiceLink();
     if (selectedOrderId && selectedOrder?.id === selectedOrderId) {
       void refreshInvoices(selectedOrderId, null);
