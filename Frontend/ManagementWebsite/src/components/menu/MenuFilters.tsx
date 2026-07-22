@@ -6,30 +6,16 @@ interface Props {
   categories: MenuCategory[]
   categoryId: string
   status: MenuStatusFilter
+  menuType: string
   onCategory: (id: string) => void
   onStatus: (s: MenuStatusFilter) => void
+  onMenuType: (t: string) => void
   onManageCategories: () => void
 }
 
-const ChevronDown = () => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-ink-muted shrink-0">
-    <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-)
-
-const FilterSelect = ({ placeholder }: { placeholder: string }) => (
-  <button
-    className="flex items-center justify-between w-full h-10 px-3 bg-field border border-line-default rounded-md cursor-pointer transition-colors hover:border-line-strong"
-    type="button"
-  >
-    <span className="text-md text-ink-muted">{placeholder}</span>
-    <ChevronDown />
-  </button>
-)
-
 const MENU_TYPES = ['Đồ ăn', 'Đồ uống', 'Dịch vụ', 'Khác']
 
-const MenuFilters = ({ categories, categoryId, status, onCategory, onStatus, onManageCategories }: Props) => (
+const MenuFilters = ({ categories, categoryId, status, menuType, onCategory, onStatus, onMenuType, onManageCategories }: Props) => (
   <div className="flex flex-col gap-5">
     {/* Nhóm món (danh mục) — functional */}
     <div className="flex flex-col gap-2">
@@ -73,24 +59,18 @@ const MenuFilters = ({ categories, categoryId, status, onCategory, onStatus, onM
       </div>
     </div>
 
-    {/* Loại thực đơn (cosmetic) */}
+    {/* Loại thực đơn — functional; checking a type filters to it, checking the active one again clears it */}
     <div className="flex flex-col gap-2">
       <div className="text-md font-semibold text-ink">Loại thực đơn</div>
       <div className="flex flex-col gap-1.5 mt-1">
         {MENU_TYPES.map(t => (
           <label key={t} className="kv-check">
-            <input type="checkbox" disabled />
+            <input type="checkbox" checked={menuType === t} onChange={() => onMenuType(menuType === t ? '' : t)} />
             <span className="kv-check-box" />
             <span className="kv-check-text">{t}</span>
           </label>
         ))}
       </div>
-    </div>
-
-    {/* Tồn kho (cosmetic) */}
-    <div className="flex flex-col gap-2">
-      <div className="text-md font-semibold text-ink">Tồn kho</div>
-      <FilterSelect placeholder="Tất cả" />
     </div>
   </div>
 )

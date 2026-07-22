@@ -6,12 +6,6 @@ import type { SortKey, SortDir } from './Menu'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
-const Star = ({ filled }: { filled: boolean }) => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill={filled ? 'var(--kv-warning)' : 'none'} stroke={filled ? 'var(--kv-warning)' : 'currentColor'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-  </svg>
-)
-
 const th = 'sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-3 py-3 whitespace-nowrap'
 const td = 'text-md text-ink px-3 py-2 border-b border-line align-middle'
 
@@ -47,17 +41,9 @@ const MenuTable = ({
   items, loading, categoryNames, total, page, totalPages, pageSize, onPage, onPageSize, onEdit, onToggleAvailability, onDelete,
   selected, onToggleSelect, onToggleAll, sortKey, sortDir, onSort,
 }: Props) => {
-  const [starred, setStarred] = useState<Set<string>>(new Set())
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const allSelected = items.length > 0 && items.every(p => selected.has(p.id))
-
-  const toggleStar = (id: string) =>
-    setStarred(s => {
-      const next = new Set(s)
-      if (next.has(id)) next.delete(id); else next.add(id)
-      return next
-    })
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-card border border-line rounded-t-lg overflow-hidden">
@@ -70,11 +56,6 @@ const MenuTable = ({
                   <input type="checkbox" checked={allSelected} onChange={onToggleAll} />
                   <span className="kv-check-box" />
                 </label>
-              </th>
-              <th className={`${th} w-[4rem] text-center`}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="opacity-45 inline">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                </svg>
               </th>
               <th className={`${th} w-[5.5rem]`} />
               <th className={`${th} w-[10rem]`}>
@@ -111,15 +92,6 @@ const MenuTable = ({
                     <span className="kv-check-box" />
                   </label>
                 </td>
-                <td className={`${td} text-center`} onClick={e => e.stopPropagation()}>
-                  <button
-                    className="inline-flex items-center justify-center text-ink-muted cursor-pointer hover:text-warning"
-                    onClick={() => toggleStar(p.id)}
-                    aria-label="Đánh dấu"
-                  >
-                    <Star filled={starred.has(p.id)} />
-                  </button>
-                </td>
                 <td className={td}>
                   {p.imageUrl
                     ? <img src={assetUrl(p.imageUrl)} alt="" className="w-10 h-10 rounded-sm object-cover border border-line" loading="lazy" />
@@ -154,7 +126,7 @@ const MenuTable = ({
               </tr>
               {expandedId === p.id && (
                 <tr>
-                  <td colSpan={10} className="p-0 border-b border-line" onClick={e => e.stopPropagation()}>
+                  <td colSpan={9} className="p-0 border-b border-line" onClick={e => e.stopPropagation()}>
                     <MenuItemDetail
                       item={p}
                       categoryName={categoryNames.get(p.categoryId) ?? ''}

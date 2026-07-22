@@ -10,7 +10,7 @@ import java.util.List;
 public interface MenuService {
 
     // Items (MM-01 / MM-03)
-    PageResponse<MenuItemResponse> searchItems(String q, String categoryId, Boolean available, Pageable pageable);
+    PageResponse<MenuItemResponse> searchItems(String q, String categoryId, Boolean available, String menuType, Pageable pageable);
     MenuItemResponse getItem(String id);
     MenuItemResponse createItem(CreateMenuItemRequest request);
     MenuItemResponse updateItem(String id, UpdateMenuItemRequest request);

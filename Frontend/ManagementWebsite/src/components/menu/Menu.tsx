@@ -28,6 +28,7 @@ const Menu = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [status, setStatus] = useState<MenuStatusFilter>('all')
+  const [menuType, setMenuType] = useState('')
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -62,6 +63,7 @@ const Menu = () => {
         q: debouncedSearch || undefined,
         categoryId: categoryId || undefined,
         available,
+        menuType: menuType || undefined,
         page,
         size: pageSize,
         sort: sortKey ? `${sortKey},${sortDir}` : undefined,
@@ -75,14 +77,14 @@ const Menu = () => {
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, categoryId, status, page, pageSize, sortKey, sortDir])
+  }, [debouncedSearch, categoryId, status, menuType, page, pageSize, sortKey, sortDir])
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
     return () => clearTimeout(t)
   }, [search])
 
-  useEffect(() => { setPage(1) }, [debouncedSearch, categoryId, status, pageSize, sortKey, sortDir])
+  useEffect(() => { setPage(1) }, [debouncedSearch, categoryId, status, menuType, pageSize, sortKey, sortDir])
 
   // Click a sortable header: asc → desc → back to the default (code asc).
   const handleSort = (key: SortKey) => {
@@ -93,15 +95,6 @@ const Menu = () => {
 
   useEffect(() => { void loadCategories() }, [loadCategories])
   useEffect(() => { void loadItems() }, [loadItems])
-
-  // Auto product code (SP000026, …) based on the highest existing numeric code.
-  const nextCode = useMemo(() => {
-    const max = items.reduce((m, p) => {
-      const n = parseInt((p.code ?? '').replace(/\D/g, ''), 10)
-      return Number.isFinite(n) ? Math.max(m, n) : m
-    }, 25)
-    return 'SP' + String(max + 1).padStart(6, '0')
-  }, [items])
 
   const reload = () => { void loadItems(); void loadCategories() }
 
@@ -133,6 +126,7 @@ const Menu = () => {
         q: debouncedSearch || undefined,
         categoryId: categoryId || undefined,
         available,
+        menuType: menuType || undefined,
         page: 1,
         size: Math.max(total, 1),
       })
@@ -205,8 +199,10 @@ const Menu = () => {
           categories={categories}
           categoryId={categoryId}
           status={status}
+          menuType={menuType}
           onCategory={setCategoryId}
           onStatus={setStatus}
+          onMenuType={setMenuType}
           onManageCategories={() => setShowCategoryManager(true)}
         />
       </aside>
@@ -279,7 +275,6 @@ const Menu = () => {
           kind={modalKind ?? 'mon'}
           item={editItem ?? undefined}
           categories={categories}
-          nextCode={nextCode}
           onClose={closeModal}
           onSaved={reload}
           onCategoryCreated={loadCategories}

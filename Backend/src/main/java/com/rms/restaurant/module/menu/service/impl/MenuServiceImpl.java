@@ -62,10 +62,11 @@ public class MenuServiceImpl implements MenuService {
 
     @Override
     @Transactional(readOnly = true)
-    public PageResponse<MenuItemResponse> searchItems(String q, String categoryId, Boolean available, Pageable pageable) {
+    public PageResponse<MenuItemResponse> searchItems(String q, String categoryId, Boolean available, String menuType, Pageable pageable) {
         String term = StringUtils.hasText(q) ? q.trim() : null;
         String category = StringUtils.hasText(categoryId) ? categoryId : null;
-        Page<MenuItemResponse> page = itemRepository.search(term, category, available, pageable)
+        String type = StringUtils.hasText(menuType) ? menuType : null;
+        Page<MenuItemResponse> page = itemRepository.search(term, category, available, type, pageable)
                 .map(menuMapper::toResponse);
         return PageResponse.of(page);
     }
@@ -80,7 +81,7 @@ public class MenuServiceImpl implements MenuService {
     public MenuItemResponse createItem(CreateMenuItemRequest request) {
         requireCategory(request.categoryId());
         MenuItem item = MenuItem.builder()
-                .code(trimToNull(request.code()))
+                .code(resolveCode(trimToNull(request.code()), null))
                 .categoryId(request.categoryId())
                 .name(request.name().trim())
                 .price(request.price())
@@ -118,7 +119,7 @@ public class MenuServiceImpl implements MenuService {
             item.setImageUrl(trimToNull(request.imageUrl()));
         }
         if (request.code() != null) {
-            item.setCode(trimToNull(request.code()));
+            item.setCode(resolveCode(trimToNull(request.code()), item.getId()));
         }
         if (request.costPrice() != null) {
             item.setCostPrice(request.costPrice());
@@ -295,11 +296,7 @@ public class MenuServiceImpl implements MenuService {
 
         // Auto product code (SP000026, …): continue from the highest existing numeric code
         // so rows imported without a code still get one.
-        long maxCodeNumber = itemRepository.findAll().stream()
-                .map(MenuItem::getCode)
-                .filter(StringUtils::hasText)
-                .mapToLong(MenuServiceImpl::numericCode)
-                .max().orElse(0);
+        long maxCodeNumber = computeMaxCodeNumber();
 
         int created = 0;
         int updated = 0;
@@ -370,6 +367,14 @@ public class MenuServiceImpl implements MenuService {
                     }
                     String code = trimToNull(column(record, "code"));
                     if (code != null) {
+                        final MenuItem currentItem = item;
+                        boolean codeTaken = itemRepository.findByCodeIgnoreCase(code)
+                                .filter(existing -> !existing.getId().equals(currentItem.getId()))
+                                .isPresent();
+                        if (codeTaken) {
+                            errors.add(new ImportResultResponse.RowError((int) rowNumber, "Code already used by another item"));
+                            continue;
+                        }
                         item.setCode(code);
                     } else if (!StringUtils.hasText(item.getCode())) {
                         // File has no code and the item doesn't have one yet → assign the next auto code.
@@ -455,6 +460,35 @@ public class MenuServiceImpl implements MenuService {
         } catch (NumberFormatException ex) {
             return 0;
         }
+    }
+
+    /** Highest numeric code currently in use across ALL items (not page-scoped). */
+    private long computeMaxCodeNumber() {
+        return itemRepository.findAll().stream()
+                .map(MenuItem::getCode)
+                .filter(StringUtils::hasText)
+                .mapToLong(MenuServiceImpl::numericCode)
+                .max().orElse(0);
+    }
+
+    private String nextAutoCode() {
+        return String.format("SP%06d", computeMaxCodeNumber() + 1);
+    }
+
+    /**
+     * Blank requestedCode → auto-generate the next code (globally, not scoped to whatever page
+     * the UI happened to have loaded — that page-scoped client-side generation was the root cause
+     * of silent code collisions). Non-blank requestedCode → must not already belong to a
+     * different item.
+     */
+    private String resolveCode(String requestedCode, String excludeItemId) {
+        if (requestedCode == null) {
+            return nextAutoCode();
+        }
+        itemRepository.findByCodeIgnoreCase(requestedCode)
+                .filter(existing -> !existing.getId().equals(excludeItemId))
+                .ifPresent(existing -> { throw new ConflictException(ApplicationError.DUPLICATE_MENU_ITEM_CODE); });
+        return requestedCode;
     }
 
     private String nullSafe(String value) {

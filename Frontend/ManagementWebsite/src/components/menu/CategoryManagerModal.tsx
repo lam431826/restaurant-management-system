@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { updateCategory, deleteCategory } from '../../services/menuService'
+import { createCategory, updateCategory, deleteCategory } from '../../services/menuService'
 import type { MenuCategory } from '../../services/menuService'
 import { ApiError } from '../../services/api'
 import ConfirmDialog from './ConfirmDialog'
@@ -23,6 +23,8 @@ const inputCls =
 const CategoryManagerModal = ({ categories, onClose, onChanged }: Props) => {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
   const [confirmDeleteCat, setConfirmDeleteCat] = useState<MenuCategory | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -37,6 +39,25 @@ const CategoryManagerModal = ({ categories, onClose, onChanged }: Props) => {
       document.removeEventListener('keydown', onKey)
     }
   }, [onClose, busy])
+
+  const startCreate = () => { setCreating(true); setNewName(''); setError('') }
+
+  const handleCreate = async () => {
+    const name = newName.trim()
+    if (!name) { setError('Tên nhóm không được để trống'); return }
+    setBusy(true)
+    setError('')
+    try {
+      await createCategory({ name, displayOrder: categories.length })
+      setCreating(false)
+      setNewName('')
+      onChanged()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Tạo nhóm thất bại.')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const startEdit = (c: MenuCategory) => { setEditingId(c.id); setEditName(c.name); setError('') }
 
@@ -81,13 +102,34 @@ const CategoryManagerModal = ({ categories, onClose, onChanged }: Props) => {
       <div className="w-full max-w-[42rem] my-[8vh] bg-card rounded-lg shadow-lg flex flex-col max-h-[calc(100vh-12vh)]">
         <div className="flex items-center justify-between px-6 h-16 border-b border-line shrink-0">
           <h2 className="text-h3 font-bold text-ink">Quản lý nhóm món</h2>
-          <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">
-            <CloseIcon />
-          </button>
+          <div className="flex items-center gap-3">
+            {!creating && (
+              <button className="text-sm font-medium text-primary hover:underline" onClick={startCreate}>
+                + Tạo nhóm mới
+              </button>
+            )}
+            <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">
+              <CloseIcon />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto p-3">
-          {categories.length === 0 && (
+          {creating && (
+            <div className="flex items-center gap-2 px-2 py-2 rounded-md bg-fill">
+              <input
+                className={`${inputCls} flex-1`}
+                placeholder="Tên nhóm món mới"
+                value={newName}
+                autoFocus
+                onChange={e => setNewName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreate() }}
+              />
+              <button className="kv-btn kv-btn-primary h-8" disabled={busy} onClick={handleCreate}>Lưu</button>
+              <button className="kv-btn kv-btn-outline-neutral h-8" disabled={busy} onClick={() => { setCreating(false); setError('') }}>Hủy</button>
+            </div>
+          )}
+          {categories.length === 0 && !creating && (
             <div className="text-center text-md text-ink-subtle py-10">Chưa có nhóm món nào.</div>
           )}
           {categories.map(c => (

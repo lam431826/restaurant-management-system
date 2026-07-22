@@ -38,6 +38,7 @@ export interface ItemSearchParams {
   q?: string
   categoryId?: string
   available?: boolean
+  menuType?: string
   page?: number // 1-based
   size?: number
   sort?: string // Spring format: "field,asc" | "field,desc"
@@ -73,6 +74,7 @@ export const searchItems = (params: ItemSearchParams = {}): Promise<PageResponse
     q: params.q,
     categoryId: params.categoryId,
     available: params.available,
+    menuType: params.menuType,
     // backend Pageable is 0-based
     page: params.page ? params.page - 1 : 0,
     size: params.size ?? 20,

@@ -43,6 +43,7 @@ public enum ApplicationError {
     CATEGORY_HAS_ITEMS("Category still has items; reassign or remove them first", HttpStatus.CONFLICT),
     MENU_ITEM_HAS_ORDERS("Item has existing orders and cannot be deleted; deactivate it instead", HttpStatus.CONFLICT),
     MENU_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
+    DUPLICATE_MENU_ITEM_CODE("Item code already in use", HttpStatus.CONFLICT),
 
     // Employee Management
     EMPLOYEE_NOT_FOUND("Employee not found", HttpStatus.NOT_FOUND),

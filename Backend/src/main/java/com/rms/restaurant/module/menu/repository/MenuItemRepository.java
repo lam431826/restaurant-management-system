@@ -22,12 +22,16 @@ public interface MenuItemRepository extends JpaRepository<MenuItem, String> {
 
     Optional<MenuItem> findByNameIgnoreCaseAndCategoryId(String name, String categoryId);
 
+    Optional<MenuItem> findByCodeIgnoreCase(String code);
+
     @Query("SELECT i FROM MenuItem i WHERE " +
             "(:categoryId IS NULL OR i.categoryId = :categoryId) AND " +
             "(:available IS NULL OR i.available = :available) AND " +
-            "(:q IS NULL OR LOWER(i.name) LIKE LOWER(CONCAT('%', :q, '%')))")
+            "(:menuType IS NULL OR i.menuType = :menuType) AND " +
+            "(:q IS NULL OR LOWER(i.name) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(i.code) LIKE LOWER(CONCAT('%', :q, '%')))")
     Page<MenuItem> search(@Param("q") String q,
                           @Param("categoryId") String categoryId,
                           @Param("available") Boolean available,
+                          @Param("menuType") String menuType,
                           Pageable pageable);
 }

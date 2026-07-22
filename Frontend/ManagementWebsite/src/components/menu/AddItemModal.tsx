@@ -11,16 +11,15 @@ interface KindConfig {
   nameLabel: string
   cost: boolean
   prep: boolean
-  inventory: boolean
   components: boolean
   defaultMenuType: string
 }
 
 const KIND_CONFIG: Record<NewItemKind, KindConfig> = {
-  mon:     { title: 'Tạo món',            nameLabel: 'Tên món',     cost: true,  prep: true,  inventory: true,  components: false, defaultMenuType: 'Đồ ăn' },
-  topping: { title: 'Tạo topping',        nameLabel: 'Tên topping', cost: true,  prep: false, inventory: true,  components: false, defaultMenuType: 'Khác' },
-  dichvu:  { title: 'Tạo dịch vụ',        nameLabel: 'Tên dịch vụ', cost: false, prep: false, inventory: false, components: false, defaultMenuType: 'Dịch vụ' },
-  combo:   { title: 'Tạo combo - buffet', nameLabel: 'Tên combo',   cost: false, prep: false, inventory: false, components: true,  defaultMenuType: 'Khác' },
+  mon:     { title: 'Tạo món',            nameLabel: 'Tên món',     cost: true,  prep: true,  components: false, defaultMenuType: 'Đồ ăn' },
+  topping: { title: 'Tạo topping',        nameLabel: 'Tên topping', cost: true,  prep: false, components: false, defaultMenuType: 'Khác' },
+  dichvu:  { title: 'Tạo dịch vụ',        nameLabel: 'Tên dịch vụ', cost: false, prep: false, components: false, defaultMenuType: 'Dịch vụ' },
+  combo:   { title: 'Tạo combo - buffet', nameLabel: 'Tên combo',   cost: false, prep: false, components: true,  defaultMenuType: 'Khác' },
 }
 
 const MENU_TYPES = ['Đồ ăn', 'Đồ uống', 'Dịch vụ', 'Khác']
@@ -134,17 +133,6 @@ const MoneyInput = ({ value, onChange }: { value: string; onChange: (v: string) 
   )
 }
 
-const Switch = ({ on, onToggle }: { on: boolean; onToggle: () => void }) => (
-  <button
-    type="button"
-    onClick={onToggle}
-    className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${on ? 'bg-primary' : 'bg-neutral-200'}`}
-    aria-pressed={on}
-  >
-    <span className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${on ? 'translate-x-5' : ''}`} />
-  </button>
-)
-
 interface ComboLine { id: number; name: string; qty: number; price: number }
 
 /* ─── Main modal ─────────────────────────────────────────────────────────── */
@@ -152,16 +140,15 @@ interface Props {
   kind: NewItemKind
   item?: MenuItem
   categories: MenuCategory[]
-  nextCode: string
   onClose: () => void
   onSaved: () => void
   onCategoryCreated: () => void
 }
 
-const TABS = ['Thông tin', 'Mô tả chi tiết', 'Chi nhánh kinh doanh'] as const
+const TABS = ['Thông tin', 'Mô tả chi tiết'] as const
 type Tab = (typeof TABS)[number]
 
-const AddItemModal = ({ kind, item, categories, nextCode, onClose, onSaved, onCategoryCreated }: Props) => {
+const AddItemModal = ({ kind, item, categories, onClose, onSaved, onCategoryCreated }: Props) => {
   const isEdit = !!item
   const cfg = KIND_CONFIG[kind]
 
@@ -175,7 +162,6 @@ const AddItemModal = ({ kind, item, categories, nextCode, onClose, onSaved, onCa
   const [price, setPrice] = useState(item != null ? String(item.price) : '')
   const [description, setDescription] = useState(item?.description ?? '')
   const [prep, setPrep] = useState<'che-bien' | 'thuong'>(item?.itemType === 'Món chế biến' ? 'che-bien' : 'thuong')
-  const [trackStock, setTrackStock] = useState(item?.trackStock ?? false)
   const [allowSell, setAllowSell] = useState(item?.available ?? true)
   const [image, setImage] = useState(item?.imageUrl ?? '')
   const [components, setComponents] = useState<ComboLine[]>([])
@@ -248,14 +234,13 @@ const AddItemModal = ({ kind, item, categories, nextCode, onClose, onSaved, onCa
       categoryId,
       name: name.trim(),
       price: finalPrice,
-      code: code.trim() || nextCode,
+      code: code.trim() || undefined,
       costPrice: cost === '' ? undefined : Number(cost),
       description: description.trim() || undefined,
       imageUrl: image.trim() || undefined,
       menuType,
       itemType,
       tag: tag || undefined,
-      trackStock,
       available: allowSell,
     }
   }
@@ -263,7 +248,7 @@ const AddItemModal = ({ kind, item, categories, nextCode, onClose, onSaved, onCa
   const resetForm = () => {
     setName(''); setCode(''); setTag(''); setCost(''); setPrice('')
     setDescription(''); setImage(''); setComponents([]); setMenuType(cfg.defaultMenuType)
-    setPrep('thuong'); setTrackStock(false); setAllowSell(true); setError(''); setTab('Thông tin')
+    setPrep('thuong'); setAllowSell(true); setError(''); setTab('Thông tin')
     nameRef.current?.focus()
   }
 
@@ -363,7 +348,7 @@ const AddItemModal = ({ kind, item, categories, nextCode, onClose, onSaved, onCa
                   </div>
                   <div className="flex flex-col gap-2">
                     <FieldLabel>Mã món</FieldLabel>
-                    <input className={inputCls} placeholder={nextCode + ' (tự động)'} value={code} onChange={e => setCode(e.target.value)} />
+                    <input className={inputCls} placeholder="Để trống sẽ tự động tạo mã" value={code} onChange={e => setCode(e.target.value)} />
                   </div>
                 </div>
 
@@ -419,17 +404,6 @@ const AddItemModal = ({ kind, item, categories, nextCode, onClose, onSaved, onCa
                         )
                       })}
                     </div>
-                  </div>
-                )}
-
-                {/* Quản lý tồn kho */}
-                {cfg.inventory && (
-                  <div className="border border-line-default rounded-xl px-5 py-4 flex items-center justify-between gap-4">
-                    <div>
-                      <h3 className="text-lg font-bold text-ink">Quản lý tồn tại Kho hàng</h3>
-                      <p className="text-md text-ink-subtle mt-0.5">Theo dõi số lượng tồn kho của món này.</p>
-                    </div>
-                    <Switch on={trackStock} onToggle={() => setTrackStock(v => !v)} />
                   </div>
                 )}
 
@@ -494,18 +468,6 @@ const AddItemModal = ({ kind, item, categories, nextCode, onClose, onSaved, onCa
             <div className="flex flex-col gap-2 max-w-[60rem]">
               <FieldLabel>Mô tả chi tiết</FieldLabel>
               <textarea className={`${inputCls} h-[28rem] py-3 resize-none`} placeholder="Nhập mô tả chi tiết cho món..." value={description} onChange={e => setDescription(e.target.value)} />
-            </div>
-          )}
-
-          {tab === 'Chi nhánh kinh doanh' && (
-            <div className="border border-line-default rounded-xl overflow-hidden max-w-[60rem]">
-              <div className="grid grid-cols-[1fr_12rem] gap-2 px-4 py-3 bg-primary-25 text-md font-semibold text-ink-strong">
-                <span>Chi nhánh</span><span className="text-right">Giá bán</span>
-              </div>
-              <div className="grid grid-cols-[1fr_12rem] gap-2 px-4 py-3 items-center border-t border-line">
-                <label className="kv-check"><input type="checkbox" defaultChecked /><span className="kv-check-box" /><span className="kv-check-text">Chi nhánh trung tâm</span></label>
-                <span className="text-right text-md text-ink">{price ? Number(price).toLocaleString('vi-VN') : '0'}</span>
-              </div>
             </div>
           )}
         </div>

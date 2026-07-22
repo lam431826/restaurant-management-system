@@ -43,8 +43,9 @@ public class MenuManagementController {
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String categoryId,
             @RequestParam(required = false) Boolean available,
+            @RequestParam(required = false) String menuType,
             Pageable pageable) {
-        return ResponseEntity.ok(menuService.searchItems(q, categoryId, available, pageable));
+        return ResponseEntity.ok(menuService.searchItems(q, categoryId, available, menuType, pageable));
     }
 
     @GetMapping("/items/{id}")
