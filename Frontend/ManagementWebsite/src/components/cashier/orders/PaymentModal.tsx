@@ -131,7 +131,6 @@ export const PaymentModal = ({
   onResetMergeError: () => void;
 }) => {
   const [method, setMethod] = useState<SelectablePaymentMethod>("CASH");
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [cashInput, setCashInput] = useState("");
   const [splitOpen, setSplitOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -154,7 +153,6 @@ export const PaymentModal = ({
   useEffect(() => {
     setSplitOpen(false);
     setMergeOpen(false);
-    setDropdownOpen(false);
     setCashInput("");
     setMethod("CASH");
     onResetVnpayState();
@@ -251,16 +249,14 @@ export const PaymentModal = ({
         role="dialog"
         aria-modal="true"
         aria-label="Thanh toán hóa đơn"
-        className="relative bg-white rounded-[16px] p-6 flex flex-col gap-2.5 overflow-hidden w-[95vw] max-w-[711px] max-h-[calc(100vh-32px)]"
+        className="relative bg-white rounded-[16px] p-5 sm:p-6 flex flex-col gap-3 overflow-hidden w-[95vw] max-w-[840px] max-h-[calc(100vh-32px)]"
       >
-        <div
-          className="flex items-center justify-between shrink-0"
-          style={{ height: 44 }}
-        >
-          <p className="text-[24px] font-semibold text-[#202325]">Thanh toán</p>
+        <div className="flex items-center justify-between shrink-0">
+          <p className="text-[20px] font-semibold text-[#202325]">Thanh toán</p>
           <button
             onClick={onClose}
-            className="w-10 h-10 bg-[#f5f5f5] rounded-full flex items-center justify-center text-[#202325] hover:bg-[#e8e8e8] transition-colors"
+            aria-label="Đóng"
+            className="w-9 h-9 bg-[#f5f5f5] rounded-full flex items-center justify-center text-[#636566] hover:bg-[#e8e8e8] hover:text-[#202325] transition-colors"
           >
             <XIcon />
           </button>
@@ -326,30 +322,30 @@ export const PaymentModal = ({
         )}
 
         {invoice && !detailLoading && !detailError && (
-        <div className="flex gap-6 lg:gap-10 items-stretch flex-1 min-h-0 overflow-hidden">
+        <div className="flex gap-5 lg:gap-6 items-stretch flex-1 min-h-0 overflow-hidden">
           {/* Receipt */}
           <div
-            className="hidden lg:flex w-[300px] min-h-0 bg-[#fcf7ef] overflow-y-auto flex-col gap-3 px-4 py-8 shrink-0"
+            className="hidden lg:flex w-[320px] min-h-0 bg-[#fcf7ef] overflow-y-auto flex-col gap-3 px-4 py-6 shrink-0 rounded-[12px]"
             style={{ fontFamily: "monospace" }}
           >
-            <div className="flex flex-col items-center gap-3">
-              <p className="text-[#3f4e4f] text-[24px] font-medium">
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-[#3f4e4f] text-[19px] font-semibold">
                 Wasabi Sushi
               </p>
-              <p className="text-black text-[10px] text-center tracking-tight">
+              <p className="text-black text-[11px] text-center tracking-tight">
                 {dateStr} • {timeStr}
               </p>
             </div>
             <div className="border border-dashed border-[#b0a080] rounded px-3 py-2 text-center">
-              <p className="text-[10px] tracking-widest text-black">Mã đơn hàng</p>
+              <p className="text-[11px] tracking-widest text-black">Mã đơn hàng</p>
               <p
-                className="text-[14px] font-bold tracking-wider text-black"
+                className="text-[16px] font-bold tracking-wider text-black"
                 title={invoice.orderId}
               >
                 {invoice.orderCode}
               </p>
             </div>
-            <div className="flex flex-col gap-3 text-[10px]">
+            <div className="flex flex-col gap-2.5 text-[12px]">
               <div className="flex justify-between gap-2">
                 <span className="text-[#6d7278] shrink-0">Thu ngân</span>
                 <span className="text-black text-right">{cashierName}</span>
@@ -360,7 +356,7 @@ export const PaymentModal = ({
               </div>
             </div>
             <div className="border-t border-dashed border-[#b0a080]" />
-            <div className="flex flex-col gap-3 text-[10px]">
+            <div className="flex flex-col gap-2.5 text-[12px]">
               <div className="flex justify-between gap-2">
                 <span className="text-[#6d7278] shrink-0">Khách hàng</span>
                 <span className="text-black text-right break-all">
@@ -395,17 +391,19 @@ export const PaymentModal = ({
               </div>
             </div>
             <div className="border-t border-dashed border-[#b0a080]" />
-            <div className="flex flex-col gap-3 text-[10px]">
+            <div className="flex flex-col gap-2.5 text-[12px]">
               {invoice.items.map((item, i) => (
-                <div key={i} className="flex gap-2 justify-between">
-                  <span className="text-[#6d7278] flex-1 truncate">
-                    {item.menuItemName}
-                  </span>
-                  <span className="text-[#6d7278] shrink-0">
+                <div key={i} className="flex flex-col gap-0.5">
+                  <div className="flex gap-2 justify-between">
+                    <span className="text-black font-medium flex-1 truncate">
+                      {item.menuItemName}
+                    </span>
+                    <span className="text-black shrink-0 font-bold">
+                      {item.lineTotal.toLocaleString("vi-VN")}đ
+                    </span>
+                  </div>
+                  <span className="text-[#6d7278] text-[11px]">
                     {item.quantity} x {item.unitPrice.toLocaleString("vi-VN")}đ
-                  </span>
-                  <span className="text-black shrink-0 font-bold">
-                    {item.lineTotal.toLocaleString("vi-VN")}đ
                   </span>
                 </div>
               ))}
@@ -413,27 +411,27 @@ export const PaymentModal = ({
             {nonPayableItems.length > 0 && (
               <>
                 <div className="border-t border-dashed border-[#b0a080]" />
-                <div className="flex flex-col gap-3 text-[10px]">
+                <div className="flex flex-col gap-2.5 text-[12px]">
                   <p className="text-black font-bold">
                     Món đã hủy bởi nhà hàng
                   </p>
                   {nonPayableItems.map((item) => (
                     <div key={item.id} className="flex flex-col gap-1">
                       <div className="flex justify-between gap-2">
-                        <span className="text-[#6d7278] flex-1 truncate">
+                        <span className="text-black flex-1 truncate">
                           {item.name}
                         </span>
-                        <span className="text-[#6d7278] shrink-0">
+                        <span className="text-[#6d7278] shrink-0 text-[11px]">
                           x{item.quantity}
                         </span>
                       </div>
                       <div className="flex justify-between gap-2">
-                        <span className="text-[#6d7278]">
+                        <span className="text-[#6d7278] text-[11px]">
                           Không tính tiền
                         </span>
                         <span className="text-black font-bold">0đ</span>
                       </div>
-                      <p className="text-[#6d7278] leading-snug">
+                      <p className="text-[#6d7278] text-[11px] leading-snug">
                         Ghi chú: {item.note?.trim() || nonPayableFallbackNote}
                       </p>
                     </div>
@@ -442,7 +440,7 @@ export const PaymentModal = ({
               </>
             )}
             <div className="border-t border-dashed border-[#b0a080]" />
-            <div className="flex flex-col gap-3 text-[10px]">
+            <div className="flex flex-col gap-2.5 text-[12px]">
               <div className="flex justify-between">
                 <span className="text-[#6d7278]">Tạm tính</span>
                 <span className="text-black">
@@ -457,24 +455,131 @@ export const PaymentModal = ({
               </div>
             </div>
             <div className="border-t border-dashed border-[#b0a080]" />
-            <div className="flex justify-between text-[14px] font-bold text-[#a27b5c]">
+            <div className="flex justify-between text-[15px] font-bold text-[#a27b5c]">
               <span>Tổng thanh toán</span>
               <span>{total.toLocaleString("vi-VN")}đ</span>
             </div>
-            <p className="text-[8px] text-black leading-relaxed">
+            <p className="text-[10px] text-[#6d7278] leading-relaxed text-center">
               Cảm ơn quý khách. Hẹn gặp lại!
             </p>
-            <p className="text-[#3f4e4f] text-[24px] font-medium text-center">
+            <p className="text-[#3f4e4f] text-[14px] font-semibold text-center">
               Wasabi Sushi
             </p>
           </div>
 
-          {/* Payment panel */}
+          {/* Payment panel — one scroll area + a sticky confirm footer, so no control is ever
+              clipped by the modal's overflow-hidden regardless of viewport height. */}
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            <div className="relative flex flex-col gap-3 shrink-0">
-              <div className="rounded-[12px] border border-[#e8e8e8] bg-[#f5f5f5] p-3 flex flex-col gap-3">
+            <div className="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
+              {/* Payment method comes first — it's the primary action for an active invoice
+                  and must be reachable without scrolling past the secondary invoice-actions card. */}
+              {isActiveInvoice && (
+                <>
+                  <p className="text-[14px] font-semibold text-[#202325]">
+                    Chọn phương thức thanh toán
+                  </p>
+                  {/* Segmented control — only two methods, so a toggle is clearer than a
+                      dropdown and never overlays the content below it. */}
+                  <div className="grid grid-cols-2 gap-1.5 p-1 rounded-[12px] border border-[#e8e8e8] bg-[#f5f5f5]">
+                    {PAYMENT_METHODS.map((pm) => {
+                      const active = method === pm.id;
+                      return (
+                        <button
+                          key={pm.id}
+                          type="button"
+                          onClick={() => setMethod(pm.id)}
+                          aria-pressed={active}
+                          className={`flex items-center justify-center gap-2 h-[42px] rounded-[9px] text-[14px] font-medium transition-colors ${
+                            active
+                              ? "bg-white text-[#025cca] shadow-sm ring-1 ring-[#cfe3fb]"
+                              : "bg-transparent text-[#636566] hover:text-[#202325]"
+                          }`}
+                        >
+                          <span className={active ? "text-[#025cca]" : "text-[#797b7c]"}>
+                            {methodIcons[pm.id]}
+                          </span>
+                          <span className="truncate">{pm.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {method === "CASH" && (
+                    <div className="flex flex-col items-center gap-4 pb-1">
+                      <div className="flex flex-col items-center gap-1.5 rounded-[12px] bg-[#f7f9fc] border border-[#eef1f5] w-full py-3">
+                        <p className="text-[12px] font-medium text-[#797b7c]">
+                          Tiền khách đưa
+                        </p>
+                        <p className="text-[34px] font-semibold leading-none text-[#202325] text-center">
+                          {displayAmount}
+                        </p>
+                        <div className="flex items-center gap-4 mt-0.5">
+                          <p className="text-[12px] text-[#797b7c]">
+                            Cần thu: {total.toLocaleString("vi-VN")} đ
+                          </p>
+                          <p
+                            className={`text-[12px] font-medium ${receivedAmountSufficient ? "text-[#286b4a]" : "text-[#797b7c]"}`}
+                          >
+                            Thối lại: {changeAmount.toLocaleString("vi-VN")} đ
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 w-full gap-2">
+                        {[
+                          "1", "2", "3",
+                          "4", "5", "6",
+                          "7", "8", "9",
+                          ".", "0", "del",
+                        ].map((key) => (
+                          <button
+                            key={key}
+                            onClick={() => key !== "." && handleDigit(key)}
+                            disabled={key === "."}
+                            className={`h-[46px] flex items-center justify-center rounded-[10px] border transition-all active:scale-95 ${
+                              key === "."
+                                ? "opacity-0 cursor-default border-transparent"
+                                : "border-[#e8e8e8] bg-white hover:bg-[#f5f5f5] hover:border-[#d9d9d9]"
+                            }`}
+                          >
+                            {key === "del" ? (
+                              <DeleteDigitIcon />
+                            ) : (
+                              <span className="text-[22px] font-medium text-[#202325]">
+                                {key}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {method === "VNPAY" && (
+                    <div className="flex flex-col items-center gap-3 pb-1">
+                      <div className="w-[140px] h-[140px] bg-white flex items-center justify-center shrink-0 border border-dashed border-[#cfe3fb] rounded-[14px] text-[#025cca] [&_svg]:w-14 [&_svg]:h-14">
+                        <QRMethodIcon />
+                      </div>
+                      <p className="text-[12px] text-center text-[#797b7c] px-2 leading-relaxed">
+                        Bạn sẽ được chuyển đến cổng thanh toán VNPAY Sandbox để
+                        hoàn tất giao dịch. Hệ thống sẽ tự động cập nhật trạng
+                        thái hóa đơn sau khi thanh toán.
+                      </p>
+                      <p className="text-[13px] font-medium text-[#202325]">
+                        Cần thu: {total.toLocaleString("vi-VN")} đ
+                      </p>
+                      {vnpayError && (
+                        <p className="text-[12px] text-[#d92d20] text-center">
+                          {vnpayError}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="rounded-[12px] border border-[#e8e8e8] bg-[#fafafa] p-3 flex flex-col gap-2.5">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-[15px] font-semibold text-[#202325]">
+                  <p className="text-[14px] font-semibold text-[#202325]">
                     Thao tác hóa đơn
                   </p>
                   <div className="flex items-center gap-2">
@@ -502,12 +607,12 @@ export const PaymentModal = ({
                         onPromotionCodeChange(event.target.value.toUpperCase())
                       }
                       placeholder="Mã khuyến mãi"
-                      className="flex-1 min-w-0 h-[36px] px-3 rounded-[10px] border border-[#e8e8e8] bg-white text-[12px] uppercase outline-none focus:border-[#025cca]"
+                      className="flex-1 min-w-0 h-[38px] px-3 rounded-[10px] border border-[#e8e8e8] bg-white text-[13px] uppercase outline-none focus:border-[#025cca]"
                     />
                     <button
                       onClick={onApplyDiscount}
                       disabled={actionBusy || !promotionCode.trim()}
-                      className="h-[36px] px-3 rounded-[10px] border border-[#025cca] bg-white text-[12px] font-medium text-[#025cca] disabled:opacity-50"
+                      className="h-[38px] px-3.5 shrink-0 rounded-[10px] border border-[#025cca] bg-white text-[13px] font-medium text-[#025cca] transition-colors hover:bg-[#f0f8ff] disabled:opacity-50 disabled:hover:bg-white"
                     >
                       {action === "discount" ? "Đang áp dụng" : "Áp dụng mã"}
                     </button>
@@ -517,49 +622,51 @@ export const PaymentModal = ({
                     Không thể áp dụng mã sau khi hóa đơn đã thanh toán
                   </p>
                 )}
-                {splitVisible && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setSplitOpen(true)}
-                      disabled={Boolean(splitDisabledReason)}
-                      className="h-[36px] w-full rounded-[10px] border border-[#025cca] bg-white text-[12px] font-medium text-[#025cca] disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Chia hóa đơn
-                    </button>
-                    {splitDisabledReason && (
-                      <p className="mt-1 text-[11px] text-[#797b7c]">
-                        {splitDisabledReason}
-                      </p>
+                {(splitVisible || mergeVisible) && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {splitVisible && (
+                      <button
+                        type="button"
+                        onClick={() => setSplitOpen(true)}
+                        disabled={Boolean(splitDisabledReason)}
+                        className={`h-[38px] rounded-[10px] border border-[#025cca] bg-white text-[13px] font-medium text-[#025cca] transition-colors hover:bg-[#f0f8ff] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white ${mergeVisible ? "" : "col-span-2"}`}
+                      >
+                        Chia hóa đơn
+                      </button>
+                    )}
+                    {mergeVisible && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onResetMergeError();
+                          setMergeOpen(true);
+                        }}
+                        disabled={actionBusy || processing || invoiceListLoading}
+                        className={`h-[38px] rounded-[10px] bg-[#025cca] text-[13px] font-medium text-white transition-colors hover:bg-[#0250b0] disabled:cursor-not-allowed disabled:opacity-50 ${splitVisible ? "" : "col-span-2"}`}
+                      >
+                        Gộp hóa đơn
+                      </button>
                     )}
                   </div>
                 )}
+                {splitVisible && splitDisabledReason && (
+                  <p className="-mt-1 text-[11px] text-[#797b7c]">
+                    {splitDisabledReason}
+                  </p>
+                )}
                 {mergeVisible && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onResetMergeError();
-                        setMergeOpen(true);
-                      }}
-                      disabled={actionBusy || processing || invoiceListLoading}
-                      className="h-[36px] w-full rounded-[10px] border border-[#025cca] bg-[#025cca] text-[12px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Gộp hóa đơn
-                    </button>
-                    <p className="mt-1 text-[11px] text-[#797b7c]">
-                      {eligibleMergeCount} hóa đơn đang đủ điều kiện sơ bộ.
-                    </p>
-                  </div>
+                  <p className="-mt-1 text-[11px] text-[#797b7c]">
+                    {eligibleMergeCount} hóa đơn đang đủ điều kiện sơ bộ.
+                  </p>
                 )}
                 <div className="rounded-[10px] border border-[#e8e8e8] bg-white">
                   <button
                     type="button"
                     onClick={() => setCustomerOpen((open) => !open)}
-                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+                    className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
                   >
                     <span className="min-w-0">
-                      <span className="block text-[12px] font-medium text-[#202325]">
+                      <span className="block text-[13px] font-medium text-[#202325]">
                         Khách hàng
                       </span>
                       <span className="block truncate text-[11px] text-[#797b7c]">
@@ -582,7 +689,7 @@ export const PaymentModal = ({
                           }))
                         }
                         placeholder="Tên khách hàng"
-                        className="h-[34px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[12px] outline-none focus:border-[#025cca]"
+                        className="h-[36px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[13px] outline-none focus:border-[#025cca]"
                       />
                       <input
                         value={customerDraft.customerPhone}
@@ -594,7 +701,7 @@ export const PaymentModal = ({
                         }
                         placeholder="Số điện thoại"
                         inputMode="tel"
-                        className="h-[34px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[12px] outline-none focus:border-[#025cca]"
+                        className="h-[36px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[13px] outline-none focus:border-[#025cca]"
                       />
                       <input
                         value={customerDraft.customerEmail}
@@ -606,7 +713,7 @@ export const PaymentModal = ({
                         }
                         placeholder="Email (để gửi hóa đơn)"
                         inputMode="email"
-                        className="h-[34px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[12px] outline-none focus:border-[#025cca]"
+                        className="h-[36px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[13px] outline-none focus:border-[#025cca]"
                       />
                       {customerError && (
                         <p className="text-[11px] text-[#d92d20]">
@@ -621,7 +728,7 @@ export const PaymentModal = ({
                           });
                         }}
                         disabled={customerSaving}
-                        className="h-[34px] rounded-[8px] border border-[#025cca] bg-white text-[12px] font-medium text-[#025cca] disabled:opacity-50"
+                        className="h-[36px] rounded-[8px] border border-[#025cca] bg-white text-[13px] font-medium text-[#025cca] transition-colors hover:bg-[#f0f8ff] disabled:opacity-50 disabled:hover:bg-white"
                       >
                         {customerSaving ? "Đang lưu..." : "Lưu thông tin khách"}
                       </button>
@@ -631,7 +738,7 @@ export const PaymentModal = ({
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={onPrint}
-                    className="h-[36px] rounded-[10px] bg-white text-[12px] font-medium text-[#202325] disabled:opacity-50"
+                    className="h-[38px] rounded-[10px] border border-[#e8e8e8] bg-white text-[13px] font-medium text-[#202325] transition-colors hover:bg-[#f5f5f5] disabled:opacity-50"
                   >
                     In hóa đơn
                   </button>
@@ -641,7 +748,7 @@ export const PaymentModal = ({
                     title={
                       hasCustomerEmail ? undefined : "Cần email khách hàng"
                     }
-                    className="h-[36px] rounded-[10px] bg-[#f0f8ff] text-[12px] font-medium text-[#025cca] disabled:opacity-50"
+                    className="h-[38px] rounded-[10px] border border-[#cfe3fb] bg-[#f0f8ff] text-[13px] font-medium text-[#025cca] transition-colors hover:bg-[#e2f0ff] disabled:opacity-50"
                   >
                     {action === "send"
                       ? "Đang gửi"
@@ -664,171 +771,58 @@ export const PaymentModal = ({
                   Hóa đơn {invoice.status} không thể thanh toán hoặc áp dụng khuyến mãi.
                 </div>
               )}
+            </div>
 
-              <p className={`text-[16px] font-semibold text-[#202325] ${!isActiveInvoice ? "hidden" : ""}`}>
-                Chọn phương thức thanh toán
-              </p>
-              <button
-                onClick={() => setDropdownOpen((v) => !v)}
-                className={`items-center justify-between px-2 py-3 rounded-[12px] border transition-colors ${isActiveInvoice ? "flex" : "hidden"} ${dropdownOpen ? "border-[#025cca] bg-white" : "border-[#e8e8e8] bg-[#f5f5f5]"}`}
-              >
-                <div className="flex items-center gap-2 px-3">
-                  {methodIcons[method]}
-                  <span className="text-[16px] font-medium text-[#202325]">
-                    {PAYMENT_METHODS.find((m) => m.id === method)?.label}
-                  </span>
-                </div>
-                <ChevronDownIcon
-                  className={`w-6 h-6 text-[#636566] transition-transform ${dropdownOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-              {isActiveInvoice && dropdownOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#e8e8e8] rounded-[12px] shadow-md z-10 flex flex-col gap-1 px-2 py-3">
-                  {PAYMENT_METHODS.map((pm) => (
+            {isActiveInvoice && (
+              <div className="shrink-0 mt-3 pt-3 border-t border-[#e8e8e8]">
+                {error && (
+                  <p className="text-[13px] text-[#d92d20] text-center mb-2.5">
+                    {error}
+                  </p>
+                )}
+                {method === "CASH" && (
+                  <button
+                    onClick={() => onConfirmCash(receivedAmount)}
+                    disabled={
+                      processing ||
+                      invoice.paid ||
+                      !isActiveInvoice ||
+                      actionBusy ||
+                      !receivedAmountSufficient
+                    }
+                    className="w-full h-[50px] bg-[#025cca] rounded-[12px] text-[15px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60 disabled:hover:bg-[#025cca]"
+                  >
+                    {confirmLabel}
+                  </button>
+                )}
+                {method === "VNPAY" && (
+                  <div className="w-full flex flex-col gap-2">
                     <button
-                      key={pm.id}
-                      onClick={() => {
-                        setMethod(pm.id);
-                        setDropdownOpen(false);
-                      }}
-                      className={`flex items-center gap-2 px-3 py-2.5 rounded-[12px] w-full text-left transition-colors ${method === pm.id ? "bg-[#f0f8ff]" : "bg-white hover:bg-[#f5f5f5]"}`}
+                      type="button"
+                      onClick={onInitiateVnpay}
+                      disabled={processing || actionBusy || vnpayLoading || invoice.paid}
+                      className="w-full h-[50px] bg-[#025cca] rounded-[12px] text-[15px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60 disabled:hover:bg-[#025cca]"
                     >
-                      {methodIcons[pm.id]}
-                      <span className="text-[16px] font-medium text-[#202325]">
-                        {pm.label}
-                      </span>
+                      {vnpayLoading
+                        ? "Đang xử lý..."
+                        : invoice.paid
+                          ? "Đã thanh toán"
+                          : "Thanh toán qua VNPAY Sandbox"}
                     </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className={`flex-1 min-h-0 overflow-y-auto mt-6 pr-1 ${!isActiveInvoice ? "hidden" : ""}`}>
-              {method === "CASH" && (
-                <div className="flex flex-col items-center gap-5 pb-2">
-                  <div className="flex flex-col items-center gap-2 py-2">
-                    <p className="text-[13px] font-medium text-[#636566]">
-                      Tiền khách đưa
-                    </p>
-                    <p className="text-[40px] font-medium leading-none text-[#202325] text-center">
-                      {displayAmount}
-                    </p>
-                    <p className="text-[12px] text-[#797b7c]">
-                      Cần thanh toán: {total.toLocaleString("vi-VN")} đ
-                    </p>
-                    <p
-                      className={`text-[13px] font-medium ${receivedAmountSufficient ? "text-[#286b4a]" : "text-[#797b7c]"}`}
+                    {/* Escape hatch for a transaction paid at VNPAY whose IPN never reached
+                        this machine: asks VNPAY directly instead of trusting local state. */}
+                    <button
+                      type="button"
+                      onClick={onCheckVnpayStatus}
+                      disabled={processing || actionBusy || vnpayLoading || invoice.paid}
+                      className="w-full h-[38px] rounded-[10px] border border-[#d1d5db] text-[13px] font-medium text-[#636566] transition-colors hover:bg-[#f5f5f5] disabled:opacity-60"
                     >
-                      Tiền thối lại: {changeAmount.toLocaleString("vi-VN")} đ
-                    </p>
+                      Kiểm tra trạng thái VNPAY
+                    </button>
                   </div>
-                  <div className="grid grid-cols-3 w-full gap-y-2">
-                    {[
-                      "1",
-                      "2",
-                      "3",
-                      "4",
-                      "5",
-                      "6",
-                      "7",
-                      "8",
-                      "9",
-                      ".",
-                      "0",
-                      "del",
-                    ].map((key) => (
-                      <button
-                        key={key}
-                        onClick={() => key !== "." && handleDigit(key)}
-                        disabled={key === "."}
-                        className={`h-11 flex items-center justify-center rounded-[8px] active:scale-95 transition-all ${key === "." ? "opacity-30 cursor-default" : "hover:bg-[#f5f5f5]"}`}
-                      >
-                        {key === "del" ? (
-                          <DeleteDigitIcon />
-                        ) : (
-                          <span
-                            className={`text-[24px] text-[#202325] ${key === "." ? "font-normal" : "font-medium"}`}
-                          >
-                            {key}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {method === "VNPAY" && (
-                <div className="flex flex-col items-center gap-4 pb-2">
-                  <div className="w-[160px] h-[160px] bg-white overflow-hidden flex items-center justify-center shrink-0 border border-dashed border-[#d9d9d9] rounded-[12px] text-[#025cca] [&_svg]:w-16 [&_svg]:h-16">
-                    <QRMethodIcon />
-                  </div>
-                  <p className="text-[11px] text-center text-[#a2a4a4] px-4 -mt-2">
-                    Bạn sẽ được chuyển đến cổng thanh toán VNPAY Sandbox để hoàn
-                    tất giao dịch. Sau khi thanh toán, hệ thống sẽ tự động cập
-                    nhật trạng thái hóa đơn.
-                  </p>
-                  <p className="text-[13px] text-[#797b7c]">
-                    Cần thanh toán: {total.toLocaleString("vi-VN")} đ
-                  </p>
-
-                  {vnpayError && (
-                    <p className="text-[13px] text-[#d92d20] text-center">
-                      {vnpayError}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className={`shrink-0 mt-5 pt-4 border-t border-[#e8e8e8] ${!isActiveInvoice ? "hidden" : ""}`}>
-              {error && (
-                <p className="text-[13px] text-[#d92d20] text-center mb-3">
-                  {error}
-                </p>
-              )}
-              {method === "CASH" && (
-                <button
-                  onClick={() => onConfirmCash(receivedAmount)}
-                  disabled={
-                    processing ||
-                    invoice.paid ||
-                    !isActiveInvoice ||
-                    actionBusy ||
-                    !receivedAmountSufficient
-                  }
-                  className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60"
-                >
-                  {confirmLabel}
-                </button>
-              )}
-              {method === "VNPAY" && (
-                <div className="w-full flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={onInitiateVnpay}
-                    disabled={processing || actionBusy || vnpayLoading || invoice.paid}
-                    className="w-full h-[52px] bg-[#025cca] rounded-[12px] text-[16px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60"
-                  >
-                    {vnpayLoading
-                      ? "Đang xử lý..."
-                      : invoice.paid
-                        ? "Đã thanh toán"
-                        : "Thanh toán qua VNPAY Sandbox"}
-                  </button>
-                  {/* Escape hatch for a transaction paid at VNPAY whose IPN never reached
-                      this machine: asks VNPAY directly instead of trusting local state. */}
-                  <button
-                    type="button"
-                    onClick={onCheckVnpayStatus}
-                    disabled={processing || actionBusy || vnpayLoading || invoice.paid}
-                    className="w-full h-[38px] rounded-[10px] border border-[#d1d5db] text-[13px] text-[#636566] disabled:opacity-60"
-                  >
-                    Kiểm tra trạng thái VNPAY
-                  </button>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         )}
