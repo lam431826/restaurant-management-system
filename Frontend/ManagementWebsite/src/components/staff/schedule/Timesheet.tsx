@@ -334,7 +334,7 @@ const cardLateEarlyLabel = (c: TimesheetCellDto): string | null => {
 /** Read-only "Đi muộn"/"Về sớm" indicator shown in place of the OT control (BR-AT-09). */
 const LateEarlyBadge = ({ label, minutes }: { label: string; minutes: number }) => (
   <span className={`inline-flex items-center h-9 px-3 rounded-md text-md font-medium ${minutes > 0 ? 'bg-danger-50 text-danger' : 'bg-fill text-ink-subtle'}`}>
-    {label}{minutes > 0 ? `: ${minutes} phút` : ' (trong hạn mức)'}
+    {label}{minutes > 0 ? `: ${fmtOtDuration(minutes)}` : ' (trong hạn mức)'}
   </span>
 )
 
