@@ -29,7 +29,6 @@ public class AttendanceMapper {
 
     public AttendanceSettingResponse toSettingResponse(AttendanceSetting s) {
         return new AttendanceSettingResponse(
-                s.getStandardWorkdayMinutes(),
                 s.isHalfDayEnabled(), s.getHalfDayMinMinutes(), s.getHalfDayMaxMinutes(),
                 s.isLateEnabled(), s.getLateGraceMinutes(),
                 s.isEarlyLeaveEnabled(), s.getEarlyLeaveGraceMinutes(),

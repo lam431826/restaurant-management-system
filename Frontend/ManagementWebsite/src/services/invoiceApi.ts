@@ -22,6 +22,7 @@ export interface InvoiceSummary {
 
 export interface InvoiceItem {
   menuItemId: string
+  menuItemCode: string | null
   menuItemName: string
   quantity: number
   unitPrice: number
@@ -32,6 +33,7 @@ export interface InvoiceItem {
 }
 
 export interface InvoiceDetail extends InvoiceSummary {
+  createdBy: string | null
   promotionCode: string | null
   items: InvoiceItem[]
   splitChildInvoiceIds: string[]

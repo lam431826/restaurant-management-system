@@ -33,6 +33,11 @@ public class AttendanceCalculator {
     private static final BigDecimal HALF = new BigDecimal("0.50");
     private static final BigDecimal FULL = new BigDecimal("1.00");
 
+    /** BR-AT-08 "full day" credit denominator. Used to be a per-restaurant setting
+     * (standardWorkdayMinutes) but nothing in payroll ever consumed the resulting workCredit —
+     * fixed here at its former default so existing behavior/data is unchanged. */
+    private static final int STANDARD_WORKDAY_MINUTES = 480;
+
     public record CalcInput(LocalDate workDate, LocalTime shiftStart, LocalTime shiftEnd,
                             LocalDateTime actualIn, LocalDateTime actualOut,
                             AttendanceSetting settings) {}
@@ -59,7 +64,7 @@ public class AttendanceCalculator {
 
         boolean halfDay = s.isHalfDayEnabled()
                 && worked >= s.getHalfDayMinMinutes() && worked < s.getHalfDayMaxMinutes();
-        BigDecimal credit = halfDay ? HALF : proportionalCredit(worked, s.getStandardWorkdayMinutes());
+        BigDecimal credit = halfDay ? HALF : proportionalCredit(worked, STANDARD_WORKDAY_MINUTES);
 
         // BR-AT-15: on a half-day, OT still counts but late/early do not.
         int late = halfDay ? 0 : beyondGrace(minutesAfter(scheduledStart, in.actualIn()),

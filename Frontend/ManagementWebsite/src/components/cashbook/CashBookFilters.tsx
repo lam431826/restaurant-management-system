@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import DateRangeField from '../transactions/DateRangeField'
 import { Picker } from '../staff/EmployeeModal'
-import { FUND_LABEL } from '../../data/cashBookMockData'
-import type { CashBookFilterState, CashFlowCategory, FundFilter, PartnerScope } from '../../data/cashBookMockData'
+import { FUND_LABEL } from '../../api/cashbook'
+import type { CashBookFilterState, CashFlowCategory, FundFilter, PartnerScope } from '../../api/cashbook'
 
 interface Props {
   categories: CashFlowCategory[]

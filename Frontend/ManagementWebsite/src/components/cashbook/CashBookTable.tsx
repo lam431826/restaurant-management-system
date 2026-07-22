@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 import CashBookDetail from './CashBookDetail'
-import { COLUMN_LABEL, METHOD_LABEL } from '../../data/cashBookMockData'
-import type { CashFlowCategory, CashFlowVoucher, ColumnKey } from '../../data/cashBookMockData'
+import { COLUMN_LABEL, METHOD_LABEL } from '../../api/cashbook'
+import type { CashFlowCategory, CashFlowVoucher, ColumnKey } from '../../api/cashbook'
 
 const money = (value: number) => value.toLocaleString('vi-VN')
 const formatDateTime = (value: string) =>

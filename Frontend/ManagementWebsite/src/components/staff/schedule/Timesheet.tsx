@@ -93,6 +93,11 @@ const cardStyle = (status: TimesheetStatus) => {
   }
 }
 
+/** displayStatus collapses LEAVE_APPROVED/LEAVE_UNAPPROVED into the generic OFF status —
+ * prefer the record's own type label so approved/unapproved leave reads distinctly. */
+const cellStatusLabel = (c: TimesheetCellDto) =>
+  c.record && c.record.type !== 'PRESENT' ? ATTENDANCE_TYPE_LABEL[c.record.type] : TIMESHEET_STATUS_LABEL[c.displayStatus]
+
 /* ─────────────────────────────────────────────────────────────────────────────
  * Chấm công modal — opens when a shift assignment card is clicked.
  * Tabs: "Chấm công", "Lịch sử chấm công" (placeholder) and "Phạt vi phạm".
@@ -161,13 +166,54 @@ const TimePicker = ({ value, onChange, disabled }: { value: string; onChange: (v
   )
 }
 
-const TimeRow = ({ label, on, setOn, time, setTime, right }: { label: string; on: boolean; setOn: (v: boolean) => void; time: string; setTime: (v: string) => void; right?: React.ReactNode }) => (
+/** 'dd/mm/yyyy'-style full weekday label, e.g. "Thứ 3, 21/07/2026" — matches the dropdown option style. */
+const dateOptionLabel = (ymd: string) => {
+  const d = new Date(`${ymd}T00:00:00`)
+  const sh = WEEKDAY_SHORT[d.getDay()]
+  const wd = sh === 'CN' ? 'Chủ nhật' : `Thứ ${sh.slice(1)}`
+  return `${wd}, ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+const nextYMD = (ymd: string) => toYMD(addDays(new Date(`${ymd}T00:00:00`), 1))
+
+/** Pins a Vào/Ra side to the schedule's work date or the day after (overnight shifts). */
+const DateSelect = ({ value, options, onChange, disabled }: { value: string; options: string[]; onChange: (v: string) => void; disabled?: boolean }) => {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+  return (
+    <div ref={ref} className="relative w-[20rem]">
+      <button type="button" disabled={disabled} onClick={() => !disabled && setOpen(o => !o)}
+        className="flex items-center justify-between gap-2 w-full h-10 px-3 bg-card border border-line-default rounded-md text-md text-ink disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer focus:border-primary outline-none">
+        <span className="truncate">{dateOptionLabel(value)}</span>
+        <ChevronDown />
+      </button>
+      {open && !disabled && (
+        <div className="absolute left-0 top-[calc(100%+0.3rem)] w-full bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] py-1">
+          {options.map(o => (
+            <button key={o} type="button" onClick={() => { onChange(o); setOpen(false) }}
+              className={`flex items-center justify-between w-full text-left px-4 py-2 text-md cursor-pointer hover:bg-[var(--kv-state-hover-bg)] ${o === value ? 'text-primary font-semibold bg-primary-25' : 'text-ink'}`}>
+              {dateOptionLabel(o)}
+              {o === value && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0"><polyline points="20 6 9 17 4 12" /></svg>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const TimeRow = ({ label, on, setOn, time, setTime, dateNode, right }: { label: string; on: boolean; setOn: (v: boolean) => void; time: string; setTime: (v: string) => void; dateNode?: React.ReactNode; right?: React.ReactNode }) => (
   <div className="flex items-center gap-6 flex-wrap">
     <label className="w-[8rem] shrink-0 flex items-center gap-2 text-md text-ink cursor-pointer">
       <input type="checkbox" checked={on} onChange={e => setOn(e.target.checked)} className="accent-primary w-4 h-4" />
       {label}
     </label>
     <TimePicker value={time} onChange={setTime} disabled={!on} />
+    {dateNode}
     {right}
   </div>
 )
@@ -193,21 +239,46 @@ const OtField = ({ on, setOn, hours, setHours, minutes, setMinutes, disabled }: 
   </label>
 )
 
+const isValidTime = (t: string) => /^\d{2}:\d{2}$/.test(t)
+const timeToMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+
+/** Scheduled shift end expressed in minutes since the shift's own work-date midnight (BR-AT-09/10 anchor). */
+const shiftEndMinutes = (shiftStart: string, shiftEnd: string) => {
+  const startMin = timeToMin(formatTime(shiftStart))
+  const endMin = timeToMin(formatTime(shiftEnd))
+  return endMin <= startMin ? endMin + 24 * 60 : endMin // overnight shift ends the next day
+}
+
+/**
+ * Whichever of "same day as workDate" (offset 0) / "the day after" (offset 1) — the only two
+ * days the Vào/Ra date picker offers — puts `time` closest to `anchorMin` (minutes since
+ * workDate midnight). Used to auto-follow the date whenever the time is edited, so typing
+ * "00:00" for a shift starting at 23:30 lands on the day after (30p muộn) instead of 23h30
+ * "sooner" on the same day.
+ */
+const closestDayOffset = (time: string, anchorMin: number): 0 | 1 => {
+  const raw = timeToMin(time)
+  return Math.abs(raw + 24 * 60 - anchorMin) < Math.abs(raw - anchorMin) ? 1 : 0
+}
+
 /**
  * Mirrors AttendanceCalculator's OT (BR-AT-10) and late/early (BR-AT-09) math for a live
  * preview before saving. Vào can only be early (→ Làm thêm before shift) or late (→ Đi muộn),
  * never both; Ra can only be late (→ Làm thêm after shift) or early (→ Về sớm) — never both.
+ * in/outDayOffset (0 = the schedule's own work date, 1 = the day after) come from the actual
+ * Vào/Ra date picker, mirroring how the server anchors checkInDate/checkOutDate.
  * (BR-AT-15 half-day suppression of late/early is not mirrored here — it's a preview only,
  * the server always recomputes the authoritative values on save.)
  */
-const computeOtLateEarly = (shiftStart: string, shiftEnd: string, inTime: string, outTime: string, settings: AttendanceSettingsDto) => {
-  const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
-  const shiftStartMin = toMin(formatTime(shiftStart))
-  let shiftEndMin = toMin(formatTime(shiftEnd))
-  if (shiftEndMin <= shiftStartMin) shiftEndMin += 24 * 60 // overnight shift
-  let inMin = toMin(inTime)
-  let outMin = toMin(outTime)
-  if (outMin <= inMin) outMin += 24 * 60 // overnight check-out
+const computeOtLateEarly = (
+  shiftStart: string, shiftEnd: string,
+  inTime: string, inDayOffset: number, outTime: string, outDayOffset: number,
+  settings: AttendanceSettingsDto,
+) => {
+  const shiftStartMin = timeToMin(formatTime(shiftStart))
+  const shiftEndMin = shiftEndMinutes(shiftStart, shiftEnd)
+  const inMin = inDayOffset * 24 * 60 + timeToMin(inTime)
+  const outMin = outDayOffset * 24 * 60 + timeToMin(outTime)
 
   const otBeforeRaw = Math.max(0, shiftStartMin - inMin)
   const otAfterRaw = Math.max(0, outMin - shiftEndMin)
@@ -221,8 +292,6 @@ const computeOtLateEarly = (shiftStart: string, shiftEnd: string, inTime: string
 
   return { otBefore, otAfter, isLate: lateRaw > 0, isEarly: earlyRaw > 0, late, early }
 }
-
-const isValidTime = (t: string) => /^\d{2}:\d{2}$/.test(t)
 
 /** "15p" for minutes-only, "2h" for hours-only, "1h30" when both — matches the app's duration style. */
 const fmtOtDuration = (totalMinutes: number) => {
@@ -244,10 +313,21 @@ const cardOtLabel = (c: TimesheetCellDto, settings: AttendanceSettingsDto | null
   const inTime = c.record.actualCheckIn.slice(11, 16)
   const outTime = c.record.actualCheckOut.slice(11, 16)
   if (!isValidTime(inTime) || !isValidTime(outTime)) return null
-  const { otBefore, otAfter } = computeOtLateEarly(c.shiftStartTime, c.shiftEndTime, inTime, outTime, settings)
+  const inDayOffset = c.record.actualCheckIn.slice(0, 10) === c.workDate ? 0 : 1
+  const outDayOffset = c.record.actualCheckOut.slice(0, 10) === c.workDate ? 0 : 1
+  const { otBefore, otAfter } = computeOtLateEarly(c.shiftStartTime, c.shiftEndTime, inTime, inDayOffset, outTime, outDayOffset, settings)
   const parts: string[] = []
   if (otBefore > 0) parts.push(`Làm thêm TC ${fmtOtDuration(otBefore)}`)
   if (otAfter > 0) parts.push(`Làm thêm SC ${fmtOtDuration(otAfter)}`)
+  return parts.length ? parts.join(', ') : null
+}
+
+/** "Đi muộn 30p, Về sớm 30p" summary for the timesheet card — lateMinutes/earlyLeaveMinutes are already persisted on the record (BR-AT-09), no live recompute needed. */
+const cardLateEarlyLabel = (c: TimesheetCellDto): string | null => {
+  if (!c.record || c.record.type !== 'PRESENT') return null
+  const parts: string[] = []
+  if (c.record.lateMinutes > 0) parts.push(`Đi muộn ${fmtOtDuration(c.record.lateMinutes)}`)
+  if (c.record.earlyLeaveMinutes > 0) parts.push(`Về sớm ${fmtOtDuration(c.record.earlyLeaveMinutes)}`)
   return parts.length ? parts.join(', ') : null
 }
 
@@ -381,10 +461,27 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
     return { in: formatTime(shift?.startTime), out: formatTime(shift?.endTime) }
   }
   const initial = defaultTimes()
+  const shiftStartTime = shift?.startTime ?? cell.shiftStartTime
+  const shiftEndTime = shift?.endTime ?? cell.shiftEndTime
+  // Scheduled start/end expressed in minutes since the work date's midnight (end rolls past
+  // 24h for overnight shifts) — the anchors the Vào/Ra date auto-follows the typed time against.
+  const shiftStartAnchorMin = shiftStartTime ? timeToMin(formatTime(shiftStartTime)) : 0
+  const shiftEndAnchorMin = shiftStartTime && shiftEndTime ? shiftEndMinutes(shiftStartTime, shiftEndTime) : 0
+  /** Work date, unless `time` sits closer to the day after (e.g. "00:00" for a 23:30 shift start). */
+  const autoDate = (time: string, anchorMin: number) =>
+    isValidTime(time) && closestDayOffset(time, anchorMin) === 1 ? nextYMD(cell.workDate) : cell.workDate
+
   const [inOn, setInOn] = useState(true)
   const [outOn, setOutOn] = useState(true)
   const [inTime, setInTime] = useState(initial.in)
   const [outTime, setOutTime] = useState(initial.out)
+  // Which calendar day each side belongs to — an already-saved record keeps its real
+  // persisted date; a fresh mark auto-follows the typed time (see autoDate above).
+  const [inDate, setInDate] = useState(cell.record?.actualCheckIn?.slice(0, 10) ?? autoDate(initial.in, shiftStartAnchorMin))
+  const [outDate, setOutDate] = useState(cell.record?.actualCheckOut?.slice(0, 10) ?? autoDate(initial.out, shiftEndAnchorMin))
+  const dateOptions = [cell.workDate, nextYMD(cell.workDate)]
+  const handleInTimeChange = (t: string) => { setInTime(t); setInDate(autoDate(t, shiftStartAnchorMin)) }
+  const handleOutTimeChange = (t: string) => { setOutTime(t); setOutDate(autoDate(t, shiftEndAnchorMin)) }
   const [substitute, setSubstitute] = useState(cell.substituteEmployeeId ?? '')
   const subOptions = employees.filter(e => e.id !== cell.employeeId)
 
@@ -403,15 +500,16 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
   const [earlyMinutes, setEarlyMinutes] = useState(0)
 
   useEffect(() => {
-    const shiftStart = shift?.startTime ?? cell.shiftStartTime
-    const shiftEnd = shift?.endTime ?? cell.shiftEndTime
-    if (mark !== 'work' || !settings || !shiftStart || !shiftEnd || !isValidTime(inTime) || !isValidTime(outTime)) return
-    const { otBefore, otAfter, isLate, isEarly, late, early } = computeOtLateEarly(shiftStart, shiftEnd, inTime, outTime, settings)
+    if (mark !== 'work' || !settings || !shiftStartTime || !shiftEndTime || !isValidTime(inTime) || !isValidTime(outTime)) return
+    const inDayOffset = inDate === cell.workDate ? 0 : 1
+    const outDayOffset = outDate === cell.workDate ? 0 : 1
+    const { otBefore, otAfter, isLate, isEarly, late, early } =
+      computeOtLateEarly(shiftStartTime, shiftEndTime, inTime, inDayOffset, outTime, outDayOffset, settings)
     setOtBeforeOn(otBefore > 0); setOtBeforeH(Math.floor(otBefore / 60)); setOtBeforeM(otBefore % 60)
     setOtAfterOn(otAfter > 0); setOtAfterH(Math.floor(otAfter / 60)); setOtAfterM(otAfter % 60)
     setInIsLate(isLate); setOutIsEarly(isEarly)
     setLateMinutes(late); setEarlyMinutes(early)
-  }, [mark, inTime, outTime, shift, settings, cell.shiftStartTime, cell.shiftEndTime])
+  }, [mark, inTime, outTime, inDate, outDate, shiftStartTime, shiftEndTime, settings, cell.workDate])
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -442,7 +540,9 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
       const type: AttendanceType = mark === 'work' ? 'PRESENT' : mark === 'paid' ? 'LEAVE_APPROVED' : 'LEAVE_UNAPPROVED'
       const res = await upsertRecord(cell.scheduleId, {
         type,
+        checkInDate: mark === 'work' && inOn && inTime ? inDate : null,
         checkInTime: mark === 'work' && inOn && inTime ? `${inTime}:00` : null,
+        checkOutDate: mark === 'work' && outOn && outTime ? outDate : null,
         checkOutTime: mark === 'work' && outOn && outTime ? `${outTime}:00` : null,
         substituteEmployeeId: mark !== 'work' && substitute ? substitute : null,
         note: note.trim() || null,
@@ -475,7 +575,7 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
   return (
     <>
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4" onMouseDown={onClose}>
-      <div className="bg-card rounded-xl shadow-2xl w-full max-w-[760px] flex flex-col max-h-[92vh]" onMouseDown={e => e.stopPropagation()}>
+      <div className="bg-card rounded-xl shadow-2xl w-full max-w-[900px] flex flex-col max-h-[92vh]" onMouseDown={e => e.stopPropagation()}>
         {/* header */}
         <div className="flex items-start justify-between px-6 pt-5 pb-3">
           <div>
@@ -484,7 +584,7 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
               <span className="text-ink">{cell.employeeName}</span>
               <span className="text-line-strong">|</span>
               <span className="text-ink-subtle">{cell.employeeCode}</span>
-              <span className="ml-1 px-2 py-0.5 rounded bg-fill text-ink-subtle text-sm">{TIMESHEET_STATUS_LABEL[cell.displayStatus]}</span>
+              <span className="ml-1 px-2 py-0.5 rounded bg-fill text-ink-subtle text-sm">{cellStatusLabel(cell)}</span>
             </div>
           </div>
           <button onClick={onClose} aria-label="Đóng" className="w-8 h-8 flex items-center justify-center rounded-full text-ink-muted hover:bg-fill hover:text-ink cursor-pointer"><CloseIcon /></button>
@@ -528,12 +628,14 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
               </div>
               {mark === 'work' && (
                 <>
-                  <TimeRow label="Vào" on={inOn} setOn={setInOn} time={inTime} setTime={setInTime}
+                  <TimeRow label="Vào" on={inOn} setOn={setInOn} time={inTime} setTime={handleInTimeChange}
+                    dateNode={<DateSelect value={inDate} options={dateOptions} onChange={setInDate} disabled={!inOn} />}
                     right={!inOn ? undefined : inIsLate
                       ? <LateEarlyBadge label="Đi muộn" minutes={lateMinutes} />
                       : <OtField on={otBeforeOn} setOn={setOtBeforeOn} hours={otBeforeH} setHours={setOtBeforeH}
                           minutes={otBeforeM} setMinutes={setOtBeforeM} />} />
-                  <TimeRow label="Ra" on={outOn} setOn={setOutOn} time={outTime} setTime={setOutTime}
+                  <TimeRow label="Ra" on={outOn} setOn={setOutOn} time={outTime} setTime={handleOutTimeChange}
+                    dateNode={<DateSelect value={outDate} options={dateOptions} onChange={setOutDate} disabled={!outOn} />}
                     right={!outOn ? undefined : outIsEarly
                       ? <LateEarlyBadge label="Về sớm" minutes={earlyMinutes} />
                       : <OtField on={otAfterOn} setOn={setOtAfterOn} hours={otAfterH} setHours={setOtAfterH}
@@ -563,7 +665,7 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
               {cell.record ? (
                 <div className="grid grid-cols-4 px-4 py-3 text-md text-ink border-b border-line">
                   <span>{cell.record.actualCheckIn ? `${cell.record.actualCheckIn.slice(11, 16)} - ${cell.record.actualCheckOut?.slice(11, 16) ?? '--'}` : '-'}</span>
-                  <span>{TIMESHEET_STATUS_LABEL[cell.displayStatus]}</span>
+                  <span>{cellStatusLabel(cell)}</span>
                   <span>{ATTENDANCE_TYPE_LABEL[cell.record.type]}</span>
                   <span>{[cell.record.note, ...(cell.violations ?? []).map(v => `${v.violationTypeName} x${v.count}`)].filter(Boolean).join(', ') || '-'}</span>
                 </div>
@@ -588,8 +690,8 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
                   <div key={row.id} className="grid grid-cols-[1fr_5rem_11rem_7rem_2.5rem] gap-3 items-center px-4 py-3">
                     <ViolationSelect value={row.typeId} types={vioTypes}
                       onSelect={id => setVioRow(row.id, { typeId: id, appliedPenalty: null })} onAddType={() => setAddTypeForRow(row.id)} />
-                    <input type="text" inputMode="numeric" value={row.count}
-                      onChange={e => setVioRow(row.id, { count: Math.max(1, parseInt(e.target.value.replace(/[^\d]/g, '') || '1', 10)) })}
+                    <input type="text" inputMode="numeric" maxLength={2} value={row.count}
+                      onChange={e => setVioRow(row.id, { count: Math.min(99, Math.max(1, parseInt(e.target.value.replace(/[^\d]/g, '') || '1', 10))) })}
                       className="h-10 w-full text-center bg-card border border-line-default rounded-md text-md text-ink focus:border-primary outline-none" />
                     <input type="text" inputMode="numeric" value={fmtMoney(amount)}
                       onChange={e => setVioRow(row.id, { appliedPenalty: parseInt(e.target.value.replace(/[^\d]/g, '') || '0', 10) })}
@@ -828,6 +930,7 @@ const Timesheet = () => {
   /* ── employee card (week / month cell) ──────────────────────────────────── */
   const WeekCard = ({ c }: { c: TimesheetCellDto }) => {
     const otLabel = cardOtLabel(c, settings)
+    const lateEarlyLabel = cardLateEarlyLabel(c)
     return (
       <button type="button" onClick={e => { e.stopPropagation(); setAttnCell(c) }}
         className={`block w-full rounded-md px-3 py-2 text-left cursor-pointer transition-shadow hover:ring-1 hover:ring-primary/50 ${cardStyle(c.displayStatus)}`}>
@@ -835,9 +938,13 @@ const Timesheet = () => {
         {c.displayStatus === 'UNMARKED' && (
           <div className="text-sm mt-1">Chưa chấm công</div>
         )}
+        {c.record && c.record.type !== 'PRESENT' && (
+          <div className="text-sm mt-1">{ATTENDANCE_TYPE_LABEL[c.record.type]}</div>
+        )}
         {c.record && c.record.type === 'PRESENT' && (c.record.actualCheckIn || c.record.actualCheckOut) && (
           <div className="text-sm mt-1 text-ink-subtle">{c.record.actualCheckIn?.slice(11, 16) ?? '--'} - {c.record.actualCheckOut?.slice(11, 16) ?? '--'}</div>
         )}
+        {lateEarlyLabel && <div className="text-sm mt-0.5 text-primary font-medium">{lateEarlyLabel}</div>}
         {otLabel && <div className="text-sm mt-0.5 text-primary font-medium">{otLabel}</div>}
         {(c.violations ?? []).map(v => (
           <div key={v.id} className="text-sm mt-0.5 text-primary font-medium">{v.violationTypeName} {v.count}</div>
@@ -849,13 +956,15 @@ const Timesheet = () => {
   /* ── employee card (day view — richer) ──────────────────────────────────── */
   const DayCard = ({ c }: { c: TimesheetCellDto }) => {
     const otLabel = cardOtLabel(c, settings)
+    const lateEarlyLabel = cardLateEarlyLabel(c)
     return (
       <button type="button" onClick={e => { e.stopPropagation(); setAttnCell(c) }}
         className={`block rounded-md px-4 py-3 w-[22rem] max-w-full text-left cursor-pointer transition-shadow hover:ring-1 hover:ring-primary/50 ${cardStyle(c.displayStatus)}`}>
         <div className="text-md font-semibold text-ink mb-2">{c.employeeName}</div>
         <div className="flex items-center gap-2 text-sm mb-1"><CalIcon /> {c.record?.actualCheckIn?.slice(11, 16) ?? '--'} - {c.record?.actualCheckOut?.slice(11, 16) ?? '--'}</div>
         <div className="flex items-center gap-2 text-sm mb-1"><ClockIcon /> {c.record ? `${c.record.workedMinutes}p` : '--'}</div>
-        <div className="flex items-center gap-2 text-sm"><NoteIcon /> {TIMESHEET_STATUS_LABEL[c.displayStatus]}</div>
+        <div className="flex items-center gap-2 text-sm"><NoteIcon /> {cellStatusLabel(c)}</div>
+        {lateEarlyLabel && <div className="text-sm mt-1 text-primary font-medium">{lateEarlyLabel}</div>}
         {otLabel && <div className="text-sm mt-1 text-primary font-medium">{otLabel}</div>}
         {(c.violations ?? []).map(v => (
           <div key={v.id} className="text-sm mt-1 text-primary font-medium">{v.violationTypeName} {v.count}</div>
@@ -1130,7 +1239,8 @@ const Timesheet = () => {
                     {monthDays.map(d => {
                       const c = cells.find(x => x.employeeId === emp.id && x.shiftId === s.id && x.workDate === toYMD(d))
                       return (
-                        <td key={toYMD(d)} className="px-0 py-3 border-l border-line text-center align-middle">
+                        <td key={toYMD(d)} onClick={() => c ? setAttnCell(c) : openSchedule(s, d)}
+                          className="px-0 py-3 border-l border-line text-center align-middle cursor-pointer hover:bg-success-50/40 transition-colors">
                           {c && (
                             <span className="inline-block w-2 h-2 rounded-full" style={{ background: TIMESHEET_STATUS_COLOR[c.displayStatus] }} />
                           )}

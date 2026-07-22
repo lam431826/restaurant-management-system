@@ -51,6 +51,9 @@ public class Invoice {
     @Column(name = "split_from_invoice_id", length = 36)
     private String splitFromInvoiceId;
 
+    @Column(name = "created_by", length = 150)
+    private String createdBy;
+
     @CreatedDate
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

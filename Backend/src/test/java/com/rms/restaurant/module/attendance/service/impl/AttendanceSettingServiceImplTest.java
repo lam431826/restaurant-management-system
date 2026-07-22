@@ -38,14 +38,13 @@ class AttendanceSettingServiceImplTest {
     }
 
     private AttendanceSettingRequest request(int halfMin, int halfMax, boolean halfEnabled) {
-        return new AttendanceSettingRequest(480, halfEnabled, halfMin, halfMax,
+        return new AttendanceSettingRequest(halfEnabled, halfMin, halfMax,
                 true, 15, true, 15, true, 30, true, 30, true, 3, 60, ManualTimeMode.SHIFT_TIME);
     }
 
     @Test
     void getReturnsSeededSingleton() {
         AttendanceSettingResponse response = service.get();
-        assertThat(response.standardWorkdayMinutes()).isEqualTo(480);
         assertThat(response.manualDefaultTimeMode()).isEqualTo(ManualTimeMode.SHIFT_TIME);
     }
 

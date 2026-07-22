@@ -138,7 +138,8 @@ public class AttendanceServiceImpl implements AttendanceService {
         WorkSchedule schedule = requireSchedule(scheduleId);
         applySubstitute(schedule, request.substituteEmployeeId(), request.type());
         AttendanceRecord saved = mark(schedule, request.type(),
-                request.checkInTime(), request.checkOutTime(), request.note(), false, username,
+                request.checkInDate(), request.checkInTime(), request.checkOutDate(), request.checkOutTime(),
+                request.note(), false, username,
                 request.otBeforeMinutes(), request.otAfterMinutes());
         return mapper.toRecordResponse(saved);
     }
@@ -158,7 +159,8 @@ public class AttendanceServiceImpl implements AttendanceService {
         for (WorkSchedule schedule : schedules) {
             applySubstitute(schedule, request.substituteEmployeeId(), request.type());
             results.add(mapper.toRecordResponse(mark(schedule, request.type(),
-                    request.checkInTime(), request.checkOutTime(), request.note(), false, username, null, null)));
+                    null, request.checkInTime(), null, request.checkOutTime(),
+                    request.note(), false, username, null, null)));
         }
         return results;
     }
@@ -206,26 +208,40 @@ public class AttendanceServiceImpl implements AttendanceService {
         return results;
     }
 
-    /** Anchors HH:mm times to the schedule's work date and persists the computed record. */
+    /**
+     * Anchors HH:mm times to a calendar date and persists the computed record. checkInDate/
+     * checkOutDate, when supplied, pin that side to an explicit day (must be the schedule's
+     * work date or the day after — UI only ever offers those two); when null, falls back to
+     * the legacy heuristic (check-in on the work date, check-out rolled to the next day only
+     * if its time isn't after check-in's).
+     */
     private AttendanceRecord mark(WorkSchedule schedule, AttendanceType type,
-                                  LocalTime checkInTime, LocalTime checkOutTime,
+                                  LocalDate checkInDate, LocalTime checkInTime,
+                                  LocalDate checkOutDate, LocalTime checkOutTime,
                                   String note, boolean autoFilled, String username,
                                   Integer otBeforeOverride, Integer otAfterOverride) {
         AttendanceSetting settings = settingService.current();
         WorkShift shift = shiftRepository.findById(schedule.getShiftId())
                 .orElseThrow(() -> new ApplicationException(ApplicationError.AT_SHIFT_NOT_FOUND));
+        requireWithinRange(checkInDate, schedule);
+        requireWithinRange(checkOutDate, schedule);
         LocalDateTime in = null;
         LocalDateTime out = null;
         if (type == AttendanceType.PRESENT) {
-            in = checkInTime == null ? null : schedule.getWorkDate().atTime(checkInTime);
+            LocalDate inDate = checkInDate != null ? checkInDate : schedule.getWorkDate();
+            in = checkInTime == null ? null : inDate.atTime(checkInTime);
             if (checkOutTime != null) {
-                if (checkInTime != null && !checkOutTime.isAfter(checkInTime)) {
-                    if (checkOutTime.equals(checkInTime)) {
-                        throw new ApplicationException(ApplicationError.AT_RECORD_TIME_INVALID);
-                    }
-                    out = schedule.getWorkDate().plusDays(1).atTime(checkOutTime); // overnight
+                LocalDate outDate;
+                if (checkOutDate != null) {
+                    outDate = checkOutDate;
+                } else if (checkInTime != null && !checkOutTime.isAfter(checkInTime)) {
+                    outDate = schedule.getWorkDate().plusDays(1); // legacy overnight heuristic
                 } else {
-                    out = schedule.getWorkDate().atTime(checkOutTime);
+                    outDate = schedule.getWorkDate();
+                }
+                out = outDate.atTime(checkOutTime);
+                if (in != null && !out.isAfter(in)) {
+                    throw new ApplicationException(ApplicationError.AT_RECORD_TIME_INVALID);
                 }
             }
         }
@@ -233,6 +249,14 @@ public class AttendanceServiceImpl implements AttendanceService {
                 : Math.max(0, otBeforeOverride != null ? otBeforeOverride : 0)
                         + Math.max(0, otAfterOverride != null ? otAfterOverride : 0);
         return saveComputed(schedule, shift, type, in, out, note, autoFilled, username, settings, otOverride);
+    }
+
+    /** UI only ever offers the schedule's work date or the following day for either side. */
+    private void requireWithinRange(LocalDate date, WorkSchedule schedule) {
+        if (date == null) return;
+        if (date.isBefore(schedule.getWorkDate()) || date.isAfter(schedule.getWorkDate().plusDays(1))) {
+            throw new ApplicationException(ApplicationError.AT_RECORD_DATE_INVALID);
+        }
     }
 
     private AttendanceRecord saveComputed(WorkSchedule schedule, WorkShift shift, AttendanceType type,

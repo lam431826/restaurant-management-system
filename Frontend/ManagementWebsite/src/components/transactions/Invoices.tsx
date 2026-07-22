@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import InvoiceFilters from "./InvoiceFilters";
 import type { FilterState } from "./InvoiceFilters";
 import InvoiceTable from "./InvoiceTable";
@@ -59,6 +60,10 @@ const getInvoiceListErrorMessage = (error: unknown): string => {
 };
 
 const Invoices = () => {
+  // Deep link from Sổ quỹ ("nhảy vào hóa đơn" on an auto-generated receipt voucher) —
+  // see SourceInvoicePanel in cashbook/CashBookDetail.tsx.
+  const [searchParams] = useSearchParams();
+  const deepLinkInvoiceId = searchParams.get("invoiceId");
   const [tab, setTab] = useState<InvoiceViewTab>("operational");
   const [filters, setFilters] = useState<FilterState>(initialFilters);
   const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
@@ -190,6 +195,7 @@ const Invoices = () => {
           loading={loading}
           tab={tab}
           refreshVersion={refreshVersion}
+          deepLinkInvoiceId={deepLinkInvoiceId}
         />
       </section>
     </div>

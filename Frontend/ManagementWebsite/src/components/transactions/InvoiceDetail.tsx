@@ -294,6 +294,10 @@ const InvoiceDetail = ({
           </div>
         </div>
         <div>
+          <div className="text-sm text-ink-muted">Người tạo</div>
+          <div className="text-md text-ink mt-1">{invoice.createdBy ?? '—'}</div>
+        </div>
+        <div>
           <div className="text-sm text-ink-muted">Vòng đời</div>
           <span
             className={`kv-badge mt-1 ${getLifecycleBadgeClass(invoice.status)}`}
@@ -395,7 +399,7 @@ const InvoiceDetail = ({
                   className={`${td} text-primary font-mono whitespace-nowrap`}
                   title={item.menuItemId}
                 >
-                  {formatShortCode(item.menuItemId)}
+                  {item.menuItemCode ?? formatShortCode(item.menuItemId)}
                 </td>
                 <td className={td}>{item.menuItemName}</td>
                 <td className={`${td} text-right`}>{item.quantity}</td>

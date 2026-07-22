@@ -3,6 +3,7 @@ package com.rms.restaurant.module.payroll.service.impl;
 import com.rms.restaurant.common.utils.enums.*;
 import com.rms.restaurant.module.attendance.dto.AttendanceForPayroll;
 import com.rms.restaurant.module.attendance.service.AttendanceService;
+import com.rms.restaurant.module.cashbook.service.CashbookService;
 import com.rms.restaurant.module.employee.model.Employee;
 import com.rms.restaurant.module.employee.model.SalarySetting;
 import com.rms.restaurant.module.employee.repository.EmployeeRepository;
@@ -48,6 +49,7 @@ class PayrollServiceImplTest {
     @Mock private AttendanceService attendanceService;
     @Mock private SalaryCalculator salaryCalculator;
     @Mock private PayrollMapper mapper;
+    @Mock private CashbookService cashbookService;
 
     private PayrollServiceImpl service;
 
@@ -60,7 +62,8 @@ class PayrollServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new PayrollServiceImpl(sheetRepository, payslipRepository, paymentRepository,
-                employeeRepository, salarySettingRepository, attendanceService, salaryCalculator, mapper);
+                employeeRepository, salarySettingRepository, attendanceService, salaryCalculator, mapper,
+                cashbookService);
         lenient().when(sheetRepository.save(any(PayrollSheet.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(sheetRepository.findMaxCode()).thenReturn(Optional.empty());
         lenient().when(payslipRepository.findMaxCode()).thenReturn(Optional.empty());

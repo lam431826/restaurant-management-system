@@ -51,7 +51,7 @@ public class OrderController {
     public ResponseEntity<OrderResponse> createOrder(
             @Valid @RequestBody com.rms.restaurant.module.order.dto.CreateOrderRequest request,
             @AuthenticationPrincipal UserDetails principal) {
-        return ResponseEntity.ok(orderService.create(request));
+        return ResponseEntity.ok(orderService.create(request, principal.getUsername()));
     }
 
     /** Customer contact for the receipt and the invoice email. Descriptive data only. */

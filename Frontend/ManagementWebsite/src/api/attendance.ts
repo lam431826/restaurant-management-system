@@ -85,7 +85,6 @@ export interface TimesheetCellDto {
 }
 
 export interface AttendanceSettingsDto {
-  standardWorkdayMinutes: number
   halfDayEnabled: boolean
   halfDayMinMinutes: number
   halfDayMaxMinutes: number
@@ -156,7 +155,10 @@ export interface ScheduleCreatePayload {
 
 export interface AttendanceUpsertPayload {
   type: AttendanceType
+  /** 'YYYY-MM-DD'; pins that side to the schedule's work date or the day after. Omit/null falls back to the server's legacy overnight heuristic. */
+  checkInDate?: string | null
   checkInTime?: string | null
+  checkOutDate?: string | null
   checkOutTime?: string | null
   substituteEmployeeId?: string | null
   note?: string | null

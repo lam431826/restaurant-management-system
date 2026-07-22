@@ -19,6 +19,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -91,21 +93,25 @@ public class InvoiceController {
     @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
     public ResponseEntity<ApiResponse<SplitInvoiceResponse>> split(
             @PathVariable String invoiceId,
-            @Valid @RequestBody SplitInvoiceRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(invoiceService.split(invoiceId, request)));
+            @Valid @RequestBody SplitInvoiceRequest request,
+            @AuthenticationPrincipal UserDetails principal) {
+        return ResponseEntity.ok(ApiResponse.success(invoiceService.split(invoiceId, request, principal.getUsername())));
     }
 
     @PostMapping("/merge")
     @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
     public ResponseEntity<ApiResponse<MergeInvoiceResponse>> merge(
-            @Valid @RequestBody MergeInvoiceRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(invoiceService.merge(request)));
+            @Valid @RequestBody MergeInvoiceRequest request,
+            @AuthenticationPrincipal UserDetails principal) {
+        return ResponseEntity.ok(ApiResponse.success(invoiceService.merge(request, principal.getUsername())));
     }
 
     @PostMapping
     @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<InvoiceResponse>> generate(@Valid @RequestBody GenerateInvoiceRequest request) {
-        InvoiceResponse created = invoiceService.generate(request);
+    public ResponseEntity<ApiResponse<InvoiceResponse>> generate(
+            @Valid @RequestBody GenerateInvoiceRequest request,
+            @AuthenticationPrincipal UserDetails principal) {
+        InvoiceResponse created = invoiceService.generate(request, principal.getUsername());
         return ResponseEntity
                 .created(URI.create("/api/invoices/" + created.id()))
                 .body(ApiResponse.success(created));

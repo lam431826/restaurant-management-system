@@ -519,14 +519,6 @@ export const promoLinks = [
   { id: 3, title: 'Vay vốn',            subtitle: 'Giải ngân tới 1 tỷ đồng chỉ trong 24H', icon: 'loan' },
 ];
 
-export const helpLinks = [
-  { label: 'Hướng dẫn sử dụng', icon: 'question', href: 'https://kiotviet.vn/ho-tro/?type=fnb' },
-  { label: 'TeamViewer', icon: 'teamview', img: '/assets/teamview.svg', href: 'https://get.teamviewer.com/kiotviet18006162' },
-  { label: 'UltraViewer', icon: 'ultra', img: '/assets/ultra.svg', href: '#' },
-  { label: 'AnyDesk', icon: 'any', img: '/assets/any.svg', href: 'https://download.anydesk.com/AnyDesk.exe' },
-  { label: 'Cài Driver cho phần cứng', icon: 'driver', img: '/assets/driver-install.svg', href: '#' },
-];
-
 export const cashierModes = [
   { id: 12, label: 'Lễ tân', icon: 'ik-calendar-day' },
 ];
@@ -546,9 +538,6 @@ export const navItems = [
     label: 'Thực đơn',
     children: [
       { label: 'Món', href: '#/manager/products' },
-      { label: 'Ghi chú món (Tùy chọn)', href: '#' },
-      { divider: true },
-      { label: 'Thiết lập giá', href: '#' },
     ],
   },
   {
@@ -556,7 +545,6 @@ export const navItems = [
     label: 'Phòng/Bàn',
     children: [
       { label: 'Danh sách phòng bàn', href: '#/manager/rooms' },
-      { label: 'Gọi món qua mã QR', href: '#' },
     ],
   },
   {
@@ -565,7 +553,6 @@ export const navItems = [
     children: [
       { label: 'Hóa đơn', href: '#/manager/invoices' },
       { label: 'Khuyến mãi', href: '#/manager/promotions' },
-      { label: 'Trả hàng', href: '#' },
     ],
   },
   {
@@ -577,8 +564,6 @@ export const navItems = [
       { label: 'Lịch làm việc', href: '#/manager/schedule' },
       { label: 'Bảng chấm công', href: '#/manager/timesheet' },
       { label: 'Bảng lương', href: '#/manager/payroll' },
-      { label: 'Bảng hoa hồng', href: '#' },
-      { label: 'Thiết lập nhân viên', href: '#/manager/employee-settings' },
     ],
   },
   {
@@ -592,12 +577,6 @@ export const navItems = [
     label: 'Báo cáo',
     children: [
       { label: 'Cuối ngày', href: '#/manager/reports/daily-summary' },
-      { label: 'Đối soát ca thu ngân', href: '#/manager/reports/shift-reconciliation' },
-      { label: 'Bán hàng', href: '#' },
-      { label: 'Hàng hóa', href: '#' },
-      { label: 'Khách hàng', href: '#' },
-      { label: 'Nhà cung cấp', href: '#' },
-      { label: 'Kênh bán hàng', href: '#' },
       { label: 'Tài chính', href: '#/manager/reports/financial' },
     ],
   },
