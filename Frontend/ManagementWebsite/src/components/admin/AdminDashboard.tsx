@@ -7,6 +7,7 @@ import {
   type UserDto,
 } from '../../api/users'
 import ChangePasswordModal from '../auth/ChangePasswordModal'
+import { SwitchScreenIcon } from '../cashier/orders/icons'
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 const STATUS_LABEL: Record<string, string> = {
@@ -163,6 +164,7 @@ const Toast = ({ msg, type, onDismiss }: { msg: string; type: 'success' | 'error
 /* ── Header ───────────────────────────────────────────────────────────────── */
 const AdminHeader = ({ onLogout, onChangePassword }: { onLogout: () => void; onChangePassword: () => void }) => {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -172,16 +174,16 @@ const AdminHeader = ({ onLogout, onChangePassword }: { onLogout: () => void; onC
   }, [])
   const initials = (user?.fullName ?? user?.username ?? 'A').split(' ').map((w: string) => w[0]).slice(-2).join('').toUpperCase()
   return (
-    <header className="bg-white border-b border-[#e8e8e8] flex items-center justify-between px-6 h-[64px] shrink-0">
+    <header className="bg-white border-b border-[#e8e8e8] flex items-center justify-between px-6 h-[64px] shrink-0 z-[50]">
       <div className="flex items-center gap-4">
-        <img src="/images/wasabi-logo.svg" alt="Wasabi" className="h-10 w-auto" />
+        <img src="/images/wasabi-logo.svg" alt="Wasabi" className="h-12 w-auto" />
         <div className="h-6 w-px bg-[#e8e8e8]" />
         <span className="text-[15px] font-semibold text-[#202325]">Quản trị hệ thống</span>
       </div>
       <div className="flex items-center gap-3">
         <div className="relative" ref={ref}>
           <button onClick={() => setOpen(v => !v)} className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-full bg-red-500 flex items-center justify-center text-white text-[13px] font-semibold">{initials}</div>
+            <div className="w-9 h-9 rounded-full bg-[#5B8FE8] flex items-center justify-center text-white text-[13px] font-semibold">{initials}</div>
             <div className="flex flex-col items-start leading-tight text-left">
               <span className="text-[14px] font-medium text-[#202325]">{user?.fullName ?? user?.username}</span>
               <span className="text-[12px] text-[#636566]">Quản trị viên</span>
@@ -189,21 +191,27 @@ const AdminHeader = ({ onLogout, onChangePassword }: { onLogout: () => void; onC
             <ChevronDownIcon cls={`w-4 h-4 text-[#797b7c] transition-transform ${open ? 'rotate-180' : ''}`} />
           </button>
           {open && (
-            <div className="absolute right-0 top-full mt-2 bg-white border border-[#e8e8e8] rounded-[12px] shadow-lg w-[190px] py-1 z-50">
+            <div className="absolute right-0 top-full mt-2 bg-white border border-[#e8e8e8] rounded-[12px] shadow-lg w-[200px] py-1 z-50">
               <div className="px-4 py-2 border-b border-[#e8e8e8]">
-                <p className="text-[13px] font-semibold text-[#202325] truncate">{user?.fullName ?? user?.username}</p>
+                <p className="text-[14px] font-semibold text-[#202325] truncate">{user?.fullName ?? user?.username}</p>
                 <p className="text-[12px] text-[#636566]">Quản trị viên</p>
               </div>
+              <button onClick={() => { setOpen(false); navigate('/my-profile') }}
+                className="flex items-center gap-2 w-full px-4 py-2.5 text-[14px] text-[#202325] hover:bg-[#f5f5f5] transition-colors">
+                <SwitchScreenIcon />
+                Hồ sơ của tôi
+              </button>
+              <div className="h-px bg-[#e8e8e8] mx-2" />
               <button onClick={() => { setOpen(false); onChangePassword() }}
-                className="flex items-center gap-2 w-full px-4 py-2.5 text-[13px] text-[#202325] hover:bg-[#f5f5f5] transition-colors">
+                className="flex items-center gap-2 w-full px-4 py-2.5 text-[14px] text-[#202325] hover:bg-[#f5f5f5] transition-colors">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
                 </svg>
                 Đổi mật khẩu
               </button>
-              <div className="h-px bg-[#e8e8e8] my-1" />
+              <div className="h-px bg-[#e8e8e8] mx-2" />
               <button onClick={() => { setOpen(false); onLogout() }}
-                className="flex items-center gap-2 w-full px-4 py-2.5 text-[13px] text-red-500 hover:bg-red-50 transition-colors">
+                className="flex items-center gap-2 w-full px-4 py-2.5 text-[14px] text-red-500 hover:bg-red-50 transition-colors">
                 <LogoutIcon />Đăng xuất
               </button>
             </div>

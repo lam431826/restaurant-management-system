@@ -6,7 +6,8 @@ import type { MyEmployeeProfileDto } from '../../api/employees'
 import { inputCls, Field, SectionCard } from './EmployeeModal'
 
 const defaultRouteForRole = (role?: string) => {
-  if (role === 'MANAGER' || role === 'ADMIN') return '/manager/dashboard'
+  if (role === 'ADMIN') return '/admin'
+  if (role === 'MANAGER') return '/manager/dashboard'
   if (role === 'CASHIER') return '/cashier'
   return '/waiter'
 }

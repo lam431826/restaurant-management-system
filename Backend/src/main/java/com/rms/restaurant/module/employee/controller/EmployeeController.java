@@ -49,7 +49,7 @@ public class EmployeeController {
     // MANAGER/ADMIN restriction; Spring Security resolves the nearest annotation, method wins. ──
 
     @GetMapping("/me")
-    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER')")
+    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER','ADMIN')")
     public ResponseEntity<ApiResponse<EmployeeResponse>> getMyProfile(@AuthenticationPrincipal UserDetails principal) {
         return ResponseEntity.ok(ApiResponse.success(employeeService.getMyProfile(principal.getUsername())));
     }
@@ -58,7 +58,7 @@ public class EmployeeController {
     // client's perspective, only its persisted-or-not state differs server-side — a POST/PUT
     // split would just push that branch onto the frontend for no real benefit.
     @PostMapping("/me")
-    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER')")
+    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER','ADMIN')")
     public ResponseEntity<ApiResponse<EmployeeResponse>> saveMyProfile(
             @AuthenticationPrincipal UserDetails principal,
             @Valid @RequestBody SelfEmployeeProfileRequest request) {

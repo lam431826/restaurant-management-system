@@ -11,6 +11,7 @@ import com.rms.restaurant.common.utils.mail.GmailService;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
+import com.rms.restaurant.module.employee.repository.EmployeeRepository;
 import com.rms.restaurant.module.user.dto.CreateUserRequest;
 import com.rms.restaurant.module.user.dto.CreateUserResponse;
 import com.rms.restaurant.module.user.dto.UpdateUserRequest;
@@ -45,6 +46,7 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final GmailService gmailService;
     private final AuditService auditService;
+    private final EmployeeRepository employeeRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Override
@@ -144,11 +146,45 @@ public class UserServiceImpl implements UserService {
         }
 
         User saved = userRepository.save(user);
+        syncLinkedEmployee(saved, request);
         try {
             auditService.log("USER_UPDATE", "User", saved.getId(),
                     "{\"username\":\"" + saved.getUsername() + "\",\"role\":\"" + saved.getRole() + "\",\"status\":\"" + saved.getStatus() + "\"}");
         } catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
         return userProfileMapper.toResponse(saved);
+    }
+
+    /**
+     * Employee is decoupled from User (employees.user_id is an optional 0..1 FK — see
+     * CLAUDE.md), so the two rows can drift out of sync unless something keeps them aligned.
+     * EmployeeServiceImpl.syncUserProfile() already does this in the other direction for the
+     * self-service "my profile" flow; this mirrors it for the admin-edit path. Only touches an
+     * ALREADY-linked Employee — never creates one, since editing an existing account isn't the
+     * same action as onboarding a new employee (that's the separate "Thêm nhân viên mới" flow).
+     * Partial-update discipline matches updateUser() above: a blank/omitted field must not
+     * blank out the employee's existing value.
+     */
+    private void syncLinkedEmployee(User user, UpdateUserRequest request) {
+        if (!StringUtils.hasText(request.fullName())
+                && !StringUtils.hasText(request.email())
+                && !StringUtils.hasText(request.phone())) {
+            return;
+        }
+        employeeRepository.findByUserId(user.getId()).ifPresent(employee -> {
+            if (StringUtils.hasText(request.fullName())) {
+                employee.setName(request.fullName());
+            }
+            if (StringUtils.hasText(request.phone()) && !request.phone().equals(employee.getPhone())) {
+                if (employeeRepository.existsByPhoneAndIdNot(request.phone(), employee.getId())) {
+                    throw new ConflictException(ApplicationError.DUPLICATE_EMPLOYEE_PHONE);
+                }
+                employee.setPhone(request.phone());
+            }
+            if (StringUtils.hasText(request.email())) {
+                employee.setEmail(request.email());
+            }
+            employeeRepository.save(employee);
+        });
     }
 
     @Override
