@@ -45,9 +45,6 @@ export const cancelReservation = (id: string) =>
 export const checkInReservation = (id: string) =>
   apiClient.put<{ data: ReservationDto }>(`/reservations/${id}/check-in`)
 
-export const noShowReservation = (id: string) =>
-  apiClient.put(`/reservations/${id}/no-show`)
-
 export const updateReservation = (id: string, body: {
   tableId?: string | null
   guestName?: string

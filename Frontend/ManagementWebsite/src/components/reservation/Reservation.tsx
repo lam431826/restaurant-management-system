@@ -14,7 +14,6 @@ import {
   confirmReservation,
   cancelReservation,
   checkInReservation,
-  noShowReservation,
   updateReservation,
   transferTable as apiTransferTable,
   type ReservationDto,
@@ -163,6 +162,15 @@ const Reservation = () => {
     if (dto) setEditingDto(dto)
   }
 
+  // Bell → "Kết quả gửi email thông báo" list items link back to their reservation via
+  // referenceId. The reservation may have scrolled out of the loaded page (listReservations
+  // only keeps the first 200) or been deleted — surface that instead of silently doing nothing.
+  const handleOpenReservationById = (id: string) => {
+    const dto = dtos.find(d => d.id === id)
+    if (dto) setEditingDto(dto)
+    else showToast('Không tìm thấy đặt bàn này để chỉnh sửa', 'error')
+  }
+
   useEffect(() => { load() }, [load])
 
   useEffect(() => { loadTables() }, [loadTables])
@@ -215,11 +223,6 @@ const Reservation = () => {
     try { await checkInReservation(id); await load(); showToast('Check-in thành công') }
     catch { showToast('Không thể check-in', 'error') }
   }
-  const handleNoShow = async (id: string) => {
-    try { await noShowReservation(id); await load(); showToast('Đã đánh dấu không đến') }
-    catch { showToast('Không thể cập nhật', 'error') }
-  }
-
   const handleAssignTable = async (reservationId: string, tableId: string) => {
     const guestEmail = items.find(r => r.id === reservationId)?.guestEmail ?? null
     try {
@@ -267,6 +270,7 @@ const Reservation = () => {
         newReservations={newReservations}
         unseenNotifCount={unseenNotifCount}
         onOpenReservation={(dto) => setEditingDto(dto)}
+        onOpenReservationById={handleOpenReservationById}
         employeeName={user?.fullName ?? user?.username ?? 'Nhân viên'}
         roleLabel={ROLE_LABEL[user?.role ?? ''] ?? user?.role ?? 'Phục vụ'}
         role={user?.role}
@@ -328,7 +332,6 @@ const Reservation = () => {
               onConfirm={handleConfirm}
               onCheckIn={handleCheckIn}
               onCancel={handleCancel}
-              onNoShow={handleNoShow}
               onEdit={handleEdit}
             />
           ) : (
@@ -337,7 +340,6 @@ const Reservation = () => {
               tables={tables}
               onConfirm={handleConfirm}
               onCheckIn={handleCheckIn}
-              onNoShow={handleNoShow}
               onCancel={handleCancel}
               onAssignTable={handleAssignTable}
               onEdit={handleEdit}

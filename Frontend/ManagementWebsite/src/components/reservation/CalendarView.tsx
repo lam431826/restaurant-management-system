@@ -15,7 +15,6 @@ interface Props {
   onConfirm?: (id: string) => void
   onCheckIn?: (id: string) => void
   onCancel?: (id: string) => void
-  onNoShow?: (id: string) => void
   onEdit?: (id: string) => void
 }
 
@@ -183,7 +182,7 @@ const DItem = ({ label, value }: { label: string; value: React.ReactNode }) => (
 
 const CalendarView = ({
   reservations, tables, selectedDate, onSelectDate, onAssignTable, onTransferTable,
-  onConfirm, onCheckIn, onCancel, onNoShow, onEdit,
+  onConfirm, onCheckIn, onCancel, onEdit,
 }: Props) => {
   const [view, setView] = useState<'day' | 'week' | 'month'>('day')
   const [statuses, setStatuses] = useState<Set<ReservationStatus>>(new Set(['PENDING', 'CONFIRMED', 'CHECKED_IN']))
@@ -599,11 +598,6 @@ const CalendarView = ({
                   {canAct && s === 'CONFIRMED' && (
                     <button onClick={() => act(onCheckIn)} className="kv-btn kv-btn-primary h-9 text-sm min-w-[7rem]">
                       Check-in
-                    </button>
-                  )}
-                  {canAct && s === 'CONFIRMED' && (
-                    <button onClick={() => act(onNoShow)} className="kv-btn kv-btn-outline-neutral h-9 text-sm min-w-[7rem]">
-                      Không đến
                     </button>
                   )}
                   {canAct && (

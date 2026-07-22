@@ -40,6 +40,7 @@ interface Props {
   newReservations?: ReservationDto[];
   unseenNotifCount?: number;
   onOpenReservation?: (dto: ReservationDto) => void;
+  onOpenReservationById?: (id: string) => void;
   employeeName?: string;
   roleLabel?: string;
   role?: string;
@@ -55,6 +56,7 @@ const ReservationHeader = ({
   newReservations = [],
   unseenNotifCount = 0,
   onOpenReservation,
+  onOpenReservationById,
   employeeName = "Nhân viên",
   roleLabel = "Phục vụ",
   role,
@@ -192,52 +194,72 @@ const ReservationHeader = ({
                     Chưa có thông báo nào
                   </div>
                 ) : (
-                  notifLogs.map((log) => (
-                    <div
-                      key={log.id}
-                      className="flex items-start gap-3 px-4 py-3 border-b border-[#e8e8e8] last:border-b-0 hover:bg-[#f9fafb]"
-                    >
-                      <div className="text-[1.3rem] mt-0.5 shrink-0">📧</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[14px] font-semibold text-[#202325]">
-                            {TEMPLATE_LABELS[log.template] ?? log.template}
-                          </span>
-                          <span
-                            className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
-                              log.status === "SENT"
-                                ? "bg-green-500 text-white"
+                  notifLogs.map((log) => {
+                    const editable =
+                      log.referenceType === "RESERVATION" && !!log.referenceId && !!onOpenReservationById;
+                    const Wrapper = editable ? "button" : "div";
+                    return (
+                      <Wrapper
+                        key={log.id}
+                        type={editable ? "button" : undefined}
+                        onClick={
+                          editable
+                            ? () => {
+                                onOpenReservationById?.(log.referenceId as string);
+                                onBellToggle?.();
+                              }
+                            : undefined
+                        }
+                        title={editable ? "Xem/chỉnh sửa đặt bàn liên quan" : undefined}
+                        className={`flex items-start gap-3 px-4 py-3 border-b border-[#e8e8e8] last:border-b-0 w-full text-left bg-transparent ${
+                          editable ? "hover:bg-[#f0f6ff] cursor-pointer" : "hover:bg-[#f9fafb]"
+                        }`}
+                      >
+                        <div className="text-[1.3rem] mt-0.5 shrink-0">📧</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[14px] font-semibold text-[#202325]">
+                              {TEMPLATE_LABELS[log.template] ?? log.template}
+                            </span>
+                            <span
+                              className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
+                                log.status === "SENT"
+                                  ? "bg-green-500 text-white"
+                                  : log.status === "FAILED"
+                                    ? "bg-red-500 text-white"
+                                    : "bg-yellow-500 text-white"
+                              }`}
+                              title={
+                                log.status === "SENT"
+                                  ? "Server đã chấp nhận — không đảm bảo vào hòm thư (có thể bị bounce hoặc vào thư rác)"
+                                  : undefined
+                              }
+                            >
+                              {log.status === "SENT"
+                                ? "Đã gửi đi"
                                 : log.status === "FAILED"
-                                  ? "bg-red-500 text-white"
-                                  : "bg-yellow-500 text-white"
-                            }`}
-                            title={
-                              log.status === "SENT"
-                                ? "Server đã chấp nhận — không đảm bảo vào hòm thư (có thể bị bounce hoặc vào thư rác)"
-                                : undefined
-                            }
-                          >
-                            {log.status === "SENT"
-                              ? "Đã gửi đi"
-                              : log.status === "FAILED"
-                                ? "Thất bại"
-                                : "Đang gửi"}
-                          </span>
-                        </div>
-                        <div className="text-[12px] text-[#636566] mt-0.5 truncate">
-                          {log.recipient}
-                        </div>
-                        {log.status === "FAILED" && log.errorMessage && (
-                          <div className="text-[11px] text-red-400 mt-0.5 truncate">
-                            {log.errorMessage}
+                                  ? "Thất bại"
+                                  : "Đang gửi"}
+                            </span>
                           </div>
-                        )}
-                        <div className="text-[11px] text-[#797b7c] mt-0.5">
-                          {log.sentAt ? timeAgo(log.sentAt) : ""}
+                          <div className="text-[12px] text-[#636566] mt-0.5 truncate">
+                            {log.recipient}
+                          </div>
+                          {log.status === "FAILED" && log.errorMessage && (
+                            <div className="text-[11px] text-red-400 mt-0.5 truncate">
+                              {log.errorMessage}
+                            </div>
+                          )}
+                          <div className="text-[11px] text-[#797b7c] mt-0.5 flex items-center justify-between gap-2">
+                            <span>{log.sentAt ? timeAgo(log.sentAt) : ""}</span>
+                            {editable && (
+                              <span className="text-primary font-semibold shrink-0">Xem đặt bàn ›</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  ))
+                      </Wrapper>
+                    );
+                  })
                 )}
               </div>
               <div className="px-4 py-2 border-t border-[#e8e8e8] bg-[#f9fafb]">

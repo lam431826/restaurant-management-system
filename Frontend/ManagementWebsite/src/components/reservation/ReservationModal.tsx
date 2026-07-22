@@ -14,6 +14,11 @@ interface Props {
 const ASSUMED_DURATION_MIN = 90
 const OCCUPYING_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN']
 
+// BR-03: a reservation must be made at least 30 minutes in advance. Mirrors the reference
+// check in Frontend/PublicWebsite/src/components/ReservationSection.jsx — this is the first
+// place that rule gets enforced client-side on the staff side too.
+const MIN_LEAD_MINUTES = 30
+
 // Mirrors ReservationServiceImpl's real conflict rule (checkTableAvailabilityForStatuses):
 // two bookings on the same table conflict when |T1-T2| < 180min. Getting this out of sync
 // with the backend would let the dropdown mark a table "valid" that the server then rejects.
@@ -94,6 +99,10 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const customerRef = useRef<HTMLInputElement>(null)
+  // Captured instead of calling Date.now() directly in the validationMessage computation below
+  // (impure during render) — refreshed periodically so a modal left open still re-validates the
+  // BR-03 lead-time check as time passes, without needing every render to be Date.now()-driven.
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     customerRef.current?.focus()
@@ -102,7 +111,8 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     listTables().then(r => setTables(r.data.data)).catch(() => {})
-    return () => { document.body.style.overflow = prev; document.removeEventListener('keydown', onKey) }
+    const nowTimer = setInterval(() => setNow(Date.now()), 30000)
+    return () => { document.body.style.overflow = prev; document.removeEventListener('keydown', onKey); clearInterval(nowTimer) }
   }, [onClose])
 
   // List every table (not just AVAILABLE ones) grouped by area, so the waiter can see the whole
@@ -187,12 +197,30 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
   // assignable time the waiter is looking for.
   const tableSchedule = [...reservationBlocks, ...liveWalkInBlock].sort((a, b) => a.start.getTime() - b.start.getTime())
 
+  // Single source of truth for both the submit-button's disabled state and the on-click
+  // validation — recomputed on every render (cheap: string ops + a handful of comparisons)
+  // so the button reflects live field edits, not just the last submit attempt.
+  const validationMessage = (() => {
+    if (!customer.trim()) return 'Vui lòng nhập tên khách hàng'
+    if (!phone.trim()) return 'Vui lòng nhập số điện thoại'
+    if (!/^0\d{9,10}$/.test(phone.trim())) return 'Số điện thoại không hợp lệ (bắt đầu bằng 0, 10-11 số)'
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return 'Email không hợp lệ'
+    if (!guests || Number(guests) < 1) return 'Vui lòng nhập số khách (tối thiểu 1)'
+    if (!requestedDt) return 'Vui lòng chọn thời gian đến'
+    if (requestedDt.getTime() < now + MIN_LEAD_MINUTES * 60000) return `Vui lòng đặt bàn trước ít nhất ${MIN_LEAD_MINUTES} phút`
+    return ''
+  })()
+  const isValid = !validationMessage
+  // Only surface the live hint once the waiter has actually started filling the form —
+  // otherwise a blank modal would open already showing a wall of red text.
+  const isDirty = Boolean(customer.trim() || phone.trim() || guests)
+
   const handleSave = async () => {
-    if (!customer.trim()) { setError('Vui lòng nhập tên khách hàng'); customerRef.current?.focus(); return }
-    if (!phone.trim()) { setError('Vui lòng nhập số điện thoại'); return }
-    if (!/^0\d{9,10}$/.test(phone.trim())) { setError('Số điện thoại không hợp lệ (bắt đầu bằng 0, 10-11 số)'); return }
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError('Email không hợp lệ'); return }
-    if (!guests || Number(guests) < 1) { setError('Vui lòng nhập số khách (tối thiểu 1)'); return }
+    if (validationMessage) {
+      setError(validationMessage)
+      if (!customer.trim()) customerRef.current?.focus()
+      return
+    }
     setError('')
     setLoading(true)
     try {
@@ -221,16 +249,16 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
 
   return (
     <div className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center p-6 overflow-y-auto" style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="w-full max-w-[52rem] my-6 bg-card rounded-lg shadow-lg flex flex-col max-h-[calc(100vh-6rem)]">
-        <div className="flex items-center justify-between px-6 h-16 border-b border-line shrink-0">
+      <div className="w-full max-w-[60rem] my-6 bg-card rounded-lg shadow-lg flex flex-col max-h-[calc(100vh-6rem)]">
+        <div className="flex items-center justify-between px-7 h-[4.5rem] border-b border-line shrink-0">
           <div>
-            <h2 className="text-h3 font-bold text-ink">Đặt bàn</h2>
+            <h2 className="text-h2 font-bold text-ink">Đặt bàn</h2>
             <p className="text-[12px] text-ink-muted">Đơn do nhân viên tạo — trạng thái tự động <span className="text-[var(--kv-success)] font-semibold">Đã xác nhận</span></p>
           </div>
           <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer hover:bg-fill hover:text-ink" aria-label="Đóng"><CloseIcon /></button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-7 flex flex-col gap-5">
           <Row label="Khách hàng" required>
             <input ref={customerRef} className={inputCls} placeholder="Tên khách đặt" value={customer} onChange={e => { setCustomer(e.target.value); if (error) setError('') }} />
           </Row>
@@ -294,11 +322,11 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
           <Row label="Ghi chú"><textarea className={`${inputCls} h-[7rem] py-2 resize-none`} placeholder="Nhập ghi chú" value={note} onChange={e => setNote(e.target.value)} /></Row>
         </div>
 
-        <div className="flex items-center justify-between gap-4 px-6 py-3 border-t border-line shrink-0">
-          <span className="text-md text-danger">{error}</span>
+        <div className="flex items-center justify-between gap-4 px-7 py-4 border-t border-line shrink-0">
+          <span className="text-md text-danger">{error || (isDirty && validationMessage ? validationMessage : '')}</span>
           <div className="flex items-center gap-2">
             <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose} disabled={loading}>Bỏ qua</button>
-            <button className="kv-btn kv-btn-primary h-10" onClick={handleSave} disabled={loading}>
+            <button className="kv-btn kv-btn-primary h-10" onClick={handleSave} disabled={loading || !isValid}>
               {loading ? 'Đang lưu...' : 'Lưu'}
             </button>
           </div>

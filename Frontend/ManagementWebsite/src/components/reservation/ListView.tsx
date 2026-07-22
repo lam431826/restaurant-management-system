@@ -9,7 +9,6 @@ interface Props {
   tables?: TableDto[]
   onConfirm: (id: string) => Promise<void>
   onCheckIn: (id: string) => Promise<void>
-  onNoShow: (id: string) => Promise<void>
   onCancel: (id: string) => Promise<void>
   onAssignTable?: (reservationId: string, tableId: string) => void
   onEdit?: (id: string) => void
@@ -183,12 +182,11 @@ const EditIcon = () => (
 )
 
 /* ── Inline action buttons per row ───────────────────────────────────────── */
-const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onNoShow, onCancel, onEdit }: {
+const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onCancel, onEdit }: {
   r: Reservation
   busy: boolean
   onConfirm: () => void
   onCheckIn: () => void
-  onNoShow: () => void
   onCancel: () => void
   onEdit?: () => void
 }) => {
@@ -215,10 +213,6 @@ const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onNoShow, onCancel, onEd
         className="h-7 px-2.5 text-[12px] font-semibold rounded-md bg-primary text-white hover:opacity-90 disabled:opacity-50 cursor-pointer whitespace-nowrap">
         Check-in
       </button>
-      <button disabled={busy} onClick={onNoShow}
-        className="h-7 px-2 text-[12px] font-semibold rounded-md border border-line-strong text-ink-muted hover:bg-fill disabled:opacity-50 cursor-pointer whitespace-nowrap">
-        Không đến
-      </button>
       <button disabled={busy} onClick={onCancel}
         className="h-7 px-2 text-[12px] font-semibold rounded-md border border-danger text-danger hover:bg-red-50 disabled:opacity-50 cursor-pointer whitespace-nowrap">
         Hủy
@@ -240,7 +234,7 @@ const toDateInputValue = (d: Date) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onNoShow, onCancel, onAssignTable, onEdit }: Props) => {
+const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onCancel, onAssignTable, onEdit }: Props) => {
   const [code, setCode] = useState('')
   const [timeMode, setTimeMode] = useState<'all' | 'other'>('all')
   const [dateFrom, setDateFrom] = useState('')
@@ -443,7 +437,6 @@ const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onNoShow, o
                       <ActionButtons r={r} busy={busy}
                         onConfirm={() => act(() => onConfirm(r.id), r.id)}
                         onCheckIn={() => act(() => onCheckIn(r.id), r.id)}
-                        onNoShow={() => act(() => onNoShow(r.id), r.id)}
                         onCancel={() => act(() => onCancel(r.id), r.id)}
                         onEdit={() => onEdit?.(r.id)} />
                     </td>
@@ -569,12 +562,6 @@ const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onNoShow, o
                       <button disabled={busy} onClick={() => actDetail(onCheckIn)}
                         className="kv-btn kv-btn-primary h-9 text-sm min-w-[7rem] disabled:opacity-50">
                         Check-in
-                      </button>
-                    )}
-                    {s === 'CONFIRMED' && (
-                      <button disabled={busy} onClick={() => actDetail(onNoShow)}
-                        className="kv-btn kv-btn-outline-neutral h-9 text-sm min-w-[7rem] disabled:opacity-50">
-                        Không đến
                       </button>
                     )}
                     <button disabled={busy}

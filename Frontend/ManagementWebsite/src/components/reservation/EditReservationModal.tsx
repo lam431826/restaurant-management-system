@@ -10,15 +10,30 @@ interface Props {
   onSaved: () => void
 }
 
-const fieldCls = 'w-full h-10 px-3 bg-field border border-line-default rounded-md text-md text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary disabled:opacity-50'
-const labelCls = 'block text-sm font-medium text-ink-subtle mb-1'
-
+// Mirrors ReservationModal.tsx (the create flow) — same constants, same table-validity and
+// schedule-preview logic, so an edit never shows a table as valid that the server would then
+// reject, and the two modals stay visually/behaviorally in sync as intended.
+const ASSUMED_DURATION_MIN = 90
 const OCCUPYING_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN']
-// Mirrors ReservationServiceImpl's real conflict rule (checkTableAvailabilityForStatuses) and
-// validateWalkInCooldown() — kept in sync with the identical constants in ReservationModal.tsx
-// (the create flow) so the dropdown never marks a table "valid" that the server then rejects.
 const CONFLICT_WINDOW_MINUTES = 180
 const WALK_IN_COOLDOWN_MINUTES = 120
+// BR-03: a reservation must be at least 30 minutes in advance — applies to the datetime field's
+// current value here just like on create, whether or not the waiter actually touched it.
+const MIN_LEAD_MINUTES = 30
+
+const sameLocalDate = (iso: string, ymd: string) => {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` === ymd
+}
+
+const fmtTime = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+
+const combineDateTime = (ymd: string, hm: string): Date | null => {
+  if (!ymd || !hm) return null
+  const d = new Date(`${ymd}T${hm}:00`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
 
 const tableStatusLabel = (t: TableDto): string => {
   switch (t.status) {
@@ -31,26 +46,54 @@ const tableStatusLabel = (t: TableDto): string => {
   }
 }
 
+const CloseIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+)
+
+const inputCls =
+  'w-full h-10 px-3 bg-field border border-line-default rounded-md text-md text-ink transition-colors ' +
+  'placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary ' +
+  'focus:shadow-[0_0_0_0.3rem_rgba(var(--kv-primary-rgb),0.12)]'
+
+const Row = ({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) => (
+  <div className="flex items-center gap-3 min-h-10">
+    <div className="w-[10rem] shrink-0">
+      <label className="text-md text-ink-subtle">{label}{required && <span className="text-danger ml-0.5">*</span>}</label>
+    </div>
+    <div className="flex-1 min-w-0">{children}</div>
+  </div>
+)
+
 const EditReservationModal = ({ dto, tables, reservations, onClose, onSaved }: Props) => {
   const dt = new Date(dto.datetime)
-  const toLocalDatetimeStr = (d: Date) => {
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  }
+  const pad = (n: number) => String(n).padStart(2, '0')
 
   const [guestName, setGuestName] = useState(dto.guestName)
   const [phone, setPhone] = useState(dto.phone)
   const [guestEmail, setGuestEmail] = useState(dto.guestEmail ?? '')
-  const [partySize, setPartySize] = useState(String(dto.partySize))
-  const [datetime, setDatetime] = useState(toLocalDatetimeStr(dt))
+  const [guests, setGuests] = useState(String(dto.partySize))
+  const [date, setDate] = useState(`${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`)
+  const [time, setTime] = useState(`${pad(dt.getHours())}:${pad(dt.getMinutes())}`)
   const [note, setNote] = useState(dto.note ?? '')
   const [tableId, setTableId] = useState(dto.tableId ?? '')
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  // Captured instead of calling Date.now() directly in the validationMessage computation below
+  // (impure during render) — refreshed periodically so a modal left open still re-validates the
+  // BR-03 lead-time check as time passes.
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const nowTimer = setInterval(() => setNow(Date.now()), 30000)
+    return () => clearInterval(nowTimer)
+  }, [])
 
   const areas = [...new Set(tables.map(t => t.area))]
-  const partySizeNum = Number(partySize)
-  const requestedDt = datetime ? new Date(datetime) : null
+  const partySizeNum = Number(guests)
+  const requestedDt = combineDateTime(date, time)
+  const isToday = sameLocalDate(new Date().toISOString(), date)
 
   // Same two checks ReservationServiceImpl.update() runs server-side (validateTableCapacity then
   // checkTableAvailability) plus the walk-in cooldown — see ReservationModal.tsx's tableValidity()
@@ -72,7 +115,7 @@ const EditReservationModal = ({ dto, tables, reservations, onClose, onSaved }: P
     if (t.occupiedSince && requestedDt) {
       const cooldownEnd = new Date(t.occupiedSince).getTime() + WALK_IN_COOLDOWN_MINUTES * 60000
       if (requestedDt.getTime() < cooldownEnd) {
-        return { ok: false, reason: 'khách vãng lai vừa ngồi, chưa hết thời gian chờ' }
+        return { ok: false, reason: `khách vãng lai vừa ngồi, chờ đến ${fmtTime(new Date(cooldownEnd))}` }
       }
     }
     return { ok: true, reason: null }
@@ -80,35 +123,65 @@ const EditReservationModal = ({ dto, tables, reservations, onClose, onSaved }: P
 
   const selectedTable = tableId ? (tables.find(t => t.id === tableId) ?? null) : null
 
-  // If the current selection stops qualifying (e.g. waiter bumps party size past its capacity),
-  // drop it instead of letting a now-invalid table ride through to submit — a disabled <option>
-  // doesn't un-select itself.
-  useEffect(() => {
-    if (tableId && selectedTable && !tableValidity(selectedTable).ok) {
-      setTableId('')
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partySize, datetime])
+  // Existing bookings on the selected table for the selected day — same as create, minus the
+  // reservation currently being edited (it would otherwise always show up as its own conflict).
+  const reservationBlocks: { key: string; start: Date; end: Date | null; label: string }[] = tableId
+    ? reservations
+        .filter(r => r.id !== dto.id && r.tableId === tableId && OCCUPYING_STATUSES.includes(r.status) && sameLocalDate(r.datetime, date))
+        .map(r => {
+          const start = new Date(r.datetime)
+          return { key: r.id, start, end: new Date(start.getTime() + ASSUMED_DURATION_MIN * 60000), label: `${r.guestName} (${r.partySize} người)` }
+        })
+    : []
+
+  const liveWalkInBlock = isToday && selectedTable
+    && (selectedTable.status === 'OCCUPIED' || selectedTable.status === 'BILLING')
+    && !selectedTable.upcomingReservation
+    ? [{
+        key: 'walk-in-now',
+        start: selectedTable.occupiedSince ? new Date(selectedTable.occupiedSince) : new Date(),
+        end: selectedTable.occupiedSince
+          ? new Date(new Date(selectedTable.occupiedSince).getTime() + WALK_IN_COOLDOWN_MINUTES * 60000)
+          : null,
+        label: 'Khách vãng lai đang ngồi (không qua đặt trước)',
+      }]
+    : []
+
+  const tableSchedule = [...reservationBlocks, ...liveWalkInBlock].sort((a, b) => a.start.getTime() - b.start.getTime())
+
+  // Same validation set as ReservationModal.tsx's create flow, plus the table being required
+  // here (an existing reservation being edited must keep a seat assigned).
+  const validationMessage = (() => {
+    if (!guestName.trim()) return 'Tên khách không được để trống'
+    if (!phone.trim()) return 'Vui lòng nhập số điện thoại'
+    if (!/^0\d{9,10}$/.test(phone.trim())) return 'Số điện thoại không hợp lệ (bắt đầu bằng 0, 10-11 số)'
+    if (guestEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim())) return 'Email không hợp lệ'
+    if (!guests || partySizeNum < 1 || partySizeNum > 20) return 'Số khách phải từ 1 đến 20'
+    if (!requestedDt) return 'Vui lòng chọn thời gian đến'
+    if (requestedDt.getTime() < now + MIN_LEAD_MINUTES * 60000) return `Vui lòng đặt bàn trước ít nhất ${MIN_LEAD_MINUTES} phút`
+    if (!tableId) return 'Vui lòng chọn một bàn hợp lệ cho số khách này'
+    if (!selectedTable || !tableValidity(selectedTable).ok) return 'Bàn đã chọn không còn hợp lệ, vui lòng chọn bàn khác'
+    return ''
+  })()
+  const isValid = !validationMessage
 
   const handleSave = async () => {
-    if (!guestName.trim()) { setError('Tên khách không được để trống'); return }
-    if (!phone.trim() || !/^0\d{9,10}$/.test(phone.trim())) { setError('Số điện thoại không hợp lệ (phải bắt đầu bằng 0, 10-11 chữ số)'); return }
-    if (!datetime) { setError('Vui lòng chọn thời gian'); return }
-    if (new Date(datetime) <= new Date()) { setError('Thời gian đặt bàn phải ở tương lai'); return }
-    const p = parseInt(partySize, 10)
-    if (!p || p < 1 || p > 20) { setError('Số khách phải từ 1 đến 20'); return }
-    if (!tableId) { setError('Vui lòng chọn một bàn hợp lệ cho số khách này'); return }
-    if (!selectedTable || !tableValidity(selectedTable).ok) { setError('Bàn đã chọn không còn hợp lệ, vui lòng chọn bàn khác'); return }
-
+    if (validationMessage) { setError(validationMessage); return }
+    setError('')
     setSaving(true)
-    setError(null)
     try {
       await updateReservation(dto.id, {
         guestName: guestName.trim(),
         phone: phone.trim(),
         guestEmail: guestEmail.trim() || null,
-        partySize: p,
-        datetime: new Date(datetime).toISOString().slice(0, 19),
+        partySize: partySizeNum,
+        // Bare local datetime, no toISOString() — matches how the create flow (and the rest of
+        // the app) sends a zoneless LocalDateTime string. The previous version built this via
+        // new Date(datetime).toISOString(), which shifted the value to UTC before sending; the
+        // backend then parsed that shifted string as if it were already local wall-clock time,
+        // silently saving the reservation at the wrong hour whenever the browser's timezone
+        // wasn't UTC+0.
+        datetime: `${date}T${time}:00`,
         note: note.trim() || null,
         tableId,
       })
@@ -122,51 +195,32 @@ const EditReservationModal = ({ dto, tables, reservations, onClose, onSaved }: P
   }
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div
-        className="bg-card rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-line">
-          <h2 className="text-lg font-bold text-ink">Chỉnh sửa đặt bàn</h2>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-md text-ink-muted hover:bg-fill cursor-pointer">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+    <div className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center p-6 overflow-y-auto" style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="w-full max-w-[60rem] my-6 bg-card rounded-lg shadow-lg flex flex-col max-h-[calc(100vh-6rem)]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-7 h-[4.5rem] border-b border-line shrink-0">
+          <h2 className="text-h2 font-bold text-ink">Chỉnh sửa đặt bàn</h2>
+          <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer hover:bg-fill hover:text-ink" aria-label="Đóng"><CloseIcon /></button>
         </div>
 
-        {/* Body */}
-        <div className="px-6 py-5 flex flex-col gap-4">
-          {error && (
-            <div className="px-3 py-2 rounded-md bg-danger/10 text-danger text-sm">{error}</div>
-          )}
-
+        <div className="flex-1 min-h-0 overflow-y-auto p-7 flex flex-col gap-5">
+          <Row label="Khách hàng" required>
+            <input className={inputCls} placeholder="Tên khách đặt" value={guestName} onChange={e => setGuestName(e.target.value)} />
+          </Row>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>Tên khách *</label>
-              <input className={fieldCls} value={guestName} onChange={e => setGuestName(e.target.value)} placeholder="Nguyễn Văn A" />
+            <Row label="Điện thoại" required>
+              <input className={inputCls} inputMode="tel" placeholder="0xxxxxxxxx" value={phone} onChange={e => setPhone(e.target.value)} />
+            </Row>
+            <Row label="Email khách">
+              <input className={inputCls} type="email" placeholder="guest@example.com" value={guestEmail} onChange={e => setGuestEmail(e.target.value)} />
+            </Row>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-3 min-h-10">
+              <div className="w-[10rem] shrink-0"><label className="text-md text-ink-subtle">Số khách<span className="text-danger ml-0.5">*</span></label></div>
+              <input className={`${inputCls} text-right`} inputMode="numeric" placeholder="0" value={guests} onChange={e => setGuests(e.target.value.replace(/[^\d]/g, ''))} />
             </div>
-            <div>
-              <label className={labelCls}>Điện thoại *</label>
-              <input className={fieldCls} value={phone} onChange={e => setPhone(e.target.value)} placeholder="0912345678" />
-            </div>
-            <div>
-              <label className={labelCls}>Email</label>
-              <input className={fieldCls} type="email" value={guestEmail} onChange={e => setGuestEmail(e.target.value)} placeholder="email@gmail.com" />
-            </div>
-            <div>
-              <label className={labelCls}>Số khách *</label>
-              <input className={fieldCls} type="number" min={1} max={20} value={partySize} onChange={e => setPartySize(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelCls}>Thời gian đến *</label>
-              <input className={fieldCls} type="datetime-local" value={datetime} onChange={e => setDatetime(e.target.value)} />
-            </div>
-            <div className="col-span-2">
-              <label className={labelCls}>Chọn bàn *</label>
-              <select className={fieldCls} value={tableId} onChange={e => setTableId(e.target.value)}>
+            <Row label="Chọn bàn" required>
+              <select className={inputCls} value={tableId} onChange={e => setTableId(e.target.value)}>
                 <option value="">— Chọn bàn —</option>
                 {areas.map(area => (
                   <optgroup key={area} label={area}>
@@ -181,26 +235,41 @@ const EditReservationModal = ({ dto, tables, reservations, onClose, onSaved }: P
                   </optgroup>
                 ))}
               </select>
-            </div>
-            <div className="col-span-2">
-              <label className={labelCls}>Ghi chú</label>
-              <textarea
-                className="w-full px-3 py-2 bg-field border border-line-default rounded-md text-md text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary resize-none"
-                rows={3}
-                value={note}
-                onChange={e => setNote(e.target.value)}
-                placeholder="Yêu cầu đặc biệt..."
-              />
-            </div>
+            </Row>
           </div>
+          {tableId && (
+            <div className="ml-[calc(10rem+0.75rem)] -mt-2 text-[12px]">
+              {tableSchedule.length === 0 ? (
+                <span className="text-ink-muted">Bàn chưa có lịch đặt nào trong ngày {date}</span>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <span className="font-medium text-ink">Lịch bàn trong ngày {date}:</span>
+                  {tableSchedule.map(b => (
+                    <span key={b.key} className="text-ink-subtle">
+                      {b.end ? `${fmtTime(b.start)}–${fmtTime(b.end)}` : `Từ ${fmtTime(b.start)}`} · {b.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <Row label="Giờ đến" required>
+            <div className="flex gap-2">
+              <input type="date" className={inputCls} value={date} onChange={e => setDate(e.target.value)} />
+              <input type="time" className={inputCls} value={time} onChange={e => setTime(e.target.value)} />
+            </div>
+          </Row>
+          <Row label="Ghi chú"><textarea className={`${inputCls} h-[7rem] py-2 resize-none`} placeholder="Nhập ghi chú" value={note} onChange={e => setNote(e.target.value)} /></Row>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-line">
-          <button onClick={onClose} className="kv-btn kv-btn-outline-neutral h-10 min-w-[6rem]" disabled={saving}>Hủy</button>
-          <button onClick={handleSave} className="kv-btn kv-btn-primary h-10 min-w-[8rem]" disabled={saving}>
-            {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
-          </button>
+        <div className="flex items-center justify-between gap-4 px-7 py-4 border-t border-line shrink-0">
+          <span className="text-md text-danger">{error || validationMessage}</span>
+          <div className="flex items-center gap-2">
+            <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose} disabled={saving}>Hủy</button>
+            <button className="kv-btn kv-btn-primary h-10" onClick={handleSave} disabled={saving || !isValid}>
+              {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
