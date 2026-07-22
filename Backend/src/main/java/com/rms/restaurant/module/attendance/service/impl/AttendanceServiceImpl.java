@@ -4,6 +4,7 @@ import com.rms.restaurant.common.utils.enums.AttendanceType;
 import com.rms.restaurant.common.utils.enums.EmployeeStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
+import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.module.attendance.dto.*;
 import com.rms.restaurant.module.attendance.mapper.AttendanceMapper;
 import com.rms.restaurant.module.attendance.model.AttendanceRecord;
@@ -24,6 +25,8 @@ import com.rms.restaurant.module.attendance.service.AttendanceCalculator.MergedS
 import com.rms.restaurant.module.attendance.service.AttendanceCalculator.MergedSlot;
 import com.rms.restaurant.module.attendance.service.AttendanceService;
 import com.rms.restaurant.module.attendance.service.AttendanceSettingService;
+import com.rms.restaurant.module.authentication.model.User;
+import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.employee.model.Employee;
 import com.rms.restaurant.module.employee.repository.EmployeeRepository;
 import lombok.RequiredArgsConstructor;
@@ -61,6 +64,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     private final ViolationRepository violationRepository;
     private final ViolationTypeRepository violationTypeRepository;
     private final EmployeeRepository employeeRepository;
+    private final UserRepository userRepository;
     private final AttendanceSettingService settingService;
     private final AttendanceCalculator calculator;
     private final AttendanceMapper mapper;
@@ -70,7 +74,17 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional(readOnly = true)
     public List<TimesheetCellResponse> timesheet(LocalDate start, LocalDate end) {
-        List<WorkSchedule> schedules = scheduleRepository.findByWorkDateBetween(start, end);
+        return buildCells(scheduleRepository.findByWorkDateBetween(start, end));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TimesheetCellResponse> myTimesheet(String username, LocalDate start, LocalDate end) {
+        Employee self = requireSelfEmployee(username);
+        return buildCells(scheduleRepository.findByEmployeeIdAndWorkDateBetween(self.getId(), start, end));
+    }
+
+    private List<TimesheetCellResponse> buildCells(List<WorkSchedule> schedules) {
         Map<String, AttendanceRecord> recordsByScheduleId = recordRepository
                 .findByScheduleIdIn(schedules.stream().map(WorkSchedule::getId).toList())
                 .stream().collect(Collectors.toMap(AttendanceRecord::getScheduleId, Function.identity()));
@@ -142,6 +156,61 @@ public class AttendanceServiceImpl implements AttendanceService {
                 request.note(), false, username,
                 request.otBeforeMinutes(), request.otAfterMinutes());
         return mapper.toRecordResponse(saved);
+    }
+
+    // ---- Self-service clock in/out ("Lịch làm việc") ────────────────────────
+
+    @Override
+    public AttendanceRecordResponse checkIn(String scheduleId, String username) {
+        WorkSchedule schedule = requireOwnSchedule(scheduleId, username);
+        if (!schedule.getWorkDate().equals(LocalDate.now())) {
+            throw new ApplicationException(ApplicationError.AT_RECORD_DATE_INVALID,
+                    "Chỉ có thể chấm công cho ca làm hôm nay");
+        }
+        AttendanceRecord existing = recordRepository.findByScheduleId(scheduleId).orElse(null);
+        if (existing != null && existing.getActualCheckIn() != null) {
+            throw new ApplicationException(ApplicationError.AT_RECORD_TIME_INVALID, "Đã chấm công vào ca này");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        AttendanceRecord saved = mark(schedule, AttendanceType.PRESENT,
+                now.toLocalDate(), now.toLocalTime(), null, null, null, false, username, null, null);
+        return mapper.toRecordResponse(saved);
+    }
+
+    @Override
+    public AttendanceRecordResponse checkOut(String scheduleId, String username) {
+        WorkSchedule schedule = requireOwnSchedule(scheduleId, username);
+        AttendanceRecord existing = recordRepository.findByScheduleId(scheduleId)
+                .orElseThrow(() -> new ApplicationException(ApplicationError.AT_RECORD_TIME_INVALID, "Chưa chấm công vào ca"));
+        if (existing.getActualCheckIn() == null) {
+            throw new ApplicationException(ApplicationError.AT_RECORD_TIME_INVALID, "Chưa chấm công vào ca");
+        }
+        if (existing.getActualCheckOut() != null) {
+            throw new ApplicationException(ApplicationError.AT_RECORD_TIME_INVALID, "Đã chấm công ra ca này");
+        }
+        LocalDateTime in = existing.getActualCheckIn();
+        LocalDateTime now = LocalDateTime.now();
+        AttendanceRecord saved = mark(schedule, AttendanceType.PRESENT,
+                in.toLocalDate(), in.toLocalTime(), now.toLocalDate(), now.toLocalTime(),
+                existing.getNote(), false, username, null, null);
+        return mapper.toRecordResponse(saved);
+    }
+
+    /** Resolves the schedule and rejects it unless it belongs to the calling user's own employee record. */
+    private WorkSchedule requireOwnSchedule(String scheduleId, String username) {
+        WorkSchedule schedule = requireSchedule(scheduleId);
+        Employee self = requireSelfEmployee(username);
+        if (!schedule.getEmployeeId().equals(self.getId())) {
+            throw new ApplicationException(ApplicationError.AT_SCHEDULE_NOT_FOUND);
+        }
+        return schedule;
+    }
+
+    private Employee requireSelfEmployee(String username) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.USER_NOT_FOUND));
+        return employeeRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new ApplicationException(ApplicationError.EMPLOYEE_NOT_FOUND));
     }
 
     @Override

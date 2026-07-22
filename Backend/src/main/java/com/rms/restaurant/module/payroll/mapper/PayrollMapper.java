@@ -3,6 +3,7 @@ package com.rms.restaurant.module.payroll.mapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rms.restaurant.module.payroll.dto.*;
+import com.rms.restaurant.module.payroll.model.PayrollHoliday;
 import com.rms.restaurant.module.payroll.model.PayrollSetting;
 import com.rms.restaurant.module.payroll.model.PayrollSheet;
 import com.rms.restaurant.module.payroll.model.Payslip;
@@ -76,6 +77,10 @@ public class PayrollMapper {
         return new PayrollSettingResponse(
                 s.getPayrollCutoffDay(), s.isAutoCreateEnabled(),
                 s.isAutoUpdateEnabled(), s.isPersonalIncomeTaxEnabled());
+    }
+
+    public PayrollHolidayResponse toResponse(PayrollHoliday h) {
+        return new PayrollHolidayResponse(h.getId(), h.getName(), h.getHolidayDate(), h.getCreatedAt(), h.getUpdatedAt());
     }
 
     public List<AttendanceDetailRow> parseSnapshot(String json) {

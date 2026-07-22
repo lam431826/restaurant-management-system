@@ -3,6 +3,8 @@ import type { AttendanceSettingsDto, ManualTimeMode, ShiftDto } from '../../api/
 import { deleteShift, formatTime, getSettings, listShifts, updateSettings, updateShift } from '../../api/attendance'
 import type { SalaryTemplateDto } from '../../api/salaryTemplates'
 import { listSalaryTemplates } from '../../api/salaryTemplates'
+import type { PayrollHolidayDto } from '../../api/payrollHolidays'
+import { listPayrollHolidays } from '../../api/payrollHolidays'
 import type { PayrollSettingsDto } from '../../api/payroll'
 import { getPayrollSettings, updatePayrollSettings } from '../../api/payroll'
 import type { FinancialCustomLineRow, FinancialLineGroupParam } from '../../api/reports'
@@ -10,6 +12,7 @@ import { deleteFinancialCustomLine, listFinancialCustomLines } from '../../api/r
 import { ApiError } from '../../services/api'
 import ShiftTemplateModal from '../staff/schedule/ShiftTemplateModal'
 import SalaryTemplateList from '../staff/settings/SalaryTemplateList'
+import HolidayList from '../staff/settings/HolidayList'
 import FinancialCustomLineModal from './FinancialCustomLineModal'
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -151,6 +154,8 @@ const SettingsPage = () => {
   const [shifts, setShifts] = useState<ShiftDto[]>([])
   const [salaryTemplateListOpen, setSalaryTemplateListOpen] = useState(false)
   const [salaryTemplates, setSalaryTemplates] = useState<SalaryTemplateDto[]>([])
+  const [holidayListOpen, setHolidayListOpen] = useState(false)
+  const [holidays, setHolidays] = useState<PayrollHolidayDto[]>([])
   const [financialLines, setFinancialLines] = useState<FinancialCustomLineRow[]>([])
 
   const [settings, setSettings] = useState<AttendanceSettingsDto | null>(null)
@@ -173,6 +178,9 @@ const SettingsPage = () => {
   const loadSalaryTemplates = () => {
     listSalaryTemplates().then(res => setSalaryTemplates(res.data.data)).catch(() => {})
   }
+  const loadHolidays = () => {
+    listPayrollHolidays().then(res => setHolidays(res.data.data)).catch(() => {})
+  }
   const loadFinancialLines = () => {
     listFinancialCustomLines().then(res => setFinancialLines(res.data.data)).catch(() => {})
   }
@@ -180,6 +188,7 @@ const SettingsPage = () => {
   useEffect(() => {
     loadShifts()
     loadSalaryTemplates()
+    loadHolidays()
     loadFinancialLines()
     getSettings()
       .then(res => setSettings(res.data.data))
@@ -268,13 +277,15 @@ const SettingsPage = () => {
             {tab === 'attendance' && shiftListOpen && (
               <ShiftList shifts={shifts} onBack={() => setShiftListOpen(false)} onChanged={loadShifts} />
             )}
-            {tab === 'payroll' && !salaryTemplateListOpen && payrollSettings && (
+            {tab === 'payroll' && !salaryTemplateListOpen && !holidayListOpen && payrollSettings && (
               <PayrollSettings
                 settings={payrollSettings}
                 commit={commitPayroll}
                 saveError={payrollLoadError || payrollSaveError}
                 salaryTemplateCount={salaryTemplates.length}
                 onOpenSalaryTemplateList={() => setSalaryTemplateListOpen(true)}
+                holidayCount={holidays.length}
+                onOpenHolidayList={() => setHolidayListOpen(true)}
               />
             )}
             {tab === 'payroll' && salaryTemplateListOpen && (
@@ -282,6 +293,13 @@ const SettingsPage = () => {
                 templates={salaryTemplates}
                 onBack={() => setSalaryTemplateListOpen(false)}
                 onChanged={loadSalaryTemplates}
+              />
+            )}
+            {tab === 'payroll' && holidayListOpen && (
+              <HolidayList
+                holidays={holidays}
+                onBack={() => setHolidayListOpen(false)}
+                onChanged={loadHolidays}
               />
             )}
 
@@ -524,12 +542,16 @@ const ShiftList = ({ shifts, onBack, onChanged }: { shifts: ShiftDto[]; onBack: 
 }
 
 /* ── Tính lương tab ────────────────────────────────────────────────────────── */
-const PayrollSettings = ({ settings, commit, saveError, salaryTemplateCount, onOpenSalaryTemplateList }: {
+const PayrollSettings = ({
+  settings, commit, saveError, salaryTemplateCount, onOpenSalaryTemplateList, holidayCount, onOpenHolidayList,
+}: {
   settings: PayrollSettingsDto
   commit: (next: PayrollSettingsDto) => void
   saveError: string
   salaryTemplateCount: number
   onOpenSalaryTemplateList: () => void
+  holidayCount: number
+  onOpenHolidayList: () => void
 }) => {
   const set = <K extends keyof PayrollSettingsDto>(key: K, value: PayrollSettingsDto[K]) =>
     commit({ ...settings, [key]: value })
@@ -561,6 +583,9 @@ const PayrollSettings = ({ settings, commit, saveError, salaryTemplateCount, onO
 
       <Block title="Thiết lập Mẫu lương" desc="Thiết lập mẫu lương chung có thể dùng cho nhiều nhân viên"
         right={<button onClick={onOpenSalaryTemplateList} className="flex items-center gap-1 text-md text-ink hover:text-primary cursor-pointer">{salaryTemplateCount} mẫu lương <ChevronRight /></button>} />
+
+      <Block title="Ngày lễ, Tết" desc="Các ngày được tính theo mức lương Ngày lễ tết khi tạo bảng lương (BR-PAY-04)"
+        right={<button onClick={onOpenHolidayList} className="flex items-center gap-1 text-md text-ink hover:text-primary cursor-pointer">{holidayCount} ngày lễ <ChevronRight /></button>} />
 
       <Block title="Thuế TNCN cho nhân viên" desc="Thiết lập quy định tính thuế TNCN cho nhân viên"
         right={<Toggle on={settings.personalIncomeTaxEnabled} onChange={v => set('personalIncomeTaxEnabled', v)} />} last />

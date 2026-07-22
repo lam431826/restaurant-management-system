@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -51,7 +52,8 @@ class SalaryCalculatorTest {
     void shiftType_paysFullWagePerCompletedShift() {
         ComputedPayslip result = calculator.compute(setting(SalaryType.SHIFT, 200_000),
                 List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0),
-                        present(MONDAY.plusDays(1), LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)));
+                        present(MONDAY.plusDays(1), LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)),
+                Set.of());
 
         assertThat(result.mainSalary()).isEqualByComparingTo("400000");
         assertThat(result.overtimeSalary()).isEqualByComparingTo("0");
@@ -65,7 +67,8 @@ class SalaryCalculatorTest {
         s.setMainAdvancedRates("{\"sat\":{\"amount\":\"150\",\"unit\":\"percent\"},\"sun\":null}");
 
         ComputedPayslip result = calculator.compute(s,
-                List.of(present(SATURDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)));
+                List.of(present(SATURDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)),
+                Set.of());
 
         assertThat(result.mainSalary()).isEqualByComparingTo("300000");
     }
@@ -76,18 +79,21 @@ class SalaryCalculatorTest {
         s.setMainAdvancedRates("{\"sat\":{\"amount\":\"250000\",\"unit\":\"vnd\"}}");
 
         ComputedPayslip result = calculator.compute(s,
-                List.of(present(SATURDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)));
+                List.of(present(SATURDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)),
+                Set.of());
 
         assertThat(result.mainSalary()).isEqualByComparingTo("250000");
     }
 
     @Test
-    void shiftType_proratesEarlyLeave() {
+    void shiftType_paysFullWageEvenOnEarlyLeave() {
         ComputedPayslip result = calculator.compute(setting(SalaryType.SHIFT, 200_000),
-                List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(10, 0), 120, 0, 30)));
+                List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(10, 0), 120, 0, 30)),
+                Set.of());
 
-        // 120 of 240 scheduled minutes → half the shift wage
-        assertThat(result.mainSalary()).isEqualByComparingTo("100000");
+        // Early leave (30 min beyond grace) is handled manually via violation penalties,
+        // not by prorating the shift wage — full wage regardless.
+        assertThat(result.mainSalary()).isEqualByComparingTo("200000");
     }
 
     @Test
@@ -98,7 +104,8 @@ class SalaryCalculatorTest {
 
         // AT already applied BR-AT-10: 60 OT minutes past the scheduled end; hourly base 200000/4h = 50000
         ComputedPayslip result = calculator.compute(s,
-                List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(13, 0), 240, 60, 0)));
+                List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(13, 0), 240, 60, 0)),
+                Set.of());
 
         assertThat(result.otMinutes()).isEqualTo(60);
         assertThat(result.overtimeSalary()).isEqualByComparingTo("75000"); // 50000 × 150%
@@ -109,10 +116,25 @@ class SalaryCalculatorTest {
     void shiftType_leaveEarnsNothing() {
         ComputedPayslip result = calculator.compute(setting(SalaryType.SHIFT, 200_000),
                 List.of(leave(MONDAY, AttendanceType.LEAVE_UNAPPROVED),
-                        leave(MONDAY.plusDays(1), AttendanceType.LEAVE_APPROVED)));
+                        leave(MONDAY.plusDays(1), AttendanceType.LEAVE_APPROVED)),
+                Set.of());
 
         assertThat(result.mainSalary()).isEqualByComparingTo("0");
         assertThat(result.shiftCount()).isZero();
+    }
+
+    @Test
+    void shiftType_classifiesConfiguredDateAsHoliday() {
+        SalarySetting s = setting(SalaryType.SHIFT, 200_000);
+        s.setMainAdvancedRates("{\"holiday\":{\"amount\":\"200\",\"unit\":\"percent\"}}");
+
+        // MONDAY is an ordinary weekday (would resolve to "normal", 100%) unless it's in the
+        // configured holiday set — BR-PAY-04: the holiday calendar wins over the weekday.
+        ComputedPayslip result = calculator.compute(s,
+                List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)),
+                Set.of(MONDAY));
+
+        assertThat(result.mainSalary()).isEqualByComparingTo("400000");
     }
 
     @Test
@@ -122,7 +144,8 @@ class SalaryCalculatorTest {
         s.setOvertimeRates("{\"normal\":{\"amount\":\"150\",\"unit\":\"percent\"}}");
 
         ComputedPayslip result = calculator.compute(s,
-                List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(11, 30), 210, 0, 0)));
+                List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(11, 30), 210, 0, 0)),
+                Set.of());
 
         assertThat(result.mainSalary()).isEqualByComparingTo("105000"); // 3.5h × 30000
         assertThat(result.overtimeSalary()).isEqualByComparingTo("0");
@@ -131,7 +154,8 @@ class SalaryCalculatorTest {
     @Test
     void fixedType_ignoresAttendance() {
         ComputedPayslip result = calculator.compute(setting(SalaryType.FIXED, 8_000_000),
-                List.of(leave(MONDAY, AttendanceType.LEAVE_UNAPPROVED)));
+                List.of(leave(MONDAY, AttendanceType.LEAVE_UNAPPROVED)),
+                Set.of());
 
         assertThat(result.mainSalary()).isEqualByComparingTo("8000000");
         assertThat(result.overtimeSalary()).isEqualByComparingTo("0");
@@ -140,7 +164,8 @@ class SalaryCalculatorTest {
     @Test
     void noSalarySetting_yieldsZerosWithNullType() {
         ComputedPayslip result = calculator.compute(null,
-                List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)));
+                List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)),
+                Set.of());
 
         assertThat(result.salaryType()).isNull();
         assertThat(result.mainSalary()).isEqualByComparingTo("0");
@@ -153,7 +178,8 @@ class SalaryCalculatorTest {
         s.setMainAdvancedRates("{not valid json");
 
         ComputedPayslip result = calculator.compute(s,
-                List.of(present(SATURDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)));
+                List.of(present(SATURDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)),
+                Set.of());
 
         assertThat(result.mainSalary()).isEqualByComparingTo("200000");
     }

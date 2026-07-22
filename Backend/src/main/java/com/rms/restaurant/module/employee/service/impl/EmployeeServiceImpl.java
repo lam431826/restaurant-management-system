@@ -173,8 +173,50 @@ public class EmployeeServiceImpl implements EmployeeService {
         }
 
         Employee saved = employeeRepository.save(employee);
+        syncLinkedUser(saved, request);
         audit("EMPLOYEE_UPDATE", saved);
         return employeeMapper.toResponse(saved);
+    }
+
+    /**
+     * Manager/Admin editing an Employee via this screen is the mirror image of
+     * UserServiceImpl.syncLinkedEmployee() (User→Employee, for the admin-edit-user screen) —
+     * this propagates the other direction, Employee→User, so the two rows don't drift apart
+     * regardless of which screen the edit came from. Only touches an ALREADY-linked User —
+     * never creates one (linking a new User is a separate, explicit action via
+     * request.userId()). Partial-update discipline matches update() above: a blank/omitted
+     * field must not blank out the user's existing value.
+     */
+    private void syncLinkedUser(Employee employee, UpdateEmployeeRequest request) {
+        if (!StringUtils.hasText(request.name())
+                && !StringUtils.hasText(request.phone())
+                && !StringUtils.hasText(request.email())) {
+            return;
+        }
+        String userId = employee.getUserId();
+        if (userId == null) {
+            return;
+        }
+        userRepository.findById(userId).ifPresent(user -> {
+            if (StringUtils.hasText(request.name())) {
+                user.setFullName(request.name().trim());
+            }
+            if (StringUtils.hasText(request.phone())) {
+                String phone = request.phone().trim();
+                if (!phone.equals(user.getPhone()) && userRepository.existsByPhoneAndIdNot(phone, user.getId())) {
+                    throw new ConflictException(ApplicationError.DUPLICATE_PHONE);
+                }
+                user.setPhone(phone);
+            }
+            if (StringUtils.hasText(request.email())) {
+                String email = request.email().trim();
+                if (!email.equals(user.getEmail()) && userRepository.existsByEmailAndIdNot(email, user.getId())) {
+                    throw new ConflictException(ApplicationError.DUPLICATE_EMAIL);
+                }
+                user.setEmail(email);
+            }
+            userRepository.save(user);
+        });
     }
 
     @Override

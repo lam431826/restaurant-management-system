@@ -211,6 +211,16 @@ export const cancelScheduleRule = (ruleId: string, from?: string) =>
 export const getTimesheet = (start: string, end: string) =>
   apiClient.get<{ data: TimesheetCellDto[] }>('/attendance/timesheet', { params: { start, end } })
 
+/* ── Self-service ("Lịch làm việc") ───────────────────────────────────────── */
+export const getMyTimesheet = (start: string, end: string) =>
+  apiClient.get<{ data: TimesheetCellDto[] }>('/attendance/timesheet/me', { params: { start, end } })
+
+export const checkIn = (scheduleId: string) =>
+  apiClient.post<{ data: AttendanceRecordDto }>(`/attendance/schedules/${scheduleId}/check-in`)
+
+export const checkOut = (scheduleId: string) =>
+  apiClient.post<{ data: AttendanceRecordDto }>(`/attendance/schedules/${scheduleId}/check-out`)
+
 export const upsertRecord = (scheduleId: string, req: AttendanceUpsertPayload) =>
   apiClient.put<{ data: AttendanceRecordDto }>(`/attendance/schedules/${scheduleId}/record`, req)
 

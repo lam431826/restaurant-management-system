@@ -19,9 +19,18 @@ public interface AttendanceService {
 
     List<TimesheetCellResponse> timesheet(LocalDate start, LocalDate end);
 
+    /** Self-service ("Lịch làm việc"): the caller's own schedule + attendance status. */
+    List<TimesheetCellResponse> myTimesheet(String username, LocalDate start, LocalDate end);
+
     AttendanceRecordResponse getRecord(String recordId);
 
     AttendanceRecordResponse upsert(String scheduleId, AttendanceUpsertRequest request, String username);
+
+    /** Self-service clock in for the caller's own schedule occurrence (today only). */
+    AttendanceRecordResponse checkIn(String scheduleId, String username);
+
+    /** Self-service clock out for the caller's own schedule occurrence (must already be checked in). */
+    AttendanceRecordResponse checkOut(String scheduleId, String username);
 
     List<AttendanceRecordResponse> bulkMark(BulkAttendanceRequest request, String username);
 

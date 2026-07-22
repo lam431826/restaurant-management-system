@@ -14,6 +14,7 @@ import com.rms.restaurant.module.payroll.dto.ReloadRequest;
 import com.rms.restaurant.module.payroll.mapper.PayrollMapper;
 import com.rms.restaurant.module.payroll.model.PayrollSheet;
 import com.rms.restaurant.module.payroll.model.Payslip;
+import com.rms.restaurant.module.payroll.repository.PayrollHolidayRepository;
 import com.rms.restaurant.module.payroll.repository.PayrollSheetRepository;
 import com.rms.restaurant.module.payroll.repository.PayslipPaymentRepository;
 import com.rms.restaurant.module.payroll.repository.PayslipRepository;
@@ -46,6 +47,7 @@ class PayrollServiceImplTest {
     @Mock private PayslipPaymentRepository paymentRepository;
     @Mock private EmployeeRepository employeeRepository;
     @Mock private SalarySettingRepository salarySettingRepository;
+    @Mock private PayrollHolidayRepository payrollHolidayRepository;
     @Mock private AttendanceService attendanceService;
     @Mock private SalaryCalculator salaryCalculator;
     @Mock private PayrollMapper mapper;
@@ -62,17 +64,18 @@ class PayrollServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new PayrollServiceImpl(sheetRepository, payslipRepository, paymentRepository,
-                employeeRepository, salarySettingRepository, attendanceService, salaryCalculator, mapper,
-                cashbookService);
+                employeeRepository, salarySettingRepository, payrollHolidayRepository, attendanceService,
+                salaryCalculator, mapper, cashbookService);
         lenient().when(sheetRepository.save(any(PayrollSheet.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(sheetRepository.findMaxCode()).thenReturn(Optional.empty());
         lenient().when(payslipRepository.findMaxCode()).thenReturn(Optional.empty());
         lenient().when(payslipRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(payslipRepository.findByPayrollSheetIdOrderByEmployeeCode(anyString())).thenReturn(List.of());
+        lenient().when(payrollHolidayRepository.findAllByHolidayDateBetween(any(), any())).thenReturn(List.of());
         lenient().when(mapper.toResponse(any(PayrollSheet.class), any()))
                 .thenReturn(new PayrollSheetResponse(null, null, null, null, null, null, null, null,
                         null, 0, null, null, null, null, null, null, null, null, null, null));
-        lenient().when(salaryCalculator.compute(any(), any())).thenReturn(
+        lenient().when(salaryCalculator.compute(any(), any(), any())).thenReturn(
                 new com.rms.restaurant.module.payroll.service.ComputedPayslip(
                         SalaryType.SHIFT, BigDecimal.valueOf(200_000), BigDecimal.ZERO, 1, 480, 0, "[]"));
     }
