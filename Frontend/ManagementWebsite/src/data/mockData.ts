@@ -529,7 +529,6 @@ export const helpLinks = [
 
 export const cashierModes = [
   { id: 12, label: 'Lễ tân', icon: 'ik-calendar-day' },
-  { id: 11, label: 'Nhà bếp', icon: 'ik-bell-concierge' },
 ];
 
 /* href '#' = screen not yet implemented (placeholder, does not navigate).    */

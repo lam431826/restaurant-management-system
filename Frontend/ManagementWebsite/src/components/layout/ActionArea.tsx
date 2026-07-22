@@ -116,7 +116,6 @@ const ActionArea = () => {
     setOpen(null);
     if (id === 12)
       navigate("/waiter"); // Lễ tân
-    else if (id === 11) window.alert("Màn hình Nhà bếp đang được phát triển");
   };
 
   useEffect(() => {
@@ -387,39 +386,16 @@ const ActionArea = () => {
 
               <div className="h-px bg-line my-1" />
 
-              <div className={menuRow}>
-                <div>
-                  <div>Hồ sơ cửa hàng</div>
-                  <div className="text-sm text-ink-muted">restaurant101</div>
-                </div>
-              </div>
-
-              <div className={menuRow}>
-                <div>
-                  <div>Chi nhánh</div>
-                  <div className="text-sm text-ink-muted">
-                    Chi nhánh trung tâm
-                  </div>
-                </div>
-              </div>
-
-              <div className="h-px bg-line my-1" />
-
-              <div className={menuRow}>
-                <span>Chủ đề</span>
-              </div>
-
-              <div className={menuRow}>
-                <span>Ngôn ngữ</span>
-                <div className="flex items-center gap-2">
-                  <img
-                    src="/assets/flagsquare-vn.svg"
-                    alt="Vietnamese"
-                    className="w-5 h-5 rounded-xxs object-cover inline-block"
-                  />
-                  <span>Tiếng Việt</span>
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(null);
+                  navigate("/my-profile");
+                }}
+                className={`${menuRow} w-full bg-transparent border-none text-left`}
+              >
+                Hồ sơ của tôi
+              </button>
 
               <div className="h-px bg-line my-1" />
 
@@ -429,18 +405,13 @@ const ActionArea = () => {
                   setOpen(null);
                   setShowChangePassword(true);
                 }}
-                className={`${menuRow} w-full bg-transparent border-none`}
+                className={`${menuRow} w-full bg-transparent border-none text-left`}
               >
                 Đổi mật khẩu
               </button>
 
               <div className="h-px bg-line my-1" />
 
-              <button
-                type="button"
-                onClick={handleLogout}
-                className={`${menuRow} w-full text-danger hover:!bg-[var(--kv-action-danger-faded-bg)] bg-transparent border-none`}
-              />
               <button
                 type="button"
                 onClick={handleLogout}
