@@ -43,11 +43,11 @@ const addDays = (d: Date, days: number) => {
   r.setDate(r.getDate() + days)
   return r
 }
-// The backend's findPaidBetween(from, to) is inclusive on BOTH ends against createdAt, which can
-// carry sub-second precision. An upper bound of "23:59:59" would silently omit a transaction
-// settled at, say, 23:59:59.4 — so "end of day" is always the *start of the next* calendar day
-// instead: every instant of the intended day is `<= to` with no truncation, and the only
-// theoretical overlap is the single, unreachable-in-practice instant of exactly next midnight.
+// The backend's findSettledPaidBetween(from, to) is half-open on paidAt (`>= from AND < to`),
+// which can carry sub-second precision. An upper bound of "23:59:59" would silently omit a
+// transaction settled at, say, 23:59:59.4 — so "end of day" is always the *start of the next*
+// calendar day instead: every instant of the intended day is `< to` with no truncation, and
+// the boundary instant itself (exactly next midnight) correctly belongs to the next day.
 const startOfNextDay = (d: Date) => addDays(startOfDay(d), 1)
 
 /** Resolves a period id to concrete [from, to] windows (current + previous) and bucket width. */
@@ -138,13 +138,18 @@ export interface TableStats {
   occupied: number
   billing: number
   reserved: number
-  cleaning: number
   /** Tables actively serving a guest (OCCUPIED or BILLING). */
   inUse: number
   occupancyPct: number
 }
 
-/** Counts only ACTIVE tables — archived/disabled tables never skew occupancy. */
+/**
+ * Counts only ACTIVE tables — archived/disabled tables never skew occupancy.
+ * BILLING/CLEANING exist as TableStatus values but no cashier flow ever sets them today
+ * (paying an invoice jumps a table straight OCCUPIED -> AVAILABLE); billing is still counted
+ * here (folded into inUse) for whenever that transition is wired up, but a standalone
+ * "cleaning" bucket is intentionally not exposed since it would always read 0.
+ */
 export const computeTableStats = (tables: TableItem[]): TableStats => {
   const active = tables.filter(t => t.active)
   const count = (status: string) => active.filter(t => t.status === status).length
@@ -157,7 +162,6 @@ export const computeTableStats = (tables: TableItem[]): TableStats => {
     occupied,
     billing,
     reserved: count('RESERVED'),
-    cleaning: count('CLEANING'),
     inUse,
     occupancyPct: active.length > 0 ? (inUse / active.length) * 100 : 0,
   }

@@ -10,6 +10,11 @@ import RecentActivities from './RecentActivities'
 import { resolvePeriod, type PeriodId, type ResolvedPeriod } from './dashboardUtils'
 import { getDashboardOverview, type DashboardOverview, type DashboardRevenue } from '../../api/dashboard'
 import { listTables, type TableItem } from '../../services/tableService'
+import { useRealtime } from '../../hooks/useRealtime'
+
+// Revenue/KPI figures have no backend push event (no "payment settled" topic exists), so they
+// are kept fresh with a lightweight periodic poll instead of a WebSocket subscription.
+const OVERVIEW_POLL_INTERVAL_MS = 60_000
 
 export interface OverviewState {
   data: DashboardOverview | null
@@ -84,10 +89,20 @@ const Dashboard = () => {
     loadOverview(r)
   }, [period, loadOverview])
 
-  // Live table occupancy is point-in-time, independent of the reporting period — fetched once.
+  // No push event exists for "a payment/invoice just settled", so re-fetch the current period's
+  // overview on a timer instead of requiring a manual page reload.
+  useEffect(() => {
+    const interval = setInterval(() => loadOverview(resolved), OVERVIEW_POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [resolved, loadOverview])
+
+  // Live table occupancy is point-in-time, independent of the reporting period — fetched once
+  // up front, then kept fresh by the same /topic/tables channel the cashier floor view already
+  // subscribes to (table create/seat/close/reservation check-in all publish to it).
   useEffect(() => {
     loadTables()
   }, [loadTables])
+  useRealtime('/topic/tables', () => loadTables())
 
   return (
     <div className="flex flex-col gap-4 min-h-full">

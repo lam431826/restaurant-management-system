@@ -4,11 +4,13 @@ import { computeTableStats, fmtInt, fmtPercent } from './dashboardUtils'
 import type { TablesState } from './Dashboard'
 
 // Status colors aligned with the table-management floor view.
+// No "cleaning" row: BILLING/CLEANING exist as table-status values but no cashier flow ever
+// sets them (paying an invoice jumps a table straight OCCUPIED -> AVAILABLE), so that bucket
+// would always read 0 and mislead managers into thinking cleanup is being tracked.
 const STATUS_META = [
   { key: 'inUse', label: 'Đang phục vụ', color: 'var(--kv-success)' },
   { key: 'available', label: 'Bàn trống', color: 'var(--kv-text-subtle)' },
   { key: 'reserved', label: 'Đã đặt trước', color: 'var(--kv-primary)' },
-  { key: 'cleaning', label: 'Chờ dọn dẹp', color: 'var(--kv-warning)' },
 ] as const
 
 const TableOperations = ({
