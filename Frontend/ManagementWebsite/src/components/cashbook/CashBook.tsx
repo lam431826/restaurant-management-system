@@ -1,15 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import CashBookFilters from './CashBookFilters'
 import CashBookSummary from './CashBookSummary'
 import CashBookTable from './CashBookTable'
 import CashBookToolbar from './CashBookToolbar'
 import CashFlowModal from './CashFlowModal'
 import {
-  OPENING_BALANCE, initialCategories, initialVouchers, METHOD_LABEL, FUND_LABEL, defaultCashBookFilters,
-} from '../../data/cashBookMockData'
+  listVouchers, listCategories, getSummary,
+  createCategory as apiCreateCategory, updateCategory as apiUpdateCategory, deleteCategory as apiDeleteCategory,
+  createVoucher as apiCreateVoucher, voidVoucher as apiVoidVoucher,
+  METHOD_LABEL, FUND_LABEL, defaultCashBookFilters,
+} from '../../api/cashbook'
 import type {
   CashBookFilterState, CashFlowCategory, CashFlowMethod, CashFlowType, CashFlowVoucher, ColumnKey,
-} from '../../data/cashBookMockData'
+  CreateVoucherPayload,
+} from '../../api/cashbook'
 
 type ModalState = { type: CashFlowType; method: CashFlowMethod } | null
 
@@ -19,6 +23,9 @@ const DEFAULT_VISIBLE_COLUMNS: Record<ColumnKey, boolean> = {
 
 const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1)
 const endOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999)
+
+const errMsg = (err: unknown, fallback: string) =>
+  (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
 
 const exportCsv = (vouchers: CashFlowVoucher[], categories: CashFlowCategory[]) => {
   const categoryName = (id: string) => categories.find(c => c.id === id)?.name ?? ''
@@ -45,13 +52,34 @@ const exportCsv = (vouchers: CashFlowVoucher[], categories: CashFlowCategory[]) 
 }
 
 const CashBook = () => {
-  const [categories, setCategories] = useState<CashFlowCategory[]>(initialCategories)
-  const [vouchers, setVouchers] = useState<CashFlowVoucher[]>(initialVouchers)
+  const [categories, setCategories] = useState<CashFlowCategory[]>([])
+  const [vouchers, setVouchers] = useState<CashFlowVoucher[]>([])
+  const [openingBalance, setOpeningBalance] = useState(0)
   const [filters, setFilters] = useState<CashBookFilterState>(defaultCashBookFilters)
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState<ModalState>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [visibleColumns, setVisibleColumns] = useState<Record<ColumnKey, boolean>>(DEFAULT_VISIBLE_COLUMNS)
+
+  const loadVouchers = useCallback(async () => {
+    try {
+      const page = await listVouchers({})
+      setVouchers(page.data)
+    } catch {
+      // keep the previously loaded list on a transient fetch failure
+    }
+  }, [])
+
+  useEffect(() => { void loadVouchers() }, [loadVouchers])
+
+  useEffect(() => {
+    listCategories().then(setCategories).catch(() => setCategories([]))
+  }, [])
+
+  useEffect(() => {
+    const fund = filters.fund === 'ALL' ? undefined : filters.fund
+    getSummary({ fund }).then(s => setOpeningBalance(s.openingBalance)).catch(() => {})
+  }, [filters.fund])
 
   const createdByOptions = useMemo(
     () => Array.from(new Set(vouchers.map(v => v.createdBy))),
@@ -104,25 +132,36 @@ const CashBook = () => {
     )
   }, [filteredVouchers])
 
-  const saveVoucher = (voucher: CashFlowVoucher) => {
-    setVouchers(list => [voucher, ...list])
+  const saveVoucher = async (payload: CreateVoucherPayload) => {
+    await apiCreateVoucher(payload)
+    await loadVouchers()
     setModal(null)
   }
 
-  const addCategory = (type: CashFlowType, data: { name: string; description: string; accountingToIncome: boolean }): CashFlowCategory => {
-    const created: CashFlowCategory = { id: crypto.randomUUID(), type, ...data }
+  const addCategory = async (type: CashFlowType, data: { name: string; description: string; accountingToIncome: boolean }) => {
+    const created = await apiCreateCategory({ name: data.name, type, description: data.description, accountingToIncome: data.accountingToIncome })
     setCategories(list => [...list, created])
     return created
   }
-  const updateCategory = (id: string, data: { name: string; description: string; accountingToIncome: boolean }) => {
-    setCategories(list => list.map(c => (c.id === id ? { ...c, ...data } : c)))
+  const updateCategory = async (id: string, data: { name: string; description: string; accountingToIncome: boolean }) => {
+    const existing = categories.find(c => c.id === id)
+    if (!existing) return
+    const updated = await apiUpdateCategory(id, { name: data.name, type: existing.type, description: data.description, accountingToIncome: data.accountingToIncome })
+    setCategories(list => list.map(c => (c.id === id ? updated : c)))
   }
-  const deleteCategory = (id: string) => {
+  const deleteCategory = async (id: string) => {
+    await apiDeleteCategory(id)
     setCategories(list => list.filter(c => c.id !== id))
   }
 
-  const voidVoucher = (voucherId: string) => {
-    setVouchers(list => list.map(v => (v.id === voucherId ? { ...v, voided: true } : v)))
+  const voidVoucher = async (voucherId: string) => {
+    if (!window.confirm('Hủy phiếu này?')) return
+    try {
+      const updated = await apiVoidVoucher(voucherId)
+      setVouchers(list => list.map(v => (v.id === voucherId ? updated : v)))
+    } catch (err) {
+      window.alert(errMsg(err, 'Không thể hủy phiếu'))
+    }
   }
 
   const toggleColumn = (key: ColumnKey) => setVisibleColumns(cols => ({ ...cols, [key]: !cols[key] }))
@@ -144,7 +183,7 @@ const CashBook = () => {
           onToggleColumn={toggleColumn}
         />
 
-        <CashBookSummary openingBalance={OPENING_BALANCE} totalIncome={totalIncome} totalExpense={totalExpense} />
+        <CashBookSummary openingBalance={openingBalance} totalIncome={totalIncome} totalExpense={totalExpense} />
 
         <CashBookTable
           vouchers={filteredVouchers}
@@ -161,7 +200,6 @@ const CashBook = () => {
           type={modal.type}
           defaultMethod={modal.method}
           categories={categories}
-          vouchers={vouchers}
           onClose={() => setModal(null)}
           onSave={saveVoucher}
           onAddCategory={addCategory}

@@ -48,7 +48,7 @@ public class InvoiceMergePersistenceService {
     private final EntityManager entityManager;
 
     @Transactional
-    public PersistedInvoiceMergeResult mergeAtomically(ValidatedInvoiceMergePlan plan) {
+    public PersistedInvoiceMergeResult mergeAtomically(ValidatedInvoiceMergePlan plan, String username) {
         validatePlanStructure(plan);
 
         Order owningOrder = orderRepository.findByIdForUpdate(plan.orderId())
@@ -79,7 +79,7 @@ public class InvoiceMergePersistenceService {
         Map<String, SourceInvoiceSnapshot> invoiceSnapshots = captureInvoiceSnapshots(sourceInvoices);
         Map<String, SourceAllocationSnapshot> allocationSnapshots = captureAllocationSnapshots(sourceAllocations);
 
-        Invoice targetInvoice = createTargetInvoice(plan.orderId(), financials.targetSubtotal());
+        Invoice targetInvoice = createTargetInvoice(plan.orderId(), financials.targetSubtotal(), username);
 
         for (InvoiceItemAllocation sourceAllocation : sourceAllocations) {
             sourceAllocation.setActive(false);
@@ -340,7 +340,7 @@ public class InvoiceMergePersistenceService {
         }
     }
 
-    private Invoice createTargetInvoice(String orderId, BigDecimal targetSubtotal) {
+    private Invoice createTargetInvoice(String orderId, BigDecimal targetSubtotal, String username) {
         Invoice target = Invoice.builder()
                 .code(businessCodeGenerator.nextInvoiceCode())
                 .orderId(orderId)
@@ -352,6 +352,7 @@ public class InvoiceMergePersistenceService {
                 .status(InvoiceStatus.ACTIVE)
                 .mergedIntoInvoiceId(null)
                 .splitFromInvoiceId(null)
+                .createdBy(username)
                 .build();
         Invoice savedTarget = invoiceRepository.save(target);
         invoiceRepository.flush();

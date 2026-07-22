@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { BRANCHES } from '../../data/endOfDayReportMockData'
 import { PAYMENT_METHOD_ABBR } from '../../api/reports'
 import type { EndOfDaySalesRow, ReportPaymentMethod } from '../../api/reports'
@@ -167,10 +168,12 @@ const exportCsv = (rows: EndOfDaySalesRow[], filters: EndOfDayFilterState) => {
 const td = (align: 'left' | 'right', extra = '') => `px-2 py-2 text-sm text-ink ${align === 'right' ? 'text-right' : 'text-left'} ${extra}`
 
 const EndOfDayPreview = ({ rows, filters, generatedAt, loading, error, onRefresh }: Props) => {
-  const [zoom, setZoom] = useState(100)
+  const navigate = useNavigate()
+  const [zoom, setZoom] = useState(90)
   const [fullscreen, setFullscreen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
+  // default collapsed — invoice detail rows only show once the user expands a row
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [exportOpen, setExportOpen] = useState(false)
   const [page, setPage] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -193,7 +196,7 @@ const EndOfDayPreview = ({ rows, filters, generatedAt, loading, error, onRefresh
     else void containerRef.current?.requestFullscreen()
   }
 
-  const toggleCollapsed = (id: string) => setCollapsedIds(prev => {
+  const toggleExpanded = (id: string) => setExpandedIds(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id); else next.add(id)
     return next
@@ -312,13 +315,13 @@ const EndOfDayPreview = ({ rows, filters, generatedAt, loading, error, onRefresh
                       <td className={td('right', 'font-semibold')}>{money(totals.payment)}</td>
                     </tr>
                     {pagedRows.map(r => {
-                      const collapsed = collapsedIds.has(r.id)
+                      const collapsed = !expandedIds.has(r.id)
                       return (
                         <Fragment key={r.id}>
                           {/* per-invoice collapsible header — date/time acts as the group toggle */}
                           <tr className="border-b border-line hover:bg-fill/40">
                             <td className={td('left')}>
-                              <button type="button" onClick={() => toggleCollapsed(r.id)}
+                              <button type="button" onClick={() => toggleExpanded(r.id)}
                                 className="inline-flex items-center gap-1.5 text-primary hover:underline cursor-pointer">
                                 <span className="w-4 h-4 inline-flex items-center justify-center rounded border border-primary/40">
                                   {collapsed ? <PlusIcon /> : <MinusIcon />}
@@ -338,7 +341,16 @@ const EndOfDayPreview = ({ rows, filters, generatedAt, loading, error, onRefresh
                           {/* exploded invoice line — every filterable field as its own column */}
                           {!collapsed && (
                             <tr className="border-b border-line">
-                              <td className={td('left')}><span className="text-primary">{r.code}</span></td>
+                              <td className={td('left')}>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/manager/invoices?invoiceId=${r.id}`)}
+                                  title="Xem hóa đơn trong Giao dịch"
+                                  className="text-primary font-mono hover:underline cursor-pointer"
+                                >
+                                  {r.code}
+                                </button>
+                              </td>
                               <td className={td('left')}>{r.tableName ?? '—'}</td>
                               <td className={td('left')}>{r.staffName ?? '—'}</td>
                               <td className={td('left')}>{fmtTime(r.time)}</td>

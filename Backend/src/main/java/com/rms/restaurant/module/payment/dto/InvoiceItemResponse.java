@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 
 public record InvoiceItemResponse(
         String menuItemId,
+        String menuItemCode,
         String menuItemName,
         int quantity,
         BigDecimal unitPrice,

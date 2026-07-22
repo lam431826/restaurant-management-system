@@ -143,6 +143,7 @@ public enum ApplicationError {
     PAYSLIP_CANCELLED("Phiếu lương đã bị hủy", HttpStatus.UNPROCESSABLE_ENTITY),
     SALARY_TEMPLATE_NOT_FOUND("Không tìm thấy mẫu lương", HttpStatus.NOT_FOUND),
     SALARY_TEMPLATE_NAME_DUPLICATE("Tên mẫu lương đã tồn tại", HttpStatus.CONFLICT),
+    PAYROLL_SETTING_INVALID("Thiết lập tính lương không hợp lệ", HttpStatus.BAD_REQUEST),
 
     // Attendance & Shift (SRS_AT) — UC-AT-01..07, BR-AT-*
     AT_SHIFT_NOT_FOUND("Không tìm thấy ca làm việc", HttpStatus.NOT_FOUND),
@@ -158,6 +159,7 @@ public enum ApplicationError {
     AT_EMPLOYEE_INACTIVE("Nhân viên đã ngừng làm việc, không thể xếp lịch mới", HttpStatus.UNPROCESSABLE_ENTITY),
     AT_RECORD_NOT_FOUND("Không tìm thấy bản ghi chấm công", HttpStatus.NOT_FOUND),
     AT_RECORD_TIME_INVALID("Giờ ra phải sau giờ vào", HttpStatus.UNPROCESSABLE_ENTITY),
+    AT_RECORD_DATE_INVALID("Ngày chấm công không hợp lệ", HttpStatus.UNPROCESSABLE_ENTITY),
     AT_SUBSTITUTE_SINGLE_ONLY("Chỉ có thể chỉ định người làm thay khi chọn đúng một lịch làm việc", HttpStatus.BAD_REQUEST),
     AT_SUBSTITUTE_SELF("Người làm thay phải khác nhân viên được xếp ca", HttpStatus.BAD_REQUEST),
     AT_MERGE_LIMIT_EXCEEDED("Vượt giới hạn gộp ca liên tục", HttpStatus.UNPROCESSABLE_ENTITY),
@@ -179,6 +181,10 @@ public enum ApplicationError {
     CASHBOOK_VOUCHER_ALREADY_VOIDED("Voucher has already been voided", HttpStatus.CONFLICT),
     CASHBOOK_VOUCHER_CATEGORY_TYPE_MISMATCH("Category type does not match the voucher type", HttpStatus.UNPROCESSABLE_ENTITY),
     CASHBOOK_VOUCHER_PARTNER_GROUP_INVALID("Voucher partner group is invalid for this operation", HttpStatus.UNPROCESSABLE_ENTITY),
+
+    // Financial report — custom Chi phí / Thu nhập khác line items
+    FIN_CUSTOM_LINE_NOT_FOUND("Không tìm thấy danh mục", HttpStatus.NOT_FOUND),
+    FIN_CUSTOM_LINE_INVALID("Tên danh mục không hợp lệ", HttpStatus.BAD_REQUEST),
 
     // System
     INTERNAL_ERROR("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR);

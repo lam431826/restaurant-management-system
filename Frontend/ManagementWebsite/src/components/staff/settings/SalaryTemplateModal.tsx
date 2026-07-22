@@ -90,7 +90,7 @@ const SalaryTemplateModal = ({ template, onClose, onSaved }: Props) => {
       style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }}
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="w-full max-w-[70rem] my-[6vh] bg-surface rounded-lg shadow-lg flex flex-col">
+      <div className="w-full max-w-[90rem] my-[6vh] bg-surface rounded-lg shadow-lg flex flex-col">
         <div className="flex items-center justify-between px-6 h-16 bg-card rounded-t-lg border-b border-line shrink-0">
           <h2 className="text-h3 font-bold text-ink">{template ? 'Sửa mẫu lương' : 'Thêm mẫu lương'}</h2>
           <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle cursor-pointer transition-colors hover:bg-fill hover:text-ink" aria-label="Đóng">

@@ -4,6 +4,7 @@ import type { EmpStatus } from './EmployeeFilters'
 import EmployeeToolbar from './EmployeeToolbar'
 import EmployeeTable, { EMPLOYEE_COLUMNS, DEFAULT_VISIBLE_COLUMNS } from './EmployeeTable'
 import EmployeeModal from './EmployeeModal'
+import ConfirmDialog from '../menu/ConfirmDialog'
 import { listEmployees, createEmployee, deactivateEmployee, updateEmployee, toEmployee } from '../../api/employees'
 import type { EmployeeFormPayload, EmployeeStatus } from '../../api/employees'
 import type { Employee } from '../../data/mockData'
@@ -24,6 +25,9 @@ const Employees = () => {
 
   const [showAdd, setShowAdd] = useState(false)
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(DEFAULT_VISIBLE_COLUMNS)
+
+  const [pendingToggle, setPendingToggle] = useState<Employee | null>(null)
+  const [toggling, setToggling] = useState(false)
 
   const fetchEmployees = useCallback(async (p: number, s: EmpStatus) => {
     setLoading(true)
@@ -60,29 +64,33 @@ const Employees = () => {
     fetchEmployees(page, status)
   }
 
-  const handleToggleActive = async (emp: Employee) => {
-    const verb = emp.status === 'ACTIVE' ? 'ngừng làm việc' : 'tiếp tục làm việc'
-    if (!window.confirm(`Xác nhận ${verb} đối với nhân viên ${emp.name}?`)) return
+  const handleToggleActive = (emp: Employee) => {
+    setPendingToggle(emp)
+  }
+
+  const handleConfirmToggle = async () => {
+    if (!pendingToggle) return
+    setToggling(true)
     try {
-      if (emp.status === 'ACTIVE') {
-        await deactivateEmployee(emp.id)
+      if (pendingToggle.status === 'ACTIVE') {
+        await deactivateEmployee(pendingToggle.id)
       } else {
-        await updateEmployee(emp.id, { status: 'ACTIVE' })
+        await updateEmployee(pendingToggle.id, { status: 'ACTIVE' })
       }
       await fetchEmployees(page, status)
+      setPendingToggle(null)
     } catch (err) {
       const anyErr = err as { response?: { data?: { message?: string } } }
       window.alert(anyErr.response?.data?.message || 'Có lỗi xảy ra, vui lòng thử lại')
+    } finally {
+      setToggling(false)
     }
   }
 
   return (
     <div className="flex h-[calc(100vh-var(--kv-header-height))] bg-surface overflow-hidden">
       <aside className="w-[26rem] shrink-0 flex flex-col px-5 pt-5 pb-4 overflow-y-auto border-r border-line">
-        <h1 className="text-h3 font-extrabold text-ink">Danh sách nhân viên</h1>
-        <p className="text-sm text-ink-subtle mt-1 mb-5">
-          Đã sử dụng {total} nhân viên. <a href="#" className="text-primary hover:underline">Nâng gói</a>
-        </p>
+        <h1 className="text-h3 font-extrabold text-ink mb-5">Danh sách nhân viên</h1>
         <EmployeeFilters status={status} onStatus={setStatus} />
       </aside>
 
@@ -114,6 +122,22 @@ const Employees = () => {
         <EmployeeModal
           onClose={() => setShowAdd(false)}
           onSave={handleCreate}
+        />
+      )}
+
+      {pendingToggle && (
+        <ConfirmDialog
+          title={pendingToggle.status === 'ACTIVE' ? 'Ngừng làm việc' : 'Cho phép làm việc'}
+          message={
+            pendingToggle.status === 'ACTIVE'
+              ? <>Xác nhận ngừng làm việc đối với nhân viên <strong>{pendingToggle.name}</strong>?</>
+              : <>Xác nhận cho phép nhân viên <strong>{pendingToggle.name}</strong> làm việc trở lại?</>
+          }
+          confirmLabel={pendingToggle.status === 'ACTIVE' ? 'Ngừng làm việc' : 'Cho phép làm việc'}
+          danger={pendingToggle.status === 'ACTIVE'}
+          loading={toggling}
+          onConfirm={handleConfirmToggle}
+          onCancel={() => { if (!toggling) setPendingToggle(null) }}
         />
       )}
     </div>

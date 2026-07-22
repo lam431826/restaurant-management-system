@@ -904,9 +904,20 @@ const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props
               {/* Mẫu lương */}
               <SectionCard>
                 <div className="flex items-center gap-4">
-                  <label className="text-md font-bold text-ink w-[8rem] shrink-0 flex items-center gap-1.5">Mẫu lương <InfoIcon /></label>
+                  <label className="text-md text-ink-subtle w-[8rem] shrink-0 flex items-center gap-1.5">Áp dụng mẫu <InfoIcon /></label>
                   <div className="w-full sm:w-[40rem]">
-                    <Picker value={salaryTemplate} options={salaryTemplates.map(t => t.name)} placeholder="Chọn mẫu lương có sẵn" onChange={applyTemplate} />
+                    <Picker value="" options={salaryTemplates.map(t => t.name)} placeholder="Chọn mẫu lương có sẵn" onChange={applyTemplate} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 mt-4">
+                  <label className="text-md font-bold text-ink w-[8rem] shrink-0">Tên mẫu lương</label>
+                  <div className="w-full sm:w-[40rem]">
+                    <input
+                      className={inputCls}
+                      placeholder="Nhập tên mẫu lương (bắt buộc để tạo mẫu mới)"
+                      value={salaryTemplate}
+                      onChange={e => { setSalaryTemplate(e.target.value); if (error) setError('') }}
+                    />
                   </div>
                 </div>
               </SectionCard>

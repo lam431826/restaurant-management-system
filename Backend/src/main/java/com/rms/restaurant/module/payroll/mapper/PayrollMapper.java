@@ -3,6 +3,7 @@ package com.rms.restaurant.module.payroll.mapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rms.restaurant.module.payroll.dto.*;
+import com.rms.restaurant.module.payroll.model.PayrollSetting;
 import com.rms.restaurant.module.payroll.model.PayrollSheet;
 import com.rms.restaurant.module.payroll.model.Payslip;
 import com.rms.restaurant.module.payroll.model.PayslipPayment;
@@ -69,6 +70,12 @@ public class PayrollMapper {
                 t.getId(), t.getName(), t.getMainSalaryType(), t.getMainBaseWage(),
                 t.getMainAdvancedRates(), t.isOvertimeEnabled(), t.getOvertimeRates(),
                 t.getCreatedAt(), t.getUpdatedAt());
+    }
+
+    public PayrollSettingResponse toSettingResponse(PayrollSetting s) {
+        return new PayrollSettingResponse(
+                s.getPayrollCutoffDay(), s.isAutoCreateEnabled(),
+                s.isAutoUpdateEnabled(), s.isPersonalIncomeTaxEnabled());
     }
 
     public List<AttendanceDetailRow> parseSnapshot(String json) {

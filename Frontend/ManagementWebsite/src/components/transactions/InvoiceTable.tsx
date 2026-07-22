@@ -21,6 +21,7 @@ interface Props {
   loading: boolean;
   tab: InvoiceViewTab;
   refreshVersion: number;
+  deepLinkInvoiceId?: string | null;
 }
 
 const money = (value: number) => value.toLocaleString("vi-VN");
@@ -73,12 +74,15 @@ const InvoiceTable = ({
   loading,
   tab,
   refreshVersion,
+  deepLinkInvoiceId,
 }: Props) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<InvoiceDetailData | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   const previousRefreshVersion = useRef(refreshVersion);
+  const consumedDeepLinkRef = useRef<string | null>(null);
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
 
   const loadDetail = useCallback(async (invoiceId: string) => {
     setDetail(null);
@@ -98,6 +102,21 @@ const InvoiceTable = ({
     previousRefreshVersion.current = refreshVersion;
     if (expandedId) void loadDetail(expandedId);
   }, [expandedId, loadDetail, refreshVersion]);
+
+  // Jump straight to a specific invoice (e.g. from a Sổ quỹ auto-generated receipt voucher).
+  // Only fires once per deep-link id, and only once that invoice actually shows up in the
+  // currently loaded/filtered list — a later lifecycle change (split/merged) that moves it
+  // out of the default "operational" tab is a rare edge case we don't special-case here.
+  useEffect(() => {
+    if (!deepLinkInvoiceId || loading) return;
+    if (consumedDeepLinkRef.current === deepLinkInvoiceId) return;
+    const match = invoices.find((invoice) => invoice.id === deepLinkInvoiceId);
+    if (!match) return;
+    consumedDeepLinkRef.current = deepLinkInvoiceId;
+    setExpandedId(match.id);
+    void loadDetail(match.id);
+    rowRefs.current[match.id]?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [deepLinkInvoiceId, invoices, loading, loadDetail]);
 
   const toggleDetail = async (invoice: InvoiceSummary) => {
     if (expandedId === invoice.id) {
@@ -233,6 +252,7 @@ const InvoiceTable = ({
                 return (
                   <Fragment key={invoice.id}>
                     <tr
+                      ref={(el) => { rowRefs.current[invoice.id] = el; }}
                       className={`cursor-pointer ${isOpen ? "bg-primary-50" : "hover:bg-primary-25"}`}
                       onClick={() => void toggleDetail(invoice)}
                     >

@@ -159,6 +159,7 @@ export const listSheets = (params: {
   statuses?: PayrollSheetStatus[]
   page?: number
   size?: number
+  sort?: string
 } = {}) =>
   apiClient.get<SheetsPage>('/payroll/sheets', {
     params: { page: 0, size: 15, sort: 'createdAt,desc', ...params },
@@ -200,6 +201,20 @@ export const cancelPayslip = (id: string) =>
 
 export const listEmployeePayslips = (employeeId: string) =>
   apiClient.get<{ data: PayslipDetailDto[] }>(`/payroll/employees/${employeeId}/payslips`)
+
+/* ── payroll settings (Thiết lập tính lương) ─────────────────────────────── */
+export interface PayrollSettingsDto {
+  payrollCutoffDay: number
+  autoCreateEnabled: boolean
+  autoUpdateEnabled: boolean
+  personalIncomeTaxEnabled: boolean
+}
+
+export const getPayrollSettings = () =>
+  apiClient.get<{ data: PayrollSettingsDto }>('/payroll/settings')
+
+export const updatePayrollSettings = (req: PayrollSettingsDto) =>
+  apiClient.put<{ data: PayrollSettingsDto }>('/payroll/settings', req)
 
 /* ── shared formatting helpers ───────────────────────────────────────────── */
 export const money = (n: number) => (n ?? 0).toLocaleString('vi-VN')

@@ -31,7 +31,6 @@ class AttendanceCalculatorTest {
 
     private AttendanceSetting.AttendanceSettingBuilder settings() {
         return AttendanceSetting.builder()
-                .standardWorkdayMinutes(480)
                 .halfDayEnabled(false)
                 .lateEnabled(true).lateGraceMinutes(0)
                 .earlyLeaveEnabled(true).earlyLeaveGraceMinutes(0)

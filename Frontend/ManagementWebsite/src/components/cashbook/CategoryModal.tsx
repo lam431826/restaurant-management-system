@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { inputCls } from '../staff/EmployeeModal'
-import type { CashFlowCategory, CashFlowType } from '../../data/cashBookMockData'
+import type { CashFlowCategory, CashFlowType } from '../../api/cashbook'
 
 interface Props {
   type: CashFlowType

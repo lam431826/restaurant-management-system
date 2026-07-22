@@ -3,7 +3,6 @@ package com.rms.restaurant.module.attendance.dto;
 import com.rms.restaurant.common.utils.enums.ManualTimeMode;
 
 public record AttendanceSettingResponse(
-        int standardWorkdayMinutes,
         boolean halfDayEnabled,
         int halfDayMinMinutes,
         int halfDayMaxMinutes,

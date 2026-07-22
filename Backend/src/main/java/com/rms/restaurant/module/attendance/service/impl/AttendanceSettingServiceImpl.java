@@ -39,7 +39,6 @@ public class AttendanceSettingServiceImpl implements AttendanceSettingService {
     public AttendanceSettingResponse update(AttendanceSettingRequest request) {
         validate(request);
         AttendanceSetting s = current();
-        s.setStandardWorkdayMinutes(request.standardWorkdayMinutes());
         s.setHalfDayEnabled(request.halfDayEnabled());
         s.setHalfDayMinMinutes(request.halfDayMinMinutes());
         s.setHalfDayMaxMinutes(request.halfDayMaxMinutes());
@@ -59,8 +58,7 @@ public class AttendanceSettingServiceImpl implements AttendanceSettingService {
     }
 
     private void validate(AttendanceSettingRequest r) {
-        boolean invalid = r.standardWorkdayMinutes() <= 0
-                || r.halfDayMinMinutes() < 0 || r.halfDayMaxMinutes() < 0
+        boolean invalid = r.halfDayMinMinutes() < 0 || r.halfDayMaxMinutes() < 0
                 || (r.halfDayEnabled() && r.halfDayMinMinutes() >= r.halfDayMaxMinutes())
                 || r.lateGraceMinutes() < 0 || r.earlyLeaveGraceMinutes() < 0
                 || r.otBeforeMinMinutes() < 0 || r.otAfterMinMinutes() < 0

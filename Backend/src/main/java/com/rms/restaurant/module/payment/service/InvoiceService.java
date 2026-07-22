@@ -12,11 +12,11 @@ public interface InvoiceService {
      * lifecycle status, which the Cashier order view relies on.
      */
     List<InvoiceSummaryResponse> getAll(Boolean paid, String orderId, List<InvoiceStatus> statuses);
-    InvoiceResponse generate(GenerateInvoiceRequest request);
+    InvoiceResponse generate(GenerateInvoiceRequest request, String username);
     InvoiceResponse applyDiscount(String invoiceId, ApplyDiscountRequest request);
     InvoiceDetailResponse getById(String invoiceId);
-    SplitInvoiceResponse split(String invoiceId, SplitInvoiceRequest request);
-    MergeInvoiceResponse merge(MergeInvoiceRequest request);
+    SplitInvoiceResponse split(String invoiceId, SplitInvoiceRequest request, String username);
+    MergeInvoiceResponse merge(MergeInvoiceRequest request, String username);
     SendInvoiceResponse sendInvoice(String invoiceId);
     InvoiceResponse getByOrderId(String orderId);
 

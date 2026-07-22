@@ -4,7 +4,7 @@ import {
   cancelPayslip, cancelSheet, createSheet, fmtDate, fmtDateTime, getPayslip,
   listSheetPayments, listSheetPayslips, listSheets, money, paySheet, reloadSheet,
   toIsoDate,
-  ATTENDANCE_STATUS_LABEL, METHOD_LABEL, SALARY_TYPE_LABEL, SCOPE_LABEL, SHEET_STATUS_LABEL, TERM_LABEL,
+  ATTENDANCE_STATUS_LABEL, METHOD_LABEL, PAYSLIP_PAYMENT_STATUS_LABEL, SALARY_TYPE_LABEL, SCOPE_LABEL, SHEET_STATUS_LABEL, TERM_LABEL,
 } from '../../../api/payroll'
 import type {
   CreateSheetPayload, PaymentDto, PayrollSheetDto, PayrollSheetStatus, PayrollTerm,
@@ -22,11 +22,32 @@ import type { Employee } from '../../../data/mockData'
 const STATUS_FILTERS: PayrollSheetStatus[] = ['GENERATING', 'DRAFT', 'FINALIZED', 'CANCELLED']
 const TERM_PLACEHOLDER = 'Chọn kỳ hạn trả lương'
 const TERM_OPTIONS = [TERM_PLACEHOLDER, TERM_LABEL.MONTHLY, TERM_LABEL.CUSTOM]
+const DEFAULT_SORT = 'createdAt,desc'
+type SortDir = 'asc' | 'desc'
 
 const errMsg = (err: unknown, fallback: string) =>
   (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
 
 const periodLabel = (p: PayrollSheetDto) => `${fmtDate(p.periodStart)} - ${fmtDate(p.periodEnd)}`
+
+/** Client-side CSV export of one payroll sheet's payslips (BOM so Excel renders Vietnamese correctly). */
+const exportSheetCsv = (payroll: PayrollSheetDto, payslips: PayslipRowDto[]) => {
+  const header = ['Mã phiếu', 'Mã nhân viên', 'Tên nhân viên', 'Lương chính', 'Lương làm thêm giờ', 'Giảm trừ', 'Tổng lương', 'Đã trả nhân viên', 'Còn cần trả', 'Trạng thái']
+  const rows = payslips.map(s => [
+    s.code, s.employeeCode, s.employeeName, s.mainSalary, s.overtimeSalary, s.deduction, s.total, s.paidAmount, s.remaining,
+    s.status === 'CANCELLED' ? 'Đã hủy' : PAYSLIP_PAYMENT_STATUS_LABEL[s.paymentStatus],
+  ])
+  const csv = [header, ...rows]
+    .map(line => line.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `bang-luong-${payroll.code}.csv`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
 
 interface Col { key: string; label: string; align?: 'right'; sum?: boolean; render: (p: PayrollSheetDto) => React.ReactNode }
 const ALL_COLUMNS: Col[] = [
@@ -60,11 +81,15 @@ const RefreshIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill=
 const CalcIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" /><line x1="8" y1="6" x2="16" y2="6" /><line x1="8" y1="10" x2="8" y2="10" /><line x1="12" y1="10" x2="12" y2="10" /><line x1="16" y1="10" x2="16" y2="10" /><line x1="8" y1="14" x2="8" y2="14" /><line x1="12" y1="14" x2="12" y2="14" /><line x1="16" y1="14" x2="16" y2="18" /><line x1="8" y1="18" x2="12" y2="18" /></svg>)
 const CloseIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>)
 const TrashIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>)
-const PrintIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>)
 const CalendarIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>)
 const InfoIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>)
 const CheckIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-primary"><polyline points="20 6 9 17 4 12" /></svg>)
-const GearIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>)
+const SortArrow = ({ active, dir }: { active: boolean; dir: SortDir }) => (
+  <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+    className={`inline shrink-0 transition-transform ${active ? 'text-primary' : 'opacity-35'} ${active && dir === 'desc' ? 'rotate-180' : ''}`}>
+    <path d="M8 3v10M4.5 6.5L8 3l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
 
 /* read-only labelled field used in the "Thông tin" tab */
 const FieldRO = ({ label, value, placeholder }: { label: string; value?: string; placeholder?: boolean }) => (
@@ -88,6 +113,8 @@ const Payroll = () => {
   const [statuses, setStatuses] = useState<Record<PayrollSheetStatus, boolean>>({ GENERATING: true, DRAFT: true, FINALIZED: true, CANCELLED: false })
   const [search, setSearch] = useState('')
   const [size, setSize] = useState(15)
+  const [sortKey, setSortKey] = useState<'code' | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [rows, setRows] = useState<PayrollSheetDto[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -106,6 +133,7 @@ const Payroll = () => {
         term: term === TERM_LABEL.MONTHLY ? 'MONTHLY' : term === TERM_LABEL.CUSTOM ? 'CUSTOM' : undefined,
         statuses: selected.length ? selected : undefined,
         size,
+        sort: sortKey ? `${sortKey},${sortDir}` : DEFAULT_SORT,
       })
       setRows(res.data.data)
     } catch {
@@ -113,7 +141,7 @@ const Payroll = () => {
     } finally {
       setLoading(false)
     }
-  }, [search, term, statuses, size])
+  }, [search, term, statuses, size, sortKey, sortDir])
 
   useEffect(() => {
     const t = setTimeout(fetchSheets, search ? 350 : 0)
@@ -140,6 +168,12 @@ const Payroll = () => {
   }, [fetchSheets, fetchDetail])
 
   const toggleStatus = (s: PayrollSheetStatus) => setStatuses(m => ({ ...m, [s]: !m[s] }))
+
+  const handleSort = (key: 'code') => {
+    if (sortKey !== key) { setSortKey(key); setSortDir('asc') }
+    else if (sortDir === 'asc') setSortDir('desc')
+    else setSortKey(null)
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-var(--kv-header-height))] min-h-0 pt-4 pb-4 px-6">
@@ -219,7 +253,13 @@ const Payroll = () => {
                 <tr className="bg-primary-25 text-sm font-semibold text-ink-subtle">
                   <th className="sticky top-0 bg-primary-25 px-4 py-3 w-[3rem] text-left"><input type="checkbox" className="accent-primary w-4 h-4" /></th>
                   {visibleCols.map(c => (
-                    <th key={c.key} className={`sticky top-0 bg-primary-25 px-4 py-3 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>{c.label}</th>
+                    <th key={c.key} className={`sticky top-0 bg-primary-25 px-4 py-3 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>
+                      {c.key === 'code' ? (
+                        <button className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-primary" onClick={() => handleSort('code')}>
+                          {c.label} <SortArrow active={sortKey === 'code'} dir={sortDir} />
+                        </button>
+                      ) : c.label}
+                    </th>
                   ))}
                 </tr>
                 <tr className="border-b border-line text-md text-ink font-semibold">
@@ -279,11 +319,6 @@ const Payroll = () => {
         </div>
       </div>
 
-      {/* floating Khởi tạo */}
-      <button className="fixed right-6 bottom-6 flex items-center gap-2 h-11 px-4 rounded-full bg-primary text-white text-md font-medium shadow-md hover:bg-primary-600 cursor-pointer z-[var(--kv-z-dropdown)]">
-        <GearIcon /> Khởi tạo
-      </button>
-
       {addOpen && <AddPayrollModal onClose={() => setAddOpen(false)} onCreated={sheet => { setAddOpen(false); setExpanded(sheet.id); void refresh(sheet.id) }} />}
       {payModal && <PaymentModal payroll={payModal} payslips={(details[payModal.id]?.payslips ?? []).filter(s => s.status === 'ACTIVE' && s.remaining > 0)}
         onClose={() => setPayModal(null)} onDone={() => { const id = payModal.id; setPayModal(null); void refresh(id) }} />}
@@ -306,6 +341,7 @@ const PayrollDetail = ({ payroll, detail, tab, setTab, onPay, onOpenPayslip, onV
   const [error, setError] = useState('')
   const reloadRef = useRef<HTMLDivElement>(null)
   const isDraft = payroll.status === 'DRAFT'
+  const canRefreshData = payroll.status === 'DRAFT' || payroll.status === 'GENERATING'
   const payslips = detail?.payslips ?? []
   const payments = detail?.payments ?? []
 
@@ -386,9 +422,9 @@ const PayrollDetail = ({ payroll, detail, tab, setTab, onPay, onOpenPayslip, onV
             : <span />}
           <div className="flex items-center gap-2 text-sm text-ink-subtle">
             Dữ liệu được cập nhật vào: <span className="font-semibold text-ink">{fmtDateTime(payroll.dataRefreshedAt) || '—'}</span> <InfoIcon />
-            {isDraft && (
+            {canRefreshData && (
               <div ref={reloadRef} className="relative ml-2">
-                <button onClick={() => setReloadOpen(o => !o)} disabled={busy} className="kv-btn kv-btn-outline-neutral h-9 bg-card"><RefreshIcon /> {busy ? 'Đang xử lý…' : 'Tải lại dữ liệu'}</button>
+                <button onClick={() => setReloadOpen(o => !o)} disabled={busy} className="kv-btn kv-btn-outline-neutral h-9 bg-card"><RefreshIcon /> {busy ? 'Đang xử lý…' : 'Cập nhật dữ liệu'}</button>
                 {reloadOpen && (
                   <div className="absolute right-0 top-[calc(100%+0.3rem)] w-[24rem] bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] py-1">
                     <button onClick={() => void doReload('FULL')} className="w-full text-left px-3 py-2.5 text-md text-ink cursor-pointer hover:bg-[var(--kv-state-hover-bg)]">Tải lại toàn bộ</button>
@@ -400,7 +436,7 @@ const PayrollDetail = ({ payroll, detail, tab, setTab, onPay, onOpenPayslip, onV
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onView} className="kv-btn kv-btn-primary h-9"><CheckIcon /> Xem bảng lương</button>
-            <button className="kv-btn kv-btn-outline-neutral h-9 bg-card"><ExportIcon /> Xuất file</button>
+            <button onClick={() => exportSheetCsv(payroll, payslips)} className="kv-btn kv-btn-outline-neutral h-9 bg-card"><ExportIcon /> Xuất file</button>
           </div>
         </div>
       </>
@@ -775,8 +811,6 @@ const PayslipModal = ({ payslipId, onClose, onChanged }: {
             : <span />}
           <div className="flex items-center gap-3">
             <button onClick={onClose} className="kv-btn kv-btn-outline-neutral h-10 bg-card">Bỏ qua</button>
-            <button className="kv-btn kv-btn-outline-neutral h-10 bg-card"><ExportIcon /> Xuất file</button>
-            <button className="kv-btn kv-btn-outline-neutral h-10 bg-card"><PrintIcon /> In</button>
           </div>
         </div>
       </div>
@@ -882,6 +916,8 @@ const AddPayrollModal = ({ onClose, onCreated }: { onClose: () => void; onCreate
   const [scope, setScope] = useState<'all' | 'custom'>('all')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [empSearch, setEmpSearch] = useState('')
+  const [empOpen, setEmpOpen] = useState(false)
+  const empRef = useRef<HTMLDivElement>(null)
   const [selected, setSelected] = useState<Record<string, Employee>>({})
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -899,10 +935,16 @@ const AddPayrollModal = ({ onClose, onCreated }: { onClose: () => void; onCreate
       .catch(() => setEmployees([]))
   }, [scope, employees.length])
 
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (empRef.current && !empRef.current.contains(e.target as Node)) setEmpOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
   const q = empSearch.trim().toLowerCase()
-  const matches = q
-    ? employees.filter(e => !selected[e.id] && (e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q))).slice(0, 8)
-    : []
+  const matches = employees
+    .filter(e => !selected[e.id] && (!q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q)))
+    .slice(0, 8)
   const selectedList = Object.values(selected)
 
   const submit = async () => {
@@ -978,11 +1020,11 @@ const AddPayrollModal = ({ onClose, onCreated }: { onClose: () => void; onCreate
 
           {scope === 'custom' && (
             <div className="flex flex-col gap-3">
-              <div className="relative w-[24rem] max-w-full">
+              <div ref={empRef} className="relative w-[24rem] max-w-full">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2"><SearchIcon /></span>
-                <input value={empSearch} onChange={e => setEmpSearch(e.target.value)} placeholder="Tìm theo mã, tên nhân viên"
+                <input value={empSearch} onChange={e => setEmpSearch(e.target.value)} onFocus={() => setEmpOpen(true)} placeholder="Tìm theo mã, tên nhân viên"
                   className="w-full h-11 pl-9 pr-4 bg-card border border-line-default rounded-md text-md text-ink placeholder:text-ink-muted focus:border-primary outline-none" />
-                {matches.length > 0 && (
+                {empOpen && matches.length > 0 && (
                   <div className="absolute left-0 right-0 top-[calc(100%+0.3rem)] bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] py-1 max-h-[16rem] overflow-y-auto">
                     {matches.map(e => (
                       <button key={e.id} type="button" onClick={() => { setSelected(s => ({ ...s, [e.id]: e })); setEmpSearch('') }}
@@ -990,6 +1032,11 @@ const AddPayrollModal = ({ onClose, onCreated }: { onClose: () => void; onCreate
                         <span>{e.name}</span><span className="text-sm text-ink-subtle">{e.code}</span>
                       </button>
                     ))}
+                  </div>
+                )}
+                {empOpen && matches.length === 0 && employees.length > 0 && (
+                  <div className="absolute left-0 right-0 top-[calc(100%+0.3rem)] bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] py-3 text-center text-sm text-ink-subtle">
+                    Không tìm thấy nhân viên phù hợp
                   </div>
                 )}
               </div>

@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import FinancialReportFilters from './FinancialReportFilters'
 import FinancialReportPreview from './FinancialReportPreview'
 import { defaultFinancialFilters } from '../../data/financialReportMockData'
-import type { FinancialPeriod } from '../../data/financialReportMockData'
-import { getFinancialReport } from '../../api/reports'
+import type { FinancialCustomLine, FinancialPeriod } from '../../data/financialReportMockData'
+import { getFinancialReport, listFinancialCustomLines } from '../../api/reports'
 import type { FinancialGranularityParam } from '../../api/reports'
 
 const errMsg = (err: unknown, fallback: string): string =>
@@ -13,6 +13,7 @@ const FinancialReport = () => {
   const [filters, setFilters] = useState(defaultFinancialFilters)
   const [generatedAt, setGeneratedAt] = useState(() => new Date())
   const [periods, setPeriods] = useState<FinancialPeriod[]>([])
+  const [customLines, setCustomLines] = useState<FinancialCustomLine[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [refreshNonce, setRefreshNonce] = useState(0)
@@ -27,10 +28,17 @@ const FinancialReport = () => {
       setLoading(true)
       setError('')
 
-      getFinancialReport(filters.year, filters.granularity.toUpperCase() as FinancialGranularityParam)
-        .then(res => {
+      Promise.all([
+        getFinancialReport(filters.year, filters.granularity.toUpperCase() as FinancialGranularityParam),
+        listFinancialCustomLines(),
+      ])
+        .then(([reportRes, linesRes]) => {
           if (cancelled) return
-          setPeriods(res.data.data.map(({ key, label, ...values }) => ({ key, label, values })))
+          setPeriods(reportRes.data.data.map(({ key, label, customLineValues, ...values }) => ({
+            key, label, values,
+            customLineValues: Object.fromEntries(customLineValues.map(v => [v.lineId, v.amount])),
+          })))
+          setCustomLines(linesRes.data.data)
           setGeneratedAt(new Date())
         })
         .catch(err => { if (!cancelled) setError(errMsg(err, 'Không tải được báo cáo tài chính.')) })
@@ -50,8 +58,8 @@ const FinancialReport = () => {
       </div>
 
       <FinancialReportPreview
-        periods={periods} filters={filters} generatedAt={generatedAt} loading={loading} error={error}
-        onRefresh={() => setRefreshNonce(n => n + 1)}
+        periods={periods} customLines={customLines} filters={filters} generatedAt={generatedAt}
+        loading={loading} error={error} onRefresh={() => setRefreshNonce(n => n + 1)}
       />
     </div>
   )

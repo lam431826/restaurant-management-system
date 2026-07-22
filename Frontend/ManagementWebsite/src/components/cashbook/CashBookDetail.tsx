@@ -1,6 +1,8 @@
-import { useState } from 'react'
-import type { CashFlowVoucher } from '../../data/cashBookMockData'
-import { METHOD_LABEL } from '../../data/cashBookMockData'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import type { CashFlowVoucher } from '../../api/cashbook'
+import { METHOD_LABEL } from '../../api/cashbook'
+import { getInvoiceById } from '../../services/invoiceApi'
 
 const money = (value: number) => value.toLocaleString('vi-VN')
 const formatDateTime = (value: string) =>
@@ -34,9 +36,27 @@ const ChevronIcon = ({ up }: { up: boolean }) => (
 const invoiceTd = 'px-3 py-2 text-md text-ink whitespace-nowrap'
 const invoiceTh = 'px-3 py-2 text-left text-sm font-semibold text-ink-subtle whitespace-nowrap'
 
-// Read-only recap of the invoice that auto-generated this receipt.
+// Read-only recap of the invoice that auto-generated this receipt. The invoice code is a
+// clickable jump to that invoice's row in /manager/invoices (Giao dịch > Hóa đơn). Cash
+// book only stores the invoice's id (sourceReferenceId), not its human code, so the real
+// "HD%06d" code is fetched on demand — invoice.code is immutable once assigned, so this is
+// always the same value the Invoices screen itself would show.
 const SourceInvoicePanel = ({ source }: { source: NonNullable<CashFlowVoucher['sourceInvoice']> }) => {
   const [open, setOpen] = useState(true)
+  const [invoiceCode, setInvoiceCode] = useState<string | null>(null)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    let cancelled = false
+    getInvoiceById(source.invoiceId)
+      .then(invoice => { if (!cancelled) setInvoiceCode(invoice.code) })
+      .catch(() => { /* invoice may no longer be reachable; leave the placeholder */ })
+    return () => { cancelled = true }
+  }, [source.invoiceId])
+
+  const displayCode = invoiceCode ?? '…'
+  const goToInvoice = () => navigate(`/manager/invoices?invoiceId=${source.invoiceId}`)
+
   return (
     <div className="border border-line-default rounded-md overflow-hidden">
       <button
@@ -44,7 +64,7 @@ const SourceInvoicePanel = ({ source }: { source: NonNullable<CashFlowVoucher['s
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-4 py-2.5 bg-fill text-md font-semibold text-ink cursor-pointer"
       >
-        <span>Phiếu thu tự động được tạo từ hóa đơn {source.invoiceCode}</span>
+        <span>Phiếu thu tự động được tạo từ hóa đơn {displayCode}</span>
         <ChevronIcon up={open} />
       </button>
       {open && (
@@ -62,7 +82,16 @@ const SourceInvoicePanel = ({ source }: { source: NonNullable<CashFlowVoucher['s
             </thead>
             <tbody>
               <tr>
-                <td className={`${invoiceTd} font-medium text-primary`}>{source.invoiceCode}</td>
+                <td className={invoiceTd}>
+                  <button
+                    type="button"
+                    onClick={goToInvoice}
+                    title="Xem hóa đơn trong Giao dịch"
+                    className="font-medium font-mono text-primary hover:underline cursor-pointer"
+                  >
+                    {displayCode}
+                  </button>
+                </td>
                 <td className={invoiceTd}>{formatDateTime(source.invoiceTime)}</td>
                 <td className={`${invoiceTd} text-right`}>{money(source.voucherValue)}</td>
                 <td className={`${invoiceTd} text-right`}>{money(source.prePaid)}</td>

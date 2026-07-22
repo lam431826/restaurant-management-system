@@ -65,7 +65,7 @@ class AttendanceServiceImplTest {
     private final WorkSchedule schedule = WorkSchedule.builder()
             .id("s1").employeeId("e1").shiftId("sh1").workDate(DAY).build();
     private final AttendanceSetting settings = AttendanceSetting.builder()
-            .id(AttendanceSetting.FIXED_ID).standardWorkdayMinutes(480)
+            .id(AttendanceSetting.FIXED_ID)
             .lateEnabled(true).earlyLeaveEnabled(true).otBeforeEnabled(true).otAfterEnabled(true)
             .mergedShiftEnabled(true).mergedShiftMaxCount(2).mergedShiftMaxBreakMinutes(60)
             .build();
@@ -184,7 +184,7 @@ class AttendanceServiceImplTest {
         when(shiftRepository.findAllById(any())).thenReturn(List.of(morning, afternoon, evening));
         when(recordRepository.findByScheduleId(anyString())).thenReturn(Optional.empty());
         AttendanceSetting mergeSettings = AttendanceSetting.builder()
-                .id(AttendanceSetting.FIXED_ID).standardWorkdayMinutes(480)
+                .id(AttendanceSetting.FIXED_ID)
                 .lateEnabled(true).earlyLeaveEnabled(true).otBeforeEnabled(true).otAfterEnabled(true)
                 .mergedShiftEnabled(true).mergedShiftMaxCount(3).mergedShiftMaxBreakMinutes(60)
                 .build();

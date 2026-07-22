@@ -4,11 +4,11 @@ import {
   IconFileText,
   IconChevronDown,
   IconBell,
-  IconCircleHelp,
+  IconSettings,
   IconCalendar,
   IconConciergeBell,
 } from "../common/Icon";
-import { helpLinks, cashierModes } from "../../data/mockData";
+import { cashierModes } from "../../data/mockData";
 import { useAuth } from "../../context/AuthContext";
 import { logout } from "../../api/auth";
 import ChangePasswordModal from "../auth/ChangePasswordModal";
@@ -307,44 +307,18 @@ const ActionArea = () => {
           )}
         </div>
 
-        {/* ── Help ── */}
+        {/* ── Settings ── */}
         <div className="relative flex items-center">
           <button
             className="kv-btn kv-btn-icon-only kv-btn-outline-primary"
-            onClick={() => toggle("help")}
-            aria-label="Hướng dẫn"
-            aria-expanded={open === "help"}
+            onClick={() => {
+              setOpen(null);
+              navigate("/manager/settings");
+            }}
+            aria-label="Thiết lập"
           >
-            <IconCircleHelp size={16} />
+            <IconSettings size={16} />
           </button>
-
-          {open === "help" && (
-            <div className="kv-float-container min-w-[21.5rem]">
-              <ul className="list-none m-0 py-1">
-                {helpLinks.map((link, i) => (
-                  <li key={i}>
-                    <a
-                      href={link.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={listItem}
-                    >
-                      {link.img ? (
-                        <img
-                          src={link.img}
-                          alt=""
-                          className="w-[1.8rem] h-[1.8rem] object-contain shrink-0"
-                        />
-                      ) : (
-                        <IconCircleHelp size={16} color="var(--kv-primary)" />
-                      )}
-                      <span>{link.label}</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
         </div>
 
         {/* ── User / Avatar ── */}
