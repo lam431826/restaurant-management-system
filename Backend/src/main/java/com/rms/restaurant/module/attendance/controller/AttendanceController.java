@@ -38,6 +38,35 @@ public class AttendanceController {
         return ResponseEntity.ok(ApiResponse.success(attendanceService.summary(start, end)));
     }
 
+    // ── Self-service ("Lịch làm việc") — method-level override, same pattern as
+    // EmployeeController's /employees/me, since the class-level annotation is MANAGER/ADMIN only. ──
+
+    @GetMapping("/timesheet/me")
+    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER','ADMIN')")
+    public ResponseEntity<ApiResponse<List<TimesheetCellResponse>>> myTimesheet(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end,
+            @AuthenticationPrincipal UserDetails principal) {
+        return ResponseEntity.ok(ApiResponse.success(
+                attendanceService.myTimesheet(principal.getUsername(), start, end)));
+    }
+
+    @PostMapping("/schedules/{scheduleId}/check-in")
+    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER','ADMIN')")
+    public ResponseEntity<ApiResponse<AttendanceRecordResponse>> checkIn(
+            @PathVariable String scheduleId, @AuthenticationPrincipal UserDetails principal) {
+        return ResponseEntity.ok(ApiResponse.success(
+                attendanceService.checkIn(scheduleId, principal.getUsername())));
+    }
+
+    @PostMapping("/schedules/{scheduleId}/check-out")
+    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER','ADMIN')")
+    public ResponseEntity<ApiResponse<AttendanceRecordResponse>> checkOut(
+            @PathVariable String scheduleId, @AuthenticationPrincipal UserDetails principal) {
+        return ResponseEntity.ok(ApiResponse.success(
+                attendanceService.checkOut(scheduleId, principal.getUsername())));
+    }
+
     @PutMapping("/schedules/{scheduleId}/record")
     public ResponseEntity<ApiResponse<AttendanceRecordResponse>> upsert(
             @PathVariable String scheduleId,

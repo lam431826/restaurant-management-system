@@ -22,6 +22,7 @@ import com.rms.restaurant.module.attendance.repository.WorkScheduleRepository;
 import com.rms.restaurant.module.attendance.repository.WorkShiftRepository;
 import com.rms.restaurant.module.attendance.service.AttendanceCalculator;
 import com.rms.restaurant.module.attendance.service.AttendanceSettingService;
+import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.employee.model.Employee;
 import com.rms.restaurant.module.employee.repository.EmployeeRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,6 +54,7 @@ class AttendanceServiceImplTest {
     @Mock private ViolationRepository violationRepository;
     @Mock private ViolationTypeRepository violationTypeRepository;
     @Mock private EmployeeRepository employeeRepository;
+    @Mock private UserRepository userRepository;
     @Mock private AttendanceSettingService settingService;
 
     private AttendanceServiceImpl service;
@@ -73,7 +75,7 @@ class AttendanceServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new AttendanceServiceImpl(recordRepository, scheduleRepository, shiftRepository,
-                violationRepository, violationTypeRepository, employeeRepository, settingService,
+                violationRepository, violationTypeRepository, employeeRepository, userRepository, settingService,
                 new AttendanceCalculator(), new AttendanceMapper());
         lenient().when(settingService.current()).thenReturn(settings);
         lenient().when(scheduleRepository.findById("s1")).thenReturn(Optional.of(schedule));

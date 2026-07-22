@@ -14,10 +14,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Pure salary computation over one work period (BR-PAY-02..05, BR-PAY-10).
@@ -31,8 +33,10 @@ import java.util.Map;
  * Rate JSON shape mirrors the salary-setting UI exactly:
  *   mainAdvancedRates: {"sat":{"amount":"150","unit":"percent"}|null,"sun":…,"off":…,"holiday":…}
  *   overtimeRates:     same plus "normal". Percent applies on the base wage; vnd is absolute.
- * "off"/"holiday" are stored but inert until a holiday calendar exists (BR-PAY-04 partial).
- * Unparseable JSON degrades to the plain base wage.
+ * "holiday" is classified from the caller-supplied holidayDates set (BR-PAY-04, payroll_holidays
+ * calendar); "off" remains inert — there is no "designated rest day" concept yet.
+ * Unparseable JSON degrades to the plain base wage. No repository access here (pure/unit-testable
+ * without Spring) — the caller resolves holidayDates once per payroll period and passes it in.
  */
 @Component
 @RequiredArgsConstructor
@@ -44,26 +48,26 @@ public class SalaryCalculator {
 
     record RateSpec(String amount, String unit) {}
 
-    public ComputedPayslip compute(SalarySetting setting, List<AttendanceForPayroll> attendance) {
+    public ComputedPayslip compute(SalarySetting setting, List<AttendanceForPayroll> attendance, Set<LocalDate> holidayDates) {
         if (setting == null) {
             return new ComputedPayslip(null, BigDecimal.ZERO, BigDecimal.ZERO,
-                    0, 0, 0, toJson(snapshotRows(attendance, "Chưa có thiết lập lương")));
+                    0, 0, 0, toJson(snapshotRows(attendance, holidayDates, "Chưa có thiết lập lương")));
         }
         return switch (setting.getMainSalaryType()) {
-            case FIXED -> computeFixed(setting, attendance);
-            case SHIFT -> computeShift(setting, attendance);
-            case HOURLY -> computeHourly(setting, attendance);
+            case FIXED -> computeFixed(setting, attendance, holidayDates);
+            case SHIFT -> computeShift(setting, attendance, holidayDates);
+            case HOURLY -> computeHourly(setting, attendance, holidayDates);
         };
     }
 
     /** BR-PAY-03: fixed salary ignores attendance; records stay visible in the snapshot. */
-    private ComputedPayslip computeFixed(SalarySetting setting, List<AttendanceForPayroll> attendance) {
-        List<AttendanceDetailRow> rows = snapshotRows(attendance, "Lương cố định — không tính theo công");
+    private ComputedPayslip computeFixed(SalarySetting setting, List<AttendanceForPayroll> attendance, Set<LocalDate> holidayDates) {
+        List<AttendanceDetailRow> rows = snapshotRows(attendance, holidayDates, "Lương cố định — không tính theo công");
         return new ComputedPayslip(SalaryType.FIXED, scale(setting.getMainBaseWage()), BigDecimal.ZERO,
                 countPaidShifts(attendance), sumWorkedMinutes(attendance), 0, toJson(rows));
     }
 
-    private ComputedPayslip computeShift(SalarySetting setting, List<AttendanceForPayroll> attendance) {
+    private ComputedPayslip computeShift(SalarySetting setting, List<AttendanceForPayroll> attendance, Set<LocalDate> holidayDates) {
         Map<String, RateSpec> dayRates = parseRates(setting.getMainAdvancedRates());
         Map<String, RateSpec> otRates = parseRates(setting.getOvertimeRates());
         BigDecimal main = BigDecimal.ZERO;
@@ -72,7 +76,7 @@ public class SalaryCalculator {
         List<AttendanceDetailRow> rows = new ArrayList<>();
 
         for (AttendanceForPayroll a : attendance) {
-            String dayType = dayType(a.workDate().getDayOfWeek());
+            String dayType = dayType(a.workDate(), holidayDates);
             BigDecimal shiftWage = resolveRate(setting.getMainBaseWage(), dayRates.get(dayType));
             BigDecimal amount = shiftAmount(a, shiftWage);
             int otMin = setting.isOvertimeEnabled() ? a.otMinutes() : 0;
@@ -87,13 +91,13 @@ public class SalaryCalculator {
                 countPaidShifts(attendance), sumWorkedMinutes(attendance), otMinutesTotal, toJson(rows));
     }
 
-    private ComputedPayslip computeHourly(SalarySetting setting, List<AttendanceForPayroll> attendance) {
+    private ComputedPayslip computeHourly(SalarySetting setting, List<AttendanceForPayroll> attendance, Set<LocalDate> holidayDates) {
         Map<String, RateSpec> dayRates = parseRates(setting.getMainAdvancedRates());
         BigDecimal main = BigDecimal.ZERO;
         List<AttendanceDetailRow> rows = new ArrayList<>();
 
         for (AttendanceForPayroll a : attendance) {
-            String dayType = dayType(a.workDate().getDayOfWeek());
+            String dayType = dayType(a.workDate(), holidayDates);
             BigDecimal hourlyRate = resolveRate(setting.getMainBaseWage(), dayRates.get(dayType));
             BigDecimal amount = BigDecimal.ZERO;
             if (isPaid(a) && a.workedMinutes() > 0) {
@@ -108,17 +112,13 @@ public class SalaryCalculator {
                 countPaidShifts(attendance), sumWorkedMinutes(attendance), 0, toJson(rows));
     }
 
-    /** Full wage when the full shift's worked minutes are credited; prorated on early leave. */
+    /**
+     * Full shift wage whenever the shift was worked (checked in and out), regardless of late
+     * arrival or early leave — those are handled manually via violation penalties (Giảm trừ),
+     * not by prorating the shift wage here.
+     */
     private BigDecimal shiftAmount(AttendanceForPayroll a, BigDecimal shiftWage) {
-        if (!isPaid(a)) return BigDecimal.ZERO;
-        if (a.earlyLeaveMinutes() > 0 && a.workedMinutes() > 0) {
-            int scheduled = scheduledPaidMinutes(a);
-            if (scheduled <= 0) return BigDecimal.ZERO;
-            BigDecimal ratio = BigDecimal.valueOf(Math.min(a.workedMinutes(), scheduled))
-                    .divide(BigDecimal.valueOf(scheduled), 6, RoundingMode.HALF_UP);
-            return scale(shiftWage.multiply(ratio));
-        }
-        return scale(shiftWage);
+        return isPaid(a) ? scale(shiftWage) : BigDecimal.ZERO;
     }
 
     /** BR-AT-10 already applied upstream — otMinutes is used as-is, never recomputed here. */
@@ -145,7 +145,10 @@ public class SalaryCalculator {
         return (int) Math.max(0, span);
     }
 
-    private String dayType(DayOfWeek day) {
+    /** BR-PAY-04: a configured holiday date wins over the weekday; "off" has no calendar yet. */
+    private String dayType(LocalDate date, Set<LocalDate> holidayDates) {
+        if (holidayDates.contains(date)) return "holiday";
+        DayOfWeek day = date.getDayOfWeek();
         if (day == DayOfWeek.SATURDAY) return "sat";
         if (day == DayOfWeek.SUNDAY) return "sun";
         return "normal";
@@ -203,9 +206,9 @@ public class SalaryCalculator {
         }
     }
 
-    private List<AttendanceDetailRow> snapshotRows(List<AttendanceForPayroll> attendance, String note) {
+    private List<AttendanceDetailRow> snapshotRows(List<AttendanceForPayroll> attendance, Set<LocalDate> holidayDates, String note) {
         return attendance.stream()
-                .map(a -> row(a, dayType(a.workDate().getDayOfWeek()), null, BigDecimal.ZERO, 0, note))
+                .map(a -> row(a, dayType(a.workDate(), holidayDates), null, BigDecimal.ZERO, 0, note))
                 .toList();
     }
 

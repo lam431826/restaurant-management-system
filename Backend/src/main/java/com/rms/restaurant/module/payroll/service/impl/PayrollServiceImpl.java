@@ -14,9 +14,11 @@ import com.rms.restaurant.module.employee.repository.EmployeeRepository;
 import com.rms.restaurant.module.employee.repository.SalarySettingRepository;
 import com.rms.restaurant.module.payroll.dto.*;
 import com.rms.restaurant.module.payroll.mapper.PayrollMapper;
+import com.rms.restaurant.module.payroll.model.PayrollHoliday;
 import com.rms.restaurant.module.payroll.model.PayrollSheet;
 import com.rms.restaurant.module.payroll.model.Payslip;
 import com.rms.restaurant.module.payroll.model.PayslipPayment;
+import com.rms.restaurant.module.payroll.repository.PayrollHolidayRepository;
 import com.rms.restaurant.module.payroll.repository.PayrollSheetRepository;
 import com.rms.restaurant.module.payroll.repository.PayslipPaymentRepository;
 import com.rms.restaurant.module.payroll.repository.PayslipRepository;
@@ -45,6 +47,7 @@ public class PayrollServiceImpl implements PayrollService {
     private final PayslipPaymentRepository paymentRepository;
     private final EmployeeRepository employeeRepository;
     private final SalarySettingRepository salarySettingRepository;
+    private final PayrollHolidayRepository payrollHolidayRepository;
     // BR-AT-13: attendance rows for payroll come from the attendance module, keyed directly by
     // employees(id) — no more hop through a linked user account.
     private final AttendanceService attendanceService;
@@ -150,7 +153,10 @@ public class PayrollServiceImpl implements PayrollService {
         List<AttendanceForPayroll> attendance = attendanceService.listForPayroll(
                 employee.getId(), sheet.getPeriodStart(), sheet.getPeriodEnd());
         var setting = salarySettingRepository.findByEmployeeId(employee.getId()).orElse(null);
-        return salaryCalculator.compute(setting, attendance);
+        Set<LocalDate> holidayDates = payrollHolidayRepository
+                .findAllByHolidayDateBetween(sheet.getPeriodStart(), sheet.getPeriodEnd())
+                .stream().map(PayrollHoliday::getHolidayDate).collect(Collectors.toSet());
+        return salaryCalculator.compute(setting, attendance, holidayDates);
     }
 
     private Payslip buildPayslip(PayrollSheet sheet, Employee employee,
