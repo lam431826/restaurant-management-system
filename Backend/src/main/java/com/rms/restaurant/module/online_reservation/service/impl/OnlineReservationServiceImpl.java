@@ -44,7 +44,11 @@ import java.util.UUID;
 @Transactional
 public class OnlineReservationServiceImpl implements OnlineReservationService {
 
-    private static final int WINDOW_MINUTES = 180;
+    // BR: mirrors WALK_IN_COOLDOWN_MINUTES in ReservationServiceImpl — a reservation's dining
+    // (90 min) + cleanup (30 min) window occupies its table for 120 minutes, so two reservations
+    // in the same capacity tier conflict whenever their requested times fall within 120 minutes
+    // of each other. Symmetric (+/-) because either one could be the earlier seating.
+    private static final int WINDOW_MINUTES = 120;
 
     // Restaurant opening hours (see PublicWebsite ContactSection.jsx "Opening Hours" card) — applies every day of the week.
     private static final LocalTime OPENING_TIME = LocalTime.of(16, 0);
