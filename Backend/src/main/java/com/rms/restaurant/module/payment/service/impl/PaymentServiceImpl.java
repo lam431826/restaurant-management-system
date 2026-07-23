@@ -37,6 +37,7 @@ import com.rms.restaurant.module.payment.service.internal.VnpayService;
 import com.rms.restaurant.module.user.service.AuditService;
 import com.rms.restaurant.module.shift.model.Shift;
 import com.rms.restaurant.module.shift.repository.ShiftRepository;
+import com.rms.restaurant.module.shift.service.ShiftSettingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +55,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -82,6 +84,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final AuditService auditService;
     private final UserRepository userRepository;
     private final ShiftRepository shiftRepository;
+    private final ShiftSettingService shiftSettingService;
     private final MockQrPaymentGateway qrGateway;
     private final CashbookService cashbookService;
     private final VnpayService vnpayService;
@@ -160,7 +163,7 @@ public class PaymentServiceImpl implements PaymentService {
                 .receivedAmount(receivedAmount)
                 .changeAmount(changeAmount)
                 .paidAt(LocalDateTime.now())
-                .shiftId(cashierShift.shift().getId())     // BR-CS-08
+                .shiftId(cashierShift.shift() != null ? cashierShift.shift().getId() : null)     // BR-CS-08
                 .cashierId(cashierShift.cashier().getId()) // BR-CS-08
                 .build();
 
@@ -215,7 +218,7 @@ public class PaymentServiceImpl implements PaymentService {
                 .status(STATUS_PENDING)
                 .gatewayRef(transactionRef)
                 .expiresAt(LocalDateTime.now().plusMinutes(QR_EXPIRY_MINUTES))
-                .shiftId(cashierShift.shift().getId())     // BR-CS-08
+                .shiftId(cashierShift.shift() != null ? cashierShift.shift().getId() : null)     // BR-CS-08
                 .cashierId(cashierShift.cashier().getId()) // BR-CS-08
                 .build();
 
@@ -359,7 +362,7 @@ public class PaymentServiceImpl implements PaymentService {
                     .gatewayRef(vnpayService.generateTxnRef())
                     .vnpCreateDate(nowVn.format(VnpayService.VNP_DATE_FORMAT))
                     .expiresAt(expiresAt)
-                    .shiftId(cashierShift.shift().getId())     // BR-CS-08
+                    .shiftId(cashierShift.shift() != null ? cashierShift.shift().getId() : null)     // BR-CS-08
                     .cashierId(cashierShift.cashier().getId()) // BR-CS-08
                     .build();
             payment = paymentRepository.save(payment);
@@ -811,12 +814,15 @@ public class PaymentServiceImpl implements PaymentService {
 
     private CashierShiftContext requireCashierWithOpenShift(String cashierUsername) {
         // BR-CS-08: a payment action must be attributed to the processing cashier's
-        // OPEN shift; if they have none, the action is blocked.
+        // OPEN shift; if they have none, the action is blocked — unless "Kết ca" is
+        // turned off entirely, in which case payments are no longer shift-scoped.
         User cashier = userRepository.findByUsername(cashierUsername)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.USER_NOT_FOUND));
-        Shift shift = shiftRepository.findByCashierIdAndStatus(cashier.getId(), SHIFT_OPEN)
-                .orElseThrow(() -> new ApplicationException(ApplicationError.PAYMENT_NO_OPEN_SHIFT));
-        return new CashierShiftContext(cashier, shift);
+        Optional<Shift> shift = shiftRepository.findByCashierIdAndStatus(cashier.getId(), SHIFT_OPEN);
+        if (shift.isEmpty() && shiftSettingService.current().isShiftClosingRequired()) {
+            throw new ApplicationException(ApplicationError.PAYMENT_NO_OPEN_SHIFT);
+        }
+        return new CashierShiftContext(cashier, shift.orElse(null));
     }
 
     private LockedPaymentContext lockOrderAndInvoice(String invoiceId) {

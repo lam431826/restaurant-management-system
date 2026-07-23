@@ -7,6 +7,8 @@ import type { PayrollHolidayDto } from '../../api/payrollHolidays'
 import { listPayrollHolidays } from '../../api/payrollHolidays'
 import type { PayrollSettingsDto } from '../../api/payroll'
 import { getPayrollSettings, updatePayrollSettings } from '../../api/payroll'
+import type { ShiftSettingsDto } from '../../api/shiftSettings'
+import { getShiftSettings, updateShiftSettings } from '../../api/shiftSettings'
 import { ApiError } from '../../services/api'
 import ShiftTemplateModal from '../staff/schedule/ShiftTemplateModal'
 import SalaryTemplateList from '../staff/settings/SalaryTemplateList'
@@ -159,11 +161,13 @@ const SettingsPage = () => {
   const [payrollLoadError, setPayrollLoadError] = useState('')
   const [payrollSaveError, setPayrollSaveError] = useState('')
 
-  // reports toggles — display-only, no backend support yet
+  // customRevenueWindow/revenueCutoffTime are still display-only, no backend support yet.
   const [customRevenueWindow, setCustomRevenueWindow] = useState(true)
   const [revenueCutoffTime, setRevenueCutoffTime] = useState('00:00')
-  const [shiftClosingRequired, setShiftClosingRequired] = useState(true)
-  const [managerConfirmClosing, setManagerConfirmClosing] = useState(false)
+
+  const [shiftSettings, setShiftSettings] = useState<ShiftSettingsDto | null>(null)
+  const [shiftSettingsLoadError, setShiftSettingsLoadError] = useState('')
+  const [shiftSettingsSaveError, setShiftSettingsSaveError] = useState('')
 
   const loadShifts = () => {
     listShifts().then(res => setShifts(res.data.data)).catch(() => {})
@@ -185,6 +189,9 @@ const SettingsPage = () => {
     getPayrollSettings()
       .then(res => setPayrollSettings(res.data.data))
       .catch(err => setPayrollLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập tính lương.'))
+    getShiftSettings()
+      .then(setShiftSettings)
+      .catch(err => setShiftSettingsLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập kết ca.'))
   }, [])
 
   const commit = async (next: AttendanceSettingsDto) => {
@@ -204,6 +211,16 @@ const SettingsPage = () => {
       setPayrollSaveError('')
     } catch (err) {
       setPayrollSaveError(err instanceof ApiError ? err.message : 'Không thể lưu thiết lập tính lương.')
+    }
+  }
+
+  const commitShiftSettings = async (next: ShiftSettingsDto) => {
+    setShiftSettings(next) // optimistic
+    try {
+      await updateShiftSettings(next)
+      setShiftSettingsSaveError('')
+    } catch (err) {
+      setShiftSettingsSaveError(err instanceof ApiError ? err.message : 'Không thể lưu thiết lập kết ca.')
     }
   }
 
@@ -248,8 +265,9 @@ const SettingsPage = () => {
               <ReportsSettings
                 customRevenueWindow={customRevenueWindow} setCustomRevenueWindow={setCustomRevenueWindow}
                 revenueCutoffTime={revenueCutoffTime} setRevenueCutoffTime={setRevenueCutoffTime}
-                shiftClosingRequired={shiftClosingRequired} setShiftClosingRequired={setShiftClosingRequired}
-                managerConfirmClosing={managerConfirmClosing} setManagerConfirmClosing={setManagerConfirmClosing}
+                shiftSettings={shiftSettings}
+                commitShiftSettings={commitShiftSettings}
+                shiftSettingsError={shiftSettingsLoadError || shiftSettingsSaveError}
               />
             )}
 
@@ -301,13 +319,13 @@ const SettingsPage = () => {
 const ReportsSettings = ({
   customRevenueWindow, setCustomRevenueWindow,
   revenueCutoffTime, setRevenueCutoffTime,
-  shiftClosingRequired, setShiftClosingRequired,
-  managerConfirmClosing, setManagerConfirmClosing,
+  shiftSettings, commitShiftSettings, shiftSettingsError,
 }: {
   customRevenueWindow: boolean; setCustomRevenueWindow: (v: boolean) => void
   revenueCutoffTime: string; setRevenueCutoffTime: (v: string) => void
-  shiftClosingRequired: boolean; setShiftClosingRequired: (v: boolean) => void
-  managerConfirmClosing: boolean; setManagerConfirmClosing: (v: boolean) => void
+  shiftSettings: ShiftSettingsDto | null
+  commitShiftSettings: (next: ShiftSettingsDto) => void
+  shiftSettingsError: string
 }) => (
   <div>
     <h2 className="text-lg font-bold text-ink mb-2">Báo cáo</h2>
@@ -325,14 +343,19 @@ const ReportsSettings = ({
       )}
     </Block>
 
-    <Block title="Kết ca" desc="Thu ngân cần mở ca để bắt đầu làm việc và kết ca khi kết thúc ca làm."
-      right={<Toggle on={shiftClosingRequired} onChange={setShiftClosingRequired} />} last>
-      {shiftClosingRequired && (
-        <CheckLabel checked={managerConfirmClosing} onChange={setManagerConfirmClosing}>
-          <span className="text-md text-ink">Xác nhận kết ca của Quản lý</span>
-        </CheckLabel>
-      )}
-    </Block>
+    {shiftSettingsError && <div className="mb-3 px-4 py-2 rounded-md bg-danger-50 text-danger text-md border border-danger/30">{shiftSettingsError}</div>}
+    {shiftSettings && (
+      <Block title="Kết ca" desc="Thu ngân cần mở ca để bắt đầu làm việc và kết ca khi kết thúc ca làm."
+        right={<Toggle on={shiftSettings.shiftClosingRequired}
+          onChange={v => commitShiftSettings({ ...shiftSettings, shiftClosingRequired: v })} />} last>
+        {shiftSettings.shiftClosingRequired && (
+          <CheckLabel checked={shiftSettings.managerConfirmClosing}
+            onChange={v => commitShiftSettings({ ...shiftSettings, managerConfirmClosing: v })}>
+            <span className="text-md text-ink">Xác nhận kết ca của Quản lý</span>
+          </CheckLabel>
+        )}
+      </Block>
+    )}
   </div>
 )
 

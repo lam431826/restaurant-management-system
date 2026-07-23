@@ -5,15 +5,12 @@ import { useAuth } from "../../context/AuthContext";
 import { logout } from "../../api/auth";
 import { ApiError } from "../../services/api";
 import { ApiClientError } from "../../services/apiClient";
-import {
-  getMyShift,
-  getOpenNormalShifts,
-  mergeFloatingShift,
-} from "../../services/shiftService";
-import type { ShiftSummary, OpenShiftBrief } from "../../services/shiftService";
+import { getMyShift } from "../../services/shiftService";
+import type { ShiftSummary } from "../../services/shiftService";
+import { getShiftSettings } from "../../api/shiftSettings";
+import type { ShiftSettingsDto } from "../../api/shiftSettings";
 import { OpenShiftModal } from "./orders/OpenShiftModal";
 import { CloseShiftModal } from "./orders/CloseShiftModal";
-import { CashMovementModal } from "./orders/CashMovementModal";
 import {
   listTables,
   checkInWalkIn,
@@ -708,23 +705,18 @@ const CashierOrders = () => {
   const [shiftLoading, setShiftLoading] = useState(true);
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
-  const [showCashMovement, setShowCashMovement] = useState(false);
+  const [shiftSettings, setShiftSettings] = useState<ShiftSettingsDto | null>(null);
   const [showQRModal, setShowQRModal] = useState(false);
-
-  // BR-CS-19: merge a floating shift into a main shift.
-  const [mergeOpen, setMergeOpen] = useState(false);
-  const [mergeTargets, setMergeTargets] = useState<OpenShiftBrief[]>([]);
-  const [mergeTargetId, setMergeTargetId] = useState<string>("");
-  const [mergeCash, setMergeCash] = useState<string>("");
-  const [mergeNote, setMergeNote] = useState<string>("");
-  const [mergeLoading, setMergeLoading] = useState(false);
-  const [shiftMergeError, setShiftMergeError] = useState<string>("");
 
   // BR-AUTH-01/04: warn before logout while an OPEN shift is still owned.
   const [logoutWarn, setLogoutWarn] = useState(false);
   const [logoutAfterClose, setLogoutAfterClose] = useState(false);
 
   useEffect(() => {
+    getShiftSettings()
+      .then(setShiftSettings)
+      .catch(() => setShiftSettings({ shiftClosingRequired: true, managerConfirmClosing: false }));
+
     getMyShift()
       .then((s) => {
         setShift(s);
@@ -736,6 +728,12 @@ const CashierOrders = () => {
       })
       .finally(() => setShiftLoading(false));
   }, []);
+
+  // "Kết ca" turned off entirely: don't block the POS on Mở ca — the cashier should be
+  // able to sell right away. requireCashierWithOpenShift() on the backend already tolerates
+  // a missing shift when this setting is off (see PaymentServiceImpl).
+  const shiftClosingEnabled = shiftSettings?.shiftClosingRequired ?? true;
+  const shouldShowOpenShiftModal = shiftModalOpen && shiftClosingEnabled;
 
   const doLogout = async () => {
     try {
@@ -838,50 +836,6 @@ const CashierOrders = () => {
       activeOrders: freshActiveOrders,
     };
   }, []);
-
-  // BR-CS-19: open the merge dialog and load candidate main shifts.
-  const openMergeDialog = async () => {
-    setShiftMergeError("");
-    setMergeTargetId("");
-    setMergeCash("");
-    setMergeNote("");
-    setMergeOpen(true);
-    try {
-      const targets = await getOpenNormalShifts();
-      setMergeTargets(targets);
-    } catch {
-      setMergeTargets([]);
-    }
-  };
-
-  const submitMerge = async () => {
-    if (!shift) return;
-    if (!mergeTargetId) {
-      setShiftMergeError("Vui lòng chọn ca chính để gộp.");
-      return;
-    }
-    const cash = parseInt(mergeCash.replace(/\D/g, "") || "0", 10);
-    setMergeLoading(true);
-    setShiftMergeError("");
-    try {
-      await mergeFloatingShift(
-        shift.id,
-        mergeTargetId,
-        cash,
-        mergeNote.trim() || undefined,
-      );
-      // The floating shift is now MERGED; the helper no longer owns an open shift.
-      setMergeOpen(false);
-      setShift(null);
-      setShiftModalOpen(true);
-    } catch (err) {
-      setShiftMergeError(
-        err instanceof Error ? err.message : "Không thể gộp ca tạm.",
-      );
-    } finally {
-      setMergeLoading(false);
-    }
-  };
 
   // BR-AUTH-01/04: logout is never blocked, but if the cashier still owns an OPEN cash
   // shift we warn first and offer a "close shift, then log out" shortcut.
@@ -986,6 +940,18 @@ const CashierOrders = () => {
   // refetch path the mutation handlers below already use — one source of truth.
   useRealtime("/topic/orders", () => {
     setRefreshTrigger((t) => t + 1);
+  });
+
+  // Manager approves/rejects this cashier's pending shift-close request — reflect the
+  // outcome instantly instead of waiting for the cashier to reload.
+  useRealtime("/topic/shifts", (body) => {
+    const event = body as { eventType?: string; shift?: ShiftSummary };
+    if (!event.shift || event.shift.id !== shift?.id) return;
+    if (event.eventType === "APPROVED") {
+      setShift(null);
+    } else if (event.eventType === "REJECTED") {
+      setShift(event.shift);
+    }
   });
 
   // Table status changes (from any terminal, including the BR-04 no-show cron) — refetch
@@ -2406,7 +2372,7 @@ const CashierOrders = () => {
           {vnpayReturnNotice.message}
         </div>
       )}
-      {!shift && shiftModalOpen && (
+      {!shift && shouldShowOpenShiftModal && (
         <OpenShiftModal
           employeeName={user?.fullName ?? user?.username ?? "Nhân viên"}
           onOpened={(s) => {
@@ -2423,43 +2389,16 @@ const CashierOrders = () => {
         roleLabel={ROLE_LABEL[user?.role ?? ""] ?? user?.role ?? "Thu ngân"}
         role={user?.role}
         shift={shift}
+        shiftClosingEnabled={shiftClosingEnabled}
         assistanceRequests={assistanceRequests}
         onResolveRequest={handleResolveAssistance}
         onLogout={handleLogout}
         onChangePassword={() => setShowChangePw(true)}
-        onCashMovement={() => setShowCashMovement(true)}
         onCloseShift={() => setShowCloseShift(true)}
       />
 
-      {shift?.shiftType === "FLOATING" && shift.status === "OPEN" && (
-        <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2 text-[#025cca] text-[14px]">
-            <svg
-              className="w-4 h-4 shrink-0"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M13 10V3L4 14h7v7l9-11h-7z"
-              />
-            </svg>
-            Đây là ca tạm (hỗ trợ). Tiền thu được giữ riêng; khi xong hãy gộp
-            vào ca chính.
-          </div>
-          <button
-            className="kv-btn kv-btn-primary h-9 shrink-0"
-            onClick={() => void openMergeDialog()}
-          >
-            Gộp vào ca chính
-          </button>
-        </div>
-      )}
 
-      {!shift && !shiftModalOpen && (
+      {!shift && !shiftModalOpen && shiftClosingEnabled && (
         <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2 text-amber-700 text-[14px]">
             <svg
@@ -2483,6 +2422,25 @@ const CashierOrders = () => {
           >
             Mở ca
           </button>
+        </div>
+      )}
+
+      {shift?.status === "PENDING_MANAGER_CONFIRM" && (
+        <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 flex items-center gap-2 text-[#025cca] text-[14px] shrink-0">
+          <svg
+            className="w-4 h-4 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          Đang chờ quản lý xác nhận kết ca.
         </div>
       )}
 
@@ -2683,7 +2641,7 @@ const CashierOrders = () => {
             onCancelWalkInSeating={() => setWalkInOverrideTableId(null)}
             checkoutDisabled={checkoutDisabled}
             checkoutLabel={checkoutLabel}
-            shiftOpen={!!shift}
+            shiftOpen={!!shift || !shiftClosingEnabled}
             invoicePaid={canCloseSelectedOrder}
             itemMutationDisabled={disableItemMutation}
             itemMutationDisabledMessage={itemMutationDisabledMessage}
@@ -2965,9 +2923,16 @@ const CashierOrders = () => {
         <CloseShiftModal
           shift={shift}
           cashierName={user?.username ?? user?.fullName ?? "—"}
-          onClosed={() => {
-            setShift(null);
+          onClosed={(closed) => {
             setShowCloseShift(false);
+            if (closed.status === "PENDING_MANAGER_CONFIRM") {
+              // Not final yet — a manager must approve/reject first. Keep the shift
+              // around (banner above shows the pending state) and wait for the
+              // realtime APPROVED/REJECTED event below.
+              setShift(closed);
+              return;
+            }
+            setShift(null);
             if (logoutAfterClose) {
               setLogoutAfterClose(false);
               void doLogout(); // BR-AUTH-04: "close shift, then log out" shortcut
@@ -2978,102 +2943,6 @@ const CashierOrders = () => {
             setLogoutAfterClose(false);
           }}
         />
-      )}
-      {mergeOpen && shift && (
-        <div
-          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setMergeOpen(false);
-          }}
-        >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[460px] mx-4 overflow-hidden">
-            <div className="px-6 py-5 border-b border-[#eceef0]">
-              <h2 className="text-[18px] font-bold text-[#202325]">
-                Gộp ca tạm vào ca chính
-              </h2>
-              <p className="text-[13px] text-[#636566] mt-1">
-                Đếm tiền mặt đã thu trong ca tạm và chọn ca chính để gộp. Giao
-                dịch sẽ được chuyển vào ca chính (giữ nguyên người thu).
-              </p>
-            </div>
-            <div className="p-6 flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[14px] font-medium text-[#202325]">
-                  Ca chính
-                </label>
-                {mergeTargets.length === 0 ? (
-                  <p className="text-[13px] text-[#636566]">
-                    Không có ca chính nào đang mở để gộp.
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-1.5">
-                    {mergeTargets.map((t) => (
-                      <label
-                        key={t.shiftId}
-                        className="flex items-center gap-2 text-[14px] text-[#202325] cursor-pointer"
-                      >
-                        <input
-                          type="radio"
-                          name="merge-target"
-                          checked={mergeTargetId === t.shiftId}
-                          onChange={() => setMergeTargetId(t.shiftId)}
-                        />
-                        {t.cashierName}
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[14px] font-medium text-[#202325]">
-                  Tiền mặt đã đếm (VNĐ)
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={mergeCash}
-                  onChange={(e) =>
-                    setMergeCash(
-                      parseInt(
-                        e.target.value.replace(/\D/g, "") || "0",
-                        10,
-                      ).toLocaleString("vi-VN"),
-                    )
-                  }
-                  className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[15px] text-[#202325] outline-none focus:border-[#025cca]"
-                />
-              </div>
-              <input
-                type="text"
-                value={mergeNote}
-                onChange={(e) => setMergeNote(e.target.value)}
-                placeholder="Ghi chú (nếu lệch tiền)"
-                className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[14px] text-[#202325] outline-none focus:border-[#025cca]"
-              />
-              {shiftMergeError && (
-                <div className="px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-600">
-                  {shiftMergeError}
-                </div>
-              )}
-            </div>
-            <div className="px-6 py-4 border-t border-[#eceef0] flex justify-end gap-2">
-              <button
-                className="kv-btn kv-btn-outline-neutral h-10"
-                onClick={() => setMergeOpen(false)}
-              >
-                Hủy
-              </button>
-              <button
-                className="kv-btn kv-btn-primary h-10"
-                disabled={mergeLoading || mergeTargets.length === 0}
-                onClick={() => void submitMerge()}
-              >
-                {mergeLoading ? "Đang gộp..." : "Gộp ca"}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
       {logoutWarn && (
         <div
@@ -3124,13 +2993,6 @@ const CashierOrders = () => {
             </div>
           </div>
         </div>
-      )}
-      {showCashMovement && shift && (
-        <CashMovementModal
-          shift={shift}
-          onUpdated={(s) => setShift(s)}
-          onClose={() => setShowCashMovement(false)}
-        />
       )}
     </div>
   );

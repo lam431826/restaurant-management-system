@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getDailySummary, forceCloseShift, PAYMENT_METHOD_LABELS } from '../../services/shiftService'
+import { useRealtime } from '../../hooks/useRealtime'
+import { getDailySummary, forceCloseShift, approveCloseShift, rejectCloseShift, PAYMENT_METHOD_LABELS } from '../../services/shiftService'
 import type { DailySummary as ShiftReconciliationData, DailyCashierShiftRow } from '../../services/shiftService'
 import { ApiError } from '../../services/api'
 
@@ -15,6 +16,7 @@ const STATUS_LABEL: Record<DailyCashierShiftRow['status'], string> = {
   OPEN: 'Đang mở',
   CLOSED: 'Đã đóng',
   PENDING_RECON: 'Chờ đối soát',
+  PENDING_MANAGER_CONFIRM: 'Chờ xác nhận',
   STALE: 'Quá hạn',
   FORCE_CLOSED: 'Đóng bắt buộc',
 }
@@ -23,6 +25,7 @@ const STATUS_CLASS: Record<DailyCashierShiftRow['status'], string> = {
   OPEN: 'bg-warning-50 text-warning-700 border border-warning/30',
   CLOSED: 'bg-success-50 text-success-700 border border-success/30',
   PENDING_RECON: 'bg-primary-25 text-primary border border-primary/30',
+  PENDING_MANAGER_CONFIRM: 'bg-amber-50 text-amber-700 border border-amber-300',
   STALE: 'bg-danger-50 text-danger-700 border border-danger/30',
   FORCE_CLOSED: 'bg-fill text-ink-subtle border border-line',
 }
@@ -41,6 +44,14 @@ const ShiftReconciliation = () => {
   const [fcReason, setFcReason] = useState('')
   const [fcError, setFcError] = useState('')
   const [fcLoading, setFcLoading] = useState(false)
+  // Manager confirmation of a cashier's pending shift-close request
+  const [approveTarget, setApproveTarget] = useState<DailyCashierShiftRow | null>(null)
+  const [approveLoading, setApproveLoading] = useState(false)
+  const [approveError, setApproveError] = useState('')
+  const [rejectTarget, setRejectTarget] = useState<DailyCashierShiftRow | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejectError, setRejectError] = useState('')
+  const [rejectLoading, setRejectLoading] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -56,6 +67,10 @@ const ShiftReconciliation = () => {
   }, [date])
 
   useEffect(() => { void load() }, [load])
+
+  // A cashier just submitted a close for manager confirmation, or another manager already
+  // acted on one — refresh so this screen doesn't need a manual reload.
+  useRealtime('/topic/shifts', () => { void load() })
 
   const openForceClose = (row: DailyCashierShiftRow) => {
     setForceTarget(row); setFcCash(''); setFcReason(''); setFcError('')
@@ -74,6 +89,39 @@ const ShiftReconciliation = () => {
       setFcError(err instanceof ApiError ? err.message : 'Không thể đóng ca bắt buộc.')
     } finally {
       setFcLoading(false)
+    }
+  }
+
+  const submitApprove = async () => {
+    if (!approveTarget) return
+    setApproveLoading(true); setApproveError('')
+    try {
+      await approveCloseShift(approveTarget.shiftId)
+      setApproveTarget(null)
+      await load()
+    } catch (err) {
+      setApproveError(err instanceof ApiError ? err.message : 'Không thể xác nhận kết ca.')
+    } finally {
+      setApproveLoading(false)
+    }
+  }
+
+  const openReject = (row: DailyCashierShiftRow) => {
+    setRejectTarget(row); setRejectReason(''); setRejectError('')
+  }
+
+  const submitReject = async () => {
+    if (!rejectTarget) return
+    if (!rejectReason.trim()) { setRejectError('Vui lòng nhập lý do từ chối.'); return }
+    setRejectLoading(true); setRejectError('')
+    try {
+      await rejectCloseShift(rejectTarget.shiftId, rejectReason.trim())
+      setRejectTarget(null)
+      await load()
+    } catch (err) {
+      setRejectError(err instanceof ApiError ? err.message : 'Không thể từ chối kết ca.')
+    } finally {
+      setRejectLoading(false)
     }
   }
 
@@ -115,7 +163,7 @@ const ShiftReconciliation = () => {
       {data && data.shiftCount > 0 && (
         <>
           {/* Tầng 1 — Day-level totals */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <div className="bg-card border border-line rounded-lg p-4">
               <p className="text-sm text-ink-subtle">Tổng doanh thu</p>
               <p className="text-h4 font-bold text-ink mt-1">{fmt(data.totalRevenue)}</p>
@@ -123,14 +171,6 @@ const ShiftReconciliation = () => {
             <div className="bg-card border border-line rounded-lg p-4">
               <p className="text-sm text-ink-subtle">Số ca</p>
               <p className="text-h4 font-bold text-ink mt-1">{data.shiftCount}</p>
-            </div>
-            <div className="bg-card border border-line rounded-lg p-4">
-              <p className="text-sm text-ink-subtle">Thu / Chi quỹ</p>
-              <p className="text-h4 font-bold text-ink mt-1">
-                <span className="text-success-700">+{fmt(data.totalCashIn)}</span>
-                {' / '}
-                <span className="text-danger">−{fmt(data.totalCashOut)}</span>
-              </p>
             </div>
             <div className="bg-card border border-line rounded-lg p-4">
               <p className="text-sm text-ink-subtle">Lệch quỹ (tổng)</p>
@@ -179,7 +219,6 @@ const ShiftReconciliation = () => {
                   <th className="sticky top-0 bg-primary-25 text-center text-md font-semibold text-ink-strong px-4 py-3">Giờ</th>
                   <th className="sticky top-0 bg-primary-25 text-right text-md font-semibold text-ink-strong px-4 py-3">Đầu ca</th>
                   <th className="sticky top-0 bg-primary-25 text-right text-md font-semibold text-ink-strong px-4 py-3">Doanh thu</th>
-                  <th className="sticky top-0 bg-primary-25 text-right text-md font-semibold text-ink-strong px-4 py-3">Thu/Chi</th>
                   <th className="sticky top-0 bg-primary-25 text-right text-md font-semibold text-ink-strong px-4 py-3">Lệch quỹ</th>
                   <th className="sticky top-0 bg-primary-25 text-right text-md font-semibold text-ink-strong px-4 py-3">Bàn giao</th>
                   <th className="sticky top-0 bg-primary-25 text-right text-md font-semibold text-ink-strong px-4 py-3"></th>
@@ -199,16 +238,27 @@ const ShiftReconciliation = () => {
                     </td>
                     <td className="px-4 py-3 text-right text-md text-ink">{fmt(s.openingCash)}</td>
                     <td className="px-4 py-3 text-right text-md text-ink">{fmt(s.totalRevenue)}</td>
-                    <td className="px-4 py-3 text-right text-md whitespace-nowrap">
-                      <span className="text-success-700">+{fmt(s.totalCashIn)}</span>
-                      {' / '}
-                      <span className="text-danger">−{fmt(s.totalCashOut)}</span>
-                    </td>
                     <td className={`px-4 py-3 text-right text-md font-medium ${s.totalVariance > 0 ? 'text-danger' : 'text-ink'}`}>
                       {fmt(s.totalVariance)}
                     </td>
                     <td className="px-4 py-3 text-right text-md text-ink">{fmt(s.handoverAmount ?? 0)}</td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {s.status === 'PENDING_MANAGER_CONFIRM' && (
+                        <div className="flex justify-end gap-2">
+                          <button
+                            className="h-8 px-3 rounded-md text-sm font-medium text-success-700 border border-success/40 hover:bg-success-50 transition-colors"
+                            onClick={() => { setApproveTarget(s); setApproveError('') }}
+                          >
+                            Duyệt
+                          </button>
+                          <button
+                            className="h-8 px-3 rounded-md text-sm font-medium text-danger border border-danger/40 hover:bg-danger-50 transition-colors"
+                            onClick={() => openReject(s)}
+                          >
+                            Từ chối
+                          </button>
+                        </div>
+                      )}
                       {(s.status === 'STALE' || s.status === 'OPEN') && (
                         <button
                           className="h-8 px-3 rounded-md text-sm font-medium text-danger border border-danger/40 hover:bg-danger-50 transition-colors"
@@ -266,6 +316,70 @@ const ShiftReconciliation = () => {
               <button className="kv-btn kv-btn-outline-neutral h-9" onClick={() => setForceTarget(null)}>Hủy</button>
               <button className="kv-btn kv-btn-primary h-9" disabled={fcLoading} onClick={() => void submitForceClose()}>
                 {fcLoading ? 'Đang đóng...' : 'Xác nhận đóng ca'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {approveTarget && (
+        <div
+          className="fixed inset-0 z-[var(--kv-z-modal)] flex items-center justify-center p-6"
+          style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }}
+          onMouseDown={e => { if (e.target === e.currentTarget) setApproveTarget(null) }}
+        >
+          <div className="w-full max-w-[26rem] bg-card rounded-lg shadow-lg flex flex-col">
+            <div className="flex items-center justify-between px-6 h-14 border-b border-line">
+              <h2 className="text-h4 font-bold text-ink">Xác nhận kết ca</h2>
+              <button onClick={() => setApproveTarget(null)} className="w-8 h-8 flex items-center justify-center rounded-md text-ink-subtle hover:bg-fill" aria-label="Đóng">✕</button>
+            </div>
+            <div className="p-6 flex flex-col gap-3">
+              <p className="text-md text-ink-subtle">
+                Duyệt phiếu bàn giao ca của <span className="font-semibold text-ink">{approveTarget.cashierName}</span>?
+                Ca sẽ được đóng chính thức.
+              </p>
+              {approveError && <div className="px-3 py-2 rounded-md bg-danger-50 text-danger text-sm border border-danger/30">{approveError}</div>}
+            </div>
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-line">
+              <button className="kv-btn kv-btn-outline-neutral h-9" onClick={() => setApproveTarget(null)}>Hủy</button>
+              <button className="kv-btn kv-btn-primary h-9" disabled={approveLoading} onClick={() => void submitApprove()}>
+                {approveLoading ? 'Đang duyệt...' : 'Duyệt'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rejectTarget && (
+        <div
+          className="fixed inset-0 z-[var(--kv-z-modal)] flex items-center justify-center p-6"
+          style={{ background: 'rgba(var(--kv-black-rgb), 0.45)' }}
+          onMouseDown={e => { if (e.target === e.currentTarget) setRejectTarget(null) }}
+        >
+          <div className="w-full max-w-[28rem] bg-card rounded-lg shadow-lg flex flex-col">
+            <div className="flex items-center justify-between px-6 h-14 border-b border-line">
+              <h2 className="text-h4 font-bold text-ink">Từ chối kết ca</h2>
+              <button onClick={() => setRejectTarget(null)} className="w-8 h-8 flex items-center justify-center rounded-md text-ink-subtle hover:bg-fill" aria-label="Đóng">✕</button>
+            </div>
+            <div className="p-6 flex flex-col gap-4">
+              <p className="text-md text-ink-subtle">
+                Ca của <span className="font-semibold text-ink">{rejectTarget.cashierName}</span> sẽ mở lại để thu ngân sửa và gửi lại.
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-md font-medium text-ink">Lý do <span className="text-danger">*</span></label>
+                <textarea
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  placeholder="Ví dụ: số liệu chưa khớp, kiểm lại tiền mặt"
+                  className="w-full min-h-[72px] px-3 py-2 rounded-md border border-line text-md text-ink outline-none focus:border-primary"
+                />
+              </div>
+              {rejectError && <div className="px-3 py-2 rounded-md bg-danger-50 text-danger text-sm border border-danger/30">{rejectError}</div>}
+            </div>
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-line">
+              <button className="kv-btn kv-btn-outline-neutral h-9" onClick={() => setRejectTarget(null)}>Hủy</button>
+              <button className="kv-btn kv-btn-primary h-9" disabled={rejectLoading} onClick={() => void submitReject()}>
+                {rejectLoading ? 'Đang từ chối...' : 'Từ chối'}
               </button>
             </div>
           </div>

@@ -6,6 +6,7 @@ import com.rms.restaurant.module.notification.dto.NotificationLogResponse;
 import com.rms.restaurant.module.order.dto.OrderResponse;
 import com.rms.restaurant.module.order.model.AssistanceRequest;
 import com.rms.restaurant.module.reservation.dto.ReservationResponse;
+import com.rms.restaurant.module.shift.dto.ShiftSummaryResponse;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.user.dto.AuditLogResponse;
 import lombok.RequiredArgsConstructor;
@@ -95,6 +96,14 @@ public class RealtimeEventPublisher {
         }
     }
 
+    public void publishShiftEvent(String eventType, ShiftSummaryResponse shift) {
+        try {
+            messagingTemplate.convertAndSend("/topic/shifts", new ShiftEvent(eventType, shift));
+        } catch (Exception e) {
+            log.warn("Failed to publish shift event {} for shift {}: {}", eventType, shift.id(), e.getMessage());
+        }
+    }
+
     public record TableStatusEvent(String tableId, String name, String area, TableStatus status) {}
 
     public record OrderEvent(String eventType, OrderResponse order) {}
@@ -102,4 +111,6 @@ public class RealtimeEventPublisher {
     public record AssistanceEvent(String eventType, AssistanceRequest request) {}
 
     public record ReservationEvent(String eventType, ReservationResponse reservation) {}
+
+    public record ShiftEvent(String eventType, ShiftSummaryResponse shift) {}
 }

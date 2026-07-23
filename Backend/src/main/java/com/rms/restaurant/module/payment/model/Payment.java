@@ -23,7 +23,7 @@ public class Payment {
     private String invoiceId;
 
     // BR-CS-08: the cash shift this payment is attributed to, and the cashier who
-    // processed it (kept even after a floating shift is merged — BR-CS-19).
+    // processed it.
     @Column(name = "shift_id")
     private String shiftId;
 

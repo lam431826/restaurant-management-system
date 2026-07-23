@@ -2,7 +2,6 @@ package com.rms.restaurant.module.shift.mapper;
 
 import com.rms.restaurant.module.shift.dto.*;
 import com.rms.restaurant.module.shift.model.Shift;
-import com.rms.restaurant.module.shift.model.ShiftCashMovement;
 import com.rms.restaurant.module.shift.model.ShiftPaymentReconciliation;
 import org.springframework.stereotype.Component;
 
@@ -12,12 +11,7 @@ import java.util.List;
 @Component
 public class ShiftMapper {
 
-    public ShiftSummaryResponse toSummary(
-            Shift shift,
-            List<ShiftPaymentReconciliation> reconciliations,
-            List<ShiftCashMovement> movements,
-            BigDecimal totalCashIn,
-            BigDecimal totalCashOut) {
+    public ShiftSummaryResponse toSummary(Shift shift, List<ShiftPaymentReconciliation> reconciliations) {
 
         List<PaymentMethodBreakdown> breakdown = reconciliations.stream()
                 .map(r -> new PaymentMethodBreakdown(
@@ -25,16 +19,6 @@ public class ShiftMapper {
                         r.getExpectedAmount(),
                         r.getActualAmount(),
                         r.getVariance()))
-                .toList();
-
-        List<CashMovementDetail> cashMovements = movements.stream()
-                .map(m -> new CashMovementDetail(
-                        m.getId(),
-                        m.getType(),
-                        m.getAmount(),
-                        m.getReason(),
-                        m.getOperatorId(),
-                        m.getCreatedAt()))
                 .toList();
 
         BigDecimal totalRevenue = shift.getTotalRevenue() != null
@@ -58,13 +42,10 @@ public class ShiftMapper {
                 shift.getClosedAt(),
                 shift.getOpeningCash(),
                 shift.getHandoverAmount(),
-                totalCashIn,
-                totalCashOut,
                 totalRevenue,
                 totalVariance,
                 shift.getCardBatchTotal(),
                 breakdown,
-                cashMovements,
                 shift.getClosingNote());
     }
 }
