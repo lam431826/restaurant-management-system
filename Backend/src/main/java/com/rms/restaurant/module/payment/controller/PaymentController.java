@@ -29,7 +29,7 @@ public class PaymentController {
     private final PaymentService paymentService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER')")
     public ResponseEntity<ApiResponse<List<PaymentResponse>>> getHistory(
             @RequestParam(required = false) String invoiceId) {
         return ResponseEntity.ok(ApiResponse.success(paymentService.getHistory(invoiceId)));
@@ -37,7 +37,7 @@ public class PaymentController {
 
     // CASH only — immediate PAID. QR uses the /qr/* endpoints below.
     @PostMapping
-    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER')")
     public ResponseEntity<ApiResponse<PaymentResponse>> process(
             @Valid @RequestBody ProcessPaymentRequest request,
             @AuthenticationPrincipal UserDetails principal) {
@@ -48,7 +48,7 @@ public class PaymentController {
     }
 
     @PostMapping("/qr/initiate")
-    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER')")
     public ResponseEntity<ApiResponse<PaymentResponse>> initiateQr(
             @Valid @RequestBody QrInitiateRequest request,
             @AuthenticationPrincipal UserDetails principal) {
@@ -59,7 +59,7 @@ public class PaymentController {
     }
 
     @PostMapping("/qr/{paymentId}/simulate-success")
-    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER')")
     public ResponseEntity<ApiResponse<PaymentResponse>> simulateQrSuccess(
             @PathVariable String paymentId,
             @AuthenticationPrincipal UserDetails principal) {
@@ -68,7 +68,7 @@ public class PaymentController {
     }
 
     @PostMapping("/qr/{paymentId}/cancel")
-    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER')")
     public ResponseEntity<ApiResponse<PaymentResponse>> cancelQr(
             @PathVariable String paymentId,
             @AuthenticationPrincipal UserDetails principal) {

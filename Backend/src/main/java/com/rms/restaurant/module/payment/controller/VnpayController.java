@@ -38,7 +38,7 @@ public class VnpayController {
     private final PaymentService paymentService;
 
     @PostMapping("/create")
-    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER')")
     public ResponseEntity<ApiResponse<VnpayCreateResponse>> create(
             @Valid @RequestBody VnpayCreateRequest request,
             @AuthenticationPrincipal UserDetails principal,
@@ -67,7 +67,7 @@ public class VnpayController {
     }
 
     @GetMapping("/status/{txnRef}")
-    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER')")
     public ResponseEntity<ApiResponse<VnpayStatusResponse>> status(@PathVariable String txnRef) {
         return ResponseEntity.ok(ApiResponse.success(paymentService.getVnpayStatus(txnRef)));
     }
@@ -78,7 +78,7 @@ public class VnpayController {
      * (unlike /return and /ipn, which VNPAY itself calls).
      */
     @PostMapping("/reconcile/{txnRef}")
-    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER')")
     public ResponseEntity<ApiResponse<VnpayStatusResponse>> reconcile(
             @PathVariable String txnRef,
             HttpServletRequest httpRequest) {

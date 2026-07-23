@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/payroll/settings")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+@PreAuthorize("hasAnyRole('MANAGER')")
 public class PayrollSettingController {
 
     private final PayrollSettingService payrollSettingService;

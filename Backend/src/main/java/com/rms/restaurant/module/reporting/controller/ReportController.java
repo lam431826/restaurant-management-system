@@ -29,7 +29,7 @@ public class ReportController {
     // Báo cáo cuối ngày về bán hàng — from/to are full datetime bounds computed by the caller,
     // covering both a single day's time-of-day window and an arbitrary custom date range.
     @GetMapping("/end-of-day")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('MANAGER')")
     public ResponseEntity<ApiResponse<List<EndOfDaySalesRow>>> getEndOfDaySales(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
@@ -44,7 +44,7 @@ public class ReportController {
     // Bức tranh kinh doanh — aggregated manager dashboard snapshot for [from, to]. granularity
     // controls the revenue series bucket width (HOUR for a single day, DAY for multi-day ranges).
     @GetMapping("/dashboard")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('MANAGER')")
     public ResponseEntity<ApiResponse<DashboardOverviewResponse>> getDashboardOverview(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
@@ -55,7 +55,7 @@ public class ReportController {
 
     // Báo cáo tài chính (P&L) — one row per month/quarter/year within the given year.
     @GetMapping("/financial")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('MANAGER')")
     public ResponseEntity<ApiResponse<List<FinancialPeriodResponse>>> getFinancialReport(
             @RequestParam int year,
             @RequestParam FinancialGranularity granularity) {

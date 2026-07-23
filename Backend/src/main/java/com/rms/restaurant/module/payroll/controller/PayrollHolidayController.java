@@ -17,7 +17,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/payroll/holidays")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+@PreAuthorize("hasAnyRole('MANAGER')")
 public class PayrollHolidayController {
 
     private final PayrollHolidayService holidayService;

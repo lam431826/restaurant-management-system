@@ -23,7 +23,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 @RestController
 @RequestMapping("/api/orders")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('CASHIER', 'MANAGER')") // Temporary disabled for testing without login
+@PreAuthorize("hasAnyRole('CASHIER')")
 public class OrderController {
     private final OrderService orderService;
 
@@ -46,7 +46,7 @@ public class OrderController {
     public ResponseEntity<OrderResponse> updateStatus(@PathVariable String id, @RequestBody com.rms.restaurant.module.order.dto.UpdateOrderStatusRequest request) {
         return ResponseEntity.ok(orderService.updateStatus(id, request.status()));
     }
-
+    
     @PostMapping
     public ResponseEntity<OrderResponse> createOrder(
             @Valid @RequestBody com.rms.restaurant.module.order.dto.CreateOrderRequest request,

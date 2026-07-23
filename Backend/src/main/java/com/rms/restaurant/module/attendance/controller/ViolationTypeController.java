@@ -16,7 +16,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/attendance/violation-types")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+@PreAuthorize("hasAnyRole('MANAGER')")
 public class ViolationTypeController {
 
     private final AttendanceService attendanceService;

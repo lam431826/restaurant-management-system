@@ -16,7 +16,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/payroll/salary-templates")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+@PreAuthorize("hasAnyRole('MANAGER')")
 public class SalaryTemplateController {
 
     private final SalaryTemplateService templateService;

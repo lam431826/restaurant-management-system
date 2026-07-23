@@ -4,6 +4,7 @@ import MiniCalendar from './MiniCalendar'
 import type { Reservation, ReservationStatus } from '../../data/mockData'
 import { reservationStatusMeta } from '../../data/mockData'
 import type { TableDto } from '../../api/tables'
+import type { UserRole } from '../../context/AuthContext'
 
 interface Props {
   reservations: Reservation[]
@@ -16,6 +17,7 @@ interface Props {
   onCheckIn?: (id: string) => void
   onCancel?: (id: string) => void
   onEdit?: (id: string) => void
+  role?: UserRole
 }
 
 const HOURS = Array.from({ length: 10 }, (_, i) => 14 + i) // 14:00 → 23:00
@@ -181,7 +183,7 @@ const DItem = ({ label, value }: { label: string; value: React.ReactNode }) => (
 
 const CalendarView = ({
   reservations, tables, selectedDate, onSelectDate, onAssignTable, onTransferTable,
-  onConfirm, onCheckIn, onCancel, onEdit,
+  onConfirm, onCheckIn, onCancel, onEdit, role,
 }: Props) => {
   const [statuses, setStatuses] = useState<Set<ReservationStatus>>(new Set(['CONFIRMED', 'CHECKED_IN']))
   const [openAreas, setOpenAreas] = useState<Set<string>>(new Set())
@@ -575,25 +577,25 @@ const CalendarView = ({
                   )}
                 </div>
 
-                {/* Action buttons */}
+                {/* Action buttons — Waiter confirms/edits/cancels, Cashier checks guests in */}
                 <div className="flex flex-col gap-2 shrink-0">
-                  {canAct && (
+                  {canAct && role === 'WAITER' && (
                     <button onClick={() => { onEdit?.(selectedRes.id); closeDetail() }}
                       className="kv-btn kv-btn-outline-neutral h-9 text-sm min-w-[7rem]">
                       Chỉnh sửa
                     </button>
                   )}
-                  {canAct && s === 'PENDING' && (
+                  {canAct && s === 'PENDING' && role === 'WAITER' && (
                     <button onClick={() => act(onConfirm)} className="kv-btn kv-btn-primary h-9 text-sm min-w-[7rem]">
                       Xác nhận
                     </button>
                   )}
-                  {canAct && s === 'CONFIRMED' && (
+                  {canAct && s === 'CONFIRMED' && role === 'CASHIER' && (
                     <button onClick={() => act(onCheckIn)} className="kv-btn kv-btn-primary h-9 text-sm min-w-[7rem]">
                       Check-in
                     </button>
                   )}
-                  {canAct && (
+                  {canAct && role === 'WAITER' && (
                     <button
                       onClick={() => act(onCancel)}
                       className="kv-btn h-9 text-sm min-w-[7rem]"

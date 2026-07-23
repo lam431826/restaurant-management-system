@@ -21,7 +21,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/menu")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+@PreAuthorize("hasAnyRole('MANAGER')")
 public class MenuManagementController {
 
     private final MenuService menuService;
@@ -38,7 +38,7 @@ public class MenuManagementController {
     // ── Items ────────────────────────────────────────────────────────────
 
     @GetMapping("/items")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','WAITER','CASHIER')")
+    @PreAuthorize("hasAnyRole('MANAGER','WAITER','CASHIER')")
     public ResponseEntity<PageResponse<MenuItemResponse>> searchItems(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String categoryId,
@@ -49,7 +49,7 @@ public class MenuManagementController {
     }
 
     @GetMapping("/items/{id}")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','WAITER','CASHIER')")
+    @PreAuthorize("hasAnyRole('MANAGER','WAITER','CASHIER')")
     public ResponseEntity<ApiResponse<MenuItemResponse>> getItem(@PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success(menuService.getItem(id)));
     }
@@ -96,7 +96,7 @@ public class MenuManagementController {
     // ── Categories ───────────────────────────────────────────────────────
 
     @GetMapping("/categories")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','WAITER','CASHIER')")
+    @PreAuthorize("hasAnyRole('MANAGER','WAITER','CASHIER')")
     public ResponseEntity<ApiResponse<List<CategoryResponse>>> listCategories() {
         return ResponseEntity.ok(ApiResponse.success(menuService.listCategories()));
     }

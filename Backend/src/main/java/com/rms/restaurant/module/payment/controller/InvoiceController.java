@@ -42,7 +42,7 @@ public class InvoiceController {
     private final InvoiceService invoiceService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER')")
     public ResponseEntity<ApiResponse<List<InvoiceSummaryResponse>>> getAll(
             @RequestParam(required = false) Boolean paid,
             @RequestParam(required = false) String orderId,
@@ -84,13 +84,13 @@ public class InvoiceController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER')")
     public ResponseEntity<ApiResponse<InvoiceDetailResponse>> getById(@PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success(invoiceService.getById(id)));
     }
 
     @PostMapping("/{invoiceId}/split")
-    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER')")
     public ResponseEntity<ApiResponse<SplitInvoiceResponse>> split(
             @PathVariable String invoiceId,
             @Valid @RequestBody SplitInvoiceRequest request,
@@ -99,7 +99,7 @@ public class InvoiceController {
     }
 
     @PostMapping("/merge")
-    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER')")
     public ResponseEntity<ApiResponse<MergeInvoiceResponse>> merge(
             @Valid @RequestBody MergeInvoiceRequest request,
             @AuthenticationPrincipal UserDetails principal) {
@@ -107,7 +107,7 @@ public class InvoiceController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER')")
     public ResponseEntity<ApiResponse<InvoiceResponse>> generate(
             @Valid @RequestBody GenerateInvoiceRequest request,
             @AuthenticationPrincipal UserDetails principal) {
@@ -118,7 +118,7 @@ public class InvoiceController {
     }
 
     @PostMapping("/{id}/send")
-    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER')")
     public ResponseEntity<ApiResponse<SendInvoiceResponse>> send(@PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success(
                 invoiceService.sendInvoice(id),
@@ -127,7 +127,7 @@ public class InvoiceController {
     }
 
     @PutMapping("/{id}/discount")
-    @PreAuthorize("hasAnyRole('CASHIER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER')")
     public ResponseEntity<ApiResponse<InvoiceResponse>> applyDiscount(@PathVariable String id,
                                                                       @Valid @RequestBody ApplyDiscountRequest request) {
         return ResponseEntity.ok(ApiResponse.success(invoiceService.applyDiscount(id, request)));

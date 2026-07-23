@@ -273,7 +273,6 @@ const Reservation = () => {
         onOpenReservationById={handleOpenReservationById}
         employeeName={user?.fullName ?? user?.username ?? 'Nhân viên'}
         roleLabel={ROLE_LABEL[user?.role ?? ''] ?? user?.role ?? 'Phục vụ'}
-        role={user?.role}
       />
 
       <div className="relative flex-1 min-h-0 flex flex-col">
@@ -333,6 +332,7 @@ const Reservation = () => {
               onCheckIn={handleCheckIn}
               onCancel={handleCancel}
               onEdit={handleEdit}
+              role={user?.role}
             />
           ) : (
             <ListView
@@ -343,6 +343,7 @@ const Reservation = () => {
               onCancel={handleCancel}
               onAssignTable={handleAssignTable}
               onEdit={handleEdit}
+              role={user?.role}
             />
           )}
         </div>

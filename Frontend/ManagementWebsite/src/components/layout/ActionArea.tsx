@@ -1,14 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  IconFileText,
-  IconChevronDown,
-  IconBell,
-  IconSettings,
-  IconCalendar,
-  IconConciergeBell,
-} from "../common/Icon";
-import { cashierModes } from "../../data/mockData";
+import { IconBell, IconSettings } from "../common/Icon";
 import { useAuth } from "../../context/AuthContext";
 import { logout } from "../../api/auth";
 import ChangePasswordModal from "../auth/ChangePasswordModal";
@@ -46,10 +38,7 @@ const roleLabel: Record<string, string> = {
 //import { logout } from '../../services/authApi'
 import { clearAuth } from "../../services/tokenStorage";
 
-type DropdownName = "cashier" | "notifications" | "help" | "user" | null;
-
-const listItem =
-  "flex items-center gap-3 px-5 py-2 text-md text-ink cursor-pointer min-h-[3.6rem] no-underline transition-colors hover:bg-[var(--kv-state-hover-bg)] hover:text-primary";
+type DropdownName = "notifications" | "help" | "user" | null;
 
 const menuRow =
   "flex items-center justify-between px-5 py-2 min-h-[3.6rem] text-md cursor-pointer text-ink transition-colors hover:bg-[var(--kv-state-hover-bg)]";
@@ -112,12 +101,6 @@ const ActionArea = () => {
   //   navigate("/login", { replace: true });
   // };
 
-  const selectCashierMode = (id: number) => {
-    setOpen(null);
-    if (id === 12)
-      navigate("/waiter"); // Lễ tân
-  };
-
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(null);
@@ -141,58 +124,9 @@ const ActionArea = () => {
     }
   };
 
-  const cashierIcon = (icon: string) =>
-    icon === "ik-calendar-day" ? (
-      <IconCalendar size={16} />
-    ) : (
-      <IconConciergeBell size={16} />
-    );
-
   return (
     <>
       <div className="flex items-center gap-2" ref={ref}>
-        {/* ── Thu ngân button group ── */}
-        <div className="relative flex items-center">
-          <div className="kv-btn-group">
-            <button
-              className="kv-btn kv-btn-outline-primary"
-              onClick={() => {
-                setOpen(null);
-                navigate("/cashier");
-              }}
-            >
-              <IconFileText size={15} />
-              Thu ngân
-            </button>
-            <button
-              className="kv-btn kv-btn-outline-primary"
-              onClick={() => toggle("cashier")}
-              aria-expanded={open === "cashier"}
-            >
-              <IconChevronDown size={14} />
-            </button>
-          </div>
-
-          {open === "cashier" && (
-            <div className="kv-float-container min-w-[15rem]">
-              <ul className="list-none m-0 py-1">
-                {cashierModes.map((m) => (
-                  <li key={m.id}>
-                    <button
-                      type="button"
-                      className={`${listItem} w-full bg-transparent border-none text-left`}
-                      onClick={() => selectCashierMode(m.id)}
-                    >
-                      {cashierIcon(m.icon)}
-                      <span>{m.label}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
         {/* ── Notification bell ── */}
         <div className="relative flex items-center">
           <div className="relative inline-flex">

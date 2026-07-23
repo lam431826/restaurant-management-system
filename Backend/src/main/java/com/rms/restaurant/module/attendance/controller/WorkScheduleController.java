@@ -18,7 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/attendance/schedules")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+@PreAuthorize("hasAnyRole('MANAGER')")
 public class WorkScheduleController {
 
     private final WorkScheduleService workScheduleService;

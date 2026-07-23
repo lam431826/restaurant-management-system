@@ -24,7 +24,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/employees")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+@PreAuthorize("hasAnyRole('MANAGER')")
 public class EmployeeController {
 
     private final EmployeeService employeeService;
@@ -46,7 +46,7 @@ public class EmployeeController {
     }
 
     // ── Self-service ("Hồ sơ của tôi") — method-level @PreAuthorize overrides the class-level
-    // MANAGER/ADMIN restriction; Spring Security resolves the nearest annotation, method wins. ──
+    // MANAGER restriction; Spring Security resolves the nearest annotation, method wins. ──
 
     @GetMapping("/me")
     @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER','ADMIN')")

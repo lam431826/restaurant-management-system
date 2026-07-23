@@ -21,7 +21,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/payroll")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+@PreAuthorize("hasAnyRole('MANAGER')")
 public class PayrollController {
 
     private final PayrollService payrollService;

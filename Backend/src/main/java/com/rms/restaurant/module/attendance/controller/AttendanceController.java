@@ -19,7 +19,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/attendance")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+@PreAuthorize("hasAnyRole('MANAGER')")
 public class AttendanceController {
 
     private final AttendanceService attendanceService;
@@ -39,10 +39,10 @@ public class AttendanceController {
     }
 
     // ── Self-service ("Lịch làm việc") — method-level override, same pattern as
-    // EmployeeController's /employees/me, since the class-level annotation is MANAGER/ADMIN only. ──
+    // EmployeeController's /employees/me, since the class-level annotation is MANAGER only. ──
 
     @GetMapping("/timesheet/me")
-    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER')")
     public ResponseEntity<ApiResponse<List<TimesheetCellResponse>>> myTimesheet(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end,
@@ -52,7 +52,7 @@ public class AttendanceController {
     }
 
     @PostMapping("/schedules/{scheduleId}/check-in")
-    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER')")
     public ResponseEntity<ApiResponse<AttendanceRecordResponse>> checkIn(
             @PathVariable String scheduleId, @AuthenticationPrincipal UserDetails principal) {
         return ResponseEntity.ok(ApiResponse.success(
@@ -60,7 +60,7 @@ public class AttendanceController {
     }
 
     @PostMapping("/schedules/{scheduleId}/check-out")
-    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER')")
     public ResponseEntity<ApiResponse<AttendanceRecordResponse>> checkOut(
             @PathVariable String scheduleId, @AuthenticationPrincipal UserDetails principal) {
         return ResponseEntity.ok(ApiResponse.success(

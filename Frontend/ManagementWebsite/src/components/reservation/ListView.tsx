@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { Reservation, ReservationStatus } from '../../data/mockData'
 import { reservationStatusMeta } from '../../data/mockData'
 import type { TableDto } from '../../api/tables'
+import type { UserRole } from '../../context/AuthContext'
 
 interface Props {
   reservations: Reservation[]
@@ -12,6 +13,7 @@ interface Props {
   onCancel: (id: string) => Promise<void>
   onAssignTable?: (reservationId: string, tableId: string) => void
   onEdit?: (id: string) => void
+  role?: UserRole
 }
 
 /* ── Icons ────────────────────────────────────────────────────────────────── */
@@ -181,46 +183,61 @@ const EditIcon = () => (
   </svg>
 )
 
-/* ── Inline action buttons per row ───────────────────────────────────────── */
-const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onCancel, onEdit }: {
+/* ── Inline action buttons per row — Waiter confirms/edits/cancels, Cashier checks guests in ── */
+const ActionButtons = ({ r, busy, onConfirm, onCheckIn, onCancel, onEdit, role }: {
   r: Reservation
   busy: boolean
   onConfirm: () => void
   onCheckIn: () => void
   onCancel: () => void
   onEdit?: () => void
+  role?: UserRole
 }) => {
   if (r.status === 'PENDING') return (
     <div className="flex items-center gap-1.5">
-      <button disabled={busy} onClick={onConfirm}
-        className="h-7 px-2.5 text-[12px] font-semibold rounded-md bg-[var(--kv-success)] text-white hover:opacity-90 disabled:opacity-50 cursor-pointer whitespace-nowrap">
-        Xác nhận
-      </button>
-      <button disabled={busy} onClick={onCancel}
-        className="h-7 px-2 text-[12px] font-semibold rounded-md border border-danger text-danger hover:bg-red-50 disabled:opacity-50 cursor-pointer whitespace-nowrap">
-        Hủy
-      </button>
-      <button disabled={busy} onClick={onEdit} title="Chỉnh sửa"
-        className="h-7 w-7 flex items-center justify-center rounded-md border border-line-default text-ink-muted hover:text-primary hover:border-primary disabled:opacity-50 cursor-pointer">
-        <EditIcon />
-      </button>
+      {role === 'WAITER' && (
+        <button disabled={busy} onClick={onConfirm}
+          className="h-7 px-2.5 text-[12px] font-semibold rounded-md bg-[var(--kv-success)] text-white hover:opacity-90 disabled:opacity-50 cursor-pointer whitespace-nowrap">
+          Xác nhận
+        </button>
+      )}
+      {role === 'WAITER' && (
+        <button disabled={busy} onClick={onCancel}
+          className="h-7 px-2 text-[12px] font-semibold rounded-md border border-danger text-danger hover:bg-red-50 disabled:opacity-50 cursor-pointer whitespace-nowrap">
+          Hủy
+        </button>
+      )}
+      {role === 'WAITER' && (
+        <button disabled={busy} onClick={onEdit} title="Chỉnh sửa"
+          className="h-7 w-7 flex items-center justify-center rounded-md border border-line-default text-ink-muted hover:text-primary hover:border-primary disabled:opacity-50 cursor-pointer">
+          <EditIcon />
+        </button>
+      )}
+      {role !== 'WAITER' && <span className="text-ink-muted text-[12px]">—</span>}
     </div>
   )
 
   if (r.status === 'CONFIRMED') return (
     <div className="flex items-center gap-1.5">
-      <button disabled={busy} onClick={onCheckIn}
-        className="h-7 px-2.5 text-[12px] font-semibold rounded-md bg-primary text-white hover:opacity-90 disabled:opacity-50 cursor-pointer whitespace-nowrap">
-        Check-in
-      </button>
-      <button disabled={busy} onClick={onCancel}
-        className="h-7 px-2 text-[12px] font-semibold rounded-md border border-danger text-danger hover:bg-red-50 disabled:opacity-50 cursor-pointer whitespace-nowrap">
-        Hủy
-      </button>
-      <button disabled={busy} onClick={onEdit} title="Chỉnh sửa"
-        className="h-7 w-7 flex items-center justify-center rounded-md border border-line-default text-ink-muted hover:text-primary hover:border-primary disabled:opacity-50 cursor-pointer">
-        <EditIcon />
-      </button>
+      {role === 'CASHIER' && (
+        <button disabled={busy} onClick={onCheckIn}
+          className="h-7 px-2.5 text-[12px] font-semibold rounded-md bg-primary text-white hover:opacity-90 disabled:opacity-50 cursor-pointer whitespace-nowrap">
+          Check-in
+        </button>
+      )}
+      {role === 'WAITER' && (
+        <button disabled={busy} onClick={onCancel}
+          className="h-7 px-2 text-[12px] font-semibold rounded-md border border-danger text-danger hover:bg-red-50 disabled:opacity-50 cursor-pointer whitespace-nowrap">
+          Hủy
+        </button>
+      )}
+      {role === 'WAITER' && (
+        <button disabled={busy} onClick={onEdit} title="Chỉnh sửa"
+          className="h-7 w-7 flex items-center justify-center rounded-md border border-line-default text-ink-muted hover:text-primary hover:border-primary disabled:opacity-50 cursor-pointer">
+          <EditIcon />
+        </button>
+      )}
+      {role !== 'CASHIER' && role !== 'WAITER' && <span className="text-ink-muted text-[12px]">—</span>}
     </div>
   )
 
@@ -234,7 +251,7 @@ const toDateInputValue = (d: Date) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onCancel, onAssignTable, onEdit }: Props) => {
+const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onCancel, onAssignTable, onEdit, role }: Props) => {
   const [code, setCode] = useState('')
   const [timeMode, setTimeMode] = useState<'all' | 'other'>('all')
   const [dateFrom, setDateFrom] = useState('')
@@ -438,7 +455,8 @@ const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onCancel, o
                         onConfirm={() => act(() => onConfirm(r.id), r.id)}
                         onCheckIn={() => act(() => onCheckIn(r.id), r.id)}
                         onCancel={() => act(() => onCancel(r.id), r.id)}
-                        onEdit={() => onEdit?.(r.id)} />
+                        onEdit={() => onEdit?.(r.id)}
+                        role={role} />
                     </td>
                   </tr>
                 )
@@ -546,31 +564,35 @@ const ListView = ({ reservations, tables = [], onConfirm, onCheckIn, onCancel, o
                   )}
                 </div>
 
-                {canAct && (
+                {canAct && (role === 'WAITER' || role === 'CASHIER') && (
                   <div className="flex flex-col gap-2 shrink-0">
-                    <button disabled={busy} onClick={() => { onEdit?.(r.id); closeDetail() }}
-                      className="kv-btn kv-btn-outline-neutral h-9 text-sm min-w-[7rem] disabled:opacity-50">
-                      Chỉnh sửa
-                    </button>
-                    {s === 'PENDING' && (
+                    {role === 'WAITER' && (
+                      <button disabled={busy} onClick={() => { onEdit?.(r.id); closeDetail() }}
+                        className="kv-btn kv-btn-outline-neutral h-9 text-sm min-w-[7rem] disabled:opacity-50">
+                        Chỉnh sửa
+                      </button>
+                    )}
+                    {s === 'PENDING' && role === 'WAITER' && (
                       <button disabled={busy} onClick={() => actDetail(onConfirm)}
                         className="kv-btn kv-btn-primary h-9 text-sm min-w-[7rem] disabled:opacity-50">
                         Xác nhận
                       </button>
                     )}
-                    {s === 'CONFIRMED' && (
+                    {s === 'CONFIRMED' && role === 'CASHIER' && (
                       <button disabled={busy} onClick={() => actDetail(onCheckIn)}
                         className="kv-btn kv-btn-primary h-9 text-sm min-w-[7rem] disabled:opacity-50">
                         Check-in
                       </button>
                     )}
-                    <button disabled={busy}
-                      onClick={() => actDetail(onCancel)}
-                      className="kv-btn h-9 text-sm min-w-[7rem] disabled:opacity-50"
-                      style={{ borderColor: 'var(--kv-danger)', color: 'var(--kv-danger)' }}
-                    >
-                      Hủy đặt bàn
-                    </button>
+                    {role === 'WAITER' && (
+                      <button disabled={busy}
+                        onClick={() => actDetail(onCancel)}
+                        className="kv-btn h-9 text-sm min-w-[7rem] disabled:opacity-50"
+                        style={{ borderColor: 'var(--kv-danger)', color: 'var(--kv-danger)' }}
+                      >
+                        Hủy đặt bàn
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

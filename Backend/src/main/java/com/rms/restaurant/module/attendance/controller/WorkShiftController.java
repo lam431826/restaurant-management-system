@@ -17,7 +17,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/attendance/shifts")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+@PreAuthorize("hasAnyRole('MANAGER')")
 public class WorkShiftController {
 
     private final WorkShiftService workShiftService;

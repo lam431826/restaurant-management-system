@@ -2,13 +2,12 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import type { AssistanceRequest } from "../../../services/orderApi";
 import type { ShiftSummary } from "../../../services/shiftService";
-import { SearchIcon, BellIcon, ChevronDownIcon, SwitchScreenIcon, LogoutIcon } from "./icons";
+import { BellIcon, ChevronDownIcon, SwitchScreenIcon, LogoutIcon } from "./icons";
 
 /* ─── Header ─────────────────────────────────────────────────────────────── */
 export const Header = ({
   employeeName = "Duy Tan",
   roleLabel = "Thu ngân",
-  role,
   shift,
   assistanceRequests = [],
   onResolveRequest,
@@ -19,7 +18,6 @@ export const Header = ({
 }: {
   employeeName?: string;
   roleLabel?: string;
-  role?: string;
   shift?: ShiftSummary | null;
   assistanceRequests?: AssistanceRequest[];
   onResolveRequest?: (id: string) => void;
@@ -60,14 +58,6 @@ export const Header = ({
           src="/images/wasabi-logo.svg"
           alt="Wasabi"
           className="h-12 w-auto"
-        />
-      </div>
-
-      <div className="flex items-center gap-3 bg-[#f5f5f5] rounded-[12px] px-4 h-[44px] w-[180px] md:w-[260px] lg:w-[340px]">
-        <SearchIcon className="w-5 h-5 text-[#797b7c] shrink-0" />
-        <input
-          placeholder="Tìm Kiếm"
-          className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none"
         />
       </div>
 
@@ -151,31 +141,6 @@ export const Header = ({
                 </p>
                 <p className="text-[12px] text-[#636566]">{roleLabel}</p>
               </div>
-              {role === "MANAGER" && (
-                <>
-                  <button
-                    onClick={() => {
-                      setOpen(false);
-                      navigate("/manager/dashboard");
-                    }}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-[14px] text-[#202325] hover:bg-[#f5f5f5] transition-colors"
-                  >
-                    <SwitchScreenIcon />
-                    Màn Quản lý
-                  </button>
-                  <button
-                    onClick={() => {
-                      setOpen(false);
-                      navigate("/waiter");
-                    }}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-[14px] text-[#202325] hover:bg-[#f5f5f5] transition-colors"
-                  >
-                    <SwitchScreenIcon />
-                    Màn Phục vụ
-                  </button>
-                  <div className="h-px bg-[#e8e8e8] mx-2" />
-                </>
-              )}
               {shift && (
                 <>
                   <button

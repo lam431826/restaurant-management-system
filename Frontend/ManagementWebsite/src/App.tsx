@@ -55,7 +55,7 @@ function App() {
         <Route
           path="/cashier"
           element={
-            <ProtectedRoute roles={["CASHIER", "MANAGER"]}>
+            <ProtectedRoute roles={["CASHIER"]}>
               <CashierOrders />
             </ProtectedRoute>
           }
@@ -65,17 +65,18 @@ function App() {
         <Route
           path="/payment/vnpay-result"
           element={
-            <ProtectedRoute roles={["CASHIER", "MANAGER", "ADMIN"]}>
+            <ProtectedRoute roles={["CASHIER"]}>
               <VnpayResultPage />
             </ProtectedRoute>
           }
         />
 
-        {/* ── Waiter ── */}
+        {/* ── Waiter / Cashier: reservation lifecycle (Waiter confirms/edits/cancels,
+             Cashier checks guests in) ── */}
         <Route
           path="/waiter"
           element={
-            <ProtectedRoute roles={["WAITER", "MANAGER"]}>
+            <ProtectedRoute roles={["WAITER", "CASHIER"]}>
               <Reservation />
             </ProtectedRoute>
           }
@@ -95,7 +96,7 @@ function App() {
         <Route
           path="/my-schedule"
           element={
-            <ProtectedRoute roles={["WAITER", "CASHIER", "MANAGER", "ADMIN"]}>
+            <ProtectedRoute roles={["WAITER", "CASHIER", "MANAGER"]}>
               <MySchedule />
             </ProtectedRoute>
           }

@@ -2421,7 +2421,6 @@ const CashierOrders = () => {
       <Header
         employeeName={user?.fullName ?? user?.username ?? "Nhân viên"}
         roleLabel={ROLE_LABEL[user?.role ?? ""] ?? user?.role ?? "Thu ngân"}
-        role={user?.role}
         shift={shift}
         assistanceRequests={assistanceRequests}
         onResolveRequest={handleResolveAssistance}

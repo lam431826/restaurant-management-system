@@ -23,7 +23,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/cashbook")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+@PreAuthorize("hasAnyRole('MANAGER')")
 public class CashbookController {
 
     private final CashbookService cashbookService;
