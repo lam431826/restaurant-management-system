@@ -19,6 +19,7 @@ public enum ApplicationError {
     INVALID_VERIFY_TOKEN("Verification token is invalid", HttpStatus.UNAUTHORIZED),
     INVALID_RESET_TOKEN("Password reset token is invalid or expired", HttpStatus.UNAUTHORIZED),
     UNAUTHORIZED("Authentication required", HttpStatus.UNAUTHORIZED),
+    EMAIL_VERIFICATION_MISMATCH("Email does not match the one on file for this account — please re-enter it", HttpStatus.BAD_REQUEST),
 
     // Resources
     USER_NOT_FOUND("User not found", HttpStatus.NOT_FOUND),

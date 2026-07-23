@@ -220,6 +220,8 @@ const LoginPage = () => {
       const code = err.response?.data?.error;
       if (code === "DUPLICATE_EMAIL")
         setProfileErrors({ email: "Email đã được sử dụng bởi tài khoản khác" });
+      else if (code === "EMAIL_VERIFICATION_MISMATCH")
+        setProfileErrors({ email: "Email không khớp với email đã đăng ký. Vui lòng nhập lại." });
       else if (code === "DUPLICATE_PHONE" || code === "DUPLICATE_EMPLOYEE_PHONE")
         setProfileErrors({ phone: "Số điện thoại đã được sử dụng" });
       else setError("Không thể gửi OTP. Vui lòng thử lại.");

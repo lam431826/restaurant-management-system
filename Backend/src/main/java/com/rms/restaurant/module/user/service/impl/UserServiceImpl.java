@@ -93,7 +93,7 @@ public class UserServiceImpl implements UserService {
 
         if (StringUtils.hasText(saved.getEmail())) {
             try {
-                gmailService.sendTempPasswordEmail(saved.getEmail(), saved.getFullName(), tempPassword);
+                gmailService.sendTempPasswordEmail(saved.getEmail(), saved.getFullName(), saved.getUsername(), tempPassword);
             } catch (Exception e) {
                 log.warn("Failed to send temp password email to '{}': {}", saved.getEmail(), e.getMessage());
             }
