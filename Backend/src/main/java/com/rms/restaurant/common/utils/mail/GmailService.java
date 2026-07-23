@@ -437,24 +437,6 @@ public class GmailService {
         mailSender.send(msg);
     }
 
-    // ── ORM-03: Cancel OTP ────────────────────────────────────────────────────
-
-    public void sendCancelOtpEmail(String toEmail, String guestName, String otp) {
-        SimpleMailMessage msg = new SimpleMailMessage();
-        msg.setFrom(fromAddress);
-        msg.setTo(toEmail);
-        msg.setSubject("[Wasabi Restaurant] Mã xác nhận huỷ đặt bàn");
-        msg.setText(
-            "Xin chào " + guestName + ",\n\n" +
-            "Bạn đã yêu cầu huỷ đặt bàn tại Wasabi Restaurant.\n\n" +
-            "Mã OTP xác nhận huỷ: " + otp + "\n\n" +
-            "Mã có hiệu lực trong 10 phút.\n" +
-            "Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email và liên hệ nhà hàng ngay.\n\n" +
-            "Trân trọng,\nWasabi Restaurant"
-        );
-        mailSender.send(msg);
-    }
-
     // ── NM-04: Manual email ───────────────────────────────────────────────────
 
     public void sendManualEmail(String toEmail, String message) {
