@@ -8,6 +8,8 @@ import AlertModal from './AlertModal'
 
 const GUEST_ORDER_ALREADY_INVOICED_MESSAGE =
   'Đơn hàng đã được lập hóa đơn nên không thể thêm hoặc sửa món.'
+const GUEST_ORDER_CLOSED_OR_CANCELLED_MESSAGE =
+  'Đơn hàng đã đóng hoặc đã hủy nên không thể thêm hoặc sửa món.'
 
 export default function GuestOrderPage() {
   const [searchParams] = useSearchParams()
@@ -32,18 +34,22 @@ export default function GuestOrderPage() {
     if (!tableToken) return
 
     // Fetch Table Info
-    fetch(`/api/guest/orders/table-info?token=${tableToken}`)
-      .then(res => res.json())
-      .then(data => {
-        setTableInfo({ id: data.tableId, name: data.tableName })
-        if (data.activeOrderId) {
-          setCurrentOrderId(data.activeOrderId)
-        }
-      })
-      .catch(err => {
-        console.error('Failed to fetch table info:', err)
-        setTableInfo({ id: 'T01', name: 'Bàn T01' }) // Fallback
-      })
+    const fetchTableInfo = () => {
+      fetch(`/api/guest/orders/table-info?token=${tableToken}`)
+        .then(res => res.json())
+        .then(data => {
+          setTableInfo({ id: data.tableId, name: data.tableName })
+          if (data.activeOrderId) {
+            setCurrentOrderId(data.activeOrderId)
+          }
+        })
+        .catch(err => {
+          console.error('Failed to fetch table info:', err)
+          setTableInfo(prev => prev.id ? prev : { id: '', name: 'Lỗi tải bàn' })
+        })
+    }
+
+    fetchTableInfo()
 
     // Fetch Menu
     fetch('/api/menu/public')
@@ -56,7 +62,16 @@ export default function GuestOrderPage() {
         console.error('Failed to fetch menu:', err)
         setLoading(false)
       })
-  }, [tableToken])
+
+    // Poll table-info if no currentOrderId is active
+    const tableInfoInterval = setInterval(() => {
+      if (!currentOrderId) {
+        fetchTableInfo()
+      }
+    }, 5000)
+
+    return () => clearInterval(tableInfoInterval)
+  }, [tableToken, currentOrderId])
 
   useEffect(() => {
     if (!currentOrderId) {
@@ -79,7 +94,7 @@ export default function GuestOrderPage() {
     fetchStatus()
     const interval = setInterval(fetchStatus, 5000)
     return () => clearInterval(interval)
-  }, [currentOrderId])
+  }, [currentOrderId, tableToken])
 
   const getMenuItem = (itemId) => {
     for (const cat of menuData) {
@@ -184,10 +199,20 @@ export default function GuestOrderPage() {
             body.message?.includes('Order already has an invoice')
           ) {
             message = GUEST_ORDER_ALREADY_INVOICED_MESSAGE
+          } else if (
+            body.error === 'INVALID_STATUS_TRANSITION' ||
+            body.message?.includes('Closed or cancelled order cannot be modified') ||
+            body.message?.includes('Closed and cancelled orders are terminal')
+          ) {
+            message = GUEST_ORDER_CLOSED_OR_CANCELLED_MESSAGE
+          } else if (body.message) {
+            message = body.message
           }
         } catch {
           if (text.includes('ORDER_ALREADY_INVOICED')) {
             message = GUEST_ORDER_ALREADY_INVOICED_MESSAGE
+          } else if (text.includes('Closed or cancelled order cannot be modified') || text.includes('INVALID_STATUS_TRANSITION')) {
+            message = GUEST_ORDER_CLOSED_OR_CANCELLED_MESSAGE
           }
         }
         setAlertMessage(message)

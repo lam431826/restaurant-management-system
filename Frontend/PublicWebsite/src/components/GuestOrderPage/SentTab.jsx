@@ -19,12 +19,18 @@ export default function SentTab({ statusData, handleStartEditing, getItemImage }
         <div className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100 flex items-center justify-between">
           <div>
             <p className="text-[11px] text-gray-500 uppercase tracking-widest font-bold mb-1">Trạng thái đơn</p>
-            <h3 className={`font-bold text-lg ${statusData.status === 'PENDING' ? 'text-orange-500' : 'text-green-600'}`}>
+            <h3 className={`font-bold text-lg ${
+              statusData.status === 'PENDING' ? 'text-orange-500' :
+              statusData.status === 'CANCELLED' ? 'text-red-500' :
+              statusData.status === 'CLOSED' ? 'text-gray-600' :
+              'text-green-600'
+            }`}>
               {statusData.status === 'PENDING' ? 'Đang Chờ Duyệt' :
                statusData.status === 'ACCEPTED' ? 'Đã Tiếp Nhận' :
                statusData.status === 'READY' ? 'Nấu Xong' :
                statusData.status === 'SERVED' ? 'Đã Phục Vụ' :
-               statusData.status === 'CANCELLED' ? 'Đã Hủy' : statusData.status}
+               statusData.status === 'CANCELLED' ? 'Đã Hủy' :
+               statusData.status === 'CLOSED' ? 'Đã Thanh Toán' : statusData.status}
             </h3>
             {statusData.status === 'ACCEPTED' && (
               <p className="text-xs text-gray-600 mt-1">Dự kiến: <span className="font-bold text-gray-900">{statusData.estimatedWaitTimeMinutes} phút</span></p>

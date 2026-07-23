@@ -224,18 +224,25 @@ export const QROrderConfirmationModal = ({
               {mainItems.map((item) => (
                 <div
                   key={item.orderItemId}
-                  className="flex items-center justify-between py-3 border-t border-gray-100"
+                  className="py-3 border-t border-gray-100"
                 >
-                  <div className="flex items-center gap-2 min-w-0 text-gray-800 text-[15px] font-medium">
-                    <span className="whitespace-nowrap">{item.quantity}</span>
-                    <span className="text-gray-400">×</span>
-                    <span className="truncate">{item.menuItemName}</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0 text-gray-800 text-[15px] font-medium">
+                      <span className="whitespace-nowrap">{item.quantity}</span>
+                      <span className="text-gray-400">×</span>
+                      <span className="truncate">{item.menuItemName}</span>
+                    </div>
+                    <div className="flex items-center gap-4 shrink-0 ml-4">
+                      <span className="text-[15px] font-semibold text-gray-700">
+                        {(item.unitPrice * item.quantity).toLocaleString("vi-VN")}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 shrink-0 ml-4">
-                    <span className="text-[15px] font-semibold text-gray-700">
-                      {(item.unitPrice * item.quantity).toLocaleString("vi-VN")}
-                    </span>
-                  </div>
+                  {item.note && (
+                    <p className="mt-1 ml-1 text-xs text-gray-500 italic">
+                      📝 {item.note}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
