@@ -90,7 +90,7 @@ class AttendanceServiceImplTest {
     void upsertComputesMetricsForNewRecord() {
         when(recordRepository.findByScheduleId("s1")).thenReturn(Optional.empty());
         AttendanceUpsertRequest request = new AttendanceUpsertRequest(
-                AttendanceType.PRESENT, LocalTime.of(8, 15), LocalTime.of(16, 0), null, null, null, null);
+                AttendanceType.PRESENT, null, LocalTime.of(8, 15), null, LocalTime.of(16, 0), null, null, null, null);
 
         var response = service.upsert("s1", request, "manager01");
 
@@ -105,7 +105,7 @@ class AttendanceServiceImplTest {
                 .type(AttendanceType.PRESENT).lateMinutes(99).build();
         when(recordRepository.findByScheduleId("s1")).thenReturn(Optional.of(existing));
         AttendanceUpsertRequest request = new AttendanceUpsertRequest(
-                AttendanceType.PRESENT, LocalTime.of(8, 0), LocalTime.of(16, 0), null, null, null, null);
+                AttendanceType.PRESENT, null, LocalTime.of(8, 0), null, LocalTime.of(16, 0), null, null, null, null);
 
         var response = service.upsert("s1", request, "manager01");
 
@@ -118,7 +118,7 @@ class AttendanceServiceImplTest {
         when(recordRepository.findByScheduleId("s1")).thenReturn(Optional.empty());
         // Manager overrides OT to 15m before-shift + 2h after-shift, regardless of the auto-computed value.
         AttendanceUpsertRequest request = new AttendanceUpsertRequest(
-                AttendanceType.PRESENT, LocalTime.of(7, 45), LocalTime.of(18, 0), null, null, 15, 120);
+                AttendanceType.PRESENT, null, LocalTime.of(7, 45), null, LocalTime.of(18, 0), null, null, 15, 120);
 
         var response = service.upsert("s1", request, "manager01");
 
@@ -127,8 +127,10 @@ class AttendanceServiceImplTest {
 
     @Test
     void upsertRejectsCheckOutNotAfterCheckIn() {
+        // Explicit same-day checkOutDate — must NOT trigger the legacy overnight-rollover
+        // heuristic (which pins equal check-in/check-out times to a valid next-day range).
         AttendanceUpsertRequest request = new AttendanceUpsertRequest(
-                AttendanceType.PRESENT, LocalTime.of(8, 0), LocalTime.of(8, 0), null, null, null, null);
+                AttendanceType.PRESENT, DAY, LocalTime.of(8, 0), DAY, LocalTime.of(8, 0), null, null, null, null);
 
         assertThatThrownBy(() -> service.upsert("s1", request, "manager01"))
                 .isInstanceOf(ApplicationException.class)

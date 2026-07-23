@@ -7,6 +7,8 @@ import type { PayrollHolidayDto } from '../../api/payrollHolidays'
 import { listPayrollHolidays } from '../../api/payrollHolidays'
 import type { PayrollSettingsDto } from '../../api/payroll'
 import { getPayrollSettings, updatePayrollSettings } from '../../api/payroll'
+import type { ReportSettingsDto } from '../../api/reports'
+import { getReportSettings, updateReportSettings } from '../../api/reports'
 import type { ShiftSettingsDto } from '../../api/shiftSettings'
 import { getShiftSettings, updateShiftSettings } from '../../api/shiftSettings'
 import { ApiError } from '../../services/api'
@@ -16,9 +18,9 @@ import HolidayList from '../staff/settings/HolidayList'
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Thiết lập — unified KiotViet-style settings shell. Sidebar trimmed down to
- * only what's implemented: Báo cáo (display-only, no backend yet), and the
- * former "Thiết lập nhân viên" screen flattened into Chấm công / Tính lương.
- * Chấm công is wired to the real UC-AT-05 settings API + UC-AT-01 shift CRUD.
+ * only what's implemented: Báo cáo, and the former "Thiết lập nhân viên" screen
+ * flattened into Chấm công / Tính lương. Chấm công is wired to the real
+ * UC-AT-05 settings API + UC-AT-01 shift CRUD.
  * ──────────────────────────────────────────────────────────────────────────── */
 
 type Tab = 'reports' | 'attendance' | 'payroll'
@@ -161,9 +163,9 @@ const SettingsPage = () => {
   const [payrollLoadError, setPayrollLoadError] = useState('')
   const [payrollSaveError, setPayrollSaveError] = useState('')
 
-  // customRevenueWindow/revenueCutoffTime are still display-only, no backend support yet.
-  const [customRevenueWindow, setCustomRevenueWindow] = useState(true)
-  const [revenueCutoffTime, setRevenueCutoffTime] = useState('00:00')
+  const [reportSettings, setReportSettings] = useState<ReportSettingsDto | null>(null)
+  const [reportLoadError, setReportLoadError] = useState('')
+  const [reportSaveError, setReportSaveError] = useState('')
 
   const [shiftSettings, setShiftSettings] = useState<ShiftSettingsDto | null>(null)
   const [shiftSettingsLoadError, setShiftSettingsLoadError] = useState('')
@@ -189,6 +191,9 @@ const SettingsPage = () => {
     getPayrollSettings()
       .then(res => setPayrollSettings(res.data.data))
       .catch(err => setPayrollLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập tính lương.'))
+    getReportSettings()
+      .then(res => setReportSettings(res.data.data))
+      .catch(err => setReportLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập báo cáo.'))
     getShiftSettings()
       .then(setShiftSettings)
       .catch(err => setShiftSettingsLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập kết ca.'))
@@ -211,6 +216,16 @@ const SettingsPage = () => {
       setPayrollSaveError('')
     } catch (err) {
       setPayrollSaveError(err instanceof ApiError ? err.message : 'Không thể lưu thiết lập tính lương.')
+    }
+  }
+
+  const commitReportSettings = async (next: ReportSettingsDto) => {
+    setReportSettings(next) // optimistic
+    try {
+      await updateReportSettings(next)
+      setReportSaveError('')
+    } catch (err) {
+      setReportSaveError(err instanceof ApiError ? err.message : 'Không thể lưu thiết lập báo cáo.')
     }
   }
 
@@ -263,8 +278,8 @@ const SettingsPage = () => {
 
             {tab === 'reports' && (
               <ReportsSettings
-                customRevenueWindow={customRevenueWindow} setCustomRevenueWindow={setCustomRevenueWindow}
-                revenueCutoffTime={revenueCutoffTime} setRevenueCutoffTime={setRevenueCutoffTime}
+                reportSettings={reportSettings} commitReportSettings={commitReportSettings}
+                reportSettingsError={reportLoadError || reportSaveError}
                 shiftSettings={shiftSettings}
                 commitShiftSettings={commitShiftSettings}
                 shiftSettingsError={shiftSettingsLoadError || shiftSettingsSaveError}
@@ -317,12 +332,12 @@ const SettingsPage = () => {
 
 /* ── Báo cáo tab ───────────────────────────────────────────────────────────── */
 const ReportsSettings = ({
-  customRevenueWindow, setCustomRevenueWindow,
-  revenueCutoffTime, setRevenueCutoffTime,
+  reportSettings, commitReportSettings, reportSettingsError,
   shiftSettings, commitShiftSettings, shiftSettingsError,
 }: {
-  customRevenueWindow: boolean; setCustomRevenueWindow: (v: boolean) => void
-  revenueCutoffTime: string; setRevenueCutoffTime: (v: string) => void
+  reportSettings: ReportSettingsDto | null
+  commitReportSettings: (next: ReportSettingsDto) => void
+  reportSettingsError: string
   shiftSettings: ShiftSettingsDto | null
   commitShiftSettings: (next: ShiftSettingsDto) => void
   shiftSettingsError: string
@@ -330,18 +345,23 @@ const ReportsSettings = ({
   <div>
     <h2 className="text-lg font-bold text-ink mb-2">Báo cáo</h2>
 
-    <Block title="Cho phép tùy chỉnh khung giờ tính doanh thu"
-      desc="Thiết lập khung giờ tính doanh thu trong ngày thay vì dùng khung giờ mặc định từ 00:00 đến trước 00:00 ngày hôm sau."
-      right={<Toggle on={customRevenueWindow} onChange={setCustomRevenueWindow} />}>
-      {customRevenueWindow && (
-        <div className="flex items-center gap-3">
-          <span className="text-md text-ink">Tính doanh thu theo giao dịch phát sinh trước</span>
-          <input type="time" value={revenueCutoffTime} onChange={e => setRevenueCutoffTime(e.target.value)}
-            className="h-9 px-3 border border-line-default rounded-md bg-card text-md text-ink outline-none focus:border-primary" />
-          <InfoIcon />
-        </div>
-      )}
-    </Block>
+    {reportSettingsError && <div className="mb-3 px-4 py-2 rounded-md bg-danger-50 text-danger text-md border border-danger/30">{reportSettingsError}</div>}
+    {reportSettings && (
+      <Block title="Cho phép tùy chỉnh khung giờ tính doanh thu"
+        desc="Thiết lập khung giờ tính doanh thu trong ngày thay vì dùng khung giờ mặc định từ 00:00 đến trước 00:00 ngày hôm sau."
+        right={<Toggle on={reportSettings.customRevenueWindowEnabled}
+          onChange={v => commitReportSettings({ ...reportSettings, customRevenueWindowEnabled: v })} />}>
+        {reportSettings.customRevenueWindowEnabled && (
+          <div className="flex items-center gap-3">
+            <span className="text-md text-ink">Tính doanh thu theo giao dịch phát sinh trước</span>
+            <input type="time" value={reportSettings.revenueCutoffTime.slice(0, 5)}
+              onChange={e => commitReportSettings({ ...reportSettings, revenueCutoffTime: `${e.target.value}:00` })}
+              className="h-9 px-3 border border-line-default rounded-md bg-card text-md text-ink outline-none focus:border-primary" />
+            <InfoIcon />
+          </div>
+        )}
+      </Block>
+    )}
 
     {shiftSettingsError && <div className="mb-3 px-4 py-2 rounded-md bg-danger-50 text-danger text-md border border-danger/30">{shiftSettingsError}</div>}
     {shiftSettings && (

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import EndOfDayFilters from './EndOfDayFilters'
 import EndOfDayPreview from './EndOfDayPreview'
 import { listUsers } from '../../api/users'
-import { getEndOfDaySalesReport, PAYMENT_METHOD_LABEL } from '../../api/reports'
+import { getEndOfDaySalesReport, getReportSettings, PAYMENT_METHOD_LABEL } from '../../api/reports'
 import type { EndOfDaySalesRow, ReportPaymentMethod } from '../../api/reports'
 import { defaultEndOfDayFilters } from '../../data/endOfDayReportMockData'
 import type { EndOfDayFilterState } from '../../data/endOfDayReportMockData'
@@ -43,6 +43,18 @@ const EndOfDayReport = () => {
         setStaffList(staff)
       })
       .catch(() => { /* staff filter just has no options if this fails — rest of the report still works */ })
+  }, [])
+
+  useEffect(() => {
+    // Applies the "Thiết lập báo cáo" revenue cutoff as the default timeTo, but only if the
+    // filter is still untouched — never overrides a value the user has already picked.
+    getReportSettings()
+      .then(res => {
+        const s = res.data.data
+        if (!s.customRevenueWindowEnabled) return
+        setFilters(prev => (prev.timeTo === '' ? { ...prev, timeTo: s.revenueCutoffTime.slice(0, 5) } : prev))
+      })
+      .catch(() => { /* no cutoff default is fine — falls back to the 23:59 default */ })
   }, [])
 
   const staffOptions = useMemo(() => staffList.map(s => s.fullName), [staffList])

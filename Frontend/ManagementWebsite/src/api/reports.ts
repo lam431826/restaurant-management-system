@@ -87,3 +87,15 @@ export interface FinancialCategoryLineRow {
 
 export const getFinancialReportLines = () =>
   apiClient.get<{ data: FinancialCategoryLineRow[] }>('/reports/financial/lines')
+
+/* ── Thiết lập báo cáo (revenue cutoff window) ───────────────────────────── */
+export interface ReportSettingsDto {
+  customRevenueWindowEnabled: boolean
+  revenueCutoffTime: string // "HH:mm:ss"
+}
+
+export const getReportSettings = () =>
+  apiClient.get<{ data: ReportSettingsDto }>('/reports/settings')
+
+export const updateReportSettings = (req: ReportSettingsDto) =>
+  apiClient.put<{ data: ReportSettingsDto }>('/reports/settings', req)
