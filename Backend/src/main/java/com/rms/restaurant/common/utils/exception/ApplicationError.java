@@ -184,10 +184,6 @@ public enum ApplicationError {
     CASHBOOK_VOUCHER_CATEGORY_TYPE_MISMATCH("Category type does not match the voucher type", HttpStatus.UNPROCESSABLE_ENTITY),
     CASHBOOK_VOUCHER_PARTNER_GROUP_INVALID("Voucher partner group is invalid for this operation", HttpStatus.UNPROCESSABLE_ENTITY),
 
-    // Financial report — custom Chi phí / Thu nhập khác line items
-    FIN_CUSTOM_LINE_NOT_FOUND("Không tìm thấy danh mục", HttpStatus.NOT_FOUND),
-    FIN_CUSTOM_LINE_INVALID("Tên danh mục không hợp lệ", HttpStatus.BAD_REQUEST),
-
     // System
     INTERNAL_ERROR("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR);
 

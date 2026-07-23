@@ -415,7 +415,7 @@ const CashFlowModal = ({
                 ) : (
                   <input
                     className={inputCls}
-                    placeholder="Tìm kiếm"
+                    placeholder="Họ và tên"
                     value={partnerName}
                     onChange={e => { setPartnerName(e.target.value); if (error) setError('') }}
                   />

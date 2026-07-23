@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { BRANCHES, CUSTOM_LINE_INSERT_AFTER, FIN_LINES, sumCustomLineValues, sumValues } from '../../data/financialReportMockData'
-import type { FinancialCustomLine, FinancialFilterState, FinancialPeriod } from '../../data/financialReportMockData'
-import { upsertFinancialCustomLineValue } from '../../api/reports'
+import { useNavigate } from 'react-router-dom'
+import { BRANCHES, CATEGORY_LINE_INSERT_AFTER, FIN_LINES, sumCategoryLineValues, sumValues } from '../../data/financialReportMockData'
+import type { FinancialCategoryLine, FinancialFilterState, FinancialPeriod } from '../../data/financialReportMockData'
 
 const money = (n: number) => n.toLocaleString('vi-VN')
 const fmtDateTime = (d: Date) =>
@@ -9,33 +9,9 @@ const fmtDateTime = (d: Date) =>
 const escapeHtml = (v: string | number) =>
   String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-/** Strips to digits and re-applies vi-VN dot separators — used live on every keystroke so the
- * custom-line amount inputs stay readable (e.g. "500.000") while the user is still typing. */
-const formatAmountInput = (raw: string) => {
-  const digits = raw.replace(/\D/g, '')
-  return digits === '' ? '' : parseInt(digits, 10).toLocaleString('vi-VN')
-}
-
-/** Controlled, live-formatted amount cell for a custom Chi phí/Thu nhập khác line at month
- * granularity. Resyncs its text from `amount` whenever the underlying value changes (e.g. after
- * a save round-trips through onRefresh). */
-const CustomLineAmountInput = ({ amount, onCommit }: { amount: number; onCommit: (raw: string) => void }) => {
-  const [text, setText] = useState(() => money(amount))
-  useEffect(() => setText(money(amount)), [amount])
-  return (
-    <input
-      value={text}
-      inputMode="numeric"
-      className="w-full h-7 px-1 text-right bg-transparent border border-transparent rounded hover:border-line-default focus:border-primary outline-none"
-      onChange={e => setText(formatAmountInput(e.target.value))}
-      onBlur={e => onCommit(e.target.value)}
-    />
-  )
-}
-
 interface Props {
   periods: FinancialPeriod[]
-  customLines: FinancialCustomLine[]
+  categoryLines: FinancialCategoryLine[]
   filters: FinancialFilterState
   generatedAt: Date
   loading: boolean
@@ -43,13 +19,13 @@ interface Props {
   onRefresh: () => void
 }
 
-/** A period column carries both the fixed FIN_LINES values and the custom line amounts,
- * whether it's a real period or the synthetic "Tổng" column. */
+/** A period column carries both the fixed FIN_LINES values and the Sổ quỹ-derived category
+ * amounts, whether it's a real period or the synthetic "Tổng" column. */
 interface ReportColumn {
   key: string
   label: string
   values: Record<string, number>
-  customLineValues: Record<string, number>
+  categoryLineValues: Record<string, number>
 }
 
 const IconBtn = ({ label, disabled, onClick, children }: { label: string; disabled?: boolean; onClick?: () => void; children: React.ReactNode }) => (
@@ -79,21 +55,21 @@ const FullscreenIcon = ({ active }: { active: boolean }) => active ? (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" /></svg>
 )
 
-const buildPrintHtml = (periods: FinancialPeriod[], customLines: FinancialCustomLine[], generatedAt: Date) => {
+const buildPrintHtml = (periods: FinancialPeriod[], categoryLines: FinancialCategoryLine[], generatedAt: Date) => {
   const total = sumValues(periods)
-  const totalCustomLineValues = sumCustomLineValues(periods)
+  const totalCategoryLineValues = sumCategoryLineValues(periods)
   const showTotal = periods.length > 1
   const cols: ReportColumn[] = [
     ...periods,
-    ...(showTotal ? [{ key: 'total', label: 'Tổng', values: total, customLineValues: totalCustomLineValues }] : []),
+    ...(showTotal ? [{ key: 'total', label: 'Tổng', values: total, categoryLineValues: totalCategoryLineValues }] : []),
   ]
 
-  const customRowsHtml = (group: 'EXPENSE' | 'OTHER_INCOME') => customLines
+  const categoryRowsHtml = (group: 'EXPENSE' | 'OTHER_INCOME') => categoryLines
     .filter(l => l.group === group)
     .map(line => `
       <tr>
         <td style="padding-left:24px">${escapeHtml(line.name)}</td>
-        ${cols.map(c => `<td class="num">${money(c.customLineValues[line.id] ?? 0)}</td>`).join('')}
+        ${cols.map(c => `<td class="num">${money(c.categoryLineValues[line.id] ?? 0)}</td>`).join('')}
       </tr>
     `).join('')
 
@@ -102,7 +78,7 @@ const buildPrintHtml = (periods: FinancialPeriod[], customLines: FinancialCustom
       <td style="padding-left:${line.level === 1 ? 24 : 8}px">${escapeHtml(line.label)}</td>
       ${cols.map(c => `<td class="num">${money(c.values[line.key])}</td>`).join('')}
     </tr>
-    ${CUSTOM_LINE_INSERT_AFTER[line.key] ? customRowsHtml(CUSTOM_LINE_INSERT_AFTER[line.key] as 'EXPENSE' | 'OTHER_INCOME') : ''}
+    ${CATEGORY_LINE_INSERT_AFTER[line.key] ? categoryRowsHtml(CATEGORY_LINE_INSERT_AFTER[line.key] as 'EXPENSE' | 'OTHER_INCOME') : ''}
   `).join('')
 
   return `
@@ -142,22 +118,22 @@ const buildPrintHtml = (periods: FinancialPeriod[], customLines: FinancialCustom
   `
 }
 
-const exportCsv = (periods: FinancialPeriod[], customLines: FinancialCustomLine[], filters: FinancialFilterState) => {
+const exportCsv = (periods: FinancialPeriod[], categoryLines: FinancialCategoryLine[], filters: FinancialFilterState) => {
   const total = sumValues(periods)
-  const totalCustomLineValues = sumCustomLineValues(periods)
+  const totalCategoryLineValues = sumCategoryLineValues(periods)
   const showTotal = periods.length > 1
   const cols: ReportColumn[] = [
     ...periods,
-    ...(showTotal ? [{ key: 'total', label: 'Tổng', values: total, customLineValues: totalCustomLineValues }] : []),
+    ...(showTotal ? [{ key: 'total', label: 'Tổng', values: total, categoryLineValues: totalCategoryLineValues }] : []),
   ]
   const header = ['', ...cols.map(c => c.label)]
   const body = FIN_LINES.flatMap(line => {
     const row = [line.label, ...cols.map(c => c.values[line.key])]
-    const group = CUSTOM_LINE_INSERT_AFTER[line.key]
-    const customRows = group
-      ? customLines.filter(l => l.group === group).map(l => [l.name, ...cols.map(c => c.customLineValues[l.id] ?? 0)])
+    const group = CATEGORY_LINE_INSERT_AFTER[line.key]
+    const categoryRows = group
+      ? categoryLines.filter(l => l.group === group).map(l => [l.name, ...cols.map(c => c.categoryLineValues[l.id] ?? 0)])
       : []
-    return [row, ...customRows]
+    return [row, ...categoryRows]
   })
   const csv = [header, ...body].map(line => line.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
@@ -169,12 +145,12 @@ const exportCsv = (periods: FinancialPeriod[], customLines: FinancialCustomLine[
   URL.revokeObjectURL(url)
 }
 
-const FinancialReportPreview = ({ periods, customLines, filters, generatedAt, loading, error, onRefresh }: Props) => {
+const FinancialReportPreview = ({ periods, categoryLines, filters, generatedAt, loading, error, onRefresh }: Props) => {
+  const navigate = useNavigate()
   const [zoom, setZoom] = useState(100)
   const [fullscreen, setFullscreen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
-  const [saveError, setSaveError] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const exportRef = useRef<HTMLDivElement>(null)
 
@@ -204,29 +180,18 @@ const FinancialReportPreview = ({ periods, customLines, filters, generatedAt, lo
   const handlePrint = () => {
     const win = window.open('', '_blank', 'width=1100,height=720')
     if (!win) return
-    win.document.write(buildPrintHtml(periods, customLines, generatedAt))
+    win.document.write(buildPrintHtml(periods, categoryLines, generatedAt))
     win.document.close()
     win.focus()
     win.print()
   }
 
-  const handleCustomAmountBlur = (lineId: string, periodKey: string, raw: string) => {
-    const [yearStr, monthStr] = periodKey.split('-')
-    const year = parseInt(yearStr, 10)
-    const month = parseInt(monthStr, 10)
-    const amount = parseInt(raw.replace(/\D/g, '') || '0', 10)
-    setSaveError('')
-    upsertFinancialCustomLineValue(lineId, year, month, amount)
-      .then(onRefresh)
-      .catch(() => setSaveError('Không thể lưu giá trị vừa nhập.'))
-  }
-
   const total = sumValues(periods)
-  const totalCustomLineValues = sumCustomLineValues(periods)
+  const totalCategoryLineValues = sumCategoryLineValues(periods)
   const showTotal = periods.length > 1
   const columns: ReportColumn[] = [
     ...periods,
-    ...(showTotal ? [{ key: 'total', label: 'Tổng', values: total, customLineValues: totalCustomLineValues }] : []),
+    ...(showTotal ? [{ key: 'total', label: 'Tổng', values: total, categoryLineValues: totalCategoryLineValues }] : []),
   ]
 
   return (
@@ -250,7 +215,7 @@ const FinancialReportPreview = ({ periods, customLines, filters, generatedAt, lo
           <IconBtn label="Xuất file" onClick={() => setExportOpen(o => !o)}><ExportIcon /></IconBtn>
           {exportOpen && (
             <div className="absolute left-0 top-[calc(100%+0.3rem)] bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] py-1 min-w-[10rem]">
-              <button type="button" onClick={() => { exportCsv(periods, customLines, filters); setExportOpen(false) }} className="block w-full text-left px-3 py-2 text-md text-ink hover:bg-[var(--kv-state-hover-bg)] cursor-pointer">Xuất file (CSV)</button>
+              <button type="button" onClick={() => { exportCsv(periods, categoryLines, filters); setExportOpen(false) }} className="block w-full text-left px-3 py-2 text-md text-ink hover:bg-[var(--kv-state-hover-bg)] cursor-pointer">Xuất file (CSV)</button>
             </div>
           )}
         </div>
@@ -265,9 +230,16 @@ const FinancialReportPreview = ({ periods, customLines, filters, generatedAt, lo
       {error && (
         <div className="shrink-0 px-4 py-2 bg-danger-50 text-danger text-md border-b border-danger/30">{error}</div>
       )}
-      {saveError && (
-        <div className="shrink-0 px-4 py-2 bg-danger-50 text-danger text-md border-b border-danger/30">{saveError}</div>
-      )}
+      <div className="shrink-0 px-4 py-1.5 bg-fill/40 text-ink-subtle text-sm border-b border-line flex items-center justify-between">
+        <span>Số liệu Chi phí/Thu nhập khác lấy tự động từ Sổ quỹ.</span>
+        <button
+          type="button"
+          onClick={() => navigate('/manager/cash-book')}
+          className="text-primary hover:underline cursor-pointer shrink-0"
+        >
+          Quản lý tại Sổ quỹ →
+        </button>
+      </div>
 
       <div className="flex-1 min-h-0 overflow-auto p-6">
         <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }} className="transition-transform w-fit mx-auto">
@@ -310,26 +282,17 @@ const FinancialReportPreview = ({ periods, customLines, filters, generatedAt, lo
                       ))}
                     </tr>,
                   ]
-                  const group = CUSTOM_LINE_INSERT_AFTER[line.key]
+                  const group = CATEGORY_LINE_INSERT_AFTER[line.key]
                   if (group) {
-                    for (const cl of customLines.filter(l => l.group === group)) {
+                    for (const cl of categoryLines.filter(l => l.group === group)) {
                       rows.push(
                         <tr key={cl.id} className={zebra}>
                           <td className="px-2 py-2 text-sm text-ink pl-8">{cl.name}</td>
-                          {columns.map(c => {
-                            const amount = c.customLineValues[cl.id] ?? 0
-                            const editable = filters.granularity === 'month' && c.key !== 'total'
-                            return (
-                              <td key={c.label} className="px-2 py-2 text-sm text-ink text-right">
-                                {editable ? (
-                                  <CustomLineAmountInput
-                                    amount={amount}
-                                    onCommit={raw => handleCustomAmountBlur(cl.id, c.key, raw)}
-                                  />
-                                ) : money(amount)}
-                              </td>
-                            )
-                          })}
+                          {columns.map(c => (
+                            <td key={c.label} className="px-2 py-2 text-sm text-ink text-right">
+                              {money(c.categoryLineValues[cl.id] ?? 0)}
+                            </td>
+                          ))}
                         </tr>,
                       )
                     }

@@ -5,6 +5,8 @@ import com.rms.restaurant.common.utils.enums.DashboardGranularity;
 import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.enums.PaymentMethod;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
+import com.rms.restaurant.module.cashbook.repository.CashbookCategoryRepository;
+import com.rms.restaurant.module.cashbook.repository.CashbookVoucherRepository;
 import com.rms.restaurant.module.menu.repository.MenuItemRepository;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
@@ -60,6 +62,8 @@ class ReportServiceImplTest {
     @Mock MenuItemRepository menuItemRepository;
     @Mock PayrollSheetRepository payrollSheetRepository;
     @Mock PayslipRepository payslipRepository;
+    @Mock CashbookCategoryRepository cashbookCategoryRepository;
+    @Mock CashbookVoucherRepository cashbookVoucherRepository;
 
     private ReportServiceImpl service;
 
@@ -71,7 +75,7 @@ class ReportServiceImplTest {
         service = new ReportServiceImpl(
                 invoiceRepository, orderRepository, orderItemRepository, invoiceItemAllocationRepository,
                 paymentRepository, userRepository, tableRepository, menuItemRepository,
-                payrollSheetRepository, payslipRepository);
+                payrollSheetRepository, payslipRepository, cashbookCategoryRepository, cashbookVoucherRepository);
 
         lenient().when(orderRepository.findAllById(anyCollection())).thenReturn(List.of());
         lenient().when(invoiceRepository.findAllById(anyCollection())).thenReturn(List.of());

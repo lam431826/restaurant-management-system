@@ -3,10 +3,10 @@
 // come from a real backend endpoint (GET /reports/financial, see api/reports.ts), not mock data.
 // The Chi phí (6) and Thu nhập khác (8) sub-lines that used to be fixed always-zero placeholders
 // (asset depreciation, delivery-partner fees, QR fees, loyalty-point redemption, goods write-off,
-// return fees...) are now user-managed custom line items (see FinancialCustomLine / the "Tài
-// chính" tab in Settings) with per-month manually entered amounts — no longer part of FIN_LINES.
+// return fees...) are now derived live from Sổ quỹ (Cashbook) categories/vouchers flagged
+// accountingToIncome=true — read-only here, managed by adding transactions in Sổ quỹ instead.
 // Only sales revenue, invoice discount, COGS and staff payroll cost (expPayroll) have a real,
-// automatically computed counterpart.
+// automatically computed counterpart of their own.
 
 export const BRANCHES = ['Chi nhánh trung tâm']
 
@@ -60,16 +60,15 @@ export const FIN_LINES: FinLineDef[] = [
 
 export type FinancialLineGroup = 'EXPENSE' | 'OTHER_INCOME'
 
-export interface FinancialCustomLine {
+export interface FinancialCategoryLine {
   id: string
   group: FinancialLineGroup
   name: string
-  sortOrder: number
 }
 
-/** Where a FIN_LINES group header's user-managed custom rows (Tài chính settings tab) get
- * spliced in — right after the group header itself (before its one fixed sub-line, if any). */
-export const CUSTOM_LINE_INSERT_AFTER: Partial<Record<FinLineKey, FinancialLineGroup>> = {
+/** Where a FIN_LINES group header's Sổ quỹ-derived category rows get spliced in — right after
+ * the group header itself (before its one fixed sub-line, if any). */
+export const CATEGORY_LINE_INSERT_AFTER: Partial<Record<FinLineKey, FinancialLineGroup>> = {
   expenses: 'EXPENSE',
   otherIncome: 'OTHER_INCOME',
 }
@@ -78,7 +77,7 @@ export interface FinancialPeriod {
   key: string // stable id, e.g. "2026-Q3"
   label: string // display label, e.g. "Q3.2026"
   values: Record<FinLineKey, number>
-  customLineValues: Record<string, number> // customLineId -> amount for this period
+  categoryLineValues: Record<string, number> // cashbook categoryId -> amount for this period
 }
 
 const ZERO_VALUES: Record<FinLineKey, number> = FIN_LINES.reduce(
@@ -92,11 +91,11 @@ export const sumValues = (periods: FinancialPeriod[]): Record<FinLineKey, number
     return next
   }, { ...ZERO_VALUES })
 
-export const sumCustomLineValues = (periods: FinancialPeriod[]): Record<string, number> =>
+export const sumCategoryLineValues = (periods: FinancialPeriod[]): Record<string, number> =>
   periods.reduce((acc, p) => {
     const next = { ...acc }
-    for (const [lineId, amount] of Object.entries(p.customLineValues)) {
-      next[lineId] = (next[lineId] ?? 0) + amount
+    for (const [categoryId, amount] of Object.entries(p.categoryLineValues)) {
+      next[categoryId] = (next[categoryId] ?? 0) + amount
     }
     return next
   }, {} as Record<string, number>)

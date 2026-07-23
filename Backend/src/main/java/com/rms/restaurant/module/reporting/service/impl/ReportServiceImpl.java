@@ -1,5 +1,7 @@
 package com.rms.restaurant.module.reporting.service.impl;
 
+import com.rms.restaurant.common.utils.enums.CashFlowType;
+import com.rms.restaurant.common.utils.enums.CashbookSourceType;
 import com.rms.restaurant.common.utils.enums.CookingStatus;
 import com.rms.restaurant.common.utils.enums.DashboardGranularity;
 import com.rms.restaurant.common.utils.enums.FinancialGranularity;
@@ -7,6 +9,10 @@ import com.rms.restaurant.common.utils.enums.PaymentMethod;
 import com.rms.restaurant.common.utils.enums.PayslipStatus;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
+import com.rms.restaurant.module.cashbook.model.CashbookCategory;
+import com.rms.restaurant.module.cashbook.model.CashbookVoucher;
+import com.rms.restaurant.module.cashbook.repository.CashbookCategoryRepository;
+import com.rms.restaurant.module.cashbook.repository.CashbookVoucherRepository;
 import com.rms.restaurant.module.menu.model.MenuItem;
 import com.rms.restaurant.module.menu.repository.MenuItemRepository;
 import com.rms.restaurant.module.order.model.Order;
@@ -25,13 +31,12 @@ import com.rms.restaurant.module.payroll.repository.PayrollSheetRepository;
 import com.rms.restaurant.module.payroll.repository.PayslipRepository;
 import com.rms.restaurant.module.reporting.dto.DashboardOverviewResponse;
 import com.rms.restaurant.module.reporting.dto.EndOfDaySalesRow;
-import com.rms.restaurant.module.reporting.dto.FinancialCustomLineAmountDto;
-import com.rms.restaurant.module.reporting.dto.FinancialCustomLineDto;
+import com.rms.restaurant.module.reporting.dto.FinancialCategoryLineAmountDto;
+import com.rms.restaurant.module.reporting.dto.FinancialCategoryLineDto;
 import com.rms.restaurant.module.reporting.dto.FinancialPeriodResponse;
 import com.rms.restaurant.module.reporting.dto.MenuPerformanceResponse;
 import com.rms.restaurant.module.reporting.dto.TrafficReportResponse;
 import com.rms.restaurant.common.utils.enums.FinancialLineGroup;
-import com.rms.restaurant.module.reporting.service.FinancialCustomLineService;
 import com.rms.restaurant.module.reporting.service.ReportService;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
@@ -72,7 +77,8 @@ public class ReportServiceImpl implements ReportService {
     private final MenuItemRepository menuItemRepository;
     private final PayrollSheetRepository payrollSheetRepository;
     private final PayslipRepository payslipRepository;
-    private final FinancialCustomLineService financialCustomLineService;
+    private final CashbookCategoryRepository cashbookCategoryRepository;
+    private final CashbookVoucherRepository cashbookVoucherRepository;
 
     @Override
     public List<FinancialPeriodResponse> getFinancialReport(int year, FinancialGranularity granularity) {
@@ -87,20 +93,23 @@ public class ReportServiceImpl implements ReportService {
             byMonth.put(ym, new MonthAccumulator());
         }
 
-        accumulateRevenueAndCogs(byMonth, yearStart.atStartOfDay(), yearEnd.atTime(23, 59, 59));
+        LocalDateTime yearStartTime = yearStart.atStartOfDay();
+        LocalDateTime yearEndTime = yearEnd.atTime(23, 59, 59);
+        accumulateRevenueAndCogs(byMonth, yearStartTime, yearEndTime);
         accumulatePayroll(byMonth, yearStart, yearEnd);
 
-        List<FinancialCustomLineDto> customLines = financialCustomLineService.list();
-        accumulateCustomLines(byMonth, financialCustomLineService.getValuesForYear(year));
+        List<CashbookCategory> categoryLines =
+                cashbookCategoryRepository.findByCodeIsNullAndAccountingToIncomeTrueOrderByNameAsc();
+        accumulateCashbookCategoryLines(byMonth, categoryLines, yearStartTime, yearEndTime);
 
         List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries = new ArrayList<>(byMonth.entrySet());
 
         List<FinancialPeriodResponse> periods = switch (granularity) {
             case MONTH -> monthEntries.stream()
-                    .map(e -> toResponse(monthKey(e.getKey()), monthLabel(e.getKey()), e.getValue(), customLines))
+                    .map(e -> toResponse(monthKey(e.getKey()), monthLabel(e.getKey()), e.getValue(), categoryLines))
                     .toList();
-            case QUARTER -> buildQuarterPeriods(monthEntries, year, customLines);
-            case YEAR -> buildYearPeriod(monthEntries, year, customLines);
+            case QUARTER -> buildQuarterPeriods(monthEntries, year, categoryLines);
+            case YEAR -> buildYearPeriod(monthEntries, year, categoryLines);
         };
 
         List<FinancialPeriodResponse> mostRecentFirst = new ArrayList<>(periods);
@@ -171,35 +180,39 @@ public class ReportServiceImpl implements ReportService {
     }
 
     private List<FinancialPeriodResponse> buildQuarterPeriods(
-            List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries, int year, List<FinancialCustomLineDto> customLines) {
+            List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries, int year, List<CashbookCategory> categories) {
         Map<Integer, MonthAccumulator> byQuarter = new TreeMap<>();
         for (Map.Entry<YearMonth, MonthAccumulator> e : monthEntries) {
             int quarter = (e.getKey().getMonthValue() - 1) / 3 + 1;
             byQuarter.computeIfAbsent(quarter, q -> new MonthAccumulator()).add(e.getValue());
         }
         return byQuarter.entrySet().stream()
-                .map(e -> toResponse(year + "-Q" + e.getKey(), "Q" + e.getKey() + "." + year, e.getValue(), customLines))
+                .map(e -> toResponse(year + "-Q" + e.getKey(), "Q" + e.getKey() + "." + year, e.getValue(), categories))
                 .toList();
     }
 
     private List<FinancialPeriodResponse> buildYearPeriod(
-            List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries, int year, List<FinancialCustomLineDto> customLines) {
+            List<Map.Entry<YearMonth, MonthAccumulator>> monthEntries, int year, List<CashbookCategory> categories) {
         MonthAccumulator total = new MonthAccumulator();
         for (Map.Entry<YearMonth, MonthAccumulator> e : monthEntries) total.add(e.getValue());
-        return List.of(toResponse(String.valueOf(year), String.valueOf(year), total, customLines));
+        return List.of(toResponse(String.valueOf(year), String.valueOf(year), total, categories));
     }
 
-    /** Folds each user-defined custom line's per-month entered amount into the matching
-     * MonthAccumulator, so quarter/year aggregation (MonthAccumulator.add) sums them for free. */
-    private void accumulateCustomLines(Map<YearMonth, MonthAccumulator> byMonth, Map<String, BigDecimal[]> valuesByLine) {
-        for (Map.Entry<YearMonth, MonthAccumulator> e : byMonth.entrySet()) {
-            int monthIndex = e.getKey().getMonthValue() - 1;
-            for (Map.Entry<String, BigDecimal[]> lineEntry : valuesByLine.entrySet()) {
-                BigDecimal amount = lineEntry.getValue()[monthIndex];
-                if (amount != null && amount.signum() != 0) {
-                    e.getValue().customLineAmounts.merge(lineEntry.getKey(), amount, BigDecimal::add);
-                }
-            }
+    /** Chi phí (6)/Thu nhập khác (8) sub-line amounts, sourced from manager-created Cashbook
+     * categories (code IS NULL) flagged accountingToIncome=true. sourceType=MANUAL only —
+     * PAYROLL/INVOICE_PAYMENT system vouchers are already counted via expPayroll/salesRevenue,
+     * so folding them in here would double-count. Bucketed by voucher.occurredAt's month. */
+    private void accumulateCashbookCategoryLines(
+            Map<YearMonth, MonthAccumulator> byMonth, List<CashbookCategory> categories,
+            LocalDateTime from, LocalDateTime to) {
+        if (categories.isEmpty()) return;
+        List<String> categoryIds = categories.stream().map(CashbookCategory::getId).toList();
+        List<CashbookVoucher> vouchers =
+                cashbookVoucherRepository.findForFinancialReport(CashbookSourceType.MANUAL, from, to, categoryIds);
+        for (CashbookVoucher voucher : vouchers) {
+            MonthAccumulator acc = byMonth.get(YearMonth.from(voucher.getOccurredAt()));
+            if (acc == null) continue;
+            acc.categoryLineAmounts.merge(voucher.getCategoryId(), voucher.getAmount(), BigDecimal::add);
         }
     }
 
@@ -213,29 +226,29 @@ public class ReportServiceImpl implements ReportService {
 
     /** Derives the remaining P&L lines from the computable base figures. returnedGoods and
      * otherExpense are always zero — nothing tracked for them anywhere else in this app.
-     * expenses/otherIncome now fold in the user-managed custom lines (see FinancialCustomLine)
-     * instead of the old fixed zero placeholders. */
+     * expenses/otherIncome now fold in Cashbook-derived category lines (see
+     * accumulateCashbookCategoryLines) instead of the old manually-typed custom lines. */
     private FinancialPeriodResponse toResponse(
-            String key, String label, MonthAccumulator acc, List<FinancialCustomLineDto> customLines) {
+            String key, String label, MonthAccumulator acc, List<CashbookCategory> categories) {
         BigDecimal returnedGoods = BigDecimal.ZERO;
         BigDecimal discountReduction = acc.invoiceDiscount.add(returnedGoods);
         BigDecimal netRevenue = acc.salesRevenue.subtract(discountReduction);
         BigDecimal grossProfit = netRevenue.subtract(acc.cogs);
 
-        BigDecimal customExpenseTotal = BigDecimal.ZERO;
-        BigDecimal customOtherIncomeTotal = BigDecimal.ZERO;
-        List<FinancialCustomLineAmountDto> customLineValues = new ArrayList<>();
-        for (FinancialCustomLineDto line : customLines) {
-            BigDecimal amount = acc.customLineAmounts.getOrDefault(line.id(), BigDecimal.ZERO);
-            customLineValues.add(new FinancialCustomLineAmountDto(line.id(), amount));
-            if (line.group() == FinancialLineGroup.EXPENSE) customExpenseTotal = customExpenseTotal.add(amount);
-            else customOtherIncomeTotal = customOtherIncomeTotal.add(amount);
+        BigDecimal categoryExpenseTotal = BigDecimal.ZERO;
+        BigDecimal categoryOtherIncomeTotal = BigDecimal.ZERO;
+        List<FinancialCategoryLineAmountDto> categoryLineValues = new ArrayList<>();
+        for (CashbookCategory category : categories) {
+            BigDecimal amount = acc.categoryLineAmounts.getOrDefault(category.getId(), BigDecimal.ZERO);
+            categoryLineValues.add(new FinancialCategoryLineAmountDto(category.getId(), amount));
+            if (category.getType() == CashFlowType.PAYMENT) categoryExpenseTotal = categoryExpenseTotal.add(amount);
+            else categoryOtherIncomeTotal = categoryOtherIncomeTotal.add(amount);
         }
 
-        BigDecimal expenses = acc.expPayroll.add(customExpenseTotal);
+        BigDecimal expenses = acc.expPayroll.add(categoryExpenseTotal);
         BigDecimal operatingProfit = grossProfit.subtract(expenses);
 
-        BigDecimal otherIncome = customOtherIncomeTotal;
+        BigDecimal otherIncome = categoryOtherIncomeTotal;
         BigDecimal otherExpense = BigDecimal.ZERO;
         BigDecimal netProfit = operatingProfit.add(otherIncome).subtract(otherExpense);
 
@@ -248,7 +261,7 @@ public class ReportServiceImpl implements ReportService {
                 otherIncome,
                 otherExpense,
                 netProfit,
-                customLineValues);
+                categoryLineValues);
     }
 
     private static class MonthAccumulator {
@@ -256,15 +269,25 @@ public class ReportServiceImpl implements ReportService {
         BigDecimal invoiceDiscount = BigDecimal.ZERO;
         BigDecimal cogs = BigDecimal.ZERO;
         BigDecimal expPayroll = BigDecimal.ZERO;
-        Map<String, BigDecimal> customLineAmounts = new java.util.HashMap<>();
+        Map<String, BigDecimal> categoryLineAmounts = new java.util.HashMap<>();
 
         void add(MonthAccumulator other) {
             salesRevenue = salesRevenue.add(other.salesRevenue);
             invoiceDiscount = invoiceDiscount.add(other.invoiceDiscount);
             cogs = cogs.add(other.cogs);
             expPayroll = expPayroll.add(other.expPayroll);
-            other.customLineAmounts.forEach((lineId, amount) -> customLineAmounts.merge(lineId, amount, BigDecimal::add));
+            other.categoryLineAmounts.forEach((id, amount) -> categoryLineAmounts.merge(id, amount, BigDecimal::add));
         }
+    }
+
+    @Override
+    public List<FinancialCategoryLineDto> getFinancialReportLines() {
+        return cashbookCategoryRepository.findByCodeIsNullAndAccountingToIncomeTrueOrderByNameAsc().stream()
+                .map(c -> new FinancialCategoryLineDto(
+                        c.getId(),
+                        c.getType() == CashFlowType.PAYMENT ? FinancialLineGroup.EXPENSE : FinancialLineGroup.OTHER_INCOME,
+                        c.getName()))
+                .toList();
     }
 
     @Override public TrafficReportResponse getTrafficReport(LocalDate from, LocalDate to) { return null; }

@@ -3,6 +3,7 @@ package com.rms.restaurant.module.cashbook.repository;
 import com.rms.restaurant.common.utils.enums.CashFlowMethod;
 import com.rms.restaurant.common.utils.enums.CashFlowType;
 import com.rms.restaurant.common.utils.enums.CashbookPartnerGroup;
+import com.rms.restaurant.common.utils.enums.CashbookSourceType;
 import com.rms.restaurant.module.cashbook.model.CashbookVoucher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -85,4 +86,18 @@ public interface CashbookVoucherRepository extends JpaRepository<CashbookVoucher
 
     @Query("SELECT MAX(v.code) FROM CashbookVoucher v WHERE v.code LIKE CONCAT(:prefix, '%')")
     Optional<String> findMaxCode(@Param("prefix") String prefix);
+
+    /** Vouchers eligible to feed the financial report's Chi phí(6)/Thu nhập khác(8) sub-lines:
+     * non-voided, manually entered (never PAYROLL/INVOICE_PAYMENT system vouchers — those are
+     * already counted via expPayroll/sales revenue, so including them here would double-count),
+     * and flagged accountingToIncome at the voucher level (the per-transaction override of the
+     * category's default). Caller must never pass an empty categoryIds list — JPQL IN can't bind
+     * an empty collection — and should skip the call entirely in that case. */
+    @Query("SELECT v FROM CashbookVoucher v WHERE v.voided = false AND v.sourceType = :sourceType AND " +
+           "v.accountingToIncome = true AND v.occurredAt >= :from AND v.occurredAt <= :to AND " +
+           "v.categoryId IN :categoryIds")
+    List<CashbookVoucher> findForFinancialReport(@Param("sourceType") CashbookSourceType sourceType,
+                                                  @Param("from") LocalDateTime from,
+                                                  @Param("to") LocalDateTime to,
+                                                  @Param("categoryIds") List<String> categoryIds);
 }

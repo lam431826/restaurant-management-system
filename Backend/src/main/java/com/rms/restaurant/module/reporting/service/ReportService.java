@@ -5,6 +5,7 @@ import com.rms.restaurant.common.utils.enums.FinancialGranularity;
 import com.rms.restaurant.common.utils.enums.PaymentMethod;
 import com.rms.restaurant.module.reporting.dto.DashboardOverviewResponse;
 import com.rms.restaurant.module.reporting.dto.EndOfDaySalesRow;
+import com.rms.restaurant.module.reporting.dto.FinancialCategoryLineDto;
 import com.rms.restaurant.module.reporting.dto.FinancialPeriodResponse;
 import com.rms.restaurant.module.reporting.dto.MenuPerformanceResponse;
 import com.rms.restaurant.module.reporting.dto.TrafficReportResponse;
@@ -15,6 +16,10 @@ import java.util.List;
 
 public interface ReportService {
     List<FinancialPeriodResponse> getFinancialReport(int year, FinancialGranularity granularity);
+
+    /** Cashbook categories eligible to appear as Chi phí(6)/Thu nhập khác(8) sub-lines — read-only
+     * metadata (id/group/name) for the frontend to label the amounts in FinancialPeriodResponse. */
+    List<FinancialCategoryLineDto> getFinancialReportLines();
     TrafficReportResponse getTrafficReport(LocalDate from, LocalDate to);
     MenuPerformanceResponse getMenuPerformance(LocalDate from, LocalDate to);
 

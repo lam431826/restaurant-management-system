@@ -7,13 +7,10 @@ import type { PayrollHolidayDto } from '../../api/payrollHolidays'
 import { listPayrollHolidays } from '../../api/payrollHolidays'
 import type { PayrollSettingsDto } from '../../api/payroll'
 import { getPayrollSettings, updatePayrollSettings } from '../../api/payroll'
-import type { FinancialCustomLineRow, FinancialLineGroupParam } from '../../api/reports'
-import { deleteFinancialCustomLine, listFinancialCustomLines } from '../../api/reports'
 import { ApiError } from '../../services/api'
 import ShiftTemplateModal from '../staff/schedule/ShiftTemplateModal'
 import SalaryTemplateList from '../staff/settings/SalaryTemplateList'
 import HolidayList from '../staff/settings/HolidayList'
-import FinancialCustomLineModal from './FinancialCustomLineModal'
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Thiết lập — unified KiotViet-style settings shell. Sidebar trimmed down to
@@ -22,7 +19,7 @@ import FinancialCustomLineModal from './FinancialCustomLineModal'
  * Chấm công is wired to the real UC-AT-05 settings API + UC-AT-01 shift CRUD.
  * ──────────────────────────────────────────────────────────────────────────── */
 
-type Tab = 'reports' | 'attendance' | 'payroll' | 'financial'
+type Tab = 'reports' | 'attendance' | 'payroll'
 
 /* ── icons ─────────────────────────────────────────────────────────────────── */
 const InfoIcon = () => (
@@ -51,9 +48,6 @@ const TrashIcon = () => (
 )
 const SearchIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-)
-const FinanceIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></svg>
 )
 
 /* ── primitives ────────────────────────────────────────────────────────────── */
@@ -156,7 +150,6 @@ const SettingsPage = () => {
   const [salaryTemplates, setSalaryTemplates] = useState<SalaryTemplateDto[]>([])
   const [holidayListOpen, setHolidayListOpen] = useState(false)
   const [holidays, setHolidays] = useState<PayrollHolidayDto[]>([])
-  const [financialLines, setFinancialLines] = useState<FinancialCustomLineRow[]>([])
 
   const [settings, setSettings] = useState<AttendanceSettingsDto | null>(null)
   const [loadError, setLoadError] = useState('')
@@ -181,15 +174,11 @@ const SettingsPage = () => {
   const loadHolidays = () => {
     listPayrollHolidays().then(res => setHolidays(res.data.data)).catch(() => {})
   }
-  const loadFinancialLines = () => {
-    listFinancialCustomLines().then(res => setFinancialLines(res.data.data)).catch(() => {})
-  }
 
   useEffect(() => {
     loadShifts()
     loadSalaryTemplates()
     loadHolidays()
-    loadFinancialLines()
     getSettings()
       .then(res => setSettings(res.data.data))
       .catch(err => setLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập chấm công.'))
@@ -222,7 +211,6 @@ const SettingsPage = () => {
     { id: 'reports' as Tab, label: 'Báo cáo', icon: <ReportIcon /> },
     { id: 'attendance' as Tab, label: 'Chấm công', icon: <CalCheckIcon /> },
     { id: 'payroll' as Tab, label: 'Tính lương', icon: <DollarIcon /> },
-    { id: 'financial' as Tab, label: 'Tài chính', icon: <FinanceIcon /> },
   ]
 
   return (
@@ -301,10 +289,6 @@ const SettingsPage = () => {
                 onBack={() => setHolidayListOpen(false)}
                 onChanged={loadHolidays}
               />
-            )}
-
-            {tab === 'financial' && (
-              <FinancialLineSettings lines={financialLines} onChanged={loadFinancialLines} />
             )}
           </main>
         </div>
@@ -589,73 +573,6 @@ const PayrollSettings = ({
 
       <Block title="Thuế TNCN cho nhân viên" desc="Thiết lập quy định tính thuế TNCN cho nhân viên"
         right={<Toggle on={settings.personalIncomeTaxEnabled} onChange={v => set('personalIncomeTaxEnabled', v)} />} last />
-    </div>
-  )
-}
-
-/* ── Tài chính tab ─────────────────────────────────────────────────────────── */
-const FinancialLineSettings = ({ lines, onChanged }: { lines: FinancialCustomLineRow[]; onChanged: () => void }) => {
-  const [modal, setModal] = useState<{ group: FinancialLineGroupParam; line: FinancialCustomLineRow | null } | null>(null)
-
-  const remove = async (line: FinancialCustomLineRow) => {
-    if (!window.confirm(`Xóa danh mục "${line.name}"? Số liệu đã nhập cho danh mục này trên báo cáo cũng sẽ mất.`)) return
-    try {
-      await deleteFinancialCustomLine(line.id)
-      onChanged()
-    } catch {
-      window.alert('Không thể xóa danh mục.')
-    }
-  }
-
-  const LineTable = ({ group, title, last }: { group: FinancialLineGroupParam; title: string; last?: boolean }) => {
-    const rows = lines.filter(l => l.group === group).sort((a, b) => a.sortOrder - b.sortOrder)
-    return (
-      <Block title={title} last={last}
-        right={<button onClick={() => setModal({ group, line: null })} className="kv-btn kv-btn-outline-primary h-9">+ Thêm danh mục</button>}>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-fill text-sm font-semibold text-ink-subtle">
-              <th className="text-left px-4 py-2 w-[4rem]">STT</th>
-              <th className="text-left px-4 py-2">Tên danh mục</th>
-              <th className="text-right px-4 py-2 w-[8rem]">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((l, i) => (
-              <tr key={l.id} className="border-b border-line">
-                <td className="px-4 py-3 text-md text-ink">{i + 1}</td>
-                <td className="px-4 py-3 text-md text-ink">{l.name}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center justify-end gap-4 text-ink-muted">
-                    <button onClick={() => setModal({ group, line: l })} className="hover:text-primary cursor-pointer" aria-label="Sửa"><PencilIcon /></button>
-                    <button onClick={() => void remove(l)} className="hover:text-danger cursor-pointer" aria-label="Xóa"><TrashIcon /></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr><td colSpan={3} className="px-4 py-6 text-center text-md text-ink-subtle">Chưa có danh mục nào</td></tr>
-            )}
-          </tbody>
-        </table>
-      </Block>
-    )
-  }
-
-  return (
-    <div>
-      <h2 className="text-lg font-bold text-ink mb-2">Tài chính</h2>
-      <LineTable group="EXPENSE" title="Danh mục chi phí" />
-      <LineTable group="OTHER_INCOME" title="Danh mục thu nhập khác" last />
-
-      {modal && (
-        <FinancialCustomLineModal
-          group={modal.group}
-          line={modal.line}
-          onClose={() => setModal(null)}
-          onSaved={() => { setModal(null); onChanged() }}
-        />
-      )}
     </div>
   )
 }
