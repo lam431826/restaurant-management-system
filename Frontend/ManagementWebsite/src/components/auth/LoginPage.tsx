@@ -321,12 +321,7 @@ const LoginPage = () => {
           </button>
         </form>
         <div className="flex items-center justify-between mt-1">
-          <button
-            onClick={() => navigate("/employee-login")}
-            className="text-[14px] text-[#357dd5] leading-[1.5] hover:underline"
-          >
-            Đăng nhập nhân viên (PIN)
-          </button>
+
           <button
             onClick={() => navigate("/forgot-password")}
             className="text-[14px] text-[#357dd5] leading-[1.5] hover:underline"
