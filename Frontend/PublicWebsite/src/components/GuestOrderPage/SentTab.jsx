@@ -32,9 +32,6 @@ export default function SentTab({ statusData, handleStartEditing, getItemImage }
                statusData.status === 'CANCELLED' ? 'Đã Hủy' :
                statusData.status === 'CLOSED' ? 'Đã Thanh Toán' : statusData.status}
             </h3>
-            {statusData.status === 'ACCEPTED' && (
-              <p className="text-xs text-gray-600 mt-1">Dự kiến: <span className="font-bold text-gray-900">{statusData.estimatedWaitTimeMinutes} phút</span></p>
-            )}
           </div>
           {statusData.items?.some(i => i.cookingStatus === 'PENDING' && (i.isQrOrder || i.qrOrder)) && (
             <button 
