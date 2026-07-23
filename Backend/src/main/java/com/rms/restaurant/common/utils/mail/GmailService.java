@@ -30,7 +30,7 @@ public class GmailService {
     // binding leaves the unresolved "${MAIL_USERNAME}" text instead, which we detect below.
     private final MailProperties mailProperties;
 
-    public void sendTempPasswordEmail(String toEmail, String recipientName, String tempPassword) {
+    public void sendTempPasswordEmail(String toEmail, String recipientName, String username, String tempPassword) {
         SimpleMailMessage msg = new SimpleMailMessage();
         msg.setFrom(fromAddress);
         msg.setTo(toEmail);
@@ -38,6 +38,7 @@ public class GmailService {
         msg.setText(
             "Xin chào " + recipientName + ",\n\n" +
             "Tài khoản của bạn đã được tạo trên hệ thống RMS.\n" +
+            "Tên đăng nhập: " + username + "\n" +
             "Mật khẩu tạm thời: " + tempPassword + "\n\n" +
             "Vui lòng đăng nhập và đổi mật khẩu ngay sau khi kích hoạt tài khoản.\n\n" +
             "Trân trọng,\nHệ thống RMS"

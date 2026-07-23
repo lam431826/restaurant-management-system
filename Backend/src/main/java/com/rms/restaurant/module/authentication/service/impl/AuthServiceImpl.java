@@ -3,6 +3,7 @@ package com.rms.restaurant.module.authentication.service.impl;
 import com.rms.restaurant.common.security.JwtService;
 import com.rms.restaurant.common.utils.enums.UserStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
+import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ForbiddenException;
 import com.rms.restaurant.common.utils.exception.RateLimitException;
@@ -28,6 +29,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -108,6 +110,18 @@ public class AuthServiceImpl implements AuthService {
         }
 
         User user = record.getUser();
+        // Prefer the linked Employee's email (onboarding may have pre-existed the login account,
+        // see EmployeeServiceImpl.linkUser()); otherwise fall back to the email the admin set on
+        // the User row at account-creation time (CreateUserRequest.email()). If either is already
+        // on file, the submitted email must match it exactly — this step confirms the existing
+        // registered contact rather than letting the user redefine it to something arbitrary.
+        String emailOnFile = employeeRepository.findByUserId(user.getId())
+                .map(e -> StringUtils.hasText(e.getEmail()) ? e.getEmail() : null)
+                .orElse(StringUtils.hasText(user.getEmail()) ? user.getEmail() : null);
+        if (emailOnFile != null && !emailOnFile.equalsIgnoreCase(request.email())) {
+            throw new ApplicationException(ApplicationError.EMAIL_VERIFICATION_MISMATCH);
+        }
+
         // B1: duplicate email/phone checks — excludes the user's own row(s) so resubmitting the
         // same values (e.g. after an expired OTP) doesn't falsely conflict with itself. Checked
         // here (not just at verifyOtp's saveMyProfile call) so a conflict surfaces immediately

@@ -19,6 +19,7 @@ const ACTION_META: Record<string, { label: string; tone: Tone }> = {
   PAYMENT_VNPAY_RETURN_TERMINAL: { label: 'kết thúc giao dịch VNPAY', tone: 'info' },
   PAYMENT_VNPAY_RETURN_AMOUNT_MISMATCH: { label: 'ghi nhận số tiền VNPAY không khớp', tone: 'danger' },
   PAYMENT_VNPAY_IPN_FAILED: { label: 'ghi nhận thanh toán VNPAY thất bại', tone: 'danger' },
+  PAYMENT_VNPAY_IPN_SUCCESS: { label: 'đã xác nhận thanh toán VNPAY thành công', tone: 'success' },
   PAYMENT_VNPAY_IPN_INVALID_SIGNATURE: { label: 'ghi nhận chữ ký phản hồi VNPAY không hợp lệ', tone: 'danger' },
   PAYMENT_VNPAY_IPN_INVALID_TMNCODE: { label: 'ghi nhận mã đối tác VNPAY không hợp lệ', tone: 'danger' },
   PAYMENT_VNPAY_IPN_AMOUNT_MISMATCH: { label: 'ghi nhận số tiền VNPAY không khớp', tone: 'danger' },
@@ -28,6 +29,7 @@ const ACTION_META: Record<string, { label: string; tone: Tone }> = {
   PAYMENT_VNPAY_QUERYDR_TXNREF_MISMATCH: { label: 'ghi nhận mã giao dịch đối soát không khớp', tone: 'danger' },
   PAYMENT_VNPAY_QUERYDR_AMOUNT_MISMATCH: { label: 'ghi nhận số tiền đối soát không khớp', tone: 'danger' },
   PAYMENT_VNPAY_QUERYDR_NO_RESULT: { label: 'không nhận được kết quả đối soát VNPAY', tone: 'warning' },
+  PAYMENT_VNPAY_QUERYDR_SUCCESS: { label: 'đã xác nhận thanh toán VNPAY qua đối soát', tone: 'success' },
   PAYMENT_ATTEMPT_EXPIRED: { label: 'có giao dịch thanh toán hết hạn', tone: 'warning' },
   // Invoices
   INVOICE_GENERATE: { label: 'đã tạo hóa đơn', tone: 'info' },

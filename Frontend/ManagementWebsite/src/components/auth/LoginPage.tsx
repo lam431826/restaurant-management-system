@@ -220,6 +220,8 @@ const LoginPage = () => {
       const code = err.response?.data?.error;
       if (code === "DUPLICATE_EMAIL")
         setProfileErrors({ email: "Email đã được sử dụng bởi tài khoản khác" });
+      else if (code === "EMAIL_VERIFICATION_MISMATCH")
+        setProfileErrors({ email: "Email không khớp với email đã đăng ký. Vui lòng nhập lại." });
       else if (code === "DUPLICATE_PHONE" || code === "DUPLICATE_EMPLOYEE_PHONE")
         setProfileErrors({ phone: "Số điện thoại đã được sử dụng" });
       else setError("Không thể gửi OTP. Vui lòng thử lại.");
@@ -319,12 +321,7 @@ const LoginPage = () => {
           </button>
         </form>
         <div className="flex items-center justify-between mt-1">
-          <button
-            onClick={() => navigate("/employee-login")}
-            className="text-[14px] text-[#357dd5] leading-[1.5] hover:underline"
-          >
-            Đăng nhập nhân viên (PIN)
-          </button>
+
           <button
             onClick={() => navigate("/forgot-password")}
             className="text-[14px] text-[#357dd5] leading-[1.5] hover:underline"

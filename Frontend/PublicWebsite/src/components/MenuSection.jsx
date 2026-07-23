@@ -158,12 +158,6 @@ function MenuItem({ item, index = 0, onAddToCart }) {
           >
             {item.description || 'Hương vị tuyệt hảo từ bếp trưởng của chúng tôi.'}
           </p>
-          <button 
-            onClick={() => onAddToCart && onAddToCart(item)}
-            className="border border-[#efe7d2] text-[#efe7d2] px-4 py-1.5 rounded-full hover:bg-[#efe7d2] hover:text-[#0a0b0a] transition-colors shrink-0 text-sm tracking-wide font-medium cursor-pointer"
-          >
-            Thêm vào giỏ
-          </button>
         </div>
       </div>
     </div>
