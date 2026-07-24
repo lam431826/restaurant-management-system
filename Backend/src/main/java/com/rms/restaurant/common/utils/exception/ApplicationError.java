@@ -178,6 +178,7 @@ public enum ApplicationError {
     CASHBOOK_VOUCHER_ALREADY_VOIDED("Voucher has already been voided", HttpStatus.CONFLICT),
     CASHBOOK_VOUCHER_CATEGORY_TYPE_MISMATCH("Category type does not match the voucher type", HttpStatus.UNPROCESSABLE_ENTITY),
     CASHBOOK_VOUCHER_PARTNER_GROUP_INVALID("Voucher partner group is invalid for this operation", HttpStatus.UNPROCESSABLE_ENTITY),
+    CASHBOOK_VOUCHER_NOT_EDITABLE("Only manually created vouchers can be edited", HttpStatus.CONFLICT),
 
     // System
     INTERNAL_ERROR("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR);

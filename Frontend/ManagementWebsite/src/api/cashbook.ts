@@ -107,6 +107,9 @@ export interface CashFlowVoucher {
   accountingToIncome: boolean;
   createdBy: string;
   voided: boolean;
+  // Only MANUAL vouchers can be edited — PAYROLL/INVOICE_PAYMENT ones mirror domain state
+  // owned elsewhere (payroll sheets / invoice payments) and would go stale if edited here.
+  isEditable: boolean;
   sourceInvoice?: SourceInvoice;
 }
 
@@ -163,6 +166,7 @@ const mapVoucher = (dto: VoucherResponseDto): CashFlowVoucher => ({
   accountingToIncome: dto.accountingToIncome,
   createdBy: dto.createdBy ?? "",
   voided: dto.voided,
+  isEditable: dto.sourceType === "MANUAL" && !dto.voided,
   sourceInvoice:
     dto.sourceType === "INVOICE_PAYMENT" && dto.sourceReferenceId
       ? {
@@ -272,6 +276,17 @@ export const createVoucher = async (
 ): Promise<CashFlowVoucher> => {
   const res = await apiClient.post<{ data: VoucherResponseDto }>(
     "/cashbook/vouchers",
+    payload,
+  );
+  return mapVoucher(res.data.data);
+};
+
+export const updateVoucher = async (
+  id: string,
+  payload: CreateVoucherPayload,
+): Promise<CashFlowVoucher> => {
+  const res = await apiClient.put<{ data: VoucherResponseDto }>(
+    `/cashbook/vouchers/${id}`,
     payload,
   );
   return mapVoucher(res.data.data);

@@ -7,7 +7,7 @@ import CashFlowModal from './CashFlowModal'
 import {
   listVouchers, listCategories, getSummary,
   createCategory as apiCreateCategory, updateCategory as apiUpdateCategory, deleteCategory as apiDeleteCategory,
-  createVoucher as apiCreateVoucher, voidVoucher as apiVoidVoucher,
+  createVoucher as apiCreateVoucher, updateVoucher as apiUpdateVoucher, voidVoucher as apiVoidVoucher,
   METHOD_LABEL, FUND_LABEL, defaultCashBookFilters,
 } from '../../api/cashbook'
 import type {
@@ -15,7 +15,10 @@ import type {
   CreateVoucherPayload,
 } from '../../api/cashbook'
 
-type ModalState = { type: CashFlowType; method: CashFlowMethod } | null
+type ModalState =
+  | { mode: 'create'; type: CashFlowType; method: CashFlowMethod }
+  | { mode: 'edit'; voucher: CashFlowVoucher }
+  | null
 
 const DEFAULT_VISIBLE_COLUMNS: Record<ColumnKey, boolean> = {
   time: true, category: true, method: true, partner: true, amount: true,
@@ -138,6 +141,12 @@ const CashBook = () => {
     setModal(null)
   }
 
+  const updateVoucher = async (id: string, payload: CreateVoucherPayload) => {
+    await apiUpdateVoucher(id, payload)
+    await loadVouchers()
+    setModal(null)
+  }
+
   const addCategory = async (type: CashFlowType, data: { name: string; description: string; accountingToIncome: boolean }) => {
     const created = await apiCreateCategory({ name: data.name, type, description: data.description, accountingToIncome: data.accountingToIncome })
     setCategories(list => [...list, created])
@@ -177,7 +186,7 @@ const CashBook = () => {
           title={FUND_LABEL[filters.fund]}
           search={search}
           onSearchChange={setSearch}
-          onCreate={(type, method) => setModal({ type, method })}
+          onCreate={(type, method) => setModal({ mode: 'create', type, method })}
           onExport={() => exportCsv(filteredVouchers, categories)}
           visibleColumns={visibleColumns}
           onToggleColumn={toggleColumn}
@@ -192,16 +201,32 @@ const CashBook = () => {
           expandedId={expandedId}
           onToggleExpand={voucher => setExpandedId(id => (id === voucher.id ? null : voucher.id))}
           onVoid={voidVoucher}
+          onEdit={voucher => setModal({ mode: 'edit', voucher })}
         />
       </section>
 
-      {modal && (
+      {modal && modal.mode === 'create' && (
         <CashFlowModal
           type={modal.type}
           defaultMethod={modal.method}
           categories={categories}
           onClose={() => setModal(null)}
           onSave={saveVoucher}
+          onAddCategory={addCategory}
+          onUpdateCategory={updateCategory}
+          onDeleteCategory={deleteCategory}
+        />
+      )}
+
+      {modal && modal.mode === 'edit' && (
+        <CashFlowModal
+          type={modal.voucher.type}
+          defaultMethod={modal.voucher.method}
+          categories={categories}
+          editingVoucher={modal.voucher}
+          onClose={() => setModal(null)}
+          onSave={saveVoucher}
+          onUpdate={updateVoucher}
           onAddCategory={addCategory}
           onUpdateCategory={updateCategory}
           onDeleteCategory={deleteCategory}

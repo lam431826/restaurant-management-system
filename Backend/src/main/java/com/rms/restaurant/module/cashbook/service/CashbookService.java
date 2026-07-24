@@ -23,6 +23,11 @@ public interface CashbookService {
 
     VoucherResponse createVoucher(CreateVoucherRequest request, String username);
 
+    /** Only vouchers with {@code sourceType == MANUAL} may be edited — vouchers auto-generated
+     * by Payroll/Payment integrations are read-only here since they mirror domain state owned
+     * elsewhere. */
+    VoucherResponse updateVoucher(String id, CreateVoucherRequest request);
+
     VoucherResponse voidVoucher(String id);
 
     SummaryResponse getSummary(VoucherFilter filter);

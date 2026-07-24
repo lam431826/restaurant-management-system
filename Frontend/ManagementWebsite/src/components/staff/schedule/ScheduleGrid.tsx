@@ -38,7 +38,12 @@ const ShiftPill = ({ label, shiftName, startTime, endTime, colorCls, openDown, o
 }) => (
   <div
     onClick={onOpen}
-    className={`group/pill relative flex items-center justify-between gap-2 h-9 px-3 rounded-md text-md font-medium cursor-pointer transition-opacity hover:opacity-80 ${colorCls}`}
+    // z-0 + hover:z-10: hover:opacity-80 below creates a new stacking context (any
+    // opacity < 1 does), which traps the tooltip's high z-index inside it -- without an
+    // explicit z-index bump here, a later sibling pill in the same day cell (stacked
+    // below this one, plain z-index:auto) paints over this pill's whole subtree,
+    // tooltip included. Promoting the hovered pill itself above its siblings fixes it.
+    className={`group/pill relative z-0 hover:z-10 flex items-center justify-between gap-2 h-9 px-3 rounded-md text-md font-medium cursor-pointer transition-opacity hover:opacity-80 ${colorCls}`}
   >
     <span className="truncate">{label}</span>
     <button

@@ -112,9 +112,10 @@ interface Props {
   voucher: CashFlowVoucher
   categoryName: string
   onVoid: () => void
+  onEdit: () => void
 }
 
-const CashBookDetail = ({ voucher, categoryName, onVoid }: Props) => {
+const CashBookDetail = ({ voucher, categoryName, onVoid, onEdit }: Props) => {
   const isReceipt = voucher.type === 'RECEIPT'
   const docLabel = isReceipt ? 'Phiếu thu' : 'Phiếu chi'
   const roleLabel = isReceipt ? 'Người thu' : 'Người chi'
@@ -175,8 +176,8 @@ const CashBookDetail = ({ voucher, categoryName, onVoid }: Props) => {
             ? <button type="button" className="text-md text-ink-subtle hover:text-danger cursor-pointer" onClick={onVoid}>Hủy phiếu</button>
             : <span />}
           <div className="flex items-center gap-2">
-            {voucher.sourceInvoice && (
-              <button type="button" className="kv-btn kv-btn-primary h-10" title="Chỉnh sửa">
+            {voucher.isEditable && (
+              <button type="button" className="kv-btn kv-btn-primary h-10" title="Chỉnh sửa" onClick={onEdit}>
                 <PencilIcon /> Chỉnh sửa
               </button>
             )}

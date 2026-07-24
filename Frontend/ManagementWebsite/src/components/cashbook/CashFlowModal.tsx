@@ -6,15 +6,19 @@ import type { EmployeeDto } from '../../api/employees'
 import { useAuth } from '../../context/AuthContext'
 import { METHOD_LABEL } from '../../api/cashbook'
 import type {
-  CashFlowCategory, CashFlowMethod, CashFlowType, CreateVoucherPayload, PartnerGroup,
+  CashFlowCategory, CashFlowMethod, CashFlowType, CashFlowVoucher, CreateVoucherPayload, PartnerGroup,
 } from '../../api/cashbook'
 
 interface Props {
   type: CashFlowType
   defaultMethod?: CashFlowMethod
   categories: CashFlowCategory[]
+  // When set, the modal opens pre-filled for editing this (MANUAL-only) voucher instead of
+  // creating a new one — submit calls onUpdate instead of onSave.
+  editingVoucher?: CashFlowVoucher
   onClose: () => void
   onSave: (payload: CreateVoucherPayload) => Promise<void>
+  onUpdate?: (id: string, payload: CreateVoucherPayload) => Promise<void>
   onAddCategory: (type: CashFlowType, data: { name: string; description: string; accountingToIncome: boolean }) => Promise<CashFlowCategory>
   onUpdateCategory: (id: string, data: { name: string; description: string; accountingToIncome: boolean }) => Promise<void>
   onDeleteCategory: (id: string) => Promise<void>
@@ -213,22 +217,28 @@ const CategoryPicker = ({
 }
 
 const CashFlowModal = ({
-  type, defaultMethod, categories, onClose, onSave, onAddCategory, onUpdateCategory, onDeleteCategory,
+  type, defaultMethod, categories, editingVoucher, onClose, onSave, onUpdate, onAddCategory, onUpdateCategory, onDeleteCategory,
 }: Props) => {
   const { user } = useAuth()
+  const isEditing = !!editingVoucher
 
-  const [dateTimeLocal, setDateTimeLocal] = useState(() => toDatetimeLocal(new Date().toISOString()))
-  const [categoryName, setCategoryName] = useState('')
-  const [amount, setAmount] = useState('')
-  const [note, setNote] = useState('')
-  const [method] = useState<CashFlowMethod>(defaultMethod ?? 'CASH')
-  const [partnerGroup, setPartnerGroup] = useState<PartnerGroup>('OTHER')
-  const [partnerName, setPartnerName] = useState('')
-  const [employeeId, setEmployeeId] = useState('')
-  const [employeeName, setEmployeeName] = useState('')
+  const [dateTimeLocal, setDateTimeLocal] = useState(() => toDatetimeLocal(editingVoucher?.createdAt ?? new Date().toISOString()))
+  const [categoryName, setCategoryName] = useState(() =>
+    editingVoucher ? (categories.find(c => c.id === editingVoucher.categoryId)?.name ?? '') : '')
+  const [amount, setAmount] = useState(() => (editingVoucher ? formatAmount(String(editingVoucher.amount)) : ''))
+  const [note, setNote] = useState(editingVoucher?.note ?? '')
+  const [method] = useState<CashFlowMethod>(editingVoucher?.method ?? defaultMethod ?? 'CASH')
+  const [partnerGroup, setPartnerGroup] = useState<PartnerGroup>(
+    editingVoucher && editingVoucher.partnerGroup !== 'CUSTOMER' ? editingVoucher.partnerGroup : 'OTHER')
+  const [partnerName, setPartnerName] = useState(
+    editingVoucher && editingVoucher.partnerGroup === 'OTHER' ? editingVoucher.partnerName : '')
+  const [employeeId, setEmployeeId] = useState(
+    editingVoucher?.partnerGroup === 'EMPLOYEE' ? (editingVoucher.partnerId ?? '') : '')
+  const [employeeName, setEmployeeName] = useState(
+    editingVoucher?.partnerGroup === 'EMPLOYEE' ? editingVoucher.partnerName : '')
   const [collectorId, setCollectorId] = useState('')
-  const [collectorName, setCollectorName] = useState(user?.fullName ?? user?.username ?? 'manager')
-  const [accountingToIncome, setAccountingToIncome] = useState(true)
+  const [collectorName, setCollectorName] = useState(editingVoucher?.createdBy || user?.fullName || user?.username || 'manager')
+  const [accountingToIncome, setAccountingToIncome] = useState(editingVoucher?.accountingToIncome ?? true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [categoryModal, setCategoryModal] = useState<CategoryModalState | null>(null)
@@ -267,7 +277,7 @@ const CashFlowModal = ({
   }, [onClose])
 
   const isReceipt = type === 'RECEIPT'
-  const title = `Tạo ${isReceipt ? 'phiếu thu' : 'phiếu chi'} ${METHOD_LABEL[method].toLowerCase()}`
+  const title = `${isEditing ? 'Chỉnh sửa' : 'Tạo'} ${isReceipt ? 'phiếu thu' : 'phiếu chi'} ${METHOD_LABEL[method].toLowerCase()}`
   const categoryTypeLabel = isReceipt ? 'Loại thu' : 'Loại chi'
   const collectorLabel = isReceipt ? 'Người thu' : 'Người chi'
   const partnerGroupFieldLabel = isReceipt ? 'Đối tượng nộp' : 'Đối tượng nhận'
@@ -331,7 +341,11 @@ const CashFlowModal = ({
     if (!payload) return
     setSaving(true)
     try {
-      await onSave(payload)
+      if (isEditing && editingVoucher && onUpdate) {
+        await onUpdate(editingVoucher.id, payload)
+      } else {
+        await onSave(payload)
+      }
       if (thenPrint) window.print()
     } catch (err) {
       setError(errMsg(err, 'Không thể lưu phiếu'))
@@ -360,7 +374,7 @@ const CashFlowModal = ({
           <SectionCard>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               <Field label="Mã phiếu">
-                <input className={`${inputCls} text-ink-muted`} value="" placeholder="Tự động" disabled />
+                <input className={`${inputCls} text-ink-muted`} value={editingVoucher?.code ?? ''} placeholder="Tự động" disabled />
               </Field>
               <Field label="Thời gian">
                 <input

@@ -139,6 +139,38 @@ public class CashbookServiceImpl implements CashbookService {
         return mapper.toResponse(voucher, category);
     }
 
+    @Override
+    public VoucherResponse updateVoucher(String id, CreateVoucherRequest request) {
+        CashbookVoucher voucher = requireVoucher(id);
+        if (voucher.getSourceType() != CashbookSourceType.MANUAL) {
+            throw new ApplicationException(ApplicationError.CASHBOOK_VOUCHER_NOT_EDITABLE);
+        }
+        if (voucher.isVoided()) {
+            throw new ApplicationException(ApplicationError.CASHBOOK_VOUCHER_ALREADY_VOIDED);
+        }
+        if (request.type() != voucher.getType()) {
+            throw new ApplicationException(ApplicationError.CASHBOOK_VOUCHER_CATEGORY_TYPE_MISMATCH,
+                    "Voucher type cannot be changed");
+        }
+        CashbookCategory category = requireCategory(request.categoryId());
+        if (category.getType() != request.type()) {
+            throw new ApplicationException(ApplicationError.CASHBOOK_VOUCHER_CATEGORY_TYPE_MISMATCH);
+        }
+        validateManualPartner(request.partnerGroup(), request.partnerId());
+
+        voucher.setOccurredAt(request.occurredAt());
+        voucher.setCategoryId(category.getId());
+        voucher.setMethod(request.method());
+        voucher.setPartnerGroup(request.partnerGroup());
+        voucher.setPartnerId(request.partnerGroup() == CashbookPartnerGroup.EMPLOYEE ? request.partnerId() : null);
+        voucher.setPartnerName(request.partnerName());
+        voucher.setAmount(request.amount());
+        voucher.setNote(trimToNull(request.note()));
+        voucher.setAccountingToIncome(request.accountingToIncome());
+        voucherRepository.save(voucher);
+        return mapper.toResponse(voucher, category);
+    }
+
     private void validateManualPartner(CashbookPartnerGroup group, String partnerId) {
         if (group == CashbookPartnerGroup.CUSTOMER) {
             throw new ApplicationException(ApplicationError.CASHBOOK_VOUCHER_PARTNER_GROUP_INVALID,

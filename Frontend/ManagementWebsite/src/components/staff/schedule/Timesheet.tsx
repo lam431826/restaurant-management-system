@@ -430,10 +430,11 @@ const AddViolationTypeModal = ({ onClose, onSave }: { onClose: () => void; onSav
   )
 }
 
-const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTypeAdded, onClose, onSaved }: {
+const AttendanceModal = ({ cell, shifts, employees, cells, settings, vioTypes, onVioTypeAdded, onClose, onSaved }: {
   cell: TimesheetCellDto
   shifts: ShiftDto[]
   employees: EmployeeSummary[]
+  cells: TimesheetCellDto[]
   settings: AttendanceSettingsDto | null
   vioTypes: ViolationTypeDto[]
   onVioTypeAdded: (t: ViolationTypeDto) => void
@@ -483,7 +484,14 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
   const handleInTimeChange = (t: string) => { setInTime(t); setInDate(autoDate(t, shiftStartAnchorMin)) }
   const handleOutTimeChange = (t: string) => { setOutTime(t); setOutDate(autoDate(t, shiftEndAnchorMin)) }
   const [substitute, setSubstitute] = useState(cell.substituteEmployeeId ?? '')
-  const subOptions = employees.filter(e => e.id !== cell.employeeId)
+  // Chỉ loại nhân viên đã có đúng CA này trong ngày (trùng ca với người bị thay) — có ca khác
+  // trong ngày vẫn được chọn. Trừ người đang được chọn sẵn (nếu có), vì họ đã được auto-đặt
+  // lịch từ lần lưu trước nên vẫn phải hiện lại trong danh sách.
+  const busyEmployeeIds = useMemo(
+    () => new Set(cells.filter(c => c.workDate === cell.workDate && c.shiftId === cell.shiftId).map(c => c.employeeId)),
+    [cells, cell.workDate, cell.shiftId])
+  const subOptions = employees.filter(e =>
+    e.id !== cell.employeeId && (!busyEmployeeIds.has(e.id) || e.id === cell.substituteEmployeeId))
 
   // Làm thêm (OT) — live-suggested from check-in/out vs shift window (BR-AT-10), editable.
   const [otBeforeOn, setOtBeforeOn] = useState(false)
@@ -1270,7 +1278,7 @@ const Timesheet = () => {
       {/* ── Chấm công modal ─────────────────────────────────────────────────── */}
       {attnCell && (
         <AttendanceModal
-          cell={attnCell} shifts={shifts} employees={employees} settings={settings} vioTypes={vioTypes}
+          cell={attnCell} shifts={shifts} employees={employees} cells={cells} settings={settings} vioTypes={vioTypes}
           onVioTypeAdded={t => setVioTypes(ts => [...ts, t])}
           onClose={() => setAttnCell(null)}
           onSaved={() => { setAttnCell(null); void reload() }}
