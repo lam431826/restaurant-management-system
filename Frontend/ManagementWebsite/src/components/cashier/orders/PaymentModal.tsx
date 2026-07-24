@@ -21,10 +21,7 @@ import {
   XIcon,
   DeleteDigitIcon,
 } from "./icons";
-import {
-  getLifecycleBadgeClass,
-  getLifecycleLabel,
-} from "../../transactions/invoiceLifecycle";
+import { getLifecycleLabel } from "../../transactions/invoiceLifecycle";
 
 /* ─── Payment modal ──────────────────────────────────────────────────────── */
 interface NonPayableReceiptItem {
@@ -165,6 +162,8 @@ export const PaymentModal = ({
     invoices.find((candidate) => candidate.id === selectedInvoiceId) ?? null;
   const subtotal = invoice?.subtotal ?? 0;
   const total = invoice?.totalAmount ?? selectedInvoice?.totalAmount ?? 0;
+  const itemCount =
+    invoice?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
 
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", {
@@ -249,7 +248,7 @@ export const PaymentModal = ({
         role="dialog"
         aria-modal="true"
         aria-label="Thanh toán hóa đơn"
-        className="relative bg-white rounded-[16px] p-5 sm:p-6 flex flex-col gap-3 overflow-hidden w-[95vw] max-w-[840px] max-h-[calc(100vh-32px)]"
+        className="relative bg-white rounded-[16px] p-5 sm:p-6 flex flex-col gap-3 overflow-hidden w-[95vw] max-w-[980px] max-h-[calc(100vh-32px)]"
       >
         <div className="flex items-center justify-between shrink-0">
           <p className="text-[20px] font-semibold text-[#202325]">Thanh toán</p>
@@ -323,9 +322,11 @@ export const PaymentModal = ({
 
         {invoice && !detailLoading && !detailError && (
         <div className="flex gap-5 lg:gap-6 items-stretch flex-1 min-h-0 overflow-hidden">
-          {/* Receipt */}
+          {/* Receipt — its capped height sets the whole panel's height, so the payment
+              columns beside it stretch to exactly fill it (no dead space) instead of the
+              receipt ballooning the modal on tall screens. Scrolls internally past the cap. */}
           <div
-            className="hidden lg:flex w-[320px] min-h-0 bg-[#fcf7ef] overflow-y-auto flex-col gap-3 px-4 py-6 shrink-0 rounded-[12px]"
+            className="hidden lg:flex w-[320px] min-h-0 max-h-[600px] bg-[#fcf7ef] overflow-y-auto flex-col gap-3 px-4 py-6 shrink-0 rounded-[12px]"
             style={{ fontFamily: "monospace" }}
           >
             <div className="flex flex-col items-center gap-2">
@@ -467,19 +468,20 @@ export const PaymentModal = ({
             </p>
           </div>
 
-          {/* Payment panel — one scroll area + a sticky confirm footer, so no control is ever
-              clipped by the modal's overflow-hidden regardless of viewport height. */}
+          {/* Payment panel — two columns side by side (payment method+keypad, invoice actions)
+              instead of stacked, so every control fits in view on any realistic viewport
+              without scrolling; only the receipt scrolls. A safety-net scroll still wraps both
+              columns for the rare short window, and the confirm button stays pinned below. */}
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            <div className="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
-              {/* Payment method comes first — it's the primary action for an active invoice
-                  and must be reachable without scrolling past the secondary invoice-actions card. */}
+            <div className="flex-1 min-h-0 overflow-y-auto pr-1 flex items-stretch gap-4">
               {isActiveInvoice && (
-                <>
+                <div className="flex-1 min-w-0 flex flex-col gap-2.5 rounded-[12px] border border-[#e8e8e8] bg-[#fafafa] p-3">
                   <p className="text-[14px] font-semibold text-[#202325]">
                     Chọn phương thức thanh toán
                   </p>
                   {/* Segmented control — only two methods, so a toggle is clearer than a
-                      dropdown and never overlays the content below it. */}
+                      dropdown and never overlays the content below it. Icon-over-label keeps
+                      "VNPAY Sandbox" on one line without truncation at any column width. */}
                   <div className="grid grid-cols-2 gap-1.5 p-1 rounded-[12px] border border-[#e8e8e8] bg-[#f5f5f5]">
                     {PAYMENT_METHODS.map((pm) => {
                       const active = method === pm.id;
@@ -489,7 +491,7 @@ export const PaymentModal = ({
                           type="button"
                           onClick={() => setMethod(pm.id)}
                           aria-pressed={active}
-                          className={`flex items-center justify-center gap-2 h-[42px] rounded-[9px] text-[14px] font-medium transition-colors ${
+                          className={`flex items-center justify-center gap-2 h-[42px] rounded-[9px] text-[12px] font-medium transition-colors [&_svg]:w-[18px] [&_svg]:h-[18px] ${
                             active
                               ? "bg-white text-[#025cca] shadow-sm ring-1 ring-[#cfe3fb]"
                               : "bg-transparent text-[#636566] hover:text-[#202325]"
@@ -498,279 +500,326 @@ export const PaymentModal = ({
                           <span className={active ? "text-[#025cca]" : "text-[#797b7c]"}>
                             {methodIcons[pm.id]}
                           </span>
-                          <span className="truncate">{pm.label}</span>
+                          <span className="whitespace-nowrap">{pm.label}</span>
                         </button>
                       );
                     })}
                   </div>
 
-                  {method === "CASH" && (
-                    <div className="flex flex-col items-center gap-4 pb-1">
-                      <div className="flex flex-col items-center gap-1.5 rounded-[12px] bg-[#f7f9fc] border border-[#eef1f5] w-full py-3">
-                        <p className="text-[12px] font-medium text-[#797b7c]">
-                          Tiền khách đưa
-                        </p>
-                        <p className="text-[34px] font-semibold leading-none text-[#202325] text-center">
-                          {displayAmount}
-                        </p>
-                        <div className="flex items-center gap-4 mt-0.5">
-                          <p className="text-[12px] text-[#797b7c]">
-                            Cần thu: {total.toLocaleString("vi-VN")} đ
+                  {/* Centered in the leftover height so the keypad/QR never leaves a gap. */}
+                  <div className="flex-1 flex flex-col justify-center">
+                    {method === "CASH" && (
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="flex flex-col items-center gap-1 rounded-[12px] bg-[#f7f9fc] border border-[#eef1f5] w-full py-2.5">
+                          <p className="text-[12px] font-medium text-[#797b7c]">
+                            Tiền khách đưa
                           </p>
-                          <p
-                            className={`text-[12px] font-medium ${receivedAmountSufficient ? "text-[#286b4a]" : "text-[#797b7c]"}`}
-                          >
-                            Thối lại: {changeAmount.toLocaleString("vi-VN")} đ
+                          <p className="text-[34px] font-semibold leading-none text-[#202325] text-center">
+                            {displayAmount}
                           </p>
+                          <div className="flex flex-col items-center gap-0.5 mt-0.5">
+                            <p className="text-[12px] text-[#797b7c]">
+                              Cần thu: {total.toLocaleString("vi-VN")} đ
+                            </p>
+                            <p
+                              className={`text-[12px] font-medium ${receivedAmountSufficient ? "text-[#286b4a]" : "text-[#797b7c]"}`}
+                            >
+                              Thối lại: {changeAmount.toLocaleString("vi-VN")} đ
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 w-full gap-1.5">
+                          {[
+                            "1", "2", "3",
+                            "4", "5", "6",
+                            "7", "8", "9",
+                            ".", "0", "del",
+                          ].map((key) => (
+                            <button
+                              key={key}
+                              onClick={() => key !== "." && handleDigit(key)}
+                              disabled={key === "."}
+                              className={`h-[44px] flex items-center justify-center rounded-[10px] border transition-all active:scale-95 ${
+                                key === "."
+                                  ? "opacity-0 cursor-default border-transparent"
+                                  : "border-[#e8e8e8] bg-white hover:bg-[#f5f5f5] hover:border-[#d9d9d9]"
+                              }`}
+                            >
+                              {key === "del" ? (
+                                <DeleteDigitIcon />
+                              ) : (
+                                <span className="text-[22px] font-medium text-[#202325]">
+                                  {key}
+                                </span>
+                              )}
+                            </button>
+                          ))}
                         </div>
                       </div>
-                      <div className="grid grid-cols-3 w-full gap-2">
-                        {[
-                          "1", "2", "3",
-                          "4", "5", "6",
-                          "7", "8", "9",
-                          ".", "0", "del",
-                        ].map((key) => (
-                          <button
-                            key={key}
-                            onClick={() => key !== "." && handleDigit(key)}
-                            disabled={key === "."}
-                            className={`h-[46px] flex items-center justify-center rounded-[10px] border transition-all active:scale-95 ${
-                              key === "."
-                                ? "opacity-0 cursor-default border-transparent"
-                                : "border-[#e8e8e8] bg-white hover:bg-[#f5f5f5] hover:border-[#d9d9d9]"
-                            }`}
-                          >
-                            {key === "del" ? (
-                              <DeleteDigitIcon />
-                            ) : (
-                              <span className="text-[22px] font-medium text-[#202325]">
-                                {key}
-                              </span>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                    )}
 
-                  {method === "VNPAY" && (
-                    <div className="flex flex-col items-center gap-3 pb-1">
-                      <div className="w-[140px] h-[140px] bg-white flex items-center justify-center shrink-0 border border-dashed border-[#cfe3fb] rounded-[14px] text-[#025cca] [&_svg]:w-14 [&_svg]:h-14">
-                        <QRMethodIcon />
-                      </div>
-                      <p className="text-[12px] text-center text-[#797b7c] px-2 leading-relaxed">
-                        Bạn sẽ được chuyển đến cổng thanh toán VNPAY Sandbox để
-                        hoàn tất giao dịch. Hệ thống sẽ tự động cập nhật trạng
-                        thái hóa đơn sau khi thanh toán.
-                      </p>
-                      <p className="text-[13px] font-medium text-[#202325]">
-                        Cần thu: {total.toLocaleString("vi-VN")} đ
-                      </p>
-                      {vnpayError && (
-                        <p className="text-[12px] text-[#d92d20] text-center">
-                          {vnpayError}
+                    {method === "VNPAY" && (
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="w-[160px] h-[160px] bg-white flex items-center justify-center shrink-0 border border-dashed border-[#cfe3fb] rounded-[16px] text-[#025cca] [&_svg]:w-16 [&_svg]:h-16">
+                          <QRMethodIcon />
+                        </div>
+                        <p className="text-[13px] text-center text-[#797b7c] px-2 leading-relaxed">
+                          Bạn sẽ được chuyển đến cổng thanh toán VNPAY Sandbox để
+                          hoàn tất giao dịch. Hệ thống sẽ tự động cập nhật trạng
+                          thái hóa đơn sau khi thanh toán.
                         </p>
-                      )}
-                    </div>
-                  )}
-                </>
+                        <p className="text-[14px] font-medium text-[#202325]">
+                          Cần thu: {total.toLocaleString("vi-VN")} đ
+                        </p>
+                        {vnpayError && (
+                          <p className="text-[12px] text-[#d92d20] text-center">
+                            {vnpayError}
+                          </p>
+                        )}
+                        {/* Escape hatch for a transaction paid at VNPAY whose IPN never reached
+                            this machine: asks VNPAY directly instead of trusting local state.
+                            Lives beside the QR (not the shared footer) so the footer stays a
+                            single primary button, matching CASH and keeping the panel scroll-free. */}
+                        <button
+                          type="button"
+                          onClick={onCheckVnpayStatus}
+                          disabled={processing || actionBusy || vnpayLoading || invoice.paid}
+                          className="w-full h-[38px] rounded-[10px] border border-[#d1d5db] text-[13px] font-medium text-[#636566] transition-colors hover:bg-[#f5f5f5] disabled:opacity-60"
+                        >
+                          Kiểm tra trạng thái VNPAY
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
 
-              <div className="rounded-[12px] border border-[#e8e8e8] bg-[#fafafa] p-3 flex flex-col gap-2.5">
-                <div className="flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0 flex flex-col gap-2.5">
+                <div className="rounded-[12px] border border-[#e8e8e8] bg-[#fafafa] p-3 flex flex-col gap-2">
                   <p className="text-[14px] font-semibold text-[#202325]">
                     Thao tác hóa đơn
                   </p>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`kv-badge ${getLifecycleBadgeClass(invoice.status)}`}
-                    >
-                      {getLifecycleLabel(invoice.status)}
-                    </span>
-                    {invoice.paid && (
-                      <span className="text-[12px] font-medium text-[#286b4a]">
-                        Đã thanh toán
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {!isActiveInvoice ? (
-                  <p className="text-[12px] text-[#636566]">
-                    Hóa đơn lịch sử chỉ cho phép xem, in và gửi.
-                  </p>
-                ) : !invoice.paid ? (
-                  <div className="flex gap-2">
-                    <input
-                      value={promotionCode}
-                      onChange={(event) =>
-                        onPromotionCodeChange(event.target.value.toUpperCase())
-                      }
-                      placeholder="Mã khuyến mãi"
-                      className="flex-1 min-w-0 h-[38px] px-3 rounded-[10px] border border-[#e8e8e8] bg-white text-[13px] uppercase outline-none focus:border-[#025cca]"
-                    />
-                    <button
-                      onClick={onApplyDiscount}
-                      disabled={actionBusy || !promotionCode.trim()}
-                      className="h-[38px] px-3.5 shrink-0 rounded-[10px] border border-[#025cca] bg-white text-[13px] font-medium text-[#025cca] transition-colors hover:bg-[#f0f8ff] disabled:opacity-50 disabled:hover:bg-white"
-                    >
-                      {action === "discount" ? "Đang áp dụng" : "Áp dụng mã"}
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-[12px] text-[#636566]">
-                    Không thể áp dụng mã sau khi hóa đơn đã thanh toán
-                  </p>
-                )}
-                {(splitVisible || mergeVisible) && (
-                  <div className="grid grid-cols-2 gap-2">
-                    {splitVisible && (
-                      <button
-                        type="button"
-                        onClick={() => setSplitOpen(true)}
-                        disabled={Boolean(splitDisabledReason)}
-                        className={`h-[38px] rounded-[10px] border border-[#025cca] bg-white text-[13px] font-medium text-[#025cca] transition-colors hover:bg-[#f0f8ff] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white ${mergeVisible ? "" : "col-span-2"}`}
-                      >
-                        Chia hóa đơn
-                      </button>
-                    )}
-                    {mergeVisible && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onResetMergeError();
-                          setMergeOpen(true);
-                        }}
-                        disabled={actionBusy || processing || invoiceListLoading}
-                        className={`h-[38px] rounded-[10px] bg-[#025cca] text-[13px] font-medium text-white transition-colors hover:bg-[#0250b0] disabled:cursor-not-allowed disabled:opacity-50 ${splitVisible ? "" : "col-span-2"}`}
-                      >
-                        Gộp hóa đơn
-                      </button>
-                    )}
-                  </div>
-                )}
-                {splitVisible && splitDisabledReason && (
-                  <p className="-mt-1 text-[11px] text-[#797b7c]">
-                    {splitDisabledReason}
-                  </p>
-                )}
-                {mergeVisible && (
-                  <p className="-mt-1 text-[11px] text-[#797b7c]">
-                    {eligibleMergeCount} hóa đơn đang đủ điều kiện sơ bộ.
-                  </p>
-                )}
-                <div className="rounded-[10px] border border-[#e8e8e8] bg-white">
-                  <button
-                    type="button"
-                    onClick={() => setCustomerOpen((open) => !open)}
-                    className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
-                  >
-                    <span className="min-w-0">
-                      <span className="block text-[13px] font-medium text-[#202325]">
-                        Khách hàng
-                      </span>
-                      <span className="block truncate text-[11px] text-[#797b7c]">
-                        {customer.name?.trim() || "Khách lẻ"}
-                        {customerEmail ? ` · ${customerEmail}` : ""}
-                      </span>
-                    </span>
-                    <ChevronDownIcon
-                      className={`h-4 w-4 shrink-0 text-[#636566] transition-transform ${customerOpen ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                  {customerOpen && (
-                    <div className="flex flex-col gap-2 border-t border-[#e8e8e8] px-3 py-2.5">
+                  {!isActiveInvoice ? (
+                    <p className="text-[12px] text-[#636566]">
+                      Hóa đơn lịch sử chỉ cho phép xem, in và gửi.
+                    </p>
+                  ) : !invoice.paid ? (
+                    <div className="flex gap-2">
                       <input
-                        value={customerDraft.customerName}
+                        value={promotionCode}
                         onChange={(event) =>
-                          setCustomerDraft((draft) => ({
-                            ...draft,
-                            customerName: event.target.value,
-                          }))
+                          onPromotionCodeChange(event.target.value.toUpperCase())
                         }
-                        placeholder="Tên khách hàng"
-                        className="h-[36px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[13px] outline-none focus:border-[#025cca]"
+                        placeholder="Mã khuyến mãi"
+                        className="flex-1 min-w-0 h-[38px] px-3 rounded-[10px] border border-[#e8e8e8] bg-white text-[13px] uppercase outline-none focus:border-[#025cca]"
                       />
-                      <input
-                        value={customerDraft.customerPhone}
-                        onChange={(event) =>
-                          setCustomerDraft((draft) => ({
-                            ...draft,
-                            customerPhone: event.target.value,
-                          }))
-                        }
-                        placeholder="Số điện thoại"
-                        inputMode="tel"
-                        className="h-[36px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[13px] outline-none focus:border-[#025cca]"
-                      />
-                      <input
-                        value={customerDraft.customerEmail}
-                        onChange={(event) =>
-                          setCustomerDraft((draft) => ({
-                            ...draft,
-                            customerEmail: event.target.value,
-                          }))
-                        }
-                        placeholder="Email (để gửi hóa đơn)"
-                        inputMode="email"
-                        className="h-[36px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[13px] outline-none focus:border-[#025cca]"
-                      />
-                      {customerError && (
-                        <p className="text-[11px] text-[#d92d20]">
-                          {customerError}
-                        </p>
-                      )}
                       <button
-                        type="button"
-                        onClick={() => {
-                          void onSaveCustomer(customerDraft).then((saved) => {
-                            if (saved) setCustomerOpen(false);
-                          });
-                        }}
-                        disabled={customerSaving}
-                        className="h-[36px] rounded-[8px] border border-[#025cca] bg-white text-[13px] font-medium text-[#025cca] transition-colors hover:bg-[#f0f8ff] disabled:opacity-50 disabled:hover:bg-white"
+                        onClick={onApplyDiscount}
+                        disabled={actionBusy || !promotionCode.trim()}
+                        className="h-[38px] px-3.5 shrink-0 rounded-[10px] border border-[#025cca] bg-white text-[13px] font-medium text-[#025cca] transition-colors hover:bg-[#f0f8ff] disabled:opacity-50 disabled:hover:bg-white"
                       >
-                        {customerSaving ? "Đang lưu..." : "Lưu thông tin khách"}
+                        {action === "discount" ? "Đang áp dụng" : "Áp dụng mã"}
                       </button>
                     </div>
+                  ) : (
+                    <p className="text-[12px] text-[#636566]">
+                      Không thể áp dụng mã sau khi hóa đơn đã thanh toán
+                    </p>
+                  )}
+                  {(splitVisible || mergeVisible) && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {splitVisible && (
+                        <button
+                          type="button"
+                          onClick={() => setSplitOpen(true)}
+                          disabled={Boolean(splitDisabledReason)}
+                          className={`h-[38px] rounded-[10px] border border-[#025cca] bg-white text-[13px] font-medium text-[#025cca] transition-colors hover:bg-[#f0f8ff] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white ${mergeVisible ? "" : "col-span-2"}`}
+                        >
+                          Chia hóa đơn
+                        </button>
+                      )}
+                      {mergeVisible && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onResetMergeError();
+                            setMergeOpen(true);
+                          }}
+                          disabled={actionBusy || processing || invoiceListLoading}
+                          className={`h-[38px] rounded-[10px] bg-[#025cca] text-[13px] font-medium text-white transition-colors hover:bg-[#0250b0] disabled:cursor-not-allowed disabled:opacity-50 ${splitVisible ? "" : "col-span-2"}`}
+                        >
+                          Gộp hóa đơn
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {splitVisible && splitDisabledReason && (
+                    <p className="-mt-1 text-[11px] text-[#797b7c]">
+                      {splitDisabledReason}
+                    </p>
+                  )}
+                  {mergeVisible && (
+                    <p className="-mt-1 text-[11px] text-[#797b7c]">
+                      {eligibleMergeCount} hóa đơn đang đủ điều kiện sơ bộ.
+                    </p>
+                  )}
+                  {/* "Khách hàng" opens as a floating popover rather than expanding inline —
+                      keeps the card's height constant whether it's open or closed, so this
+                      occasional edit never pushes the confirm button into a scroll. */}
+                  <div className="relative rounded-[10px] border border-[#e8e8e8] bg-white">
+                    <button
+                      type="button"
+                      onClick={() => setCustomerOpen((open) => !open)}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-[13px] font-medium text-[#202325]">
+                          Khách hàng
+                        </span>
+                        <span className="block truncate text-[11px] text-[#797b7c]">
+                          {customer.name?.trim() || "Khách lẻ"}
+                          {customerEmail ? ` · ${customerEmail}` : ""}
+                        </span>
+                      </span>
+                      <ChevronDownIcon
+                        className={`h-4 w-4 shrink-0 text-[#636566] transition-transform ${customerOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                    {customerOpen && (
+                      <div className="absolute left-0 right-0 top-full z-20 mt-1.5 flex flex-col gap-1.5 rounded-[10px] border border-[#e8e8e8] bg-white p-2.5 shadow-lg">
+                        <input
+                          value={customerDraft.customerName}
+                          onChange={(event) =>
+                            setCustomerDraft((draft) => ({
+                              ...draft,
+                              customerName: event.target.value,
+                            }))
+                          }
+                          placeholder="Tên khách hàng"
+                          className="h-[34px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[13px] outline-none focus:border-[#025cca]"
+                        />
+                        <input
+                          value={customerDraft.customerPhone}
+                          onChange={(event) =>
+                            setCustomerDraft((draft) => ({
+                              ...draft,
+                              customerPhone: event.target.value,
+                            }))
+                          }
+                          placeholder="Số điện thoại"
+                          inputMode="tel"
+                          className="h-[34px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[13px] outline-none focus:border-[#025cca]"
+                        />
+                        <input
+                          value={customerDraft.customerEmail}
+                          onChange={(event) =>
+                            setCustomerDraft((draft) => ({
+                              ...draft,
+                              customerEmail: event.target.value,
+                            }))
+                          }
+                          placeholder="Email (để gửi hóa đơn)"
+                          inputMode="email"
+                          className="h-[34px] rounded-[8px] border border-[#e8e8e8] px-2.5 text-[13px] outline-none focus:border-[#025cca]"
+                        />
+                        {customerError && (
+                          <p className="text-[11px] text-[#d92d20]">
+                            {customerError}
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void onSaveCustomer(customerDraft).then((saved) => {
+                              if (saved) setCustomerOpen(false);
+                            });
+                          }}
+                          disabled={customerSaving}
+                          className="h-[34px] rounded-[8px] border border-[#025cca] bg-white text-[13px] font-medium text-[#025cca] transition-colors hover:bg-[#f0f8ff] disabled:opacity-50 disabled:hover:bg-white"
+                        >
+                          {customerSaving ? "Đang lưu..." : "Lưu thông tin khách"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={onPrint}
+                      className="h-[38px] rounded-[10px] border border-[#e8e8e8] bg-white text-[13px] font-medium text-[#202325] transition-colors hover:bg-[#f5f5f5] disabled:opacity-50"
+                    >
+                      In hóa đơn
+                    </button>
+                    <button
+                      onClick={onSend}
+                      disabled={actionBusy || !hasCustomerEmail}
+                      title={
+                        hasCustomerEmail ? undefined : "Cần email khách hàng"
+                      }
+                      className="h-[38px] rounded-[10px] border border-[#cfe3fb] bg-[#f0f8ff] text-[13px] font-medium text-[#025cca] transition-colors hover:bg-[#e2f0ff] disabled:opacity-50"
+                    >
+                      {action === "send"
+                        ? "Đang gửi"
+                        : hasCustomerEmail
+                          ? "Gửi hóa đơn"
+                          : "Thiếu email"}
+                    </button>
+                  </div>
+                  {invoiceMessage && (
+                    <p
+                      className={`text-[12px] ${invoiceMessage.type === "success" ? "text-[#286b4a]" : "text-[#d92d20]"}`}
+                    >
+                      {invoiceMessage.text}
+                    </p>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={onPrint}
-                    className="h-[38px] rounded-[10px] border border-[#e8e8e8] bg-white text-[13px] font-medium text-[#202325] transition-colors hover:bg-[#f5f5f5] disabled:opacity-50"
-                  >
-                    In hóa đơn
-                  </button>
-                  <button
-                    onClick={onSend}
-                    disabled={actionBusy || !hasCustomerEmail}
-                    title={
-                      hasCustomerEmail ? undefined : "Cần email khách hàng"
-                    }
-                    className="h-[38px] rounded-[10px] border border-[#cfe3fb] bg-[#f0f8ff] text-[13px] font-medium text-[#025cca] transition-colors hover:bg-[#e2f0ff] disabled:opacity-50"
-                  >
-                    {action === "send"
-                      ? "Đang gửi"
-                      : hasCustomerEmail
-                        ? "Gửi hóa đơn"
-                        : "Cần email khách hàng"}
-                  </button>
-                </div>
-                {invoiceMessage && (
-                  <p
-                    className={`text-[12px] ${invoiceMessage.type === "success" ? "text-[#286b4a]" : "text-[#d92d20]"}`}
-                  >
-                    {invoiceMessage.text}
-                  </p>
-                )}
-              </div>
 
-              {!isActiveInvoice && (
-                <div className="rounded-[10px] bg-[#f5f5f5] px-4 py-5 text-center text-[13px] text-[#636566]">
-                  Hóa đơn {invoice.status} không thể thanh toán hoặc áp dụng khuyến mãi.
+                {/* Order summary — grows to fill the column so it always matches the payment
+                    column's height (no dead space), and surfaces the grand total + paid state
+                    right by the confirm button. Also the only breakdown visible below `lg`,
+                    where the receipt is hidden. */}
+                <div className="flex-1 rounded-[12px] border border-[#e8e8e8] bg-white p-3 flex flex-col gap-2">
+                  <p className="text-[14px] font-semibold text-[#202325]">
+                    Tóm tắt đơn hàng
+                  </p>
+                  <div className="flex flex-col gap-1.5 text-[13px]">
+                    <div className="flex justify-between">
+                      <span className="text-[#797b7c]">Tạm tính ({itemCount} món)</span>
+                      <span className="text-[#202325]">
+                        {subtotal.toLocaleString("vi-VN")}đ
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#797b7c]">Giảm giá</span>
+                      <span className="text-[#202325]">
+                        {invoice.discountAmount > 0 ? "−" : ""}
+                        {invoice.discountAmount.toLocaleString("vi-VN")}đ
+                      </span>
+                    </div>
+                  </div>
+                  {!isActiveInvoice && (
+                    <p className="text-[12px] text-[#636566] leading-snug">
+                      Hóa đơn {getLifecycleLabel(invoice.status)} chỉ cho phép xem,
+                      in và gửi — không thể thanh toán hoặc áp dụng khuyến mãi.
+                    </p>
+                  )}
+                  <div className="flex-1 min-h-0" />
+                  <div className="flex items-end justify-between gap-3 border-t border-[#e8e8e8] pt-1.5">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[12px] text-[#797b7c]">
+                        Tổng thanh toán
+                      </span>
+                      <span
+                        className={`text-[12px] font-medium ${invoice.paid ? "text-[#286b4a]" : "text-[#d92d20]"}`}
+                      >
+                        {invoice.paid ? "Đã thanh toán" : "Chưa thanh toán"}
+                      </span>
+                    </div>
+                    <span className="text-[22px] font-bold leading-none text-[#025cca]">
+                      {total.toLocaleString("vi-VN")}đ
+                    </span>
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
 
             {isActiveInvoice && (
@@ -796,30 +845,18 @@ export const PaymentModal = ({
                   </button>
                 )}
                 {method === "VNPAY" && (
-                  <div className="w-full flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={onInitiateVnpay}
-                      disabled={processing || actionBusy || vnpayLoading || invoice.paid}
-                      className="w-full h-[50px] bg-[#025cca] rounded-[12px] text-[15px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60 disabled:hover:bg-[#025cca]"
-                    >
-                      {vnpayLoading
-                        ? "Đang xử lý..."
-                        : invoice.paid
-                          ? "Đã thanh toán"
-                          : "Thanh toán qua VNPAY Sandbox"}
-                    </button>
-                    {/* Escape hatch for a transaction paid at VNPAY whose IPN never reached
-                        this machine: asks VNPAY directly instead of trusting local state. */}
-                    <button
-                      type="button"
-                      onClick={onCheckVnpayStatus}
-                      disabled={processing || actionBusy || vnpayLoading || invoice.paid}
-                      className="w-full h-[38px] rounded-[10px] border border-[#d1d5db] text-[13px] font-medium text-[#636566] transition-colors hover:bg-[#f5f5f5] disabled:opacity-60"
-                    >
-                      Kiểm tra trạng thái VNPAY
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={onInitiateVnpay}
+                    disabled={processing || actionBusy || vnpayLoading || invoice.paid}
+                    className="w-full h-[50px] bg-[#025cca] rounded-[12px] text-[15px] font-semibold text-white hover:bg-[#0250b0] transition-colors disabled:opacity-60 disabled:hover:bg-[#025cca]"
+                  >
+                    {vnpayLoading
+                      ? "Đang xử lý..."
+                      : invoice.paid
+                        ? "Đã thanh toán"
+                        : "Thanh toán qua VNPAY Sandbox"}
+                  </button>
                 )}
               </div>
             )}
