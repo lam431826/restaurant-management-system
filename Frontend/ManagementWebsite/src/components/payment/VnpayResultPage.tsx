@@ -36,9 +36,13 @@ const STATUS_HINTS: Record<string, string> = {
 const money = (value: number) => `${value.toLocaleString("vi-VN")} đ`;
 
 // One-time cashier-return context, read by CashierOrders to restore the exact table/order.
-// Router state is the primary channel; sessionStorage is a fallback for when a hard reload
-// (or anything else that drops in-memory router state) happens between here and there —
-// both are written from the same verified backend `result`, never from raw URL parameters.
+// Router state is the primary channel for a same-tab return; localStorage (not
+// sessionStorage) is the fallback — required both for a hard reload dropping in-memory
+// router state, AND for the common case now: this page usually runs in a separate tab opened
+// via window.open() (see CashierOrders' handleInitiateVnpay), which closes itself instead of
+// navigating, so localStorage is the only channel that reaches back into the original
+// cashier tab (sessionStorage is per-tab and would never be visible there). Both channels are
+// written from the same verified backend `result`, never from raw URL parameters.
 const VNPAY_RETURN_STORAGE_KEY = "vnpay_return_context";
 
 /**
@@ -228,19 +232,24 @@ const VnpayResultPage = () => {
                 : undefined;
               if (returnContext) {
                 try {
-                  sessionStorage.setItem(
+                  localStorage.setItem(
                     VNPAY_RETURN_STORAGE_KEY,
                     JSON.stringify(returnContext),
                   );
                 } catch {
-                  // sessionStorage unavailable (private mode, quota, etc.) — router state
-                  // alone still carries the context for the common in-app navigation case.
+                  // localStorage unavailable (private mode, quota, etc.) — router state
+                  // alone still carries the context for the common in-app navigation case;
+                  // the cross-tab popup case has no other fallback if this fails.
                 }
               }
               if (openedAsPopup) {
-                // The cashier tab is still open behind this one (its own "focus" listener
-                // re-fetches the invoice once this tab closes) — close instead of navigating
-                // this throwaway tab to a second cashier screen.
+                // The cashier tab is still open behind this one — bring it to front (its own
+                // "focus" listener picks up the localStorage context written above) instead
+                // of navigating this throwaway tab to a second cashier screen. Focusing
+                // first, before closing, is what actually determines which tab the browser
+                // switches to next when many tabs are open — window.close() alone does not
+                // reliably return to the opener.
+                window.opener?.focus?.();
                 window.close();
                 return;
               }

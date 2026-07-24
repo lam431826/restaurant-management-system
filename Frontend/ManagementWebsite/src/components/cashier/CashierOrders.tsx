@@ -509,9 +509,11 @@ const chooseInvoiceId = (
 };
 
 // One-time cashier-return context written by VnpayResultPage (router state, with this
-// sessionStorage key as a fallback for when a hard reload drops in-memory router state).
-// All fields originate from the verified backend VnpayStatusResponse, never from raw VNPAY
-// URL/query parameters.
+// localStorage key as a fallback/cross-tab channel). localStorage (not sessionStorage) is
+// required here: VNPAY now opens in a separate tab (see handleInitiateVnpay), so this is the
+// only channel that reaches back into the original cashier tab — sessionStorage is per-tab
+// and would never be visible outside the popup that wrote it. All fields originate from the
+// verified backend VnpayStatusResponse, never from raw VNPAY URL/query parameters.
 interface VnpayReturnContext {
   tableId?: string;
   orderId?: string;
@@ -525,7 +527,7 @@ const VNPAY_RETURN_STORAGE_KEY = "vnpay_return_context";
 
 const readStoredVnpayReturnContext = (): VnpayReturnContext | null => {
   try {
-    const raw = sessionStorage.getItem(VNPAY_RETURN_STORAGE_KEY);
+    const raw = localStorage.getItem(VNPAY_RETURN_STORAGE_KEY);
     return raw ? (JSON.parse(raw) as VnpayReturnContext) : null;
   } catch {
     return null;
@@ -534,7 +536,7 @@ const readStoredVnpayReturnContext = (): VnpayReturnContext | null => {
 
 const clearStoredVnpayReturnContext = () => {
   try {
-    sessionStorage.removeItem(VNPAY_RETURN_STORAGE_KEY);
+    localStorage.removeItem(VNPAY_RETURN_STORAGE_KEY);
   } catch {
     /* ignore */
   }
@@ -1025,41 +1027,39 @@ const CashierOrders = () => {
     }
   }, [vnpayReturnNotice]);
 
-  // Restore the cashier's table/order/payment context after a VNPAY redirect round-trip.
-  // The navigation state (or its sessionStorage fallback) only selects UI — payment status
-  // always comes from the fresh invoice/order data reloaded below, never from the stored
-  // context itself.
-  useEffect(() => {
-    let state = location.state as VnpayReturnContext | null;
-    if (!state?.txnRef) {
-      state = readStoredVnpayReturnContext();
-    }
-    if (!state?.txnRef || !state.orderId) return;
-    // Guards against React re-running this effect (e.g. StrictMode's double-invoke, or any
-    // other location.state-triggered rerender) from reprocessing the same VNPAY return more
-    // than once on this component instance; a genuinely new return always carries a
-    // different txnRef. A fresh mount (e.g. a page refresh while restoration keeps failing)
-    // gets a fresh ref and will retry, as long as the stored context hasn't been cleared.
-    if (vnpayReturnHandledRef.current === state.txnRef) return;
-    vnpayReturnHandledRef.current = state.txnRef;
+  // Restores the cashier's table/order/payment context after a VNPAY round-trip — either a
+  // same-tab redirect (router state, or its localStorage fallback), or the cross-tab case
+  // where a separate VNPAY tab (see handleInitiateVnpay) wrote this same context and closed
+  // itself, picked up by the focus listener further below. Payment status always comes from
+  // the fresh invoice/order data reloaded here, never from the stored context itself — the
+  // context only selects which table/order/invoice to reload and display.
+  const restoreFromVnpayState = useCallback(
+    async (state: VnpayReturnContext | null) => {
+      if (!state?.txnRef || !state.orderId) return;
+      // Guards against reprocessing the same VNPAY return more than once on this component
+      // instance (React StrictMode's double-invoke, a duplicate focus event, etc.); a
+      // genuinely new return always carries a different txnRef. A fresh mount (e.g. a page
+      // refresh while restoration keeps failing) gets a fresh ref and will retry, as long as
+      // the stored context hasn't been cleared.
+      if (vnpayReturnHandledRef.current === state.txnRef) return;
+      vnpayReturnHandledRef.current = state.txnRef;
 
-    const notice =
-      state.paymentResult === "PAID"
-        ? {
-            message: `Thanh toán VNPAY thành công: ${(state.amount ?? 0).toLocaleString("vi-VN")} đ`,
-            variant: "success" as const,
-          }
-        : state.paymentResult === "FAILED"
-          ? { message: "Thanh toán VNPAY thất bại.", variant: "error" as const }
-          : state.paymentResult === "CANCELLED"
-            ? { message: "Giao dịch VNPAY đã bị hủy.", variant: "error" as const }
-            : state.paymentResult === "EXPIRED"
-              ? { message: "Giao dịch VNPAY đã hết hạn.", variant: "error" as const }
-              : undefined;
-    if (notice) setVnpayReturnNotice(notice);
+      const notice =
+        state.paymentResult === "PAID"
+          ? {
+              message: `Thanh toán VNPAY thành công: ${(state.amount ?? 0).toLocaleString("vi-VN")} đ`,
+              variant: "success" as const,
+            }
+          : state.paymentResult === "FAILED"
+            ? { message: "Thanh toán VNPAY thất bại.", variant: "error" as const }
+            : state.paymentResult === "CANCELLED"
+              ? { message: "Giao dịch VNPAY đã bị hủy.", variant: "error" as const }
+              : state.paymentResult === "EXPIRED"
+                ? { message: "Giao dịch VNPAY đã hết hạn.", variant: "error" as const }
+                : undefined;
+      if (notice) setVnpayReturnNotice(notice);
 
-    const { tableId, orderId, invoiceId, paymentResult } = state;
-    void (async () => {
+      const { tableId, orderId, invoiceId, paymentResult } = state;
       let restored = false;
       try {
         // loadCashierState() returns the freshly fetched, fully order-linked snapshot
@@ -1127,6 +1127,9 @@ const CashierOrders = () => {
           throw new Error("Không thể tải hóa đơn để khôi phục.");
         }
 
+        // Kept consistent with cash: a paid invoice always closes the payment modal — the
+        // cashier reopens it deliberately via OrderPanel's "Xem lại hóa đơn đã thanh toán"
+        // (see handleReopenPaidInvoice) rather than the modal reappearing on its own.
         if (paymentResult === "PAID" || invoiceSnapshot.allActiveInvoicesPaid) {
           setPaymentOpen(false);
         } else {
@@ -1146,13 +1149,29 @@ const CashierOrders = () => {
         }
         if (restored) {
           // Clear the one-time context only after restoration has actually succeeded —
-          // never before, and never on failure, so a refresh can retry from the same
-          // stored context instead of silently falling back to the generic screen.
+          // never before, and never on failure, so a retry (another focus, or a refresh)
+          // can retry from the same stored context instead of silently falling back to the
+          // generic screen.
           clearStoredVnpayReturnContext();
           navigate(location.pathname, { replace: true, state: null });
         }
       }
-    })();
+    },
+    // Deliberately not exhaustive: loadCashierState/refreshInvoices/resetInvoiceLink/navigate
+    // are themselves stable useCallback/router references, and location.pathname does not
+    // change within this screen — re-running this identity on every render would defeat the
+    // point of extracting it for the focus-listener effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  // Same-tab VNPAY return (router state, with a localStorage fallback for a hard reload).
+  useEffect(() => {
+    let state = location.state as VnpayReturnContext | null;
+    if (!state?.txnRef) {
+      state = readStoredVnpayReturnContext();
+    }
+    void restoreFromVnpayState(state);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
 
@@ -1686,17 +1705,26 @@ const CashierOrders = () => {
   };
 
   // A VNPAY attempt opened via handleInitiateVnpay runs in a separate tab, so a payment
-  // settled there (or abandoned) never touches this tab's state on its own. Re-fetching the
-  // selected invoice whenever the cashier comes back to this tab picks that up automatically,
-  // without requiring "Kiểm tra trạng thái VNPAY" to be clicked manually every time.
+  // settled there (or abandoned) never touches this tab's state on its own — that tab writes
+  // the outcome to the shared localStorage context and closes itself instead of navigating.
+  // Whenever this tab regains focus: if that context is waiting, run the same restore flow a
+  // same-tab VNPAY return uses (selects the right table, shows the success/failure notice,
+  // closes the payment modal on a paid invoice — kept consistent with cash); otherwise just
+  // refresh the selected invoice, in case something changed while this tab was in the
+  // background for an unrelated reason.
   useEffect(() => {
-    if (!selectedOrderId) return;
     const onFocus = () => {
-      void refreshInvoices(selectedOrderId, selectedInvoiceId);
+      const pending = readStoredVnpayReturnContext();
+      if (pending?.txnRef) {
+        void restoreFromVnpayState(pending);
+      } else if (selectedOrderId) {
+        void refreshInvoices(selectedOrderId, selectedInvoiceId);
+      }
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [selectedOrderId, selectedInvoiceId, refreshInvoices]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrderId, selectedInvoiceId]);
 
   const handleSelectInvoice = (invoiceId: string) => {
     if (!selectedOrderId || invoiceId === selectedInvoiceId) return;
@@ -2719,6 +2747,7 @@ const CashierOrders = () => {
                 : undefined
             }
             onCloseOrder={handleCloseOrder}
+            onReopenPaidInvoice={() => setPaymentOpen(true)}
             invoiceTools={null}
           />
         )}

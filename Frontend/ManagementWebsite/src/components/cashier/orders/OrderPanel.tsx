@@ -40,6 +40,7 @@ export const OrderPanel = ({
   emptyOrderMessage,
   cancelOrderIds,
   onCloseOrder,
+  onReopenPaidInvoice,
   customer,
   onCustomerChange,
   onSaveCustomer,
@@ -86,6 +87,9 @@ export const OrderPanel = ({
   emptyOrderMessage?: string;
   cancelOrderIds?: string[];
   onCloseOrder?: () => void;
+  // Reopens the payment modal for a paid invoice so the cashier can review/print/send it
+  // again before closing the order — offered right up until they actually close it.
+  onReopenPaidInvoice?: () => void;
   // Customer contact. Before the order exists this is a local draft; afterwards it is
   // the saved Order record that the receipt, payment modal and send-invoice all read.
   customer: OrderCustomerDraft;
@@ -422,14 +426,24 @@ export const OrderPanel = ({
               </div>
             )}
             {invoicePaid ? (
-              <button
-                onClick={onCloseOrder}
-                className="bg-[#286b4a] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#1a4a32] transition-colors"
-              >
-                <span className="text-[16px] font-medium text-white">
-                  Đóng đơn & Dọn bàn
-                </span>
-              </button>
+              <>
+                <button
+                  onClick={onReopenPaidInvoice}
+                  className="bg-transparent border border-[#025cca] flex items-center justify-center h-[40px] rounded-[12px] w-full hover:bg-[#f0f8ff] transition-colors"
+                >
+                  <span className="text-[13px] font-medium text-[#025cca]">
+                    Xem lại hóa đơn đã thanh toán
+                  </span>
+                </button>
+                <button
+                  onClick={onCloseOrder}
+                  className="bg-[#286b4a] flex items-center justify-center h-[52px] rounded-[12px] w-full hover:bg-[#1a4a32] transition-colors"
+                >
+                  <span className="text-[16px] font-medium text-white">
+                    Đóng đơn & Dọn bàn
+                  </span>
+                </button>
+              </>
             ) : (
               <button
                 onClick={onCheckout}
