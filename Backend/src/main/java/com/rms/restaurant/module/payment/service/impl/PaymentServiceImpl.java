@@ -10,6 +10,7 @@ import com.rms.restaurant.common.utils.enums.PaymentMethod;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.cashbook.dto.SystemVoucherRequest;
@@ -87,6 +88,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final VnpayService vnpayService;
     private final VnpayQueryClient vnpayQueryClient;
     private final VnpayProperties vnpayProperties;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     /**
      * This bean seen through its own Spring proxy. Reconciliation must commit in its OWN
@@ -172,6 +174,7 @@ public class PaymentServiceImpl implements PaymentService {
         audit("PAYMENT_PROCESS", savedPayment.getId(),
                 "{\"invoiceId\":\"" + esc(invoice.getId()) + "\",\"amount\":" + savedPayment.getAmount()
                         + ",\"method\":\"" + esc(String.valueOf(savedPayment.getMethod())) + "\"}");
+        realtimeEventPublisher.publishInvoiceEvent("PAID", order.getId(), invoice.getId());
 
         return paymentMapper.toResponse(savedPayment);
     }
@@ -273,6 +276,7 @@ public class PaymentServiceImpl implements PaymentService {
         audit("PAYMENT_QR_CONFIRM", savedPayment.getId(),
                 "{\"invoiceId\":\"" + esc(invoice.getId()) + "\",\"amount\":" + savedPayment.getAmount()
                         + ",\"transactionRef\":\"" + esc(savedPayment.getGatewayRef()) + "\"}");
+        realtimeEventPublisher.publishInvoiceEvent("PAID", order.getId(), invoice.getId());
 
         return paymentMapper.toResponse(savedPayment);
     }
@@ -619,6 +623,7 @@ public class PaymentServiceImpl implements PaymentService {
 
         audit(auditAction, savedPayment.getId(),
                 "{\"invoiceId\":\"" + esc(invoice.getId()) + "\",\"amount\":" + savedPayment.getAmount() + "}");
+        realtimeEventPublisher.publishInvoiceEvent("PAID", order.getId(), invoice.getId());
         return true;
     }
 

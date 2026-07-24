@@ -1218,6 +1218,20 @@ const CashierOrders = () => {
   const selectedOrderId = selectedTable?.orderId ?? "";
   selectedTableIdRef.current = selectedTable?.id ?? "";
   selectedOrderIdRef.current = selectedOrderId;
+
+  // The payment module otherwise broadcasts nothing (see RealtimeEventPublisher), so two
+  // cashiers — or the same cashier in two tabs — looking at the same invoice would silently
+  // drift out of sync while one of them applies a discount, splits/merges, or pays. This
+  // per-order topic re-subscribes whenever the selected table/order changes (a falsy
+  // destination is a no-op per useRealtime); any event on it always means "refetch", never
+  // "trust this payload", so it can't race with what the mutation's own response already did.
+  useRealtime(
+    selectedOrderId ? `/topic/orders/${selectedOrderId}/invoices` : "",
+    () => {
+      void refreshInvoices(selectedOrderId, selectedInvoiceId);
+    },
+  );
+
   const selectedOrder = activeOrders.find(
     (order) => order.id === selectedOrderId,
   );

@@ -7,6 +7,7 @@ import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
+import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.order.model.Order;
@@ -96,6 +97,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final NotificationDispatcher notificationDispatcher;
     private final GmailService gmailService;
     private final BusinessCodeGenerator businessCodeGenerator;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     // A business code typed into a free-text search field ("DH000123"), case-insensitive.
     private static final java.util.regex.Pattern ORDER_CODE_PATTERN =
@@ -230,6 +232,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         audit("INVOICE_GENERATE", savedInvoice.getId(),
                 "{\"orderId\":\"" + esc(orderId) + "\",\"totalAmount\":" + savedInvoice.getTotalAmount()
                         + ",\"promotionCode\":\"" + esc(request.promotionCode()) + "\"}");
+        realtimeEventPublisher.publishInvoiceEvent("CREATED", orderId, savedInvoice.getId());
 
         return invoiceMapper.toResponse(savedInvoice);
     }
@@ -264,6 +267,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         audit("INVOICE_APPLY_DISCOUNT", savedInvoice.getId(),
                 "{\"promotionCode\":\"" + esc(promotion.getCode()) + "\",\"discountAmount\":" + discountAmount
                         + ",\"totalAmount\":" + totalAmount + "}");
+        realtimeEventPublisher.publishInvoiceEvent("DISCOUNT_APPLIED", order.getId(), savedInvoice.getId());
 
         return invoiceMapper.toResponse(savedInvoice);
     }
@@ -377,7 +381,11 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     @Override
     public SplitInvoiceResponse split(String invoiceId, SplitInvoiceRequest request, String username) {
+        String orderId = invoiceRepository.findOrderIdById(invoiceId).orElse(null);
         PersistedInvoiceSplitResult result = invoiceSplitPersistenceService.splitAtomically(invoiceId, request, username);
+        if (orderId != null) {
+            realtimeEventPublisher.publishInvoiceEvent("SPLIT", orderId, result.sourceInvoiceId());
+        }
         List<SplitInvoiceChildResponse> children = result.children().stream()
                 .map(child -> new SplitInvoiceChildResponse(
                         child.childInvoiceId(),
@@ -422,6 +430,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 result.targetSplitFromInvoiceId(),
                 null
         );
+        realtimeEventPublisher.publishInvoiceEvent("MERGED", result.orderId(), result.targetInvoiceId());
         return new MergeInvoiceResponse(
                 result.orderId(),
                 result.sourceInvoiceIds(),

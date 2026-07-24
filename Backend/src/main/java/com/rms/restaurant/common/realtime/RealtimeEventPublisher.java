@@ -95,6 +95,22 @@ public class RealtimeEventPublisher {
         }
     }
 
+    /**
+     * Invoice/payment mutations (generate, discount, split, merge, pay) — the payment module
+     * otherwise broadcasts nothing, so two cashiers (or the same cashier in two tabs) viewing
+     * the same invoice have no way to learn it changed underneath them. Payload is deliberately
+     * a bare signal, not the invoice itself: the receiver always refetches, so it can never act
+     * on a stale/racing snapshot.
+     */
+    public void publishInvoiceEvent(String eventType, String orderId, String invoiceId) {
+        try {
+            messagingTemplate.convertAndSend("/topic/orders/" + orderId + "/invoices",
+                    new InvoiceEvent(eventType, orderId, invoiceId));
+        } catch (Exception e) {
+            log.warn("Failed to publish invoice event {} for invoice {}: {}", eventType, invoiceId, e.getMessage());
+        }
+    }
+
     public record TableStatusEvent(String tableId, String name, String area, TableStatus status) {}
 
     public record OrderEvent(String eventType, OrderResponse order) {}
@@ -102,4 +118,6 @@ public class RealtimeEventPublisher {
     public record AssistanceEvent(String eventType, AssistanceRequest request) {}
 
     public record ReservationEvent(String eventType, ReservationResponse reservation) {}
+
+    public record InvoiceEvent(String eventType, String orderId, String invoiceId) {}
 }
