@@ -59,6 +59,14 @@ const VnpayResultPage = () => {
   const [checking, setChecking] = useState(true);
   const pollStartRef = useRef(Date.now());
 
+  // True when this tab was opened via window.open() from the cashier screen (see
+  // handleInitiateVnpay) rather than navigated to directly. In that case the cashier's
+  // original tab is still alive with the same table/invoice selected, so the right "return"
+  // action is closing this tab, not navigating it to /cashier (which would just open a
+  // second, unauthenticated-feeling cashier screen in what's meant to be a throwaway tab).
+  const openedAsPopup =
+    typeof window !== "undefined" && !!window.opener && window.opener !== window;
+
   const readErrorMessage = (thrown: unknown, fallback: string) =>
     thrown instanceof ApiClientError ? thrown.message : fallback;
 
@@ -229,13 +237,20 @@ const VnpayResultPage = () => {
                   // alone still carries the context for the common in-app navigation case.
                 }
               }
+              if (openedAsPopup) {
+                // The cashier tab is still open behind this one (its own "focus" listener
+                // re-fetches the invoice once this tab closes) — close instead of navigating
+                // this throwaway tab to a second cashier screen.
+                window.close();
+                return;
+              }
               navigate("/cashier", { state: returnContext });
             }}
             className={`h-10 rounded-[10px] text-[13px] font-semibold text-white ${
               isPaid ? "bg-[#286b4a]" : "bg-[#025cca]"
             }`}
           >
-            Quay lại màn hình thu ngân
+            {openedAsPopup ? "Đóng và quay lại màn hình thu ngân" : "Quay lại màn hình thu ngân"}
           </button>
         </div>
       </div>

@@ -1614,10 +1614,13 @@ const CashierOrders = () => {
     setVnpayError("");
   };
 
-  // Creates (or reuses) a PENDING VNPAY attempt and redirects the browser to VNPAY
-  // Sandbox. There is no in-app "confirm" step — IPN finalizes the payment, and the
-  // browser eventually lands back on /payment/vnpay-result via the backend's Return
-  // endpoint.
+  // Creates (or reuses) a PENDING VNPAY attempt and opens it in a SEPARATE tab/window
+  // (reused via the named target, so repeated clicks don't pile up tabs) rather than
+  // navigating this tab away. If VNPAY sandbox hangs or errors, the cashier just closes
+  // that tab and is still sitting in the app with the same table/invoice selected — no
+  // re-login, no lost place. If a popup blocker prevents opening it, fall back to the old
+  // same-tab redirect so the payment can still proceed. IPN/QueryDR finalizes the payment
+  // either way; the "focus" listener below re-syncs this tab once the cashier returns to it.
   const handleInitiateVnpay = async () => {
     if (!selectedInvoice) {
       setVnpayError("Không xác định được hóa đơn cần thanh toán");
@@ -1627,9 +1630,15 @@ const CashierOrders = () => {
     setVnpayError("");
     try {
       const result = await createVnpayPayment(selectedInvoice.id);
-      window.location.href = result.paymentUrl;
+      const popup = window.open(result.paymentUrl, "vnpay-payment");
+      if (!popup) {
+        window.location.href = result.paymentUrl;
+        return;
+      }
+      popup.focus();
     } catch (initiateError) {
       setVnpayError(getPaymentProcessErrorMessage(initiateError));
+    } finally {
       setVnpayLoading(false);
     }
   };
@@ -1675,6 +1684,19 @@ const CashierOrders = () => {
       setVnpayLoading(false);
     }
   };
+
+  // A VNPAY attempt opened via handleInitiateVnpay runs in a separate tab, so a payment
+  // settled there (or abandoned) never touches this tab's state on its own. Re-fetching the
+  // selected invoice whenever the cashier comes back to this tab picks that up automatically,
+  // without requiring "Kiểm tra trạng thái VNPAY" to be clicked manually every time.
+  useEffect(() => {
+    if (!selectedOrderId) return;
+    const onFocus = () => {
+      void refreshInvoices(selectedOrderId, selectedInvoiceId);
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [selectedOrderId, selectedInvoiceId, refreshInvoices]);
 
   const handleSelectInvoice = (invoiceId: string) => {
     if (!selectedOrderId || invoiceId === selectedInvoiceId) return;
