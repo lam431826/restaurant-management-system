@@ -22,6 +22,7 @@ import {
   DeleteDigitIcon,
 } from "./icons";
 import { getLifecycleLabel } from "../../transactions/invoiceLifecycle";
+import { Skeleton } from "../../dashboard/DashboardStates";
 
 /* ─── Payment modal ──────────────────────────────────────────────────────── */
 interface NonPayableReceiptItem {
@@ -263,7 +264,10 @@ export const PaymentModal = ({
 
         <div className="shrink-0 rounded-[10px] border border-[#e8e8e8] bg-white px-3 py-2">
           {invoiceListLoading ? (
-            <p className="text-[13px] text-[#636566]">Đang tải danh sách hóa đơn...</p>
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-[13px] w-14 shrink-0" />
+              <Skeleton className="h-9 flex-1 rounded-[8px]" />
+            </div>
           ) : invoiceListError ? (
             <div className="flex items-center justify-between gap-3">
               <p className="text-[13px] text-[#d92d20]">{invoiceListError}</p>
@@ -303,8 +307,32 @@ export const PaymentModal = ({
         </div>
 
         {detailLoading && (
-          <div className="flex min-h-[280px] items-center justify-center text-[14px] text-[#636566]">
-            Đang tải chi tiết hóa đơn...
+          <div className="flex gap-5 lg:gap-6 items-stretch flex-1 min-h-0 overflow-hidden">
+            {/* Mirrors the real 3-column layout below (receipt / method / actions) so the
+                modal doesn't visibly reflow once the actual invoice data arrives. */}
+            <div className="hidden lg:flex w-[320px] flex-col gap-3 px-4 py-6 shrink-0 rounded-[12px] bg-[#fcf7ef]">
+              <Skeleton className="h-5 w-32 self-center" />
+              <Skeleton className="h-3 w-40 self-center" />
+              <Skeleton className="h-16 w-full mt-2" />
+              {Array.from({ length: 7 }).map((_, i) => (
+                <Skeleton key={i} className="h-3 w-full" />
+              ))}
+              <Skeleton className="h-6 w-full mt-2" />
+            </div>
+            <div className="flex-1 min-w-[280px] flex flex-col gap-2.5 rounded-[12px] border border-[#e8e8e8] bg-[#fafafa] p-3">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-[42px] w-full rounded-[12px]" />
+              <Skeleton className="flex-1 w-full rounded-[12px]" />
+            </div>
+            <div className="flex-1 min-w-0 flex flex-col gap-3">
+              <div className="rounded-[12px] border border-[#e8e8e8] bg-[#fafafa] p-3 flex flex-col gap-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-10 w-full rounded-[10px]" />
+                <Skeleton className="h-10 w-full rounded-[10px]" />
+                <Skeleton className="h-10 w-full rounded-[10px]" />
+              </div>
+              <Skeleton className="flex-1 w-full rounded-[12px]" />
+            </div>
           </div>
         )}
         {!detailLoading && detailError && (

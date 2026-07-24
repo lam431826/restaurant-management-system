@@ -95,6 +95,7 @@ import { OrderPanel } from "./orders/OrderPanel";
 import { SuccessToast } from "./orders/SuccessToast";
 import { SearchIcon } from "./orders/icons";
 import { QROrderConfirmationModal } from "./orders/QROrderConfirmationModal";
+import { Skeleton } from "../dashboard/DashboardStates";
 
 /* ─── Main page ──────────────────────────────────────────────────────────── */
 const TABLE_FILTERS = [
@@ -2448,11 +2449,47 @@ const CashierOrders = () => {
       : "Đang kiểm tra hóa đơn";
 
   if (shiftLoading) {
+    // Mirrors the real page shell (header / tab+search row / area filters / table grid /
+    // order panel) below, rather than a blank centered message, since this is the very first
+    // paint the cashier sees on login.
     return (
-      <div className="flex h-screen items-center justify-center bg-[#f5f5f5] font-sans">
-        <span className="text-[#636566] text-[16px]">
-          Đang tải ca làm việc...
-        </span>
+      <div className="flex flex-col h-screen bg-[#f5f5f5] overflow-hidden font-sans">
+        <div className="h-[72px] shrink-0 bg-white flex items-center justify-between px-4 lg:px-6">
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-9 w-24 rounded-[10px]" />
+            <Skeleton className="h-9 w-9 rounded-full" />
+          </div>
+        </div>
+        <div className="flex flex-1 gap-3 lg:gap-4 p-3 lg:p-4 overflow-hidden">
+          <div className="flex flex-col flex-1 gap-2.5 min-w-0 overflow-hidden">
+            <div className="flex items-start justify-between shrink-0">
+              <Skeleton className="h-[52px] w-[260px] rounded-[12px]" />
+              <Skeleton className="h-[44px] w-[160px] md:w-[220px] lg:w-[340px] rounded-[12px]" />
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Skeleton className="h-[34px] w-[120px] rounded-[8px]" />
+              <Skeleton className="h-[34px] w-[100px] rounded-[8px]" />
+              <Skeleton className="h-[34px] w-[100px] rounded-[8px]" />
+            </div>
+            <Skeleton className="h-6 w-32 shrink-0" />
+            <div className="flex flex-wrap gap-3 pr-2 flex-1 overflow-hidden">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex flex-col gap-3 items-center p-[10px] w-[184px] shrink-0"
+                >
+                  <div className="flex gap-[15px]">
+                    <Skeleton className="h-[17px] w-[63px] rounded-[12px]" />
+                    <Skeleton className="h-[17px] w-[63px] rounded-[12px]" />
+                  </div>
+                  <Skeleton className="h-[80px] w-[164px] rounded-[12px]" />
+                </div>
+              ))}
+            </div>
+          </div>
+          <Skeleton className="w-[260px] md:w-[300px] lg:w-[360px] xl:w-[400px] shrink-0 h-full rounded-[12px]" />
+        </div>
       </div>
     );
   }
@@ -2660,8 +2697,21 @@ const CashierOrders = () => {
                 onQtyChange={handleQtyChange}
               />
             ) : tablesLoading ? (
-              <div className="flex-1 flex items-center justify-center text-[#797b7c] text-[14px]">
-                Đang tải danh sách bàn...
+              <div className="flex-1 overflow-y-auto">
+                <div className="flex flex-wrap gap-3 pr-2">
+                  {Array.from({ length: 12 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex flex-col gap-3 items-center p-[10px] w-[184px] shrink-0"
+                    >
+                      <div className="flex gap-[15px]">
+                        <Skeleton className="h-[17px] w-[63px] rounded-[12px]" />
+                        <Skeleton className="h-[17px] w-[63px] rounded-[12px]" />
+                      </div>
+                      <Skeleton className="h-[80px] w-[164px] rounded-[12px]" />
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : (
               <TableView

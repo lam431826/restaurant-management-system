@@ -4,6 +4,7 @@ import { BRANCHES } from '../../data/endOfDayReportMockData'
 import { PAYMENT_METHOD_ABBR } from '../../api/reports'
 import type { EndOfDaySalesRow, ReportPaymentMethod } from '../../api/reports'
 import type { EndOfDayFilterState } from '../../data/endOfDayReportMockData'
+import { Skeleton } from '../dashboard/DashboardStates'
 
 const money = (n: number) => n.toLocaleString('vi-VN')
 const fmtDMY = (ymd: string) => { const [y, m, d] = ymd.split('-'); return `${d}/${m}/${y}` }
@@ -298,7 +299,15 @@ const EndOfDayPreview = ({ rows, filters, generatedAt, loading, error, onRefresh
               </thead>
               <tbody>
                 {loading && rows.length === 0 ? (
-                  <tr><td colSpan={COL_COUNT} className="text-center text-ink-muted py-10">Đang tải dữ liệu...</td></tr>
+                  Array.from({ length: 8 }).map((_, i) => (
+                    <tr key={i}>
+                      {HEADERS.map(([label, align]) => (
+                        <td key={label} className={td(align)}>
+                          <Skeleton className={`h-3.5 w-3/4 ${align === 'right' ? 'ml-auto' : ''}`} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
                 ) : rows.length === 0 ? (
                   <tr><td colSpan={COL_COUNT} className="text-center text-ink-muted py-10">Không có dữ liệu phù hợp</td></tr>
                 ) : (

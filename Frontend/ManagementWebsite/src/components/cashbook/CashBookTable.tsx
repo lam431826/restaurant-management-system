@@ -2,6 +2,7 @@ import { Fragment } from 'react'
 import CashBookDetail from './CashBookDetail'
 import { COLUMN_LABEL, METHOD_LABEL } from '../../api/cashbook'
 import type { CashFlowCategory, CashFlowVoucher, ColumnKey } from '../../api/cashbook'
+import { Skeleton } from '../dashboard/DashboardStates'
 
 const money = (value: number) => value.toLocaleString('vi-VN')
 const formatDateTime = (value: string) =>
@@ -15,11 +16,12 @@ interface Props {
   categories: CashFlowCategory[]
   visibleColumns: Record<ColumnKey, boolean>
   expandedId: string | null
+  loading?: boolean
   onToggleExpand: (voucher: CashFlowVoucher) => void
   onVoid: (voucherId: string) => void
 }
 
-const CashBookTable = ({ vouchers, categories, visibleColumns, expandedId, onToggleExpand, onVoid }: Props) => {
+const CashBookTable = ({ vouchers, categories, visibleColumns, expandedId, loading, onToggleExpand, onVoid }: Props) => {
   const categoryName = (id: string) => categories.find(c => c.id === id)?.name ?? '—'
   const colCount = 1 + (Object.values(visibleColumns).filter(Boolean).length)
 
@@ -38,7 +40,18 @@ const CashBookTable = ({ vouchers, categories, visibleColumns, expandedId, onTog
             </tr>
           </thead>
           <tbody>
-            {vouchers.map(voucher => {
+            {loading &&
+              Array.from({ length: 8 }).map((_, i) => (
+                <tr key={i}>
+                  <td className={td}><Skeleton className="h-4 w-20" /></td>
+                  {visibleColumns.time && <td className={td}><Skeleton className="h-4 w-24" /></td>}
+                  {visibleColumns.category && <td className={td}><Skeleton className="h-4 w-32" /></td>}
+                  {visibleColumns.method && <td className={td}><Skeleton className="h-4 w-16" /></td>}
+                  {visibleColumns.partner && <td className={td}><Skeleton className="h-4 w-28" /></td>}
+                  {visibleColumns.amount && <td className={`${td} text-right`}><Skeleton className="h-4 w-20 ml-auto" /></td>}
+                </tr>
+              ))}
+            {!loading && vouchers.map(voucher => {
               const isOpen = expandedId === voucher.id
               return (
                 <Fragment key={voucher.id}>
@@ -75,7 +88,7 @@ const CashBookTable = ({ vouchers, categories, visibleColumns, expandedId, onTog
               )
             })}
 
-            {vouchers.length === 0 && (
+            {!loading && vouchers.length === 0 && (
               <tr>
                 <td className={`${td} text-center text-ink-muted py-16`} colSpan={colCount}>
                   Không tìm thấy phiếu thu/chi nào

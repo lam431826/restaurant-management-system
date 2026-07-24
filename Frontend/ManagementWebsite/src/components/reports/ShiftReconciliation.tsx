@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { getDailySummary, forceCloseShift, PAYMENT_METHOD_LABELS } from '../../services/shiftService'
 import type { DailySummary as ShiftReconciliationData, DailyCashierShiftRow } from '../../services/shiftService'
 import { ApiError } from '../../services/api'
+import { Skeleton } from '../dashboard/DashboardStates'
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(n ?? 0)
@@ -106,7 +107,51 @@ const ShiftReconciliation = () => {
         </div>
       )}
 
-      {loading && !data && <div className="text-md text-ink-subtle">Đang tải...</div>}
+      {loading && !data && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-card border border-line rounded-lg p-4 flex flex-col gap-2">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-6 w-20" />
+              </div>
+            ))}
+          </div>
+          <div className="bg-card border border-line rounded-lg overflow-hidden">
+            <table className="w-full border-collapse">
+              <tbody>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <tr key={i} className="border-b border-line">
+                    <td className="px-4 py-3"><Skeleton className="h-4 w-24" /></td>
+                    <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                    <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                    <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="bg-card border border-line rounded-lg overflow-hidden">
+            <table className="w-full border-collapse">
+              <tbody>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="border-b border-line">
+                    <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
+                    <td className="px-4 py-3"><Skeleton className="h-5 w-20 rounded-full" /></td>
+                    <td className="px-4 py-3"><Skeleton className="h-4 w-24 mx-auto" /></td>
+                    <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                    <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                    <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-20 ml-auto" /></td>
+                    <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                    <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                    <td className="px-4 py-3"></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {data && data.shiftCount === 0 && !loading && (
         <div className="text-md text-ink-subtle py-8 text-center">Chưa có ca thu ngân nào trong ngày này.</div>

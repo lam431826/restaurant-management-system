@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BRANCHES, CUSTOM_LINE_INSERT_AFTER, FIN_LINES, sumCustomLineValues, sumValues } from '../../data/financialReportMockData'
 import type { FinancialCustomLine, FinancialFilterState, FinancialPeriod } from '../../data/financialReportMockData'
 import { upsertFinancialCustomLineValue } from '../../api/reports'
+import { Skeleton } from '../dashboard/DashboardStates'
 
 const money = (n: number) => n.toLocaleString('vi-VN')
 const fmtDateTime = (d: Date) =>
@@ -293,7 +294,13 @@ const FinancialReportPreview = ({ periods, customLines, filters, generatedAt, lo
               </thead>
               <tbody>
                 {loading && periods.length === 0 ? (
-                  <tr><td colSpan={columns.length + 1} className="text-center text-ink-muted py-10">Đang tải dữ liệu...</td></tr>
+                  Array.from({ length: 10 }).map((_, i) => (
+                    <tr key={i}>
+                      <td colSpan={columns.length + 1} className="px-2 py-2.5">
+                        <Skeleton className={`h-3.5 ${i % 3 === 0 ? 'w-1/3' : 'w-2/3 ml-6'}`} />
+                      </td>
+                    </tr>
+                  ))
                 ) : periods.length === 0 ? (
                   <tr><td colSpan={columns.length + 1} className="text-center text-ink-muted py-10">Không có dữ liệu phù hợp</td></tr>
                 ) : FIN_LINES.flatMap((line, i) => {

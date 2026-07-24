@@ -6,6 +6,7 @@ import type {
   InvoiceSummary,
 } from "../../services/invoiceApi";
 import { ApiClientError } from "../../services/apiClient";
+import { Skeleton } from "../dashboard/DashboardStates";
 import {
   getLifecycleBadgeClass,
   getLifecycleLabel,
@@ -304,8 +305,10 @@ const InvoiceTable = ({
                       <tr>
                         <td colSpan={8} className="p-0">
                           {detailLoading && (
-                            <div className="px-5 py-8 text-center text-md text-ink-muted">
-                              Đang tải chi tiết hóa đơn...
+                            <div className="px-5 py-5 flex flex-col gap-2.5">
+                              <Skeleton className="h-4 w-40" />
+                              <Skeleton className="h-4 w-56" />
+                              <Skeleton className="h-20 w-full" />
                             </div>
                           )}
                           {detailError && (
@@ -326,16 +329,19 @@ const InvoiceTable = ({
                 );
               })}
 
-            {loading && (
-              <tr>
-                <td
-                  className={`${td} text-center text-ink-muted py-16`}
-                  colSpan={8}
-                >
-                  Đang tải danh sách hóa đơn...
-                </td>
-              </tr>
-            )}
+            {loading &&
+              Array.from({ length: 8 }).map((_, i) => (
+                <tr key={i}>
+                  <td className={td}><Skeleton className="h-4 w-24" /></td>
+                  <td className={td}><Skeleton className="h-4 w-20" /></td>
+                  <td className={td}><Skeleton className="h-4 w-28" /></td>
+                  <td className={`${td} text-right`}><Skeleton className="h-4 w-20 ml-auto" /></td>
+                  <td className={`${td} text-right`}><Skeleton className="h-4 w-16 ml-auto" /></td>
+                  <td className={`${td} text-right`}><Skeleton className="h-4 w-24 ml-auto" /></td>
+                  <td className={td}><Skeleton className="h-6 w-20 rounded-full" /></td>
+                  <td className={td}><Skeleton className="h-6 w-20 rounded-full" /></td>
+                </tr>
+              ))}
             {!loading && invoices.length === 0 && (
               <tr>
                 <td

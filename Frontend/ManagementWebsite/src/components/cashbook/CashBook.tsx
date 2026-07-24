@@ -60,13 +60,17 @@ const CashBook = () => {
   const [modal, setModal] = useState<ModalState>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [visibleColumns, setVisibleColumns] = useState<Record<ColumnKey, boolean>>(DEFAULT_VISIBLE_COLUMNS)
+  const [vouchersLoading, setVouchersLoading] = useState(true)
 
   const loadVouchers = useCallback(async () => {
+    setVouchersLoading(true)
     try {
       const page = await listVouchers({})
       setVouchers(page.data)
     } catch {
       // keep the previously loaded list on a transient fetch failure
+    } finally {
+      setVouchersLoading(false)
     }
   }, [])
 
@@ -190,6 +194,7 @@ const CashBook = () => {
           categories={categories}
           visibleColumns={visibleColumns}
           expandedId={expandedId}
+          loading={vouchersLoading}
           onToggleExpand={voucher => setExpandedId(id => (id === voucher.id ? null : voucher.id))}
           onVoid={voidVoucher}
         />

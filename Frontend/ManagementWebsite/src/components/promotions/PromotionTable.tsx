@@ -1,4 +1,5 @@
 import type { Promotion } from '../../services/promotionApi'
+import { Skeleton } from '../dashboard/DashboardStates'
 
 interface Props {
   promotions: Promotion[]
@@ -95,11 +96,21 @@ const PromotionTable = ({ promotions, loading, deletingId, onEdit, onDeactivate 
               </td>
             </tr>
           ))}
-          {loading && (
-            <tr>
-              <td className={`${td} text-center text-ink-muted py-16`} colSpan={10}>Đang tải danh sách khuyến mãi...</td>
-            </tr>
-          )}
+          {loading &&
+            Array.from({ length: 8 }).map((_, i) => (
+              <tr key={i}>
+                <td className={td}><Skeleton className="h-4 w-16" /></td>
+                <td className={td}><Skeleton className="h-4 w-48" /></td>
+                <td className={td}><Skeleton className="h-4 w-14" /></td>
+                <td className={td}><Skeleton className="h-4 w-20" /></td>
+                <td className={td}><Skeleton className="h-4 w-20" /></td>
+                <td className={td}><Skeleton className="h-6 w-24 rounded-full" /></td>
+                <td className={`${td} text-right`}><Skeleton className="h-4 w-12 ml-auto" /></td>
+                <td className={`${td} text-right`}><Skeleton className="h-4 w-10 ml-auto" /></td>
+                <td className={`${td} text-right`}><Skeleton className="h-4 w-12 ml-auto" /></td>
+                <td className={`${td} text-center`}><Skeleton className="h-8 w-28 mx-auto rounded-md" /></td>
+              </tr>
+            ))}
           {!loading && promotions.length === 0 && (
             <tr>
               <td className={`${td} text-center text-ink-muted py-16`} colSpan={10}>Không tìm thấy khuyến mãi nào</td>
