@@ -153,7 +153,7 @@ public class ShiftServiceImpl implements ShiftService {
         }
 
         boolean isOwner   = floating.getCashierId().equals(user.getId());
-        boolean isManager = user.getRole() == UserRole.MANAGER || user.getRole() == UserRole.ADMIN;
+        boolean isManager = user.getRole() == UserRole.MANAGER;
         if (!isOwner && !isManager) {
             throw new ApplicationException(ApplicationError.FORBIDDEN);
         }
@@ -263,10 +263,9 @@ public class ShiftServiceImpl implements ShiftService {
             throw new ApplicationException(ApplicationError.SHIFT_CLOSED);
         }
 
-        // BR-CS-02: only shift owner or manager/admin may close
+        // BR-CS-02: only shift owner or manager may close
         boolean isOwner   = shift.getCashierId().equals(closingUser.getId());
-        boolean isManager = closingUser.getRole() == UserRole.MANAGER
-                         || closingUser.getRole() == UserRole.ADMIN;
+        boolean isManager = closingUser.getRole() == UserRole.MANAGER;
         if (!isOwner && !isManager) {
             throw new ApplicationException(ApplicationError.FORBIDDEN);
         }
@@ -364,7 +363,7 @@ public class ShiftServiceImpl implements ShiftService {
     @Override
     public ShiftSummaryResponse forceClose(String shiftId, ForceCloseShiftRequest request, String managerUsername) {
         User manager = resolveUser(managerUsername);
-        if (manager.getRole() != UserRole.MANAGER && manager.getRole() != UserRole.ADMIN) {
+        if (manager.getRole() != UserRole.MANAGER) {
             throw new ApplicationException(ApplicationError.FORBIDDEN);
         }
 
@@ -429,7 +428,7 @@ public class ShiftServiceImpl implements ShiftService {
         Shift shift = shiftRepo.findById(shiftId)
                 .orElseThrow(() -> new ApplicationException(ApplicationError.SHIFT_NOT_FOUND));
 
-        boolean isManager = user.getRole() == UserRole.MANAGER || user.getRole() == UserRole.ADMIN;
+        boolean isManager = user.getRole() == UserRole.MANAGER;
         if (!isManager && !shift.getCashierId().equals(user.getId())) {
             throw new ApplicationException(ApplicationError.FORBIDDEN);
         }
@@ -488,7 +487,7 @@ public class ShiftServiceImpl implements ShiftService {
     @Transactional(readOnly = true)
     public DailySummaryResponse dailySummary(LocalDate date, String requestingUsername) {
         User user = resolveUser(requestingUsername);
-        boolean isManager = user.getRole() == UserRole.MANAGER || user.getRole() == UserRole.ADMIN;
+        boolean isManager = user.getRole() == UserRole.MANAGER;
         if (!isManager) {
             throw new ApplicationException(ApplicationError.FORBIDDEN);
         }
@@ -572,7 +571,7 @@ public class ShiftServiceImpl implements ShiftService {
     @Transactional(readOnly = true)
     public Page<ShiftSummaryResponse> listAll(Pageable pageable, String requestingUsername) {
         User user = resolveUser(requestingUsername);
-        boolean isManager = user.getRole() == UserRole.MANAGER || user.getRole() == UserRole.ADMIN;
+        boolean isManager = user.getRole() == UserRole.MANAGER;
         if (!isManager) {
             throw new ApplicationException(ApplicationError.FORBIDDEN);
         }
