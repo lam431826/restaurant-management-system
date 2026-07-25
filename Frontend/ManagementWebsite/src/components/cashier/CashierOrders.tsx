@@ -92,7 +92,7 @@ import { ReservationPanel } from "./orders/ReservationPanel";
 import { AddNoteModal } from "./orders/AddNoteModal";
 import { PaymentModal } from "./orders/PaymentModal";
 import { OrderPanel } from "./orders/OrderPanel";
-import { SuccessToast } from "./orders/SuccessToast";
+import { PaymentResultToast, SuccessToast } from "./orders/SuccessToast";
 import { SearchIcon } from "./orders/icons";
 import { QROrderConfirmationModal } from "./orders/QROrderConfirmationModal";
 import { Skeleton } from "../dashboard/DashboardStates";
@@ -635,10 +635,9 @@ const CashierOrders = () => {
     useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [successTotal, setSuccessTotal] = useState<number | null>(null);
-  const [vnpayReturnNotice, setVnpayReturnNotice] = useState<{
-    message: string;
-    variant: "success" | "error";
-  } | null>(null);
+  // VNPAY success now reuses successTotal/SuccessToast below, so this only ever holds a
+  // failure message — see restoreFromVnpayState.
+  const [vnpayFailureNotice, setVnpayFailureNotice] = useState<string | null>(null);
   const [showChangePw, setShowChangePw] = useState(false);
   const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
   const [invoiceListOrderId, setInvoiceListOrderId] = useState<string | null>(
@@ -1022,11 +1021,11 @@ const CashierOrders = () => {
   }, [successTotal]);
 
   useEffect(() => {
-    if (vnpayReturnNotice !== null) {
-      const t = setTimeout(() => setVnpayReturnNotice(null), 4000);
+    if (vnpayFailureNotice !== null) {
+      const t = setTimeout(() => setVnpayFailureNotice(null), 4000);
       return () => clearTimeout(t);
     }
-  }, [vnpayReturnNotice]);
+  }, [vnpayFailureNotice]);
 
   // Restores the cashier's table/order/payment context after a VNPAY round-trip — either a
   // same-tab redirect (router state, or its localStorage fallback), or the cross-tab case
@@ -1045,23 +1044,23 @@ const CashierOrders = () => {
       if (vnpayReturnHandledRef.current === state.txnRef) return;
       vnpayReturnHandledRef.current = state.txnRef;
 
-      // PAID reuses the same SuccessToast the cash flow shows (handleConfirmCash,
-      // handleCheckVnpayStatus) instead of its own banner — the two used to look nothing
-      // alike (a bordered card with an icon and the amount vs. a plain solid-color pill)
-      // even though both mean the exact same thing to the cashier. Only the non-success
-      // outcomes still use vnpayReturnNotice, since SuccessToast is success-only by design.
+      // Both outcomes reuse the same PaymentResultToast card the cash flow shows
+      // (handleConfirmCash, handleCheckVnpayStatus) instead of VNPAY having its own look —
+      // success and failure used to read as two different kinds of message (a bordered card
+      // with an icon vs. a plain solid-color pill) even though both are just "here's what
+      // happened to the payment."
       if (state.paymentResult === "PAID") {
         setSuccessTotal(state.amount ?? 0);
       } else {
-        const notice =
+        const message =
           state.paymentResult === "FAILED"
-            ? { message: "Thanh toán VNPAY thất bại.", variant: "error" as const }
+            ? "Thanh toán VNPAY thất bại."
             : state.paymentResult === "CANCELLED"
-              ? { message: "Giao dịch VNPAY đã bị hủy.", variant: "error" as const }
+              ? "Giao dịch VNPAY đã bị hủy."
               : state.paymentResult === "EXPIRED"
-                ? { message: "Giao dịch VNPAY đã hết hạn.", variant: "error" as const }
+                ? "Giao dịch VNPAY đã hết hạn."
                 : undefined;
-        if (notice) setVnpayReturnNotice(notice);
+        if (message) setVnpayFailureNotice(message);
       }
 
       const { tableId, orderId, invoiceId, paymentResult } = state;
@@ -1092,11 +1091,9 @@ const CashierOrders = () => {
           }
         }
         if (!table) {
-          setVnpayReturnNotice({
-            message:
-              "Không tìm thấy bàn hoặc đơn hàng để khôi phục. Vui lòng thử lại.",
-            variant: "error",
-          });
+          setVnpayFailureNotice(
+            "Không tìm thấy bàn hoặc đơn hàng để khôi phục. Vui lòng thử lại.",
+          );
           return;
         }
 
@@ -1143,11 +1140,9 @@ const CashierOrders = () => {
         restored = true;
       } catch (err) {
         console.error(err);
-        setVnpayReturnNotice({
-          message:
-            "Không thể khôi phục bàn/đơn hàng sau khi thanh toán VNPAY. Vui lòng thử lại.",
-          variant: "error",
-        });
+        setVnpayFailureNotice(
+          "Không thể khôi phục bàn/đơn hàng sau khi thanh toán VNPAY. Vui lòng thử lại.",
+        );
       } finally {
         if (suppressAutoInvoiceRefreshForOrderRef.current === orderId) {
           suppressAutoInvoiceRefreshForOrderRef.current = null;
@@ -2517,16 +2512,12 @@ const CashierOrders = () => {
 
   return (
     <div className="flex flex-col h-screen bg-[#f5f5f5] overflow-hidden font-sans">
-      {vnpayReturnNotice && (
-        <div
-          className={`fixed top-6 left-1/2 -translate-x-1/2 z-[9999] px-5 py-3 rounded-[10px] text-white text-[14px] font-semibold shadow-lg ${
-            vnpayReturnNotice.variant === "success"
-              ? "bg-[var(--kv-success)]"
-              : "bg-danger"
-          }`}
-        >
-          {vnpayReturnNotice.message}
-        </div>
+      {vnpayFailureNotice && (
+        <PaymentResultToast
+          variant="error"
+          title={vnpayFailureNotice}
+          onDismiss={() => setVnpayFailureNotice(null)}
+        />
       )}
       {!shift && shiftModalOpen && (
         <OpenShiftModal
