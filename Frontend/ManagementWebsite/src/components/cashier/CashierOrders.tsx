@@ -1045,20 +1045,24 @@ const CashierOrders = () => {
       if (vnpayReturnHandledRef.current === state.txnRef) return;
       vnpayReturnHandledRef.current = state.txnRef;
 
-      const notice =
-        state.paymentResult === "PAID"
-          ? {
-              message: `Thanh toán VNPAY thành công: ${(state.amount ?? 0).toLocaleString("vi-VN")} đ`,
-              variant: "success" as const,
-            }
-          : state.paymentResult === "FAILED"
+      // PAID reuses the same SuccessToast the cash flow shows (handleConfirmCash,
+      // handleCheckVnpayStatus) instead of its own banner — the two used to look nothing
+      // alike (a bordered card with an icon and the amount vs. a plain solid-color pill)
+      // even though both mean the exact same thing to the cashier. Only the non-success
+      // outcomes still use vnpayReturnNotice, since SuccessToast is success-only by design.
+      if (state.paymentResult === "PAID") {
+        setSuccessTotal(state.amount ?? 0);
+      } else {
+        const notice =
+          state.paymentResult === "FAILED"
             ? { message: "Thanh toán VNPAY thất bại.", variant: "error" as const }
             : state.paymentResult === "CANCELLED"
               ? { message: "Giao dịch VNPAY đã bị hủy.", variant: "error" as const }
               : state.paymentResult === "EXPIRED"
                 ? { message: "Giao dịch VNPAY đã hết hạn.", variant: "error" as const }
                 : undefined;
-      if (notice) setVnpayReturnNotice(notice);
+        if (notice) setVnpayReturnNotice(notice);
+      }
 
       const { tableId, orderId, invoiceId, paymentResult } = state;
       let restored = false;
