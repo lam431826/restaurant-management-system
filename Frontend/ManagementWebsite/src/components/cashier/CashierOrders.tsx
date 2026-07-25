@@ -1703,6 +1703,12 @@ const CashierOrders = () => {
       await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
 
       if (status.status === "PAID") {
+        // Clear the cash-payment error too: the usual way to reach this button is a CASH
+        // attempt that the backend rejected because this very VNPAY attempt was still
+        // pending. Reconciling it to PAID resolves that error, so leaving the red
+        // "đã có giao dịch đang chờ xử lý" text behind would contradict the paid invoice
+        // (visible again as soon as the cashier reopens the settled invoice to review it).
+        setPaymentError("");
         setPaymentOpen(false);
         setSuccessTotal(status.amount);
         setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
@@ -1717,6 +1723,17 @@ const CashierOrders = () => {
     } finally {
       setVnpayLoading(false);
     }
+  };
+
+  // Reopens the payment modal on an already-settled invoice so the cashier can review, print
+  // or resend it before closing the order. Errors from the attempts that led to the payment
+  // are stale by definition here (the invoice is paid), so this starts from a clean slate —
+  // the same reset handleSelectInvoice does when moving between invoices.
+  const handleReopenPaidInvoice = () => {
+    setPaymentError("");
+    handleResetVnpayState();
+    setInvoiceMessage(null);
+    setPaymentOpen(true);
   };
 
   // A VNPAY attempt opened via handleInitiateVnpay runs in a separate tab, so a payment
@@ -2811,7 +2828,7 @@ const CashierOrders = () => {
                 : undefined
             }
             onCloseOrder={handleCloseOrder}
-            onReopenPaidInvoice={() => setPaymentOpen(true)}
+            onReopenPaidInvoice={handleReopenPaidInvoice}
             invoiceTools={null}
           />
         )}

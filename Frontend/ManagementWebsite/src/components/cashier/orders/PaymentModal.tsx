@@ -852,7 +852,12 @@ export const PaymentModal = ({
 
             {isActiveInvoice && (
               <div className="shrink-0 mt-3 pt-3 border-t border-[#e8e8e8]">
-                {error && (
+                {/* `error` only ever describes a failed attempt to TAKE payment, so on a paid
+                    invoice it is stale by definition — showing it would contradict the
+                    "Đã thanh toán" total right above. Suppressed here as well as cleared at the
+                    source, so no future path can resurrect this contradiction by forgetting to
+                    reset it. */}
+                {error && !invoice.paid && (
                   <p className="text-[13px] text-[#d92d20] text-center mb-2.5">
                     {error}
                   </p>
