@@ -49,7 +49,10 @@ const KpiShell = ({
   color: string
   children: ReactNode
 }) => (
-  <Card variant="kpi" size="lg" className="relative overflow-hidden h-full">
+  // min-h-[13rem] overrides kv-card-lg's 18rem floor: KPI content is only ~8–11rem tall, so
+  // the taller floor left 7–10rem of dead space in every card (worst on the two-line cards,
+  // which read as half-empty next to the three-line ones) and pushed the charts below the fold.
+  <Card variant="kpi" size="lg" className="relative overflow-hidden h-full min-h-[13rem]">
     <span
       className="absolute left-0 top-6 bottom-6 w-[0.5rem] rounded-r-full"
       style={{ background: color }}

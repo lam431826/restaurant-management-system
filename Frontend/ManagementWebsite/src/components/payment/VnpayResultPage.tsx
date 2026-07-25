@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ComponentType } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getVnpayStatus, reconcileVnpayPayment } from "../../services/paymentApi";
 import type { VnpayStatusResult } from "../../services/paymentApi";
@@ -18,13 +19,41 @@ const STATUS_LABELS: Record<string, string> = {
   EXPIRED: "Giao dịch đã hết hạn",
 };
 
-const STATUS_BADGE_CLASS: Record<string, string> = {
-  PENDING: "kv-badge-warning",
-  PAID: "kv-badge-success",
-  FAILED: "kv-badge-danger",
-  CANCELLED: "kv-badge-neutral",
-  EXPIRED: "kv-badge-neutral",
+const CheckIcon = () => (
+  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+const CrossIcon = () => (
+  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+const ClockIcon = () => (
+  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" />
+  </svg>
+);
+
+/**
+ * The outcome is the whole point of this page, so each status drives a full visual
+ * treatment (icon + colour + emphasis) rather than the small text badge it used to be.
+ */
+const STATUS_VISUAL: Record<
+  string,
+  { icon: ComponentType; ring: string; fg: string }
+> = {
+  PENDING: { icon: ClockIcon, ring: "bg-warning-50 text-warning-700", fg: "text-warning-700" },
+  PAID: { icon: CheckIcon, ring: "bg-success-50 text-success-700", fg: "text-success-700" },
+  FAILED: { icon: CrossIcon, ring: "bg-danger-50 text-danger-700", fg: "text-danger-700" },
+  CANCELLED: { icon: CrossIcon, ring: "bg-fill text-ink-subtle", fg: "text-ink-strong" },
+  EXPIRED: { icon: ClockIcon, ring: "bg-fill text-ink-subtle", fg: "text-ink-strong" },
 };
+
+const STATUS_VISUAL_FALLBACK = STATUS_VISUAL.CANCELLED;
 
 const STATUS_HINTS: Record<string, string> = {
   PAID: "Hóa đơn đã được ghi nhận thanh toán. Bạn có thể quay lại màn hình thu ngân để đóng đơn.",
@@ -135,70 +164,86 @@ const VnpayResultPage = () => {
     !TERMINAL_STATUSES.has(status) &&
     Date.now() - pollStartRef.current < POLL_TIMEOUT_MS;
 
+  // An unrecognised status falls back to the neutral treatment, not the amber "pending" one,
+  // so an unexpected value can never be mistaken for a transaction still in flight.
+  const visual = STATUS_VISUAL[status ?? ""] ?? STATUS_VISUAL_FALLBACK;
+  const StatusIcon = result ? visual.icon : ClockIcon;
+  // The page always exposes exactly one <h1>, in every state — while checking, and when a
+  // hard failure (e.g. a missing txnRef) means no result ever arrives.
+  const headline = result
+    ? (STATUS_LABELS[result.status] ?? result.status)
+    : checking
+      ? "Đang kiểm tra giao dịch"
+      : "Kết quả thanh toán";
+
   return (
-    <div className="min-h-screen bg-[#f5f5f5] flex items-center justify-center p-4">
-      <div className="w-full max-w-[480px] bg-white rounded-[16px] shadow-sm p-6 flex flex-col gap-4">
-        <h1 className="text-[20px] font-semibold text-[#202325] text-center">
-          Kết quả thanh toán VNPAY Sandbox
-        </h1>
+    <div className="min-h-screen bg-surface flex items-center justify-center p-4">
+      <div className="w-full max-w-[46rem] bg-card rounded-lg border border-line shadow-sm p-8 flex flex-col gap-5">
+        <p className="text-sm font-medium text-ink-muted text-center tracking-wide uppercase">
+          VNPAY Sandbox
+        </p>
 
-        {checking && !result && (
-          <p className="text-[14px] text-[#636566] text-center">
-            Đang kiểm tra giao dịch với VNPAY...
-          </p>
-        )}
-
-        {error && (
-          <p className="text-[13px] text-[#d92d20] text-center" role="alert">
-            {error}
-          </p>
-        )}
+        <div className="flex flex-col items-center gap-3">
+          {/* The outcome leads the page — icon, then headline, then the amount. */}
+          <span
+            className={`w-16 h-16 rounded-full flex items-center justify-center ${
+              result
+                ? visual.ring
+                : `bg-fill text-ink-subtle ${checking ? "animate-pulse" : ""}`
+            }`}
+          >
+            <StatusIcon />
+          </span>
+          <h1
+            className={`text-h3 font-bold text-center m-0 ${
+              result ? visual.fg : "text-ink-strong"
+            }`}
+          >
+            {headline}
+          </h1>
+          {!result && checking && (
+            <p className="text-md text-ink-subtle text-center">
+              Đang đối chiếu giao dịch với VNPAY...
+            </p>
+          )}
+        </div>
 
         {result && (
-          <div className="flex flex-col gap-3">
-            <div className="flex justify-center">
-              <span
-                className={`kv-badge ${STATUS_BADGE_CLASS[result.status] ?? "kv-badge-neutral"}`}
-              >
-                {STATUS_LABELS[result.status] ?? result.status}
-              </span>
-            </div>
-
+          <div className="flex flex-col items-center gap-3">
             {STATUS_HINTS[result.status] && (
-              <p className="text-[12px] text-[#636566] text-center">
+              <p className="text-md text-ink-subtle text-center leading-relaxed max-w-[36rem]">
                 {STATUS_HINTS[result.status]}
               </p>
             )}
 
             {autoPolling && (
-              <p className="text-[12px] text-[#797b7c] text-center">
+              <p className="text-sm text-ink-muted text-center">
                 Đang chờ xác nhận cuối cùng từ VNPAY, trang sẽ tự động cập nhật...
               </p>
             )}
 
-            <div className="border-t border-[#e8e8e8] pt-3 flex flex-col gap-2 text-[13px]">
-              <div className="flex justify-between">
-                <span className="text-[#797b7c]">Mã hóa đơn</span>
-                <span className="font-mono font-medium text-[#202325]">
+            <div className="w-full rounded-md bg-fill/60 px-5 py-4 flex flex-col items-center gap-1 mt-1">
+              <span className="text-sm text-ink-subtle">Số tiền giao dịch</span>
+              <span className="kv-big-text">{money(result.amount)}</span>
+            </div>
+
+            <div className="w-full border-t border-line pt-4 mt-1 flex flex-col gap-2.5 text-md">
+              <div className="flex justify-between gap-4">
+                <span className="text-ink-subtle shrink-0">Mã hóa đơn</span>
+                <span className="font-mono font-semibold text-ink text-right break-all">
                   {result.invoiceCode ?? "—"}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[#797b7c]">Mã đơn hàng</span>
-                <span className="font-mono font-medium text-[#202325]">
+              <div className="flex justify-between gap-4">
+                <span className="text-ink-subtle shrink-0">Mã đơn hàng</span>
+                <span className="font-mono text-ink text-right break-all">
                   {result.orderCode ?? "—"}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[#797b7c]">Số tiền</span>
-                <span className="font-medium text-[#202325]">
-                  {money(result.amount)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#797b7c]">Mã giao dịch</span>
+              <div className="flex justify-between gap-4">
+                <span className="text-ink-subtle shrink-0">Mã giao dịch</span>
                 <span
-                  className="font-mono text-[12px] text-[#202325]"
+                  className="font-mono text-sm text-ink-subtle text-right break-all"
                   title={result.txnRef}
                 >
                   {result.txnRef}
@@ -208,12 +253,18 @@ const VnpayResultPage = () => {
           </div>
         )}
 
-        <div className="flex flex-col gap-2 pt-2">
+        {error && (
+          <p className="text-sm text-danger-700 bg-danger-50 rounded-md px-4 py-2.5 text-center" role="alert">
+            {error}
+          </p>
+        )}
+
+        <div className="flex flex-col gap-2 pt-1">
           <button
             type="button"
             onClick={() => void runReconcile()}
             disabled={checking}
-            className="h-10 rounded-[10px] border border-[#025cca] text-[13px] font-medium text-[#025cca] disabled:opacity-50"
+            className="kv-btn kv-btn-outline-neutral h-11 bg-card w-full justify-center"
           >
             {checking ? "Đang kiểm tra với VNPAY..." : "Kiểm tra lại"}
           </button>
@@ -255,8 +306,10 @@ const VnpayResultPage = () => {
               }
               navigate("/cashier", { state: returnContext });
             }}
-            className={`h-10 rounded-[10px] text-[13px] font-semibold text-white ${
-              isPaid ? "bg-[#286b4a]" : "bg-[#025cca]"
+            className={`kv-btn h-11 w-full justify-center text-white ${
+              isPaid
+                ? "bg-success hover:bg-success-600"
+                : "bg-primary hover:bg-primary-600"
             }`}
           >
             {openedAsPopup ? "Đóng và quay lại màn hình thu ngân" : "Quay lại màn hình thu ngân"}
