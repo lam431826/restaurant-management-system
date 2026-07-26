@@ -425,17 +425,17 @@ const AttendanceSettingsView = ({ onOpenShiftList, shiftCount, settings, commit,
           <NumUnit value={settings.earlyLeaveGraceMinutes} onChange={v => set('earlyLeaveGraceMinutes', v)} unit="phút" disabled={!settings.earlyLeaveEnabled} />
           <InfoIcon />
         </CheckLabel>
+        <CheckLabel checked={settings.latePenaltyEnabled} onChange={v => set('latePenaltyEnabled', v)}>
+          <span className="w-[11rem] text-md text-ink">Tính phạt theo giờ thập phân</span>
+          <NumUnit value={settings.latePenaltyRoundingMinutes} onChange={v => set('latePenaltyRoundingMinutes', v)} unit="phút" disabled={!settings.latePenaltyEnabled} />
+          <InfoIcon />
+        </CheckLabel>
       </Block>
 
       <Block title="Cài đặt làm thêm giờ" desc="Tính làm thêm giờ cho nhân viên khi vào ca sớm hoặc tan ca muộn (BR-AT-10)">
-        <CheckLabel checked={settings.otBeforeEnabled} onChange={v => set('otBeforeEnabled', v)}>
-          <span className="w-[11rem] text-md text-ink">Tính làm thêm giờ trước ca</span>
-          <NumUnit value={settings.otBeforeMinMinutes} onChange={v => set('otBeforeMinMinutes', v)} unit="phút" disabled={!settings.otBeforeEnabled} />
-          <InfoIcon />
-        </CheckLabel>
-        <CheckLabel checked={settings.otAfterEnabled} onChange={v => set('otAfterEnabled', v)}>
-          <span className="w-[11rem] text-md text-ink">Tính làm thêm giờ sau ca</span>
-          <NumUnit value={settings.otAfterMinMinutes} onChange={v => set('otAfterMinMinutes', v)} unit="phút" disabled={!settings.otAfterEnabled} />
+        <CheckLabel checked={settings.overtimeEnabled} onChange={v => set('overtimeEnabled', v)}>
+          <span className="w-[11rem] text-md text-ink">Tính lương theo giờ thập phân</span>
+          <NumUnit value={settings.otRoundingMinutes} onChange={v => set('otRoundingMinutes', v)} unit="phút" disabled={!settings.overtimeEnabled} />
           <InfoIcon />
         </CheckLabel>
       </Block>
