@@ -43,6 +43,14 @@ class SalaryCalculatorTest {
                 workedMinutes == null ? 0 : workedMinutes, otMinutes, 0, earlyLeaveMinutes, BigDecimal.ZERO);
     }
 
+    /** PRESENT row with an explicit lateMinutes (present() above always hardcodes it to 0). */
+    private static AttendanceForPayroll presentLate(LocalDate date, LocalTime in, LocalTime out,
+                                                     Integer workedMinutes, int lateMinutes) {
+        return new AttendanceForPayroll(date, "sh1", "Ca sáng", SHIFT_START, SHIFT_END,
+                AttendanceType.PRESENT, LocalDateTime.of(date, in), LocalDateTime.of(date, out),
+                workedMinutes == null ? 0 : workedMinutes, 0, lateMinutes, 0, BigDecimal.ZERO);
+    }
+
     private static AttendanceForPayroll leave(LocalDate date, AttendanceType type) {
         return new AttendanceForPayroll(date, "sh1", "Ca sáng", SHIFT_START, SHIFT_END,
                 type, null, null, 0, 0, 0, 0, BigDecimal.ZERO);
@@ -53,7 +61,7 @@ class SalaryCalculatorTest {
         ComputedPayslip result = calculator.compute(setting(SalaryType.SHIFT, 200_000),
                 List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0),
                         present(MONDAY.plusDays(1), LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)),
-                Set.of());
+                Set.of(), 1, false, 15);
 
         assertThat(result.mainSalary()).isEqualByComparingTo("400000");
         assertThat(result.overtimeSalary()).isEqualByComparingTo("0");
@@ -68,7 +76,7 @@ class SalaryCalculatorTest {
 
         ComputedPayslip result = calculator.compute(s,
                 List.of(present(SATURDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)),
-                Set.of());
+                Set.of(), 1, false, 15);
 
         assertThat(result.mainSalary()).isEqualByComparingTo("300000");
     }
@@ -80,7 +88,7 @@ class SalaryCalculatorTest {
 
         ComputedPayslip result = calculator.compute(s,
                 List.of(present(SATURDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)),
-                Set.of());
+                Set.of(), 1, false, 15);
 
         assertThat(result.mainSalary()).isEqualByComparingTo("250000");
     }
@@ -89,7 +97,7 @@ class SalaryCalculatorTest {
     void shiftType_paysFullWageEvenOnEarlyLeave() {
         ComputedPayslip result = calculator.compute(setting(SalaryType.SHIFT, 200_000),
                 List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(10, 0), 120, 0, 30)),
-                Set.of());
+                Set.of(), 1, false, 15);
 
         // Early leave (30 min beyond grace) is handled manually via violation penalties,
         // not by prorating the shift wage — full wage regardless.
@@ -105,7 +113,7 @@ class SalaryCalculatorTest {
         // AT already applied BR-AT-10: 60 OT minutes past the scheduled end; hourly base 200000/4h = 50000
         ComputedPayslip result = calculator.compute(s,
                 List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(13, 0), 240, 60, 0)),
-                Set.of());
+                Set.of(), 1, false, 15);
 
         assertThat(result.otMinutes()).isEqualTo(60);
         assertThat(result.overtimeSalary()).isEqualByComparingTo("75000"); // 50000 × 150%
@@ -113,11 +121,57 @@ class SalaryCalculatorTest {
     }
 
     @Test
+    void shiftType_roundsOtMinutesDownToNearestConfiguredBlock() {
+        SalarySetting s = setting(SalaryType.SHIFT, 200_000);
+        s.setOvertimeEnabled(true);
+        s.setOvertimeRates("{\"normal\":{\"amount\":\"150\",\"unit\":\"percent\"}}");
+        // hourly base 200000/4h = 50000; OT rate 150% => 75000/h. otRoundingMinutes=15:
+        // 29 actual OT min -> floor(29/15)*15 = 15min -> 0.25h -> 75000*0.25 = 18750.
+        ComputedPayslip below = calculator.compute(s,
+                List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(12, 29), 240, 29, 0)),
+                Set.of(), 15, false, 15);
+        assertThat(below.overtimeSalary()).isEqualByComparingTo("18750");
+
+        // 30 actual OT min -> exactly 2 blocks of 15 -> 0.5h -> 75000*0.5 = 37500.
+        ComputedPayslip at = calculator.compute(s,
+                List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(12, 30), 240, 30, 0)),
+                Set.of(), 15, false, 15);
+        assertThat(at.overtimeSalary()).isEqualByComparingTo("37500");
+    }
+
+    @Test
+    void shiftType_latePenaltyRoundsUpToNearestBlockPlusOne() {
+        SalarySetting s = setting(SalaryType.SHIFT, 200_000);
+        // hourly base 200000/4h = 50000/h. latePenaltyRoundingMinutes=15, deduction formula
+        // (floor(minutes/rounding)+1)*rounding/60: 1 actual late minute -> 1 block -> 0.25h
+        // -> 12500đ; 16 minutes -> 2 blocks -> 0.5h -> 25000đ (matches the spec's own example
+        // ratios exactly: 0.25h for 1p late, 0.5h for 16p late). Tracked separately from
+        // mainSalary (full shift wage still paid) -- PayrollServiceImpl adds it into the
+        // payslip's overall `deduction`, alongside manual violation penalties.
+        ComputedPayslip oneMinuteLate = calculator.compute(s,
+                List.of(presentLate(MONDAY, LocalTime.of(8, 1), LocalTime.of(12, 0), 239, 1)),
+                Set.of(), 1, true, 15);
+        assertThat(oneMinuteLate.mainSalary()).isEqualByComparingTo("200000");
+        assertThat(oneMinuteLate.lateEarlyDeduction()).isEqualByComparingTo("12500");
+
+        ComputedPayslip sixteenMinutesLate = calculator.compute(s,
+                List.of(presentLate(MONDAY, LocalTime.of(8, 16), LocalTime.of(12, 0), 224, 16)),
+                Set.of(), 1, true, 15);
+        assertThat(sixteenMinutesLate.lateEarlyDeduction()).isEqualByComparingTo("25000");
+
+        // Disabled by default: same lateness incurs no deduction.
+        ComputedPayslip disabled = calculator.compute(s,
+                List.of(presentLate(MONDAY, LocalTime.of(8, 16), LocalTime.of(12, 0), 224, 16)),
+                Set.of(), 1, false, 15);
+        assertThat(disabled.lateEarlyDeduction()).isEqualByComparingTo("0");
+    }
+
+    @Test
     void shiftType_leaveEarnsNothing() {
         ComputedPayslip result = calculator.compute(setting(SalaryType.SHIFT, 200_000),
                 List.of(leave(MONDAY, AttendanceType.LEAVE_UNAPPROVED),
                         leave(MONDAY.plusDays(1), AttendanceType.LEAVE_APPROVED)),
-                Set.of());
+                Set.of(), 1, false, 15);
 
         assertThat(result.mainSalary()).isEqualByComparingTo("0");
         assertThat(result.shiftCount()).isZero();
@@ -132,7 +186,7 @@ class SalaryCalculatorTest {
         // configured holiday set — BR-PAY-04: the holiday calendar wins over the weekday.
         ComputedPayslip result = calculator.compute(s,
                 List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)),
-                Set.of(MONDAY));
+                Set.of(MONDAY), 1, false, 15);
 
         assertThat(result.mainSalary()).isEqualByComparingTo("400000");
     }
@@ -145,7 +199,7 @@ class SalaryCalculatorTest {
 
         ComputedPayslip result = calculator.compute(s,
                 List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(11, 30), 210, 0, 0)),
-                Set.of());
+                Set.of(), 1, false, 15);
 
         assertThat(result.mainSalary()).isEqualByComparingTo("105000"); // 3.5h × 30000
         assertThat(result.overtimeSalary()).isEqualByComparingTo("0");
@@ -155,7 +209,7 @@ class SalaryCalculatorTest {
     void fixedType_ignoresAttendance() {
         ComputedPayslip result = calculator.compute(setting(SalaryType.FIXED, 8_000_000),
                 List.of(leave(MONDAY, AttendanceType.LEAVE_UNAPPROVED)),
-                Set.of());
+                Set.of(), 1, false, 15);
 
         assertThat(result.mainSalary()).isEqualByComparingTo("8000000");
         assertThat(result.overtimeSalary()).isEqualByComparingTo("0");
@@ -165,7 +219,7 @@ class SalaryCalculatorTest {
     void noSalarySetting_yieldsZerosWithNullType() {
         ComputedPayslip result = calculator.compute(null,
                 List.of(present(MONDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)),
-                Set.of());
+                Set.of(), 1, false, 15);
 
         assertThat(result.salaryType()).isNull();
         assertThat(result.mainSalary()).isEqualByComparingTo("0");
@@ -179,7 +233,7 @@ class SalaryCalculatorTest {
 
         ComputedPayslip result = calculator.compute(s,
                 List.of(present(SATURDAY, LocalTime.of(8, 0), LocalTime.of(12, 0), 240, 0, 0)),
-                Set.of());
+                Set.of(), 1, false, 15);
 
         assertThat(result.mainSalary()).isEqualByComparingTo("200000");
     }

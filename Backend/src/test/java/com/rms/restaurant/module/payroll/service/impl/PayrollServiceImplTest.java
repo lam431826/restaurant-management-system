@@ -2,7 +2,9 @@ package com.rms.restaurant.module.payroll.service.impl;
 
 import com.rms.restaurant.common.utils.enums.*;
 import com.rms.restaurant.module.attendance.dto.AttendanceForPayroll;
+import com.rms.restaurant.module.attendance.model.AttendanceSetting;
 import com.rms.restaurant.module.attendance.service.AttendanceService;
+import com.rms.restaurant.module.attendance.service.AttendanceSettingService;
 import com.rms.restaurant.module.cashbook.service.CashbookService;
 import com.rms.restaurant.module.employee.model.Employee;
 import com.rms.restaurant.module.employee.model.SalarySetting;
@@ -33,6 +35,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -49,6 +53,7 @@ class PayrollServiceImplTest {
     @Mock private SalarySettingRepository salarySettingRepository;
     @Mock private PayrollHolidayRepository payrollHolidayRepository;
     @Mock private AttendanceService attendanceService;
+    @Mock private AttendanceSettingService attendanceSettingService;
     @Mock private SalaryCalculator salaryCalculator;
     @Mock private PayrollMapper mapper;
     @Mock private CashbookService cashbookService;
@@ -65,7 +70,7 @@ class PayrollServiceImplTest {
     void setUp() {
         service = new PayrollServiceImpl(sheetRepository, payslipRepository, paymentRepository,
                 employeeRepository, salarySettingRepository, payrollHolidayRepository, attendanceService,
-                salaryCalculator, mapper, cashbookService);
+                attendanceSettingService, salaryCalculator, mapper, cashbookService);
         lenient().when(sheetRepository.save(any(PayrollSheet.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(sheetRepository.findMaxCode()).thenReturn(Optional.empty());
         lenient().when(payslipRepository.findMaxCode()).thenReturn(Optional.empty());
@@ -75,9 +80,11 @@ class PayrollServiceImplTest {
         lenient().when(mapper.toResponse(any(PayrollSheet.class), any()))
                 .thenReturn(new PayrollSheetResponse(null, null, null, null, null, null, null, null,
                         null, 0, null, null, null, null, null, null, null, null, null, null));
-        lenient().when(salaryCalculator.compute(any(), any(), any())).thenReturn(
+        lenient().when(attendanceSettingService.current())
+                .thenReturn(AttendanceSetting.builder().id(AttendanceSetting.FIXED_ID).otRoundingMinutes(1).build());
+        lenient().when(salaryCalculator.compute(any(), any(), any(), anyInt(), anyBoolean(), anyInt())).thenReturn(
                 new com.rms.restaurant.module.payroll.service.ComputedPayslip(
-                        SalaryType.SHIFT, BigDecimal.valueOf(200_000), BigDecimal.ZERO, 1, 480, 0, "[]"));
+                        SalaryType.SHIFT, BigDecimal.valueOf(200_000), BigDecimal.ZERO, 1, 480, 0, "[]", BigDecimal.ZERO));
     }
 
     private CreatePayrollSheetRequest request() {

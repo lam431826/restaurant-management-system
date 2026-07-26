@@ -6,6 +6,7 @@ import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.attendance.dto.AttendanceForPayroll;
 import com.rms.restaurant.module.attendance.service.AttendanceService;
+import com.rms.restaurant.module.attendance.service.AttendanceSettingService;
 import com.rms.restaurant.module.cashbook.dto.SystemVoucherRequest;
 import com.rms.restaurant.module.cashbook.dto.VoucherResponse;
 import com.rms.restaurant.module.cashbook.service.CashbookService;
@@ -51,6 +52,7 @@ public class PayrollServiceImpl implements PayrollService {
     // BR-AT-13: attendance rows for payroll come from the attendance module, keyed directly by
     // employees(id) — no more hop through a linked user account.
     private final AttendanceService attendanceService;
+    private final AttendanceSettingService attendanceSettingService;
     private final SalaryCalculator salaryCalculator;
     private final PayrollMapper mapper;
     // BR-PAY-17: each salary payout mints a Cash Book (Sổ quỹ) voucher — cashbook owns PC%06d numbering.
@@ -143,7 +145,8 @@ public class PayrollServiceImpl implements PayrollService {
             ComputedPayslip computed = computeFor(employee, sheet);
             Payslip payslip = buildPayslip(sheet, employee, computed, "PL" + String.format("%06d", ++nextPayslipNo));
             payslip.setDeduction(attendanceService.violationTotal(
-                    employee.getId(), sheet.getPeriodStart(), sheet.getPeriodEnd())); // BR-AT-12
+                    employee.getId(), sheet.getPeriodStart(), sheet.getPeriodEnd()) // BR-AT-12
+                    .add(computed.lateEarlyDeduction()));
             payslips.add(payslip);
         }
         payslipRepository.saveAll(payslips);
@@ -156,7 +159,9 @@ public class PayrollServiceImpl implements PayrollService {
         Set<LocalDate> holidayDates = payrollHolidayRepository
                 .findAllByHolidayDateBetween(sheet.getPeriodStart(), sheet.getPeriodEnd())
                 .stream().map(PayrollHoliday::getHolidayDate).collect(Collectors.toSet());
-        return salaryCalculator.compute(setting, attendance, holidayDates);
+        var attendanceSettings = attendanceSettingService.current();
+        return salaryCalculator.compute(setting, attendance, holidayDates, attendanceSettings.getOtRoundingMinutes(),
+                attendanceSettings.isLatePenaltyEnabled(), attendanceSettings.getLatePenaltyRoundingMinutes());
     }
 
     private Payslip buildPayslip(PayrollSheet sheet, Employee employee,
@@ -256,7 +261,8 @@ public class PayrollServiceImpl implements PayrollService {
         payslip.setAttendanceSnapshot(computed.snapshotJson());
         if (mode == ReloadRequest.ReloadMode.FULL) {
             payslip.setDeduction(attendanceService.violationTotal(
-                    employee.getId(), sheet.getPeriodStart(), sheet.getPeriodEnd())); // BR-AT-12
+                    employee.getId(), sheet.getPeriodStart(), sheet.getPeriodEnd()) // BR-AT-12
+                    .add(computed.lateEarlyDeduction()));
             payslip.setDeductionOverridden(false);
         }
         payslipRepository.save(payslip);
