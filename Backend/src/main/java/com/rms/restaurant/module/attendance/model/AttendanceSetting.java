@@ -53,21 +53,30 @@ public class AttendanceSetting {
     @Column(name = "early_leave_grace_minutes", nullable = false)
     private int earlyLeaveGraceMinutes = 0;
 
+    /** When true, SHIFT-type salary automatically deducts wages for late arrival / early leave
+     * (SalaryCalculator), rounding UP to the nearest multiple of latePenaltyRoundingMinutes --
+     * always at least one block, even on an exact multiple. E.g. rounding=15: 1 actual late
+     * minute -> 0.25h deducted; 16 minutes -> 0.5h deducted. */
     @Builder.Default
-    @Column(name = "ot_before_enabled", nullable = false)
-    private boolean otBeforeEnabled = true;
+    @Column(name = "late_penalty_enabled", nullable = false)
+    private boolean latePenaltyEnabled = false;
 
     @Builder.Default
-    @Column(name = "ot_before_min_minutes", nullable = false)
-    private int otBeforeMinMinutes = 0;
+    @Column(name = "late_penalty_rounding_minutes", nullable = false)
+    private int latePenaltyRoundingMinutes = 15;
 
+    /** When true, all time outside the shift window (before start or after end) counts as OT,
+     * expressed in decimal hours (otMinutes / 60.0) by SalaryCalculator -- no minimum threshold. */
     @Builder.Default
-    @Column(name = "ot_after_enabled", nullable = false)
-    private boolean otAfterEnabled = true;
+    @Column(name = "overtime_enabled", nullable = false)
+    private boolean overtimeEnabled = true;
 
+    /** OT pay rounds actual otMinutes DOWN to the nearest multiple of this before converting
+     * to decimal hours (SalaryCalculator). E.g. 15: 29 actual min -> 15min -> 0.25h paid; 30
+     * actual min -> 30min -> 0.5h paid. 1 = no rounding (every minute pays proportionally). */
     @Builder.Default
-    @Column(name = "ot_after_min_minutes", nullable = false)
-    private int otAfterMinMinutes = 0;
+    @Column(name = "ot_rounding_minutes", nullable = false)
+    private int otRoundingMinutes = 1;
 
     @Builder.Default
     @Column(name = "merged_shift_enabled", nullable = false)

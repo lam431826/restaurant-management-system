@@ -72,10 +72,10 @@ public class AttendanceCalculator {
         int early = halfDay ? 0 : beyondGrace(minutesAfter(in.actualOut(), scheduledEnd),
                 s.isEarlyLeaveEnabled(), s.getEarlyLeaveGraceMinutes());
 
-        int otBefore = beyondMinimum(minutesAfter(in.actualIn(), scheduledStart),
-                s.isOtBeforeEnabled(), s.getOtBeforeMinMinutes());
-        int otAfter = beyondMinimum(minutesAfter(scheduledEnd, in.actualOut()),
-                s.isOtAfterEnabled(), s.getOtAfterMinMinutes());
+        // BR-AT-10: no minimum threshold -- any time outside the shift window counts as OT
+        // when enabled; converted to decimal hours (otMinutes / 60.0) by SalaryCalculator.
+        int otBefore = s.isOvertimeEnabled() ? minutesAfter(in.actualIn(), scheduledStart) : 0;
+        int otAfter = s.isOvertimeEnabled() ? minutesAfter(scheduledEnd, in.actualOut()) : 0;
 
         return new CalcResult(worked, late, early, otBefore + otAfter, credit, halfDay);
     }
@@ -129,12 +129,6 @@ public class AttendanceCalculator {
     private int beyondGrace(int raw, boolean enabled, int graceMinutes) {
         if (!enabled || raw <= graceMinutes) return 0;
         return raw - graceMinutes;
-    }
-
-    /** BR-AT-10: the whole interval counts once it exceeds the minimum; below it, nothing. */
-    private int beyondMinimum(int raw, boolean enabled, int minimumMinutes) {
-        if (!enabled || raw <= minimumMinutes) return 0;
-        return raw;
     }
 
     /** BR-AT-08: credit = worked / standard workday, capped at 1.00 công. */
