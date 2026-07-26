@@ -67,8 +67,6 @@ public interface InvoiceRepository extends JpaRepository<Invoice, String> {
     Optional<Invoice> findByIdForUpdate(@Param("id") String id);
 
     // Báo cáo cuối ngày: paid invoices within a datetime window, oldest first.
-    @Query("SELECT i FROM Invoice i WHERE i.paid = true AND i.createdAt >= :from AND i.createdAt <= :to ORDER BY i.createdAt ASC")
-    List<Invoice> findPaidBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT i FROM Invoice i WHERE i.id IN :ids ORDER BY i.id ASC")
     List<Invoice> findAllByIdsForUpdate(@Param("ids") List<String> ids);

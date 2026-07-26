@@ -13,6 +13,10 @@ public interface PromotionRepository extends JpaRepository<Promotion, String> {
     Optional<Promotion> findByCode(String code);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Promotion p WHERE p.id = :id")
+    Optional<Promotion> findByIdForUpdate(@Param("id") String id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Promotion p WHERE p.code = :code AND p.active = true")
     Optional<Promotion> findActiveByCodeForUpdate(@Param("code") String code);
 }

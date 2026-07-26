@@ -11,9 +11,9 @@ import java.util.List;
  * derived server-side from invoices resolved through {@code PaymentRepository.findSettledPaidBetween}
  * — i.e. anchored on the authoritative SETTLEMENT instant (Payment.paidAt), not invoice creation
  * time, so a VNPAY invoice created on one day but only reconciled successfully the next lands in
- * the period the money actually arrived in. This intentionally diverges from the Financial (P&L)
- * and End-of-day reports, which bucket by invoice.createdAt (pre-existing, unaudited-here behavior
- * of those two reports, left unchanged). Unsuccessful/PENDING/FAILED/CANCELLED/EXPIRED payment
+ * the period the money actually arrived in. Financial (P&L) and End-of-day use the same anchor,
+ * so all manager reports reconcile over the same half-open period. Unsuccessful/PENDING/FAILED/
+ * CANCELLED/EXPIRED payment
  * attempts never contribute. Live table occupancy is intentionally NOT here: it is point-in-time,
  * not period-bound, and the frontend reads it straight from the existing tables listing.
  */

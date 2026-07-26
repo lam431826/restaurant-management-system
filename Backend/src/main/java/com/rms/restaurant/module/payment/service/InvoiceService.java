@@ -18,7 +18,6 @@ public interface InvoiceService {
     SplitInvoiceResponse split(String invoiceId, SplitInvoiceRequest request, String username);
     MergeInvoiceResponse merge(MergeInvoiceRequest request, String username);
     SendInvoiceResponse sendInvoice(String invoiceId);
-    InvoiceResponse getByOrderId(String orderId);
 
     // PM-06 / PM-07 — manager read-only views
     List<InvoiceListItem> listInvoices();

@@ -44,6 +44,9 @@ public class InvoiceItemAllocation {
     @Column(name = "unit_price_snapshot", nullable = false, precision = 12, scale = 0)
     private BigDecimal unitPriceSnapshot;
 
+    @Column(name = "unit_cost_snapshot", nullable = false, precision = 12, scale = 0)
+    private BigDecimal unitCostSnapshot;
+
     @Builder.Default
     @Column(nullable = false)
     private boolean active = true;

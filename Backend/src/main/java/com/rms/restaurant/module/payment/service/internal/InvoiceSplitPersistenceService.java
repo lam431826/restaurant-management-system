@@ -167,6 +167,7 @@ public class InvoiceSplitPersistenceService {
                         .orderItemId(selection.allocation().getOrderItemId())
                         .allocatedQuantity(selection.quantity())
                         .unitPriceSnapshot(selection.allocation().getUnitPriceSnapshot())
+                        .unitCostSnapshot(selection.allocation().getUnitCostSnapshot())
                         .active(true)
                         .build());
             }
@@ -319,7 +320,9 @@ public class InvoiceSplitPersistenceService {
                 || expectedQuantity < 1
                 || allocation.getAllocatedQuantity() != expectedQuantity
                 || allocation.getUnitPriceSnapshot() == null
-                || allocation.getUnitPriceSnapshot().compareTo(source.unitPriceSnapshot()) != 0) {
+                || allocation.getUnitPriceSnapshot().compareTo(source.unitPriceSnapshot()) != 0
+                || allocation.getUnitCostSnapshot() == null
+                || allocation.getUnitCostSnapshot().compareTo(source.unitCostSnapshot()) != 0) {
             throw invalidPersistenceState();
         }
     }
@@ -475,6 +478,7 @@ public class InvoiceSplitPersistenceService {
             String orderItemId,
             int allocatedQuantity,
             BigDecimal unitPriceSnapshot,
+            BigDecimal unitCostSnapshot,
             LocalDateTime createdAt
     ) {
         private static SourceAllocationSnapshot from(InvoiceItemAllocation allocation) {
@@ -483,7 +487,8 @@ public class InvoiceSplitPersistenceService {
                     || allocation.getId().isBlank()
                     || allocation.getInvoiceId() == null
                     || allocation.getOrderItemId() == null
-                    || allocation.getUnitPriceSnapshot() == null) {
+                    || allocation.getUnitPriceSnapshot() == null
+                    || allocation.getUnitCostSnapshot() == null) {
                 throw new ApplicationException(ApplicationError.INVOICE_ALLOCATION_DATA_INVALID);
             }
             return new SourceAllocationSnapshot(
@@ -492,6 +497,7 @@ public class InvoiceSplitPersistenceService {
                     allocation.getOrderItemId(),
                     allocation.getAllocatedQuantity(),
                     allocation.getUnitPriceSnapshot(),
+                    allocation.getUnitCostSnapshot(),
                     allocation.getCreatedAt()
             );
         }
@@ -506,6 +512,8 @@ public class InvoiceSplitPersistenceService {
                     && orderItemId.equals(allocation.getOrderItemId())
                     && allocation.getUnitPriceSnapshot() != null
                     && unitPriceSnapshot.compareTo(allocation.getUnitPriceSnapshot()) == 0
+                    && allocation.getUnitCostSnapshot() != null
+                    && unitCostSnapshot.compareTo(allocation.getUnitCostSnapshot()) == 0
                     && Objects.equals(createdAt, allocation.getCreatedAt());
         }
     }

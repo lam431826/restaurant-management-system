@@ -75,7 +75,7 @@ public class PromotionServiceImpl implements PromotionService {
 
     @Override
     public PromotionResponse update(String id, UpdatePromotionRequest request) {
-        Promotion promotion = findPromotion(id);
+        Promotion promotion = findPromotionForUpdate(id);
         validateDiscount(request.discountPercent(), request.discountAmount());
         validateValidityRange(request.validFrom(), request.validTo());
         validateUsageLimit(request.usageLimit(), promotion.getUsedCount());
@@ -98,7 +98,7 @@ public class PromotionServiceImpl implements PromotionService {
 
     @Override
     public void delete(String id) {
-        Promotion promotion = findPromotion(id);
+        Promotion promotion = findPromotionForUpdate(id);
         promotion.setActive(false);
         Promotion saved = promotionRepository.save(promotion);
         audit("PROMOTION_DELETE", saved.getId(),
@@ -107,6 +107,11 @@ public class PromotionServiceImpl implements PromotionService {
 
     private Promotion findPromotion(String id) {
         return promotionRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.PROMOTION_NOT_FOUND));
+    }
+
+    private Promotion findPromotionForUpdate(String id) {
+        return promotionRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.PROMOTION_NOT_FOUND));
     }
 

@@ -1,14 +1,11 @@
 package com.rms.restaurant.module.reporting.service.impl;
 
-import com.rms.restaurant.common.utils.enums.CookingStatus;
 import com.rms.restaurant.common.utils.enums.DashboardGranularity;
 import com.rms.restaurant.common.utils.enums.FinancialGranularity;
 import com.rms.restaurant.common.utils.enums.PaymentMethod;
 import com.rms.restaurant.common.utils.enums.PayslipStatus;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
-import com.rms.restaurant.module.menu.model.MenuItem;
-import com.rms.restaurant.module.menu.repository.MenuItemRepository;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
 import com.rms.restaurant.module.order.repository.OrderItemRepository;
@@ -28,8 +25,6 @@ import com.rms.restaurant.module.reporting.dto.EndOfDaySalesRow;
 import com.rms.restaurant.module.reporting.dto.FinancialCustomLineAmountDto;
 import com.rms.restaurant.module.reporting.dto.FinancialCustomLineDto;
 import com.rms.restaurant.module.reporting.dto.FinancialPeriodResponse;
-import com.rms.restaurant.module.reporting.dto.MenuPerformanceResponse;
-import com.rms.restaurant.module.reporting.dto.TrafficReportResponse;
 import com.rms.restaurant.common.utils.enums.FinancialLineGroup;
 import com.rms.restaurant.module.reporting.service.FinancialCustomLineService;
 import com.rms.restaurant.module.reporting.service.ReportService;
@@ -69,7 +64,6 @@ public class ReportServiceImpl implements ReportService {
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final TableRepository tableRepository;
-    private final MenuItemRepository menuItemRepository;
     private final PayrollSheetRepository payrollSheetRepository;
     private final PayslipRepository payslipRepository;
     private final FinancialCustomLineService financialCustomLineService;
@@ -87,7 +81,7 @@ public class ReportServiceImpl implements ReportService {
             byMonth.put(ym, new MonthAccumulator());
         }
 
-        accumulateRevenueAndCogs(byMonth, yearStart.atStartOfDay(), yearEnd.atTime(23, 59, 59));
+        accumulateRevenueAndCogs(byMonth, yearStart.atStartOfDay(), yearEnd.plusDays(1).atStartOfDay());
         accumulatePayroll(byMonth, yearStart, yearEnd);
 
         List<FinancialCustomLineDto> customLines = financialCustomLineService.list();
@@ -108,41 +102,44 @@ public class ReportServiceImpl implements ReportService {
         return mostRecentFirst;
     }
 
-    /** Doanh thu bán hàng, chiết khấu hóa đơn (from paid Invoices) and giá vốn hàng bán
-     * (from payable OrderItems × MenuItem.costPrice), bucketed by the invoice's month. */
-    private void accumulateRevenueAndCogs(Map<YearMonth, MonthAccumulator> byMonth, LocalDateTime from, LocalDateTime to) {
-        List<Invoice> invoices = invoiceRepository.findPaidBetween(from, to);
-        if (invoices.isEmpty()) return;
+    /** Revenue, invoice discounts and allocation-scoped COGS, bucketed by settlement month. */
+    private void accumulateRevenueAndCogs(
+            Map<YearMonth, MonthAccumulator> byMonth,
+            LocalDateTime from,
+            LocalDateTime toExclusive
+    ) {
+        SettledInvoices settled = loadSettledInvoices(from, toExclusive);
+        if (settled.invoicesById().isEmpty()) return;
 
-        List<String> orderIds = invoices.stream().map(Invoice::getOrderId).distinct().toList();
-        Map<String, BigDecimal> cogsByOrderId = computeCogsByOrder(orderIds);
-
-        for (Invoice invoice : invoices) {
-            MonthAccumulator acc = byMonth.get(YearMonth.from(invoice.getCreatedAt()));
+        Map<String, BigDecimal> cogsByInvoiceId = computeCogsByInvoice(settled.invoiceIds());
+        for (Map.Entry<String, Payment> entry : settled.paymentsByInvoiceId().entrySet()) {
+            Payment payment = entry.getValue();
+            Invoice invoice = settled.invoicesById().get(entry.getKey());
+            if (invoice == null || payment.getPaidAt() == null) continue;
+            MonthAccumulator acc = byMonth.get(YearMonth.from(payment.getPaidAt()));
             if (acc == null) continue;
             BigDecimal discount = invoice.getDiscountAmount() == null ? BigDecimal.ZERO : invoice.getDiscountAmount();
             acc.salesRevenue = acc.salesRevenue.add(invoice.getSubtotal());
             acc.invoiceDiscount = acc.invoiceDiscount.add(discount);
-            acc.cogs = acc.cogs.add(cogsByOrderId.getOrDefault(invoice.getOrderId(), BigDecimal.ZERO));
+            acc.cogs = acc.cogs.add(cogsByInvoiceId.getOrDefault(invoice.getId(), BigDecimal.ZERO));
         }
     }
 
-    private Map<String, BigDecimal> computeCogsByOrder(List<String> orderIds) {
-        List<OrderItem> items = orderItemRepository.findByOrderIdIn(orderIds).stream()
-                .filter(this::isPayableItem)
+    private Map<String, BigDecimal> computeCogsByInvoice(List<String> invoiceIds) {
+        List<InvoiceItemAllocation> allocations = invoiceItemAllocationRepository
+                .findAllByInvoiceIds(invoiceIds).stream()
+                .filter(InvoiceItemAllocation::isActive)
                 .toList();
-        if (items.isEmpty()) return Map.of();
-
-        Set<String> menuItemIds = items.stream().map(OrderItem::getMenuItemId).collect(Collectors.toSet());
-        Map<String, BigDecimal> costByMenuItemId = menuItemRepository.findAllById(menuItemIds).stream()
-                .collect(Collectors.toMap(MenuItem::getId, mi -> mi.getCostPrice() == null ? BigDecimal.ZERO : mi.getCostPrice()));
-
-        return items.stream().collect(Collectors.groupingBy(
-                oi -> oi.getOrder().getId(),
-                Collectors.reducing(BigDecimal.ZERO,
-                        oi -> costByMenuItemId.getOrDefault(oi.getMenuItemId(), BigDecimal.ZERO)
-                                .multiply(BigDecimal.valueOf(oi.getQuantity())),
-                        BigDecimal::add)));
+        Map<String, BigDecimal> cogsByInvoiceId = new java.util.HashMap<>();
+        for (InvoiceItemAllocation allocation : allocations) {
+            BigDecimal unitCost = allocation.getUnitCostSnapshot() == null
+                    ? BigDecimal.ZERO
+                    : allocation.getUnitCostSnapshot();
+            BigDecimal cost = unitCost
+                    .multiply(BigDecimal.valueOf(allocation.getAllocatedQuantity()));
+            cogsByInvoiceId.merge(allocation.getInvoiceId(), cost, BigDecimal::add);
+        }
+        return cogsByInvoiceId;
     }
 
     /** Phí chi trả lương Nhân viên, accrual basis: FINALIZED sheets' ACTIVE payslip totals,
@@ -267,38 +264,21 @@ public class ReportServiceImpl implements ReportService {
         }
     }
 
-    @Override public TrafficReportResponse getTrafficReport(LocalDate from, LocalDate to) { return null; }
-    @Override public MenuPerformanceResponse getMenuPerformance(LocalDate from, LocalDate to) { return null; }
-
     @Override
     public DashboardOverviewResponse getDashboardOverview(
             LocalDateTime from, LocalDateTime to, DashboardGranularity granularity) {
+        SettledInvoices settled = loadSettledInvoices(from, to);
+        DashboardOverviewResponse.Revenue revenue = buildRevenue(settled.invoicesById().values());
+        List<DashboardOverviewResponse.RevenuePoint> revenueSeries = buildRevenueSeries(
+                settled.paymentsByInvoiceId(), settled.invoicesById(), from, to, granularity);
+        List<DashboardOverviewResponse.PaymentBreakdownRow> paymentBreakdown =
+                buildPaymentBreakdown(settled.paymentsByInvoiceId().values());
+        List<DashboardOverviewResponse.MenuItemStat> topItems = buildTopItems(settled.invoiceIds());
+        return new DashboardOverviewResponse(revenue, revenueSeries, paymentBreakdown, topItems);
+    }
 
-        // Anchored on the authoritative SETTLEMENT instant (Payment.paidAt) — set exactly once,
-        // in the same transaction as invoice.setPaid(true), by whichever path actually confirms
-        // the money (CASH's immediate settlement, QR confirm, or VNPAY's settleVnpaySuccess,
-        // shared by Return/IPN and any later QueryDR catch-up). An invoice created on one day can
-        // settle on another (VNPAY left PENDING overnight, reconciled the next morning); revenue
-        // must land in the period the money actually arrived in, not when the invoice was opened.
-        // This deliberately diverges from the Financial/P&L and End-of-day reports, which bucket
-        // by invoice.createdAt — that is pre-existing behavior of those two reports, audited but
-        // intentionally left unchanged here (no shared query was touched; see PaymentRepository
-        // .findSettledPaidBetween). PENDING/FAILED/CANCELLED/EXPIRED attempts are excluded by the
-        // status filter in that query, and duplicate IPN/QueryDR processing can never surface more
-        // than one PAID row per invoice (enforced by PaymentServiceImpl's stale-invoice guard) —
-        // the dedupe below is a deterministic defensive backstop, not the primary safeguard.
-        List<Payment> settledPayments = paymentRepository.findSettledPaidBetween(from, to);
-        Map<String, Payment> settledPaymentByInvoiceId = dedupeToAuthoritativePaymentPerInvoice(settledPayments);
-
-        List<String> invoiceIds = List.copyOf(settledPaymentByInvoiceId.keySet());
-        Map<String, Invoice> invoicesById = invoiceIds.isEmpty()
-                ? Map.of()
-                : invoiceRepository.findAllById(invoiceIds).stream()
-                        .collect(Collectors.toMap(Invoice::getId, i -> i));
-        List<Invoice> invoices = List.copyOf(invoicesById.values());
-
-        // Revenue summary. Deliberately NOT gated on order completion: a paid split invoice's
-        // money was genuinely collected even before the rest of its order is closed.
+    /** Invoice-based revenue avoids attributing one split order to multiple completion periods. */
+    private DashboardOverviewResponse.Revenue buildRevenue(Collection<Invoice> invoices) {
         BigDecimal grossRevenue = invoices.stream()
                 .map(Invoice::getSubtotal).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalDiscount = invoices.stream()
@@ -307,29 +287,11 @@ public class ReportServiceImpl implements ReportService {
         BigDecimal netRevenue = invoices.stream()
                 .map(Invoice::getTotalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         int paidInvoiceCount = invoices.size();
-
-        // No order-level "completed" count: Order has no authoritative closedAt timestamp, and
-        // OrderStatus is a mutable, current-state field. Counting "orders whose current status
-        // is CLOSED, among those with a settled invoice in this window" double-attributes a split
-        // order across periods — e.g. invoice A settles day 1, invoice B settles (and closes the
-        // order) day 2: day 1's window would find invoice A (settled in-window) and the order
-        // *currently* CLOSED, and day 2 would independently find the same thing for invoice B —
-        // "completed" in both periods from one completion event. Reporting strictly on invoices
-        // actually settled in [from, to) avoids this; see DashboardOverviewResponse.Revenue.
         BigDecimal averageInvoiceValue = paidInvoiceCount == 0
                 ? BigDecimal.ZERO
                 : netRevenue.divide(BigDecimal.valueOf(paidInvoiceCount), 0, RoundingMode.HALF_UP);
-
-        DashboardOverviewResponse.Revenue revenue = new DashboardOverviewResponse.Revenue(
+        return new DashboardOverviewResponse.Revenue(
                 grossRevenue, totalDiscount, netRevenue, paidInvoiceCount, averageInvoiceValue);
-
-        List<DashboardOverviewResponse.RevenuePoint> revenueSeries =
-                buildRevenueSeries(settledPaymentByInvoiceId, invoicesById, from, to, granularity);
-        List<DashboardOverviewResponse.PaymentBreakdownRow> paymentBreakdown =
-                buildPaymentBreakdown(settledPaymentByInvoiceId.values());
-        List<DashboardOverviewResponse.MenuItemStat> topItems = buildTopItems(invoiceIds);
-
-        return new DashboardOverviewResponse(revenue, revenueSeries, paymentBreakdown, topItems);
     }
 
     /** Resolves at most one authoritative PAID payment per invoice. The business invariant
@@ -343,6 +305,24 @@ public class ReportServiceImpl implements ReportService {
         return payments.stream().collect(Collectors.toMap(Payment::getInvoiceId, p -> p,
                 (a, b) -> mostAuthoritative.compare(a, b) >= 0 ? a : b));
     }
+
+    private SettledInvoices loadSettledInvoices(LocalDateTime from, LocalDateTime toExclusive) {
+        Map<String, Payment> paymentsByInvoiceId = dedupeToAuthoritativePaymentPerInvoice(
+                paymentRepository.findSettledPaidBetween(from, toExclusive)
+        );
+        List<String> invoiceIds = paymentsByInvoiceId.keySet().stream().sorted().toList();
+        Map<String, Invoice> invoicesById = invoiceIds.isEmpty()
+                ? Map.of()
+                : invoiceRepository.findAllById(invoiceIds).stream()
+                        .collect(Collectors.toMap(Invoice::getId, invoice -> invoice));
+        return new SettledInvoices(paymentsByInvoiceId, invoiceIds, invoicesById);
+    }
+
+    private record SettledInvoices(
+            Map<String, Payment> paymentsByInvoiceId,
+            List<String> invoiceIds,
+            Map<String, Invoice> invoicesById
+    ) {}
 
     /** Every bucket across the half-open [from, to) range is emitted (continuous axis); empty
      *  buckets carry a real 0. Both ends are half-open by construction here: `from` is the first
@@ -478,34 +458,12 @@ public class ReportServiceImpl implements ReportService {
             LocalDateTime from, LocalDateTime to,
             List<String> staffIds, PaymentMethod paymentMethod, String areaName, String tableName) {
 
-        List<Invoice> invoices = invoiceRepository.findPaidBetween(from, to);
+        SettledInvoices settled = loadSettledInvoices(from, to);
+        List<Invoice> invoices = List.copyOf(settled.invoicesById().values());
         if (invoices.isEmpty()) return List.of();
-
-        List<String> orderIds = invoices.stream().map(Invoice::getOrderId).distinct().toList();
-        List<String> invoiceIds = invoices.stream().map(Invoice::getId).toList();
-
-        Map<String, Order> ordersById = orderRepository.findAllById(orderIds).stream()
-                .collect(Collectors.toMap(Order::getId, o -> o));
-
-        // Batch cashier-name resolution — same pattern as ShiftServiceImpl's bulk cashier lookup.
-        Set<String> cashierIds = ordersById.values().stream()
-                .map(Order::getCashierId).filter(Objects::nonNull).collect(Collectors.toSet());
-        Map<String, String> staffNamesById = userRepository.findAllById(cashierIds).stream()
-                .collect(Collectors.toMap(User::getId, User::getFullName));
-
-        Map<String, RestaurantTable> tablesById = tableRepository.findAll().stream()
-                .collect(Collectors.toMap(RestaurantTable::getId, t -> t));
-
-        Map<String, Integer> quantityByOrderId = orderItemRepository.findByOrderIdIn(orderIds).stream()
-                .filter(this::isPayableItem)
-                .collect(Collectors.groupingBy(oi -> oi.getOrder().getId(), Collectors.summingInt(OrderItem::getQuantity)));
-
-        // One PAID payment per invoice at this stage — take the first if somehow more than one exists.
-        Map<String, Payment> paymentByInvoiceId = paymentRepository.findByInvoiceIdIn(invoiceIds).stream()
-                .collect(Collectors.toMap(Payment::getInvoiceId, p -> p, (a, b) -> a));
-
+        EndOfDayLookup lookup = loadEndOfDayLookup(invoices, settled.paymentsByInvoiceId());
         return invoices.stream()
-                .map(invoice -> toRow(invoice, ordersById, staffNamesById, tablesById, quantityByOrderId, paymentByInvoiceId))
+                .map(invoice -> toRow(invoice, lookup))
                 .filter(row -> staffIds == null || staffIds.isEmpty() || staffIds.contains(row.staffId()))
                 .filter(row -> paymentMethod == null || paymentMethod == row.paymentMethod())
                 .filter(row -> areaName == null || areaName.isBlank() || areaName.equals(row.areaName()))
@@ -514,23 +472,43 @@ public class ReportServiceImpl implements ReportService {
                 .toList();
     }
 
-    private EndOfDaySalesRow toRow(
-            Invoice invoice, Map<String, Order> ordersById, Map<String, String> staffNamesById,
-            Map<String, RestaurantTable> tablesById, Map<String, Integer> quantityByOrderId,
-            Map<String, Payment> paymentByInvoiceId) {
-        Order order = ordersById.get(invoice.getOrderId());
-        RestaurantTable table = order != null ? tablesById.get(order.getTableId()) : null;
-        Payment payment = paymentByInvoiceId.get(invoice.getId());
+    private EndOfDayLookup loadEndOfDayLookup(
+            List<Invoice> invoices,
+            Map<String, Payment> paymentsByInvoiceId
+    ) {
+        List<String> orderIds = invoices.stream().map(Invoice::getOrderId).distinct().toList();
+        List<String> invoiceIds = invoices.stream().map(Invoice::getId).toList();
+        Map<String, Order> ordersById = orderRepository.findAllById(orderIds).stream()
+                .collect(Collectors.toMap(Order::getId, order -> order));
+        Set<String> cashierIds = ordersById.values().stream()
+                .map(Order::getCashierId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<String, String> staffNamesById = userRepository.findAllById(cashierIds).stream()
+                .collect(Collectors.toMap(User::getId, User::getFullName));
+        Map<String, RestaurantTable> tablesById = tableRepository.findAll().stream()
+                .collect(Collectors.toMap(RestaurantTable::getId, table -> table));
+        Map<String, Integer> quantityByInvoiceId = invoiceItemAllocationRepository
+                .findAllByInvoiceIds(invoiceIds).stream()
+                .filter(InvoiceItemAllocation::isActive)
+                .collect(Collectors.groupingBy(InvoiceItemAllocation::getInvoiceId,
+                        Collectors.summingInt(InvoiceItemAllocation::getAllocatedQuantity)));
+        return new EndOfDayLookup(
+                ordersById, staffNamesById, tablesById, quantityByInvoiceId, paymentsByInvoiceId);
+    }
+
+    private EndOfDaySalesRow toRow(Invoice invoice, EndOfDayLookup lookup) {
+        Order order = lookup.ordersById().get(invoice.getOrderId());
+        RestaurantTable table = order != null ? lookup.tablesById().get(order.getTableId()) : null;
+        Payment payment = lookup.paymentsByInvoiceId().get(invoice.getId());
         String staffId = order != null ? order.getCashierId() : null;
         BigDecimal discount = invoice.getDiscountAmount() == null ? BigDecimal.ZERO : invoice.getDiscountAmount();
 
         return new EndOfDaySalesRow(
                 invoice.getId(),
                 invoice.getCode(),
-                invoice.getCreatedAt(),
+                payment != null ? payment.getPaidAt() : null,
                 table != null ? table.getName() : null,
                 table != null ? table.getArea() : null,
-                quantityByOrderId.getOrDefault(invoice.getOrderId(), 0),
+                lookup.quantityByInvoiceId().getOrDefault(invoice.getId(), 0),
                 invoice.getSubtotal(),
                 discount,
                 invoice.getTotalAmount(),
@@ -538,11 +516,16 @@ public class ReportServiceImpl implements ReportService {
                 BigDecimal.ZERO,
                 payment != null ? payment.getAmount() : BigDecimal.ZERO,
                 staffId,
-                staffId != null ? staffNamesById.get(staffId) : null,
+                staffId != null ? lookup.staffNamesById().get(staffId) : null,
                 payment != null ? payment.getMethod() : null);
     }
 
-    private boolean isPayableItem(OrderItem item) {
-        return item.getCookingStatus() == CookingStatus.READY || item.getCookingStatus() == CookingStatus.SERVED;
-    }
+    private record EndOfDayLookup(
+            Map<String, Order> ordersById,
+            Map<String, String> staffNamesById,
+            Map<String, RestaurantTable> tablesById,
+            Map<String, Integer> quantityByInvoiceId,
+            Map<String, Payment> paymentsByInvoiceId
+    ) {}
+
 }

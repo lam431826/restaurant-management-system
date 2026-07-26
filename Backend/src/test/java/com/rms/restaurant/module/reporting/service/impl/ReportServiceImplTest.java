@@ -2,10 +2,11 @@ package com.rms.restaurant.module.reporting.service.impl;
 
 import com.rms.restaurant.common.utils.enums.CookingStatus;
 import com.rms.restaurant.common.utils.enums.DashboardGranularity;
+import com.rms.restaurant.common.utils.enums.FinancialGranularity;
 import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.enums.PaymentMethod;
+import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
-import com.rms.restaurant.module.menu.repository.MenuItemRepository;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
 import com.rms.restaurant.module.order.repository.OrderItemRepository;
@@ -19,7 +20,10 @@ import com.rms.restaurant.module.payment.repository.PaymentRepository;
 import com.rms.restaurant.module.payroll.repository.PayrollSheetRepository;
 import com.rms.restaurant.module.payroll.repository.PayslipRepository;
 import com.rms.restaurant.module.reporting.dto.DashboardOverviewResponse;
+import com.rms.restaurant.module.reporting.dto.EndOfDaySalesRow;
+import com.rms.restaurant.module.reporting.dto.FinancialPeriodResponse;
 import com.rms.restaurant.module.reporting.service.FinancialCustomLineService;
+import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,6 +34,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,7 +63,6 @@ class ReportServiceImplTest {
     @Mock PaymentRepository paymentRepository;
     @Mock UserRepository userRepository;
     @Mock TableRepository tableRepository;
-    @Mock MenuItemRepository menuItemRepository;
     @Mock PayrollSheetRepository payrollSheetRepository;
     @Mock PayslipRepository payslipRepository;
     @Mock FinancialCustomLineService financialCustomLineService;
@@ -72,7 +76,7 @@ class ReportServiceImplTest {
     void setUp() {
         service = new ReportServiceImpl(
                 invoiceRepository, orderRepository, orderItemRepository, invoiceItemAllocationRepository,
-                paymentRepository, userRepository, tableRepository, menuItemRepository,
+                paymentRepository, userRepository, tableRepository,
                 payrollSheetRepository, payslipRepository, financialCustomLineService);
 
         lenient().when(orderRepository.findAllById(anyCollection())).thenReturn(List.of());
@@ -104,7 +108,8 @@ class ReportServiceImplTest {
         return InvoiceItemAllocation.builder()
                 .id("alloc-" + invoiceId + "-" + orderItemId)
                 .invoiceId(invoiceId).orderItemId(orderItemId)
-                .allocatedQuantity(qty).unitPriceSnapshot(unitPrice).active(true)
+                .allocatedQuantity(qty).unitPriceSnapshot(unitPrice)
+                .unitCostSnapshot(new BigDecimal("20000")).active(true)
                 .build();
     }
 
@@ -122,6 +127,78 @@ class ReportServiceImplTest {
                 .id(id).invoiceId(invoiceId).method(method).amount(amount).status(status)
                 .paidAt(paidAt).createdAt(createdAt)
                 .build();
+    }
+
+    @Test
+    void financialReportBucketsRevenueAndCogsBySettlementMonth() {
+        LocalDateTime invoiceCreated = LocalDateTime.of(2026, 6, 30, 23, 55);
+        LocalDateTime settled = LocalDateTime.of(2026, 7, 1, 0, 5);
+        Payment payment = payment("pay-1", "inv-1", PaymentMethod.VNPAY,
+                new BigDecimal("90000"), "PAID", settled, invoiceCreated);
+        Invoice invoice = invoice("inv-1", "order-1", "HD900",
+                new BigDecimal("100000"), new BigDecimal("10000"), new BigDecimal("90000"),
+                true, InvoiceStatus.ACTIVE, invoiceCreated);
+        InvoiceItemAllocation allocation = allocation(
+                "inv-1", "item-1", 2, new BigDecimal("50000"));
+        when(paymentRepository.findSettledPaidBetween(any(), any())).thenReturn(List.of(payment));
+        when(invoiceRepository.findAllById(List.of("inv-1"))).thenReturn(List.of(invoice));
+        when(invoiceItemAllocationRepository.findAllByInvoiceIds(List.of("inv-1")))
+                .thenReturn(List.of(allocation));
+        when(payrollSheetRepository.findFinalizedOverlapping(any(), any())).thenReturn(List.of());
+        when(financialCustomLineService.list()).thenReturn(List.of());
+        when(financialCustomLineService.getValuesForYear(2026)).thenReturn(Map.of());
+
+        List<FinancialPeriodResponse> periods =
+                service.getFinancialReport(2026, FinancialGranularity.MONTH);
+
+        FinancialPeriodResponse july = periods.stream()
+                .filter(period -> period.key().equals("2026-07"))
+                .findFirst()
+                .orElseThrow();
+        FinancialPeriodResponse june = periods.stream()
+                .filter(period -> period.key().equals("2026-06"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(july.salesRevenue()).isEqualByComparingTo("100000");
+        assertThat(july.netRevenue()).isEqualByComparingTo("90000");
+        assertThat(july.cogs()).isEqualByComparingTo("40000");
+        assertThat(june.salesRevenue()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void endOfDayUsesSettlementTimeAndInvoiceAllocationQuantity() {
+        LocalDateTime invoiceCreated = FROM.minusDays(1).plusHours(20);
+        LocalDateTime settled = FROM.plusHours(9);
+        Payment payment = payment("pay-1", "inv-1", PaymentMethod.CASH,
+                new BigDecimal("30000"), "PAID", settled, invoiceCreated);
+        Invoice invoice = invoice("inv-1", "order-1", "HD901",
+                new BigDecimal("30000"), BigDecimal.ZERO, new BigDecimal("30000"),
+                true, InvoiceStatus.ACTIVE, invoiceCreated);
+        Order order = Order.builder()
+                .id("order-1")
+                .tableId("table-1")
+                .cashierId("staff-1")
+                .build();
+        InvoiceItemAllocation paidPart = allocation(
+                "inv-1", "item-1", 1, new BigDecimal("30000"));
+
+        when(paymentRepository.findSettledPaidBetween(FROM, TO)).thenReturn(List.of(payment));
+        when(invoiceRepository.findAllById(List.of("inv-1"))).thenReturn(List.of(invoice));
+        when(orderRepository.findAllById(List.of("order-1"))).thenReturn(List.of(order));
+        when(invoiceItemAllocationRepository.findAllByInvoiceIds(List.of("inv-1")))
+                .thenReturn(List.of(paidPart));
+        when(userRepository.findAllById(anyCollection())).thenReturn(List.of(
+                User.builder().id("staff-1").fullName("Thu ngân").build()));
+        when(tableRepository.findAll()).thenReturn(List.of(
+                RestaurantTable.builder().id("table-1").name("B01").area("Tầng 1").build()));
+
+        List<EndOfDaySalesRow> rows = service.getEndOfDaySales(
+                FROM, TO, List.of(), null, null, null);
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).time()).isEqualTo(settled);
+        assertThat(rows.get(0).quantity()).isEqualTo(1);
+        assertThat(rows.get(0).paymentMethod()).isEqualTo(PaymentMethod.CASH);
     }
 
     /** Wires the two repository lookups the service performs after resolving settled payments:

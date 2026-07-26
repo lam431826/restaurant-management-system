@@ -265,7 +265,9 @@ public class InvoiceSplitValidator {
                     || !allocatedOrderItemIds.add(allocation.getOrderItemId())
                     || allocation.getAllocatedQuantity() <= 0
                     || allocation.getUnitPriceSnapshot() == null
-                    || allocation.getUnitPriceSnapshot().compareTo(BigDecimal.ZERO) <= 0) {
+                    || allocation.getUnitPriceSnapshot().compareTo(BigDecimal.ZERO) <= 0
+                    || allocation.getUnitCostSnapshot() == null
+                    || allocation.getUnitCostSnapshot().compareTo(BigDecimal.ZERO) < 0) {
                 throw invalidAllocationData();
             }
 

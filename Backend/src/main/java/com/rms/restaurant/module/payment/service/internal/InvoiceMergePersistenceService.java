@@ -382,6 +382,7 @@ public class InvoiceMergePersistenceService {
                         .orderItemId(sourceAllocation.getOrderItemId())
                         .allocatedQuantity(sourceAllocation.getAllocatedQuantity())
                         .unitPriceSnapshot(sourceAllocation.getUnitPriceSnapshot())
+                        .unitCostSnapshot(sourceAllocation.getUnitCostSnapshot())
                         .active(true)
                         .build());
                 continue;
@@ -389,7 +390,11 @@ public class InvoiceMergePersistenceService {
             if (existing.getUnitPriceSnapshot() == null
                     || sourceAllocation.getUnitPriceSnapshot() == null
                     || existing.getUnitPriceSnapshot()
-                            .compareTo(sourceAllocation.getUnitPriceSnapshot()) != 0) {
+                            .compareTo(sourceAllocation.getUnitPriceSnapshot()) != 0
+                    || existing.getUnitCostSnapshot() == null
+                    || sourceAllocation.getUnitCostSnapshot() == null
+                    || existing.getUnitCostSnapshot()
+                            .compareTo(sourceAllocation.getUnitCostSnapshot()) != 0) {
                 throw invalidAllocationData();
             }
             existing.setAllocatedQuantity(
@@ -652,6 +657,7 @@ public class InvoiceMergePersistenceService {
             String orderItemId,
             int allocatedQuantity,
             BigDecimal unitPriceSnapshot,
+            BigDecimal unitCostSnapshot,
             LocalDateTime createdAt
     ) {
         private static SourceAllocationSnapshot from(InvoiceItemAllocation allocation) {
@@ -659,7 +665,8 @@ public class InvoiceMergePersistenceService {
                     || allocation.getId() == null
                     || allocation.getInvoiceId() == null
                     || allocation.getOrderItemId() == null
-                    || allocation.getUnitPriceSnapshot() == null) {
+                    || allocation.getUnitPriceSnapshot() == null
+                    || allocation.getUnitCostSnapshot() == null) {
                 throw new ApplicationException(ApplicationError.INVOICE_ALLOCATION_DATA_INVALID);
             }
             return new SourceAllocationSnapshot(
@@ -668,6 +675,7 @@ public class InvoiceMergePersistenceService {
                     allocation.getOrderItemId(),
                     allocation.getAllocatedQuantity(),
                     allocation.getUnitPriceSnapshot(),
+                    allocation.getUnitCostSnapshot(),
                     allocation.getCreatedAt()
             );
         }
@@ -678,6 +686,7 @@ public class InvoiceMergePersistenceService {
                     && orderItemId.equals(allocation.getOrderItemId())
                     && allocatedQuantity == allocation.getAllocatedQuantity()
                     && sameAmount(unitPriceSnapshot, allocation.getUnitPriceSnapshot())
+                    && sameAmount(unitCostSnapshot, allocation.getUnitCostSnapshot())
                     && Objects.equals(createdAt, allocation.getCreatedAt());
         }
 
@@ -688,7 +697,8 @@ public class InvoiceMergePersistenceService {
          */
         private boolean matchesReplacementIdentity(InvoiceItemAllocation allocation) {
             return orderItemId.equals(allocation.getOrderItemId())
-                    && sameAmount(unitPriceSnapshot, allocation.getUnitPriceSnapshot());
+                    && sameAmount(unitPriceSnapshot, allocation.getUnitPriceSnapshot())
+                    && sameAmount(unitCostSnapshot, allocation.getUnitCostSnapshot());
         }
     }
 

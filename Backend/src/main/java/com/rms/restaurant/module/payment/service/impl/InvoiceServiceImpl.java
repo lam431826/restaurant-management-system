@@ -71,12 +71,14 @@ public class InvoiceServiceImpl implements InvoiceService {
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private static final String PAYMENT_STATUS_PAID = "PAID";
     private static final List<InvoiceStatus> ALL_INVOICE_STATUSES = List.of(InvoiceStatus.values());
-    // Only CASH/QR are selectable payment methods today; any other value on a historical
-    // row is intentionally left unmapped so the invoice email omits it rather than guess.
+    // CASH/VNPAY are the selectable payment methods today. QR remains mapped for historical
+    // rows; any other value is intentionally left unmapped so the invoice email omits it
+    // rather than guessing a customer-facing label.
     private static final Map<com.rms.restaurant.common.utils.enums.PaymentMethod, String> PAYMENT_METHOD_LABELS =
             Map.of(
                     com.rms.restaurant.common.utils.enums.PaymentMethod.CASH, "Tiền mặt",
-                    com.rms.restaurant.common.utils.enums.PaymentMethod.QR, "Mã QR"
+                    com.rms.restaurant.common.utils.enums.PaymentMethod.QR, "Mã QR",
+                    com.rms.restaurant.common.utils.enums.PaymentMethod.VNPAY, "VNPAY"
             );
 
     private final InvoiceRepository invoiceRepository;
@@ -174,68 +176,87 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.ORDER_NOT_FOUND));
+        List<OrderItem> payableItems = loadPayableItemsForInvoice(order);
+        InvoiceFinancials financials = resolveInvoiceFinancials(request.promotionCode(), payableItems);
+        Invoice savedInvoice = invoiceRepository.save(
+                buildInvoice(orderId, username, financials));
+        persistInitialAllocations(savedInvoice.getId(), payableItems);
+        if (financials.promotion() != null) incrementUsedCount(financials.promotion());
+        audit("INVOICE_GENERATE", savedInvoice.getId(),
+                "{\"orderId\":\"" + esc(orderId) + "\",\"totalAmount\":" + savedInvoice.getTotalAmount()
+                        + ",\"promotionCode\":\"" + esc(request.promotionCode()) + "\"}");
+        realtimeEventPublisher.publishInvoiceEvent("CREATED", orderId, savedInvoice.getId());
+        return invoiceMapper.toResponse(savedInvoice);
+    }
 
+    private List<OrderItem> loadPayableItemsForInvoice(Order order) {
         validateOrderCanBeInvoiced(order);
-        if (invoiceRepository.existsByOrderId(orderId)) {
+        if (invoiceRepository.existsByOrderId(order.getId())) {
             throw new ApplicationException(ApplicationError.ORDER_ALREADY_INVOICED);
         }
-
-        List<OrderItem> lockedOrderItems = orderItemRepository.findAllByOrderIdForUpdate(orderId);
-        List<OrderItem> payableItems = validateOrderItemsForInvoice(order, lockedOrderItems);
+        List<OrderItem> lockedItems = orderItemRepository.findAllByOrderIdForUpdate(order.getId());
+        List<OrderItem> payableItems = validateOrderItemsForInvoice(order, lockedItems);
         validateNoActiveAllocationConflict(order, payableItems);
+        return payableItems;
+    }
+
+    private InvoiceFinancials resolveInvoiceFinancials(
+            String promotionCode,
+            List<OrderItem> payableItems
+    ) {
         BigDecimal subtotal = calculateSubtotal(payableItems);
         validateInvoiceSubtotal(subtotal);
-
         Promotion promotion = null;
-        BigDecimal discountAmount = BigDecimal.ZERO;
-
-        if (request.promotionCode() != null && !request.promotionCode().isBlank()) {
-            promotion = findActivePromotionForUpdate(request.promotionCode());
+        BigDecimal discount = BigDecimal.ZERO;
+        if (promotionCode != null && !promotionCode.isBlank()) {
+            promotion = findActivePromotionForUpdate(promotionCode);
             validatePromotionDate(promotion);
             validatePromotionUsage(promotion);
-            discountAmount = calculateDiscount(promotion, subtotal);
+            discount = calculateDiscount(promotion, subtotal);
         }
+        BigDecimal total = subtotal.subtract(discount);
+        validateInvoiceTotal(total);
+        return new InvoiceFinancials(promotion, subtotal, discount, total);
+    }
 
-        BigDecimal totalAmount = subtotal.subtract(discountAmount);
-        validateInvoiceTotal(totalAmount);
-
-        Invoice invoice = Invoice.builder()
+    private Invoice buildInvoice(String orderId, String username, InvoiceFinancials financials) {
+        return Invoice.builder()
                 .code(businessCodeGenerator.nextInvoiceCode())
                 .orderId(orderId)
-                .subtotal(subtotal)
-                .discountAmount(discountAmount)
-                .totalAmount(totalAmount)
-                .promotionId(promotion == null ? null : promotion.getId())
+                .subtotal(financials.subtotal())
+                .discountAmount(financials.discount())
+                .totalAmount(financials.total())
+                .promotionId(financials.promotion() == null ? null : financials.promotion().getId())
                 .paid(false)
                 .status(InvoiceStatus.ACTIVE)
                 .mergedIntoInvoiceId(null)
                 .splitFromInvoiceId(null)
                 .createdBy(username)
                 .build();
+    }
 
-        Invoice savedInvoice = invoiceRepository.save(invoice);
+    private void persistInitialAllocations(String invoiceId, List<OrderItem> payableItems) {
+        Map<String, BigDecimal> unitCostByMenuItemId = snapshotUnitCosts(payableItems);
         List<InvoiceItemAllocation> allocations = payableItems.stream()
                 .map(item -> InvoiceItemAllocation.builder()
-                        .invoiceId(savedInvoice.getId())
+                        .invoiceId(invoiceId)
                         .orderItemId(item.getId())
                         .allocatedQuantity(item.getQuantity())
                         .unitPriceSnapshot(item.getUnitPrice())
+                        .unitCostSnapshot(unitCostByMenuItemId.getOrDefault(
+                                item.getMenuItemId(), BigDecimal.ZERO))
                         .active(true)
                         .build())
                 .collect(Collectors.toList());
         invoiceItemAllocationRepository.saveAll(allocations);
-
-        if (promotion != null) {
-            incrementUsedCount(promotion);
-        }
-
-        audit("INVOICE_GENERATE", savedInvoice.getId(),
-                "{\"orderId\":\"" + esc(orderId) + "\",\"totalAmount\":" + savedInvoice.getTotalAmount()
-                        + ",\"promotionCode\":\"" + esc(request.promotionCode()) + "\"}");
-        realtimeEventPublisher.publishInvoiceEvent("CREATED", orderId, savedInvoice.getId());
-
-        return invoiceMapper.toResponse(savedInvoice);
     }
+
+    private record InvoiceFinancials(
+            Promotion promotion,
+            BigDecimal subtotal,
+            BigDecimal discount,
+            BigDecimal total
+    ) {}
 
     @Override
     public InvoiceResponse applyDiscount(String invoiceId, ApplyDiscountRequest request) {
@@ -538,8 +559,6 @@ public class InvoiceServiceImpl implements InvoiceService {
         );
     }
 
-    @Override public InvoiceResponse getByOrderId(String orderId) { return null; }
-
     // ── PM-07: invoice / payment history list ────────────────────────────
 
     @Override
@@ -796,6 +815,19 @@ public class InvoiceServiceImpl implements InvoiceService {
         return orderItems.stream()
                 .map(item -> item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private Map<String, BigDecimal> snapshotUnitCosts(List<OrderItem> orderItems) {
+        Set<String> menuItemIds = orderItems.stream()
+                .map(OrderItem::getMenuItemId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+        if (menuItemIds.isEmpty()) return Map.of();
+        return menuItemRepository.findAllById(menuItemIds).stream()
+                .collect(Collectors.toMap(
+                        MenuItem::getId,
+                        item -> item.getCostPrice() == null ? BigDecimal.ZERO : item.getCostPrice()
+                ));
     }
 
     private void validateOrderCanBeInvoiced(Order order) {

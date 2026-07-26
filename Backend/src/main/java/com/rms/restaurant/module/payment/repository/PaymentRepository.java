@@ -15,7 +15,6 @@ import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<Payment, String> {
     List<Payment> findByInvoiceId(String invoiceId);
-    List<Payment> findByInvoiceIdIn(List<String> invoiceIds);
     boolean existsByInvoiceId(String invoiceId);
     boolean existsByInvoiceIdIn(Collection<String> invoiceIds);
     boolean existsByInvoiceIdAndStatus(String invoiceId, String status);
@@ -26,16 +25,9 @@ public interface PaymentRepository extends JpaRepository<Payment, String> {
     // BR-CS-08: payments attributed to a specific shift (revenue by ownership)
     List<Payment> findByShiftIdAndStatus(String shiftId, String status);
 
-    @Query("SELECT p FROM Payment p WHERE p.status = 'PAID' AND p.createdAt >= :from AND p.createdAt <= :to")
-    List<Payment> findPaidPaymentsBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
-
-    // Manager dashboard only — anchored on the authoritative SETTLEMENT instant (paidAt), not
-    // attempt creation time: a VNPAY payment can be created on one day and settle (Return/IPN,
-    // or a later QueryDR catch-up) on another, and revenue belongs to when the money actually
-    // landed. Half-open [from, to): `to` is exclusive so a period boundary can never double-count
-    // or omit a payment settled at that exact instant — unlike findPaidPaymentsBetween above
-    // (creation-time, inclusive-both-ends, currently unused) or InvoiceRepository.findPaidBetween
-    // (creation-time, inclusive-both-ends, shared by the Financial/EOD reports — left untouched).
+    // Manager reports use the authoritative settlement instant. A VNPAY attempt can be created
+    // on one day and settle on another. Half-open [from, to) boundaries prevent adjacent periods
+    // from double-counting or omitting a payment settled exactly at their shared boundary.
     @Query("SELECT p FROM Payment p WHERE p.status = 'PAID' AND p.paidAt >= :from AND p.paidAt < :to ORDER BY p.paidAt ASC")
     List<Payment> findSettledPaidBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
