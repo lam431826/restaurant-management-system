@@ -265,8 +265,6 @@ public class OrderServiceImpl implements OrderService {
         return response;
     }
 
-    @Override public OrderResponse addItem(String id, com.rms.restaurant.module.order.dto.AddOrderItemRequest request) { return null; }
-
     @Override
     public OrderResponse removeItem(String orderId, String itemId) {
         String normalizedOrderId = normalizeOrderId(orderId);

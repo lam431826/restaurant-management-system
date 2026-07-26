@@ -71,8 +71,6 @@ public class SecurityConfig {
                 .requestMatchers("/api/guest/**").permitAll()
                 // Public – WebSocket handshake (auth validated in StompAuthChannelInterceptor per CONNECT frame)
                 .requestMatchers("/ws/**", "/ws-guest/**").permitAll()
-                // Public – Payment webhook (verified via HMAC-SHA256 in controller)
-                .requestMatchers(HttpMethod.POST, "/api/webhooks/**").permitAll()
                 // Public – VNPAY Return/IPN (VNPAY's own browser redirect/server call with no
                 // JWT; verified via HMAC-SHA512 checksum in the controller/service)
                 .requestMatchers(HttpMethod.GET, "/api/payments/vnpay/return", "/api/payments/vnpay/ipn").permitAll()

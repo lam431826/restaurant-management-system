@@ -27,7 +27,6 @@ public interface TableService {
     AreaResponse createArea(AreaRequest request);
     void deleteArea(String id);
 
-    // Order-session operations (TM-04) — not yet implemented
+    // Order-session operation
     void transfer(TransferTableRequest request);
-    void merge(MergeTableRequest request);
 }

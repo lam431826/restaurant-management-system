@@ -1,6 +1,5 @@
 package com.rms.restaurant.module.payment.service;
 
-import com.rms.restaurant.module.payment.dto.PaymentWebhookPayload;
 import com.rms.restaurant.module.payment.dto.PaymentResponse;
 import com.rms.restaurant.module.payment.dto.ProcessPaymentRequest;
 import com.rms.restaurant.module.payment.dto.QrInitiateRequest;
@@ -26,8 +25,6 @@ public interface PaymentService {
     PaymentResponse cancelQrPayment(String paymentId, String cashierUsername);
 
     List<PaymentResponse> getHistory(String invoiceId);
-    void handleWebhook(PaymentWebhookPayload payload, String signature);
-
     // ── VNPAY Sandbox ────────────────────────────────────────────────────────
 
     /** Creates (or, if an unexpired one already exists, reuses) a PENDING VNPAY attempt

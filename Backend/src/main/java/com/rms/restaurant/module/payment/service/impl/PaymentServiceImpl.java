@@ -18,7 +18,6 @@ import com.rms.restaurant.module.cashbook.service.CashbookService;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.payment.dto.PaymentResponse;
-import com.rms.restaurant.module.payment.dto.PaymentWebhookPayload;
 import com.rms.restaurant.module.payment.dto.ProcessPaymentRequest;
 import com.rms.restaurant.module.payment.dto.QrInitiateRequest;
 import com.rms.restaurant.module.payment.dto.VnpayCreateRequest;
@@ -879,7 +878,6 @@ public class PaymentServiceImpl implements PaymentService {
         return responses;
     }
 
-    @Override public void handleWebhook(PaymentWebhookPayload payload, String signature) {}
 
     private boolean hasPaidPayment(String invoiceId) {
         return paymentRepository.findByInvoiceId(invoiceId).stream()

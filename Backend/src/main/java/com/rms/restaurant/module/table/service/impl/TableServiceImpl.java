@@ -442,9 +442,6 @@ public class TableServiceImpl implements TableService {
         tableRepository.saveAll(lockedTables);
     }
 
-    @Override
-    public void merge(MergeTableRequest request) { /* TODO TM-04 */ }
-
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private RestaurantTable findLockedTable(List<RestaurantTable> lockedTables, String tableId, String message) {

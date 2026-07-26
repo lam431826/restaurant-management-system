@@ -124,11 +124,4 @@ public class TableController {
         return ResponseEntity.noContent().build();
     }
 
-    // ── TM-05: Ghép bàn ──────────────────────────────────────────────────────
-    @PostMapping("/merge")
-    @PreAuthorize("hasAnyRole('WAITER', 'CASHIER')")
-    public ResponseEntity<Void> merge(@Valid @RequestBody MergeTableRequest request) {
-        tableService.merge(request);
-        return ResponseEntity.noContent().build();
-    }
 }
