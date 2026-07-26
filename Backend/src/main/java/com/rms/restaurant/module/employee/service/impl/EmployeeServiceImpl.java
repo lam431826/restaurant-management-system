@@ -2,6 +2,7 @@ package com.rms.restaurant.module.employee.service.impl;
 
 import com.rms.restaurant.common.utils.enums.EmployeeStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
+import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
@@ -93,9 +94,10 @@ public class EmployeeServiceImpl implements EmployeeService {
             throw new ConflictException(ApplicationError.DUPLICATE_EMPLOYEE_PHONE);
         }
         String userId = trimToNull(request.userId());
-        if (userId != null) {
-            linkUser(userId);
+        if (userId == null) {
+            throw new ApplicationException(ApplicationError.EMPLOYEE_USER_REQUIRED);
         }
+        linkUser(userId);
 
         Employee employee = Employee.builder()
                 .code(code)

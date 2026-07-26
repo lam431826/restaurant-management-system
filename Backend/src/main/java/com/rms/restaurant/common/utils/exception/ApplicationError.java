@@ -50,6 +50,7 @@ public enum ApplicationError {
     DUPLICATE_EMPLOYEE_CODE("Employee code already in use", HttpStatus.CONFLICT),
     DUPLICATE_EMPLOYEE_PHONE("Phone number already in use", HttpStatus.CONFLICT),
     EMPLOYEE_USER_ALREADY_LINKED("This user account is already linked to another employee", HttpStatus.CONFLICT),
+    EMPLOYEE_USER_REQUIRED("Vui lòng gắn tài khoản đăng nhập cho nhân viên", HttpStatus.BAD_REQUEST),
     EMPLOYEE_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
     EMPLOYEE_IMPORT_TOO_MANY_ROWS("Import file exceeds the 500-row limit", HttpStatus.BAD_REQUEST),
 

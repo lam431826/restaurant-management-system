@@ -717,6 +717,11 @@ const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props
       setTab('info')
       return
     }
+    if (!isEdit && !userId) {
+      setError('Vui lòng chọn hoặc tạo tài khoản đăng nhập cho nhân viên')
+      setTab('info')
+      return
+    }
     if (createTemplateAfter && !salaryType) {
       setError('Vui lòng chọn loại lương trước khi tạo mẫu')
       setTab('salary')
@@ -842,7 +847,7 @@ const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props
                   <Field label="Ngày bắt đầu làm việc">
                     <input type="date" className={inputCls} value={startDate} onChange={e => setStartDate(e.target.value)} />
                   </Field>
-                  <Field label="Tài khoản đăng nhập">
+                  <Field label={isEdit ? 'Tài khoản đăng nhập' : 'Tài khoản đăng nhập *'}>
                     <AccountPicker
                       value={userId}
                       accounts={accounts}
