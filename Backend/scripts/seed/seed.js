@@ -1,22 +1,27 @@
 #!/usr/bin/env node
 /**
- * Generates seed_3_months.sql: ~3 months (2026-04-24 .. 2026-07-24 inclusive) of realistic
- * RMS operational history, written as plain SQL Server INSERT statements.
+ * Seeds the ENTIRE rms_db dataset directly, with no dependency on DataSeeder.java (deleted --
+ * this script is now the only source of seed data, so it must be able to bootstrap a truly
+ * empty, freshly-migrated database on its own): baseline/master data (test-account users,
+ * table areas + tables, promotions, and the full menu catalog imported from the repo-root
+ * menu-export.csv) is created once and never deleted by cleanup; on top of that it generates
+ * ~3 rolling months (today - 3mo .. today) of realistic operational history (attendance,
+ * orders/invoices/payments, cashier shifts, payroll, cashbook, reservations), resolving every
+ * reference id LIVE against the current database instead of hardcoding snapshot values.
  *
  * This does NOT call any Java service code -- it ports the exact formulas from
  * AttendanceCalculator.java and SalaryCalculator.java into JS so the numbers it writes are
- * consistent with what the real backend would compute for the same inputs. Business codes
- * (order/invoice sequences, cashbook/payroll MAX+1 codes) continue from the live values in
- * rms_db verified on 2026-07-24 -- re-verify the COUNTERS block below before re-running this
- * script against a database that has since seen more real usage.
+ * consistent with what the real backend would compute for the same inputs.
  *
- * Usage: node generate_seed.js
- * Writes seed_3_months.sql next to this file. Review it, then apply with sqlcmd. Requires
- * `sqlcmd` on PATH and reachable at localhost with the credentials below (used only for
- * read-only SELECTs of reference master data -- menu items, tables).
+ * Usage: node seed.js  (or run_seed.bat, which just calls this)
+ * Requires `sqlcmd` on PATH and the DB schema already migrated (run the backend once via
+ * Flyway if starting from a completely empty database); DB credentials read from Backend/env
+ * (DB_USERNAME/DB_PASSWORD), falling back to sa/123 if that file is missing.
  *
- * (Originally written in Python; ported to Node.js because no Python interpreter was
- * available on the dev machine that generated this -- see the plan/session notes.)
+ * Safe to re-run any number of times: baseline/master data is insert-only-if-missing (matched
+ * by natural key: username, table name, promotion code, menu item code, ...), and
+ * 00_cleanup.sql removes exactly the transactional/historical data this script owns before
+ * regenerating it, so nothing accumulates or collides between runs.
  */
 'use strict';
 const fs = require('fs');
@@ -25,7 +30,45 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 // ---------------------------------------------------------------------------------------
-// Seeded RNG (mulberry32) so re-running reproduces the same data
+// Env / sqlcmd plumbing
+// ---------------------------------------------------------------------------------------
+function loadEnvFile(file) {
+  const out = {};
+  if (!fs.existsSync(file)) return out;
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m) out[m[1]] = m[2];
+  }
+  return out;
+}
+const ENV = loadEnvFile(path.join(__dirname, '..', '..', 'env'));
+const DB_USERNAME = ENV.DB_USERNAME || 'sa';
+const DB_PASSWORD = ENV.DB_PASSWORD || '123';
+// -b: abort with a non-zero exit code on the first error, instead of sqlcmd's default of
+// printing the error and continuing -- we want a broken run to fail loudly, not silently.
+const SQLCMD_ARGS_BASE = ['-S', 'localhost', '-U', DB_USERNAME, '-P', DB_PASSWORD, '-d', 'rms_db', '-b'];
+const CLEANUP_PATH = path.join(__dirname, '00_cleanup.sql');
+const OUT_PATH = path.join(__dirname, 'seed_3_months.sql');
+const BASELINE_PATH = path.join(__dirname, 'baseline_bootstrap.sql');
+const MENU_CSV_PATH = path.join(__dirname, '..', '..', '..', 'menu-export.csv');
+
+function sqlcmdQuery(sql) {
+  const args = [...SQLCMD_ARGS_BASE, '-h', '-1', '-s', '|', '-W', '-Q', `SET NOCOUNT ON; ${sql}`];
+  const out = execFileSync('sqlcmd', args, { encoding: 'utf8' });
+  return out.split(/\r?\n/)
+    .map((l) => l.replace(/\s+$/, ''))
+    .filter((l) => l && !/^-+$/.test(l.trim()))
+    .map((l) => l.split('|').map((p) => p.trim()));
+}
+function sqlcmdRunFile(file) {
+  execFileSync('sqlcmd', [...SQLCMD_ARGS_BASE, '-i', file], { stdio: 'inherit' });
+}
+function countOf(table) {
+  return parseInt(sqlcmdQuery(`SELECT COUNT(*) FROM ${table}`)[0][0], 10);
+}
+
+// ---------------------------------------------------------------------------------------
+// Seeded RNG (mulberry32) so re-running reproduces the same relative pattern of data
 // ---------------------------------------------------------------------------------------
 function mulberry32(seed) {
   return function () {
@@ -59,6 +102,7 @@ const newId = () => crypto.randomUUID();
 const pad2 = (n) => String(n).padStart(2, '0');
 const mkDate = (y, m, d, hh = 0, mi = 0, ss = 0) => new Date(y, m - 1, d, hh, mi, ss);
 const addDays = (dt, n) => { const d = new Date(dt); d.setDate(d.getDate() + n); return d; };
+const addMonths = (dt, n) => { const d = new Date(dt); d.setMonth(d.getMonth() + n); return d; };
 const addMinutes = (dt, n) => new Date(dt.getTime() + n * 60000);
 const dateOnly = (dt) => mkDate(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
 const dateKey = (dt) => `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
@@ -69,36 +113,174 @@ const fmtDateTime = (dt) => dt ? `${fmtDate(dt)} ${pad2(dt.getHours())}:${pad2(d
 const fmtIsoDateTime = (dt) => dt ? `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}T${pad2(dt.getHours())}:${pad2(dt.getMinutes())}:${pad2(dt.getSeconds())}` : null;
 const fmtTime = (hh, mm) => `${pad2(hh)}:${pad2(mm)}:00`;
 function daterange(a, b) { const out = []; let d = dateOnly(a); const end = dateOnly(b); while (d <= end) { out.push(d); d = addDays(d, 1); } return out; }
+function startOfMonth(y, m) { return mkDate(y, m, 1); }
+function endOfMonth(y, m) { return mkDate(y, m, new Date(y, m, 0).getDate()); }
+function shiftMonth(y, m, delta) { const total = y * 12 + (m - 1) + delta; return { y: Math.floor(total / 12), m: (total % 12) + 1 }; }
 
 // ---------------------------------------------------------------------------------------
-// Config
+// SQL emission helpers (target array is explicit so both the baseline-bootstrap file and the
+// main 3-month file can reuse the same batching/escaping logic)
 // ---------------------------------------------------------------------------------------
-const START_DATE = mkDate(2026, 4, 24);
-const END_DATE = mkDate(2026, 7, 24); // inclusive
-const ALL_DATES = daterange(START_DATE, END_DATE);
-
-const SQLCMD_ARGS_BASE = ['-S', 'localhost', '-U', 'sa', '-P', '123', '-d', 'rms_db'];
-const OUT_PATH = path.join(__dirname, 'seed_3_months.sql');
-
-// MAX(code)/sequence values verified live against rms_db on 2026-07-24.
-const COUNTERS = {
-  order_seq: 9, invoice_seq: 10, NV: 3, PT: 0, PC: 4, TT: 8, BL: 2, PL: 5,
-};
-function nextCode(prefix, width = 6) { COUNTERS[prefix] += 1; return `${prefix}${String(COUNTERS[prefix]).padStart(width, '0')}`; }
-function nextOrderCode() { COUNTERS.order_seq += 1; return `DH${String(COUNTERS.order_seq).padStart(6, '0')}`; }
-function nextInvoiceCode() { COUNTERS.invoice_seq += 1; return `HD${String(COUNTERS.invoice_seq).padStart(6, '0')}`; }
-
-// ---------------------------------------------------------------------------------------
-// Live reference data (read-only SELECTs against rms_db)
-// ---------------------------------------------------------------------------------------
-function sqlcmdQuery(sql) {
-  const args = [...SQLCMD_ARGS_BASE, '-h', '-1', '-s', '|', '-W', '-Q', `SET NOCOUNT ON; ${sql}`];
-  const out = execFileSync('sqlcmd', args, { encoding: 'utf8' });
-  return out.split(/\r?\n/)
-    .map((l) => l.replace(/\s+$/, ''))
-    .filter((l) => l && !/^-+$/.test(l.trim()))
-    .map((l) => l.split('|').map((p) => p.trim()));
+function sqlval(v) {
+  if (v === null || v === undefined) return 'NULL';
+  if (typeof v === 'boolean') return v ? '1' : '0';
+  if (typeof v === 'number') return String(v);
+  return `'${String(v).replace(/'/g, "''")}'`;
 }
+function emitInsert(target, table, columns, rows, batch = 200) {
+  if (!rows.length) return;
+  const colList = columns.join(', ');
+  for (let i = 0; i < rows.length; i += batch) {
+    const chunk = rows.slice(i, i + batch);
+    const valuesSql = chunk.map((row) => '(' + row.map(sqlval).join(', ') + ')').join(',\n');
+    target.push(`INSERT INTO ${table} (${colList}) VALUES\n${valuesSql};`);
+    target.push('GO');
+  }
+}
+function emitRaw(target, sql) { target.push(sql); target.push('GO'); }
+
+// ---------------------------------------------------------------------------------------
+// Config: rolling 3-month window ending today
+// ---------------------------------------------------------------------------------------
+const END_DATE = dateOnly(new Date());
+const START_DATE = dateOnly(addMonths(END_DATE, -3));
+const ALL_DATES = daterange(START_DATE, END_DATE);
+const NOW_STAMP = fmtDateTime(new Date());
+const CURRENT_YEAR = END_DATE.getFullYear();
+
+// =========================================================================================
+// Step 1: Ensure baseline/master data exists (users, table areas + tables, promotions, menu
+// catalog). Everything here is insert-only-if-missing (matched by natural key), and none of
+// it is touched by 00_cleanup.sql -- so this whole block is a no-op after the first run.
+// =========================================================================================
+console.log('[1/5] Ensuring baseline data (users, tables, promotions, menu)...');
+const BASELINE_OUT = ['SET QUOTED_IDENTIFIER ON;', 'GO'];
+
+// Core test-account users. Passwords must be bcrypt hashes (BCryptPasswordEncoder(12) in
+// SecurityConfig) -- Node has no bcrypt in its standard library and this script intentionally
+// has zero npm dependencies, so these are fixed hashes captured once from a real
+// BCryptPasswordEncoder run (each still logs in with the plaintext password on the right).
+const BASELINE_USERS = [
+  // username, password_hash, full_name, email, phone, role                    | plaintext password
+  ['admin', '$2a$12$ZY8v9wB2v1ZtYP4cqEI7gusqMIEJTu6bnPneC5VgsPIyRA6tflQJ2', 'System Administrator', 'admin@rms.local', '0900000001', 'ADMIN'],     // Admin@123456
+  ['manager01', '$2a$12$QbCA/ZO5s0mSeLib/Mi6qutRNd.0oqPGxY9PNtpISxHHCQKrWpCLq', 'Manager One', 'manager01@rms.local', '0900000002', 'MANAGER'],   // Manager@123456
+  ['cashier01', '$2a$12$erGwdfhbaTBb85STSISJIOjdi1262cQpM4QUlwLOO7cy/5JHkdbeu', 'Cashier One', 'cashier01@rms.local', '0900000003', 'CASHIER'],    // Cashier@123456
+  ['waiter01', '$2a$12$wEHtCx.m1wtd.t6Djdkq1.XMIvPUYiLFz6KTyj7wJuqA/Eq4agFly', 'Waiter One', 'waiter01@rms.local', '0900000004', 'WAITER'],        // Waiter@123456
+];
+const existingUsernames = new Set(sqlcmdQuery(
+  `SELECT username FROM users WHERE username IN (${BASELINE_USERS.map((u) => `'${u[0]}'`).join(',')})`
+).map((r) => r[0]));
+const newBaselineUserRows = BASELINE_USERS
+  .filter(([username]) => !existingUsernames.has(username))
+  .map(([username, hash, fullName, email, phone, role]) =>
+    [newId(), username, hash, fullName, email, phone, role, 'ACTIVE', 0, null, NOW_STAMP, NOW_STAMP, 0]);
+emitInsert(BASELINE_OUT, 'users', ['id', 'username', 'password_hash', 'full_name', 'email', 'phone', 'role',
+  'status', 'failed_login_attempts', 'locked_at', 'created_at', 'updated_at', 'token_version'], newBaselineUserRows);
+
+// Table areas + restaurant tables (26 tables across 3 areas). ASCII names throughout --
+// sqlcmd on this box was confirmed (empirically, round-tripping a test insert) to mangle
+// Vietnamese diacritics written through a generated SQL file, matching the same class of
+// encoding risk already documented below for -Q command-line arguments.
+if (countOf('table_areas') === 0) {
+  emitInsert(BASELINE_OUT, 'table_areas', ['id', 'name', 'note', 'display_order'], [
+    [newId(), 'Tang 1', null, 0],
+    [newId(), 'Tang 2', null, 1],
+    [newId(), 'Phong VIP', null, 2],
+  ]);
+}
+if (countOf('restaurant_tables') === 0) {
+  const TABLE_DEFS = [
+    ['T1-01', 2, 'Tang 1'], ['T1-02', 2, 'Tang 1'], ['T1-03', 2, 'Tang 1'], ['T1-04', 2, 'Tang 1'],
+    ['T1-05', 4, 'Tang 1'], ['T1-06', 4, 'Tang 1'], ['T1-07', 4, 'Tang 1'], ['T1-08', 4, 'Tang 1'], ['T1-09', 4, 'Tang 1'],
+    ['T1-10', 6, 'Tang 1'], ['T1-11', 6, 'Tang 1'], ['T1-12', 6, 'Tang 1'],
+    ['T2-01', 4, 'Tang 2'], ['T2-02', 4, 'Tang 2'], ['T2-03', 4, 'Tang 2'], ['T2-04', 4, 'Tang 2'],
+    ['T2-05', 6, 'Tang 2'], ['T2-06', 6, 'Tang 2'], ['T2-07', 6, 'Tang 2'], ['T2-08', 6, 'Tang 2'],
+    ['T2-09', 8, 'Tang 2'], ['T2-10', 8, 'Tang 2'],
+    ['VIP-01', 8, 'Phong VIP'], ['VIP-02', 10, 'Phong VIP'], ['VIP-03', 12, 'Phong VIP'], ['VIP-04', 20, 'Phong VIP'],
+  ];
+  emitInsert(BASELINE_OUT, 'restaurant_tables', ['id', 'name', 'capacity', 'area', 'note', 'display_order',
+    'active', 'status', 'qr_token', 'occupied_since', 'updated_at'],
+    TABLE_DEFS.map(([name, capacity, area]) => [newId(), name, capacity, area, null, 0, true, 'AVAILABLE', `QR-${name}`, null, null]));
+}
+
+// Promotions (2 always-on, 2 inactive test fixtures for deactivated/expired scenarios).
+if (countOf('promotions') === 0) {
+  emitInsert(BASELINE_OUT, 'promotions', ['id', 'code', 'description', 'discount_percent', 'discount_amount',
+    'valid_from', 'valid_to', 'active', 'usage_limit', 'used_count'], [
+    [newId(), 'PERCENT10', 'Giam 10% tong hoa don', 10.00, null, `${CURRENT_YEAR}-01-01`, `${CURRENT_YEAR}-12-31`, true, null, 0],
+    [newId(), 'FLAT50K', 'Giam 50.000d cho moi don hang', null, 50000, `${CURRENT_YEAR}-01-01`, `${CURRENT_YEAR}-12-31`, true, null, 0],
+    [newId(), 'WELCOME20', 'Khuyen mai chao mung khach hang moi - Giam 20%', 20.00, null, `${CURRENT_YEAR}-06-01`, `${CURRENT_YEAR}-06-30`, false, null, 0],
+    [newId(), 'SUMMER30', 'Khuyen mai he 2025 - Giam 30%', 30.00, null, `${CURRENT_YEAR - 1}-06-01`, `${CURRENT_YEAR - 1}-08-31`, false, null, 0],
+  ]);
+}
+
+// Menu catalog imported from the repo-root menu-export.csv (the real ~97-item sushi-restaurant
+// catalog exported via the app's own GET /menu/export-csv), replacing DataSeeder's old 10
+// hardcoded generic items. Categories are find-or-created by name; items are inserted only if
+// their `code` isn't already present, so a partially-imported catalog can be topped up safely.
+if (!fs.existsSync(MENU_CSV_PATH)) throw new Error(`menu-export.csv not found at ${MENU_CSV_PATH}`);
+let csvText = fs.readFileSync(MENU_CSV_PATH, 'utf8');
+if (csvText.charCodeAt(0) === 0xFEFF) csvText = csvText.slice(1); // strip UTF-8 BOM
+const csvLines = csvText.split(/\r?\n/).filter((l) => l.length > 0);
+const csvHeader = csvLines[0].split(',');
+const csvRows = csvLines.slice(1).map((line) => {
+  const cells = line.split(',');
+  const row = {};
+  csvHeader.forEach((h, i) => { row[h] = (cells[i] !== undefined ? cells[i] : '').trim(); });
+  return row;
+});
+
+const existingCatRows = sqlcmdQuery('SELECT id, name, display_order FROM menu_categories');
+const catIdByName = {};
+let maxCatOrder = -1;
+for (const [id, name, order] of existingCatRows) {
+  catIdByName[name] = id;
+  maxCatOrder = Math.max(maxCatOrder, parseInt(order, 10) || 0);
+}
+const newCatRows = [];
+for (const row of csvRows) {
+  if (!row.category || catIdByName[row.category]) continue;
+  const id = newId();
+  catIdByName[row.category] = id;
+  maxCatOrder += 1;
+  newCatRows.push([id, row.category, maxCatOrder, null]);
+}
+emitInsert(BASELINE_OUT, 'menu_categories', ['id', 'name', 'display_order', 'icon'], newCatRows);
+
+const existingItemCodes = new Set(sqlcmdQuery('SELECT code FROM menu_items WHERE code IS NOT NULL').map((r) => r[0]));
+const newMenuItemRows = [];
+for (const row of csvRows) {
+  if (!row.code || existingItemCodes.has(row.code)) continue;
+  const catId = catIdByName[row.category];
+  if (!catId) continue; // category was just created above in this same run
+  newMenuItemRows.push([
+    newId(), row.code, catId, row.name, parseInt(row.price, 10) || 0,
+    row.costPrice ? parseInt(row.costPrice, 10) : null,
+    row.description || null, row.imageUrl || null,
+    row.menuType || null, row.itemType || null, row.tag || null,
+    row.trackStock === 'true', row.status === 'Available', null,
+  ]);
+}
+emitInsert(BASELINE_OUT, 'menu_items', ['id', 'code', 'category_id', 'name', 'price', 'cost_price', 'description',
+  'image_url', 'menu_type', 'item_type', 'tag', 'track_stock', 'available', 'updated_at'], newMenuItemRows);
+
+if (BASELINE_OUT.length > 2) {
+  fs.writeFileSync(BASELINE_PATH, BASELINE_OUT.join('\n'), 'utf8');
+  sqlcmdRunFile(BASELINE_PATH);
+  console.log(`  -> inserted missing baseline rows (${newBaselineUserRows.length} user(s), ${newCatRows.length} categor${newCatRows.length === 1 ? 'y' : 'ies'}, ${newMenuItemRows.length} menu item(s), plus tables/promotions if missing).`);
+} else {
+  console.log('  -> baseline data already present, nothing to do.');
+}
+
+// ---------------------------------------------------------------------------------------
+console.log('[2/5] Cleaning up previous seed run (00_cleanup.sql)...');
+sqlcmdRunFile(CLEANUP_PATH);
+
+// ---------------------------------------------------------------------------------------
+// Live reference data (read-only lookups against rms_db, run AFTER cleanup so MAX()/sequence
+// values reflect only real pre-existing data, never this script's own previous run)
+// ---------------------------------------------------------------------------------------
+console.log('[3/5] Resolving live reference data...');
 
 const MENU_ITEMS = sqlcmdQuery('SELECT id, name, price FROM menu_items WHERE available = 1')
   .map(([id, name, price]) => [id, name, parseInt(price, 10)]);
@@ -106,50 +288,146 @@ const TABLE_IDS = sqlcmdQuery('SELECT id FROM restaurant_tables WHERE active = 1
 if (!MENU_ITEMS.length) throw new Error('No available menu_items found -- is rms_db reachable and seeded?');
 if (!TABLE_IDS.length) throw new Error('No active restaurant_tables found.');
 
-// Cashbook categories (verified live 2026-07-24; kept, not re-inserted).
-const CAT_SALARY_PAYMENT = 'c0000000-0000-0000-0000-000000000001'; // PAYMENT, income=1
-const CAT_SALES_RECEIPT = 'c0000000-0000-0000-0000-000000000002'; // RECEIPT, income=1
-const CAT_OTHER_RECEIPT = 'c0000000-0000-0000-0000-000000000003'; // RECEIPT, income=0
-const CAT_INGREDIENTS = 'c0000000-0000-0000-0000-000000000004'; // PAYMENT, income=1
-const CAT_UTILITIES = 'c0000000-0000-0000-0000-000000000005'; // PAYMENT, income=1
-const CAT_CSVC = '449f9dcf-ab85-4d95-8f0d-041da9ad9fc2'; // PAYMENT, income=1
+// Core test-account users (created by the baseline step above on a fresh DB, resolved live by
+// username rather than hardcoded id so a DB reset never breaks this).
+const userRows = sqlcmdQuery("SELECT id, username FROM users WHERE username IN ('manager01','cashier01','waiter01')");
+const userIdByUsername = {};
+for (const [id, username] of userRows) userIdByUsername[username] = id;
+for (const u of ['manager01', 'cashier01', 'waiter01']) {
+  if (!userIdByUsername[u]) throw new Error(`Required user '${u}' not found live -- is rms_db seeded with base test accounts?`);
+}
+const USER_MANAGER01 = userIdByUsername.manager01;
+const USER_CASHIER01 = userIdByUsername.cashier01;
+const USER_WAITER01 = userIdByUsername.waiter01;
+// Fixed bcrypt hash reused for every synthetic account this script creates (cashier02,
+// waiter02, ...) -- same rationale as BASELINE_USERS above: no bcrypt in Node's stdlib.
+const SEED_ACCOUNT_PASSWORD_HASH = '$2a$12$laA5nJYNLEjnwIPvjeReju0IkZ5LzYF3IO.ZucZWBHIKVlbk7v2CW';
 
-// Active promotions usable for discounted invoices (verified live 2026-07-24).
-const PROMO_PERCENT10 = { id: '9d235c2b-3288-4383-a6e7-b1d1640b966a', percent: 10, amount: null };
-const PROMO_FLAT50K = { id: '66937284-293f-47d2-8604-ad3a7002f40e', percent: null, amount: 50000 };
-const PROMOTIONS = [PROMO_PERCENT10, PROMO_FLAT50K];
+// Cashbook categories -- only SALARY_PAYMENT/SALES_RECEIPT carry a non-null `code`; the other
+// 4 must be resolved by exact name (matched in JS to avoid passing diacritics through a
+// command-line -Q argument, which risks console-codepage mangling on Windows).
+const catRows = sqlcmdQuery('SELECT id, name, code FROM cashbook_categories');
+const catByCode = {}, catByName = {};
+for (const [id, name, code] of catRows) {
+  if (code && code !== 'NULL') catByCode[code] = id;
+  catByName[name] = id;
+}
+const CAT_SALARY_PAYMENT = catByCode.SALARY_PAYMENT;
+const CAT_SALES_RECEIPT = catByCode.SALES_RECEIPT;
+const CAT_OTHER_RECEIPT = catByName['Thu khác'];
+const CAT_INGREDIENTS = catByName['Chi phí nguyên liệu'];
+const CAT_UTILITIES = catByName['Chi phí điện nước'];
+const CAT_CSVC = catByName['Chi phí vận hành khác'];
+for (const [k, v] of Object.entries({ CAT_SALARY_PAYMENT, CAT_SALES_RECEIPT, CAT_OTHER_RECEIPT, CAT_INGREDIENTS, CAT_UTILITIES, CAT_CSVC })) {
+  if (!v) throw new Error(`Required cashbook category for ${k} not found live.`);
+}
+
+// Active promotions usable for discounted invoices.
+const promoRows = sqlcmdQuery("SELECT id, code FROM promotions WHERE code IN ('PERCENT10','FLAT50K')");
+const promoIdByCode = {};
+for (const [id, code] of promoRows) promoIdByCode[code] = id;
+if (!promoIdByCode.PERCENT10 || !promoIdByCode.FLAT50K) throw new Error('Required promotions PERCENT10/FLAT50K not found live.');
+const PROMOTIONS = [
+  { id: promoIdByCode.PERCENT10, percent: 10, amount: null },
+  { id: promoIdByCode.FLAT50K, percent: null, amount: 50000 },
+];
 const PROMO_USAGE = {};
 
-// Existing users (verified live 2026-07-24; kept, not re-inserted).
-const USER_MANAGER01 = '0cd90d8a-b3c4-47f7-aea7-b49f6eae4752';
-const USER_CASHIER01 = '652d7d4b-5cf9-4988-aa97-059b3597140a';
-const USER_WAITER01 = '65bcb92e-63a1-4659-8510-efb5864ab590';
-const CASHIER01_PASSWORD_HASH = '$2a$12$laA5nJYNLEjnwIPvjeReju0IkZ5LzYF3IO.ZucZWBHIKVlbk7v2CW';
-
-// ---------------------------------------------------------------------------------------
-// SQL emission helpers
-// ---------------------------------------------------------------------------------------
-const OUT = ['SET QUOTED_IDENTIFIER ON;', 'GO'];
-function sqlval(v) {
-  if (v === null || v === undefined) return 'NULL';
-  if (typeof v === 'boolean') return v ? '1' : '0';
-  if (typeof v === 'number') return String(v);
-  return `'${String(v).replace(/'/g, "''")}'`;
-}
-function emitInsert(table, columns, rows, batch = 200) {
-  if (!rows.length) return;
-  const colList = columns.join(', ');
-  for (let i = 0; i < rows.length; i += batch) {
-    const chunk = rows.slice(i, i + batch);
-    const valuesSql = chunk.map((row) => '(' + row.map(sqlval).join(', ') + ')').join(',\n');
-    OUT.push(`INSERT INTO ${table} (${colList}) VALUES\n${valuesSql};`);
-    OUT.push('GO');
+// Work-shift templates: find-or-create by name, uniformly (no more "assumed pre-existing").
+const SHIFT_DEFS = [
+  { key: 'CA_SANG', name: 'Ca Sang', start: [6, 0], end: [14, 0] },
+  { key: 'CA_CHIEU', name: 'Ca Chieu', start: [14, 30], end: [18, 30] },
+  { key: 'CA_TOI', name: 'Ca Toi', start: [18, 0], end: [22, 0] },
+];
+const newWsRowsOut = [];
+const shiftIdByKey = {};
+for (const def of SHIFT_DEFS) {
+  const found = sqlcmdQuery(`SELECT id FROM work_shifts WHERE name = '${def.name}'`);
+  if (found.length) {
+    shiftIdByKey[def.key] = found[0][0];
+  } else {
+    const id = newId();
+    shiftIdByKey[def.key] = id;
+    newWsRowsOut.push([id, def.name, fmtTime(...def.start), fmtTime(...def.end), null, null, null, 'ACTIVE', NOW_STAMP, NOW_STAMP]);
   }
 }
-function emitRaw(sql) { OUT.push(sql); OUT.push('GO'); }
+const SHIFT_CA_SANG = shiftIdByKey.CA_SANG, SHIFT_CA_CHIEU = shiftIdByKey.CA_CHIEU, SHIFT_CA_TOI = shiftIdByKey.CA_TOI;
+const SHIFT_TIMES = {
+  [SHIFT_CA_SANG]: [6, 0, 14, 0],
+  [SHIFT_CA_CHIEU]: [14, 30, 18, 30],
+  [SHIFT_CA_TOI]: [18, 0, 22, 0],
+};
+const SHIFT_NAMES = { [SHIFT_CA_SANG]: 'Ca Sang', [SHIFT_CA_CHIEU]: 'Ca Chieu', [SHIFT_CA_TOI]: 'Ca Toi' };
+const SHIFT_IDS = Object.keys(SHIFT_TIMES);
+
+// Violation types: find-or-create by name, uniformly.
+const VT_DEFS = [
+  { key: 'LATE', name: 'Di muon', penalty: 50000 },
+  { key: 'NOSHOW', name: 'Nghi khong phep', penalty: 200000 },
+  { key: 'UNIFORM', name: 'Vi pham dong phuc', penalty: 30000 },
+];
+const violationTypeRows = [];
+const vtIdByKey = {};
+for (const def of VT_DEFS) {
+  const found = sqlcmdQuery(`SELECT id FROM violation_types WHERE name = '${def.name}'`);
+  if (found.length) {
+    vtIdByKey[def.key] = found[0][0];
+  } else {
+    const id = newId();
+    vtIdByKey[def.key] = id;
+    violationTypeRows.push([id, def.name, def.penalty, false, NOW_STAMP, NOW_STAMP]);
+  }
+}
+const VT_LATE = vtIdByKey.LATE, VT_NOSHOW = vtIdByKey.NOSHOW, VT_UNIFORM = vtIdByKey.UNIFORM;
+const VT_LATE_PENALTY = 50000;
+
+// Attendance settings (singleton row) -- read live instead of hardcoding grace/threshold values.
+const asRows = sqlcmdQuery("SELECT half_day_enabled, half_day_min_minutes, half_day_max_minutes, " +
+  "late_enabled, late_grace_minutes, early_leave_enabled, early_leave_grace_minutes, " +
+  "ot_before_enabled, ot_before_min_minutes, ot_after_enabled, ot_after_min_minutes " +
+  "FROM attendance_settings WHERE id = 'a0000000-0000-0000-0000-000000000001'");
+if (!asRows.length) throw new Error('attendance_settings singleton row not found live.');
+const [hdEn, hdMin, hdMax, lateEn, lateGrace, earlyEn, earlyGrace, otBEn, otBMin, otAEn, otAMin] = asRows[0];
+const ATTENDANCE_SETTINGS = {
+  halfDayEnabled: hdEn === '1', halfDayMinMinutes: parseInt(hdMin, 10), halfDayMaxMinutes: parseInt(hdMax, 10),
+  lateEnabled: lateEn === '1', lateGraceMinutes: parseInt(lateGrace, 10),
+  earlyLeaveEnabled: earlyEn === '1', earlyLeaveGraceMinutes: parseInt(earlyGrace, 10),
+  otBeforeEnabled: otBEn === '1', otBeforeMinMinutes: parseInt(otBMin, 10),
+  otAfterEnabled: otAEn === '1', otAfterMinMinutes: parseInt(otAMin, 10),
+};
+
+// Code counters -- live sequence current_value / MAX(code) suffix instead of a stale snapshot.
+function liveSeqValue(name) {
+  const rows = sqlcmdQuery(`SELECT current_value FROM sys.sequences WHERE name = '${name}'`);
+  if (!rows.length) throw new Error(`Sequence ${name} not found live.`);
+  return parseInt(rows[0][0], 10);
+}
+function liveMaxSuffix(table, prefix) {
+  const rows = sqlcmdQuery(`SELECT MAX(code) FROM ${table} WHERE code LIKE '${prefix}%'`);
+  const val = rows.length ? rows[0][0] : null;
+  if (!val || val === 'NULL') return 0;
+  const n = parseInt(val.slice(prefix.length), 10);
+  return Number.isNaN(n) ? 0 : n;
+}
+const COUNTERS = {
+  order_seq: liveSeqValue('order_code_seq'),
+  invoice_seq: liveSeqValue('invoice_code_seq'),
+  NV: liveMaxSuffix('employees', 'NV'),
+  PT: liveMaxSuffix('cashbook_vouchers', 'PT'),
+  PC: liveMaxSuffix('cashbook_vouchers', 'PC'),
+  TT: liveMaxSuffix('cashbook_vouchers', 'TT'),
+  BL: liveMaxSuffix('payroll_sheets', 'BL'),
+  PL: liveMaxSuffix('payslips', 'PL'),
+};
+function nextCode(prefix, width = 6) { COUNTERS[prefix] += 1; return `${prefix}${String(COUNTERS[prefix]).padStart(width, '0')}`; }
+function nextOrderCode() { COUNTERS.order_seq += 1; return `DH${String(COUNTERS.order_seq).padStart(6, '0')}`; }
+function nextInvoiceCode() { COUNTERS.invoice_seq += 1; return `HD${String(COUNTERS.invoice_seq).padStart(6, '0')}`; }
+
+console.log('[4/5] Generating 3 months of data...');
+const OUT = ['SET QUOTED_IDENTIFIER ON;', 'GO'];
 
 // ---------------------------------------------------------------------------------------
-// Roster: employees, salary settings, work shift templates, new user logins
+// Roster: 5 employees, always inserted fresh (no more "existing: true" assumption)
 // ---------------------------------------------------------------------------------------
 const RATES_SHIFT_JSON = JSON.stringify({
   sat: { amount: '120', unit: 'percent' }, sun: { amount: '130', unit: 'percent' },
@@ -162,61 +440,37 @@ const OT_RATES_SHIFT_JSON = JSON.stringify({
 const DAY_RATE = { sat: 120, sun: 130, normal: null, holiday: 200 };
 const OT_RATE = { sat: 150, sun: 150, normal: 150, holiday: 300 };
 
-const ROSTER = [
-  { id: 'e122e9ca-5ae6-4736-911d-c9e836f2f58c', code: 'NV000001', name: 'Nguyen Van A', pos: 'CASHIER',
-    existing: true, needsSalary: false, salaryType: 'SHIFT', wage: 250000, overtime: true, userId: USER_CASHIER01 },
-  { id: '55b187d6-1680-4720-a6d8-427680cb39d0', code: 'NV000002', name: 'Nguyen Van B', pos: 'WAITER',
-    existing: true, needsSalary: false, salaryType: 'SHIFT', wage: 200000, overtime: true, userId: null },
-  { id: '65b4b552-04d2-4fc7-b7e3-2e5fec31a6c5', code: 'NV000003', name: 'Nguyen Van Test', pos: 'WAITER',
-    existing: true, needsSalary: true, salaryType: 'SHIFT', wage: 180000, overtime: true, userId: null },
-];
-
-// 6-person roster total: NV1(existing cashier) + NV2/NV3(existing waiters) + these 3 new
-// (1 manager, 1 cashier, 1 waiter) = 2 cashiers, 3 waiters, 1 manager.
-const NEW_EMP_SPECS = [
-  ['Tran Thi Huong', 'MANAGER', 'FIXED', 12000000, false, USER_MANAGER01],
-  ['Le Van Hung', 'CASHIER', 'SHIFT', 230000, true, 'NEW_CASHIER'],
-  ['Vo Van Nam', 'WAITER', 'SHIFT', 190000, true, USER_WAITER01],
-];
-
+// Roster: 5 employees (Nguyen Van A-E) -- 1 manager, 2 cashiers, 2 waiters. Every employee is
+// linked to a login account: manager01/cashier01/waiter01 already exist as baseline test
+// accounts; cashier02/waiter02 are created fresh here. Every employee is account-linked,
+// consistent with EmployeeServiceImpl.create() requiring one for new employees.
 const NEW_USER_ROWS = [];
-let phoneSeq = 4;
-for (const [name, pos, salaryType, wage, overtime, userIdSpec] of NEW_EMP_SPECS) {
-  const code = nextCode('NV');
-  const empId = newId();
-  let userId = userIdSpec;
-  let username = null;
-  if (userIdSpec === 'NEW_CASHIER') {
-    userId = newId();
-    username = `cashier${String(phoneSeq - 2).padStart(2, '0')}`; // cashier02, cashier03
-    NEW_USER_ROWS.push([userId, username, CASHIER01_PASSWORD_HASH, name, null, null, 'CASHIER', 'ACTIVE',
-      0, null, fmtDateTime(mkDate(2026, 4, 20, 9, 0, 0)), fmtDateTime(mkDate(2026, 4, 20, 9, 0, 0)), 0]);
-  }
-  ROSTER.push({
-    id: empId, code, name, pos, existing: false, needsSalary: true, salaryType, wage, overtime,
-    userId, username, phone: `090000${String(phoneSeq).padStart(4, '0')}`,
-  });
-  phoneSeq += 1;
+function newAccountUser(username, name, role) {
+  const userId = newId();
+  NEW_USER_ROWS.push([userId, username, SEED_ACCOUNT_PASSWORD_HASH, name, null, null, role, 'ACTIVE',
+    0, null, NOW_STAMP, NOW_STAMP, 0]);
+  return userId;
 }
-// username is only meaningful for the 3 CASHIER employees (used as invoices/vouchers
-// created_by, a plain username string per this codebase's convention -- NOT a user id).
-ROSTER[0].username = 'cashier01'; // NV000001, existing
+const ROSTER_SPECS = [
+  { name: 'Nguyen Van A', pos: 'MANAGER', salaryType: 'FIXED', wage: 12000000, overtime: false, userId: USER_MANAGER01, username: 'manager01' },
+  { name: 'Nguyen Van B', pos: 'CASHIER', salaryType: 'SHIFT', wage: 250000, overtime: true, userId: USER_CASHIER01, username: 'cashier01' },
+  { name: 'Nguyen Van C', pos: 'CASHIER', salaryType: 'SHIFT', wage: 230000, overtime: true, userId: null, username: 'cashier02' },
+  { name: 'Nguyen Van D', pos: 'WAITER', salaryType: 'SHIFT', wage: 200000, overtime: true, userId: USER_WAITER01, username: 'waiter01' },
+  { name: 'Nguyen Van E', pos: 'WAITER', salaryType: 'SHIFT', wage: 190000, overtime: true, userId: null, username: 'waiter02' },
+];
+let phoneSeq = 1;
+const ROSTER = ROSTER_SPECS.map((spec) => {
+  const code = nextCode('NV');
+  const userId = spec.userId !== null ? spec.userId : newAccountUser(spec.username, spec.name, spec.pos);
+  const phone = `090000${String(phoneSeq).padStart(4, '0')}`;
+  phoneSeq += 1;
+  return { id: newId(), code, name: spec.name, pos: spec.pos, needsSalary: true, salaryType: spec.salaryType,
+    wage: spec.wage, overtime: spec.overtime, userId, username: spec.username, phone };
+});
 
 const CASHIERS = ROSTER.filter((e) => e.pos === 'CASHIER');
 const WAITERS = ROSTER.filter((e) => e.pos === 'WAITER');
 const MANAGER = ROSTER.find((e) => e.pos === 'MANAGER');
-
-// Work shift templates: "Ca Chieu" already exists in the DB; add two more.
-const SHIFT_CA_CHIEU = 'db9033cc-f631-4f42-98ed-7daad729d49b';
-const SHIFT_CA_SANG = newId();
-const SHIFT_CA_TOI = newId();
-const SHIFT_TIMES = {
-  [SHIFT_CA_SANG]: [6, 0, 14, 0],
-  [SHIFT_CA_CHIEU]: [14, 30, 18, 30],
-  [SHIFT_CA_TOI]: [18, 0, 22, 0],
-};
-const SHIFT_NAMES = { [SHIFT_CA_SANG]: 'Ca Sang', [SHIFT_CA_CHIEU]: 'Ca Chieu', [SHIFT_CA_TOI]: 'Ca Toi' };
-const SHIFT_IDS = Object.keys(SHIFT_TIMES);
 
 const cashierShiftCycle = [SHIFT_CA_SANG, SHIFT_CA_CHIEU, SHIFT_CA_TOI];
 CASHIERS.forEach((e, i) => { e.primaryShift = cashierShiftCycle[i % 3]; e.offDay = 6; }); // Sunday
@@ -225,17 +479,9 @@ WAITERS.forEach((e, i) => { e.primaryShift = waiterShiftCycle[i % 3]; e.offDay =
 MANAGER.primaryShift = SHIFT_CA_SANG;
 MANAGER.offDay = 6;
 
-// Violation types: reuse the existing one, add two more with plain-ASCII names.
-const VT_LATE = 'edf1b111-0333-4e00-8999-3c590d4df968'; // existing "Di muon 1h", penalty 50000
-const VT_LATE_PENALTY = 50000;
-const VT_NOSHOW = newId();
-const VT_UNIFORM = newId();
-
 // ---------------------------------------------------------------------------------------
-// Attendance calculator (ported from AttendanceCalculator.java; settings verified live)
+// Attendance calculator (ported from AttendanceCalculator.java; settings read live above)
 // ---------------------------------------------------------------------------------------
-const LATE_GRACE = 15, EARLY_GRACE = 30, OT_BEFORE_MIN = 0, OT_AFTER_MIN = 0;
-
 function scheduledWindow(workDate, shiftId) {
   const [sh, sm, eh, em] = SHIFT_TIMES[shiftId];
   const start = mkDate(workDate.getFullYear(), workDate.getMonth() + 1, workDate.getDate(), sh, sm, 0);
@@ -244,25 +490,30 @@ function scheduledWindow(workDate, shiftId) {
   const end = mkDate(endBase.getFullYear(), endBase.getMonth() + 1, endBase.getDate(), eh, em, 0);
   return [start, end];
 }
+function beyondGrace(enabled, raw, grace) { return enabled && raw > grace ? raw - grace : 0; }
+function beyondMinimum(enabled, raw, minimum) { return enabled && raw > minimum ? raw : 0; }
 
 function computeAttendance(workDate, shiftId, actualIn, actualOut) {
   if (!actualIn || !actualOut) return { worked: 0, late: 0, early: 0, ot: 0, credit: 0 };
+  const s = ATTENDANCE_SETTINGS;
   const [schedStart, schedEnd] = scheduledWindow(workDate, shiftId);
   const worked = Math.max(0, diffMinutes(actualIn, actualOut));
   const lateRaw = Math.max(0, diffMinutes(schedStart, actualIn));
-  const late = lateRaw > LATE_GRACE ? lateRaw - LATE_GRACE : 0;
   const earlyRaw = Math.max(0, diffMinutes(actualOut, schedEnd));
-  const early = earlyRaw > EARLY_GRACE ? earlyRaw - EARLY_GRACE : 0;
   const otBeforeRaw = Math.max(0, diffMinutes(actualIn, schedStart));
-  const otBefore = otBeforeRaw > OT_BEFORE_MIN ? otBeforeRaw : 0;
   const otAfterRaw = Math.max(0, diffMinutes(schedEnd, actualOut));
-  const otAfter = otAfterRaw > OT_AFTER_MIN ? otAfterRaw : 0;
+  let late = beyondGrace(s.lateEnabled, lateRaw, s.lateGraceMinutes);
+  let early = beyondGrace(s.earlyLeaveEnabled, earlyRaw, s.earlyLeaveGraceMinutes);
+  const otBefore = beyondMinimum(s.otBeforeEnabled, otBeforeRaw, s.otBeforeMinMinutes);
+  const otAfter = beyondMinimum(s.otAfterEnabled, otAfterRaw, s.otAfterMinMinutes);
   const ot = otBefore + otAfter;
+  if (s.halfDayEnabled && worked >= s.halfDayMinMinutes && worked < s.halfDayMaxMinutes) {
+    late = 0; early = 0; // half-day zeroes late/early, never OT
+  }
   let credit = worked > 0 ? Math.round((worked / 480) * 100) / 100 : 0;
   credit = Math.min(credit, 1.0);
   return { worked, late, early, ot, credit };
 }
-
 function syntheticWindow(emp, d) { return scheduledWindow(d, emp.primaryShift); }
 
 // ---------------------------------------------------------------------------------------
@@ -323,6 +574,7 @@ for (const emp of ROSTER) {
     }
   }
 }
+
 // ---------------------------------------------------------------------------------------
 // Cashier POS shifts, orders, invoices, payments, cashbook vouchers, reservations
 // ---------------------------------------------------------------------------------------
@@ -331,7 +583,6 @@ function cashierWindow(c, d) {
   if (info && info.type === 'PRESENT') return [info.actualIn, info.actualOut];
   return syntheticWindow(c, d);
 }
-
 function randomOrderTime(d) {
   const r = randFloat();
   let minute;
@@ -386,9 +637,8 @@ for (const d of ALL_DATES) {
   const dow = pyWeekday(d);
   // Kept deliberately modest: GET /api/invoices batch-loads ALL order_items referenced
   // by the (unbounded) invoice query in one `id IN (...)` -- not scoped by page size --
-  // and SQL Server hard-caps a single query at 2100 params. 950 orders (~2800
-  // order_items) still tripped it; ~600 orders (~1.7k order_items) stays comfortably
-  // under that ceiling while still reading as a believable volume. See
+  // and SQL Server hard-caps a single query at 2100 params. ~600 orders (~1.7k order_items)
+  // stays comfortably under that ceiling while still reading as a believable volume. See
   // rms-seed-3months-data memory for the full story (this is a pre-existing backend
   // bug, not something a seed script should paper over indefinitely).
   let nOrders = randInt(3, 6);
@@ -525,14 +775,16 @@ for (const d of ALL_DATES) {
       ? weightedChoice(['CONFIRMED', 'PENDING', 'CHECKED_IN'], [0.5, 0.3, 0.2])
       : weightedChoice(['COMPLETED', 'NO_SHOW', 'CANCELLED', 'CHECKED_IN'], [0.65, 0.12, 0.13, 0.10]);
     const rTime = addMinutes(mkDate(d.getFullYear(), d.getMonth() + 1, d.getDate(), 0, 0, 0), randInt(10 * 60, 21 * 60));
+    // Unlike every other created_by column in this script (plain NVARCHAR username, added in
+    // later migrations), reservations.created_by is a genuine FK to users(id) from the
+    // original V2 migration -- must be the live-resolved user id, not a username string.
     reservationRows.push([newId(), randFloat() > 0.2 ? choice(TABLE_IDS) : null, choice(GUEST_NAME_POOL),
       `09${randInt(10000000, 99999999)}`, randInt(2, 8), fmtDateTime(rTime), null, status, null, false,
       USER_MANAGER01, null, null, null, fmtDateTime(rTime), fmtDateTime(rTime)]);
   }
 
   // Monthly-ish manual cashbook vouchers (first Monday seen each month = ingredients+
-  // utilities+CSVC; occasional other income) -- was every Monday, cut to ~1/month to
-  // keep sổ quỹ volume down alongside the smaller roster/order count.
+  // utilities+CSVC; occasional other income).
   if (dow === 0 && d.getDate() <= 7) {
     const wkTime = fmtDateTime(mkDate(d.getFullYear(), d.getMonth() + 1, d.getDate(), 9, 0, 0));
     voucherRows.push([newId(), nextCode('PC'), 'PAYMENT', wkTime, CAT_INGREDIENTS, 'BANK', 'OTHER', null,
@@ -562,9 +814,10 @@ for (const idx of sample(manualVoucherIndices, Math.min(6, manualVoucherIndices.
 }
 
 // ---------------------------------------------------------------------------------------
-// Payroll: May + June (MONTHLY, FINALIZED) and July (MONTHLY, DRAFT, partial data)
+// Payroll: 2 finalized months + current (partial, DRAFT) month, relative to END_DATE
 // ---------------------------------------------------------------------------------------
-const HOLIDAY_DATES = new Set([dateKey(mkDate(2026, 4, 30)), dateKey(mkDate(2026, 5, 1))]);
+const HOLIDAY_YEAR = CURRENT_YEAR;
+const HOLIDAY_DATES = new Set([dateKey(mkDate(HOLIDAY_YEAR, 4, 30)), dateKey(mkDate(HOLIDAY_YEAR, 5, 1))]);
 function dayTypeFor(d) {
   if (HOLIDAY_DATES.has(dateKey(d))) return 'holiday';
   const wd = pyWeekday(d);
@@ -631,13 +884,17 @@ function computePayslip(emp, periodStart, periodEnd) {
 }
 
 const payrollSheetRows = [], payslipRows = [], payslipPaymentRows = [];
+const curMonth = { y: END_DATE.getFullYear(), m: END_DATE.getMonth() + 1 };
+const prev1Month = shiftMonth(curMonth.y, curMonth.m, -1);
+const prev2Month = shiftMonth(curMonth.y, curMonth.m, -2);
 const PERIODS = [
-  { start: mkDate(2026, 5, 1), end: mkDate(2026, 5, 31), name: 'Bang luong thang 5/2026',
-    status: 'FINALIZED', finalizeOffset: 3, partialFor: new Set() },
-  { start: mkDate(2026, 6, 1), end: mkDate(2026, 6, 30), name: 'Bang luong thang 6/2026',
-    status: 'FINALIZED', finalizeOffset: 3, partialFor: new Set([WAITERS[0].id, WAITERS[1].id]) },
-  { start: mkDate(2026, 7, 1), end: mkDate(2026, 7, 31), name: 'Bang luong thang 7/2026',
-    status: 'DRAFT', finalizeOffset: null, partialFor: new Set() },
+  { start: startOfMonth(prev2Month.y, prev2Month.m), end: endOfMonth(prev2Month.y, prev2Month.m),
+    name: `Bang luong thang ${prev2Month.m}/${prev2Month.y}`, status: 'FINALIZED', finalizeOffset: 3, partialFor: new Set() },
+  { start: startOfMonth(prev1Month.y, prev1Month.m), end: endOfMonth(prev1Month.y, prev1Month.m),
+    name: `Bang luong thang ${prev1Month.m}/${prev1Month.y}`, status: 'FINALIZED', finalizeOffset: 3,
+    partialFor: new Set([WAITERS[0].id, WAITERS[1].id]) },
+  { start: startOfMonth(curMonth.y, curMonth.m), end: endOfMonth(curMonth.y, curMonth.m),
+    name: `Bang luong thang ${curMonth.m}/${curMonth.y}`, status: 'DRAFT', finalizeOffset: null, partialFor: new Set() },
 ];
 
 for (const period of PERIODS) {
@@ -682,78 +939,63 @@ for (const period of PERIODS) {
 }
 
 // ---------------------------------------------------------------------------------------
-// Employees / salary settings rows to emit
+// Employees / salary settings rows to emit (all 5 are always fresh inserts now)
 // ---------------------------------------------------------------------------------------
 for (const emp of ROSTER) {
-  if (!emp.existing) {
-    const createdAt = fmtDateTime(mkDate(2026, 4, 20, 9, 0, 0));
-    empRows.push([emp.id, emp.code, emp.name, emp.phone, 'ACTIVE', null, fmtDate(mkDate(2026, 4, 20)), null, null,
-      null, null, null, null, emp.userId, createdAt, createdAt]);
-  }
+  empRows.push([emp.id, emp.code, emp.name, emp.phone, 'ACTIVE', null, fmtDate(START_DATE), null, null,
+    null, null, null, null, emp.userId, NOW_STAMP, NOW_STAMP]);
   if (emp.needsSalary) {
     const rates = emp.salaryType === 'FIXED' ? null : RATES_SHIFT_JSON;
     const otRates = emp.overtime ? OT_RATES_SHIFT_JSON : null;
-    const createdAt = fmtDateTime(mkDate(2026, 4, 20, 9, 0, 0));
-    salaryRows.push([newId(), emp.id, emp.salaryType, emp.wage, rates, emp.overtime, otRates, null, createdAt, createdAt]);
+    salaryRows.push([newId(), emp.id, emp.salaryType, emp.wage, rates, emp.overtime, otRates, null, NOW_STAMP, NOW_STAMP]);
   }
 }
 
-const newWsCreated = fmtDateTime(mkDate(2026, 4, 20, 9, 0, 0));
-const newWsRowsOut = [
-  [SHIFT_CA_SANG, 'Ca Sang', fmtTime(6, 0), fmtTime(14, 0), null, null, null, 'ACTIVE', newWsCreated, newWsCreated],
-  [SHIFT_CA_TOI, 'Ca Toi', fmtTime(18, 0), fmtTime(22, 0), null, null, null, 'ACTIVE', newWsCreated, newWsCreated],
-];
-
 const holidayRows = [
-  [newId(), 'Ngay Thong Nhat', fmtDate(mkDate(2026, 4, 30)), newWsCreated, newWsCreated],
-  [newId(), 'Quoc Te Lao Dong', fmtDate(mkDate(2026, 5, 1)), newWsCreated, newWsCreated],
+  [newId(), 'Ngay Thong Nhat', fmtDate(mkDate(HOLIDAY_YEAR, 4, 30)), NOW_STAMP, NOW_STAMP],
+  [newId(), 'Quoc Te Lao Dong', fmtDate(mkDate(HOLIDAY_YEAR, 5, 1)), NOW_STAMP, NOW_STAMP],
 ];
 
 const salaryTemplateRows = [
-  [newId(), 'Mau nhan vien phuc vu', 'SHIFT', 190000, RATES_SHIFT_JSON, true, OT_RATES_SHIFT_JSON, newWsCreated, newWsCreated],
-];
-
-const violationTypeRows = [
-  [VT_NOSHOW, 'Nghi khong phep', 200000, false, newWsCreated, newWsCreated],
-  [VT_UNIFORM, 'Vi pham dong phuc', 30000, false, newWsCreated, newWsCreated],
+  [newId(), 'Mau nhan vien phuc vu', 'SHIFT', 190000, RATES_SHIFT_JSON, true, OT_RATES_SHIFT_JSON, NOW_STAMP, NOW_STAMP],
 ];
 
 // ---------------------------------------------------------------------------------------
 // Emit everything in FK-safe order
 // ---------------------------------------------------------------------------------------
-emitInsert('users', ['id', 'username', 'password_hash', 'full_name', 'email', 'phone', 'role', 'status',
+emitInsert(OUT, 'users', ['id', 'username', 'password_hash', 'full_name', 'email', 'phone', 'role', 'status',
   'failed_login_attempts', 'locked_at', 'created_at', 'updated_at', 'token_version'], NEW_USER_ROWS);
 
-emitInsert('employees', ['id', 'code', 'name', 'phone', 'status', 'avatar_url', 'start_date', 'timekeep_code',
+emitInsert(OUT, 'employees', ['id', 'code', 'name', 'phone', 'status', 'avatar_url', 'start_date', 'timekeep_code',
   'note', 'id_number', 'birthday', 'gender', 'address', 'user_id', 'created_at', 'updated_at'], empRows);
 
-emitInsert('salary_settings', ['id', 'employee_id', 'main_salary_type', 'main_base_wage', 'main_advanced_rates',
+emitInsert(OUT, 'salary_settings', ['id', 'employee_id', 'main_salary_type', 'main_base_wage', 'main_advanced_rates',
   'overtime_enabled', 'overtime_rates', 'salary_template', 'created_at', 'updated_at'], salaryRows);
 
-emitInsert('work_shifts', ['id', 'name', 'start_time', 'end_time', 'check_in_window_start', 'check_in_window_end',
+emitInsert(OUT, 'work_shifts', ['id', 'name', 'start_time', 'end_time', 'check_in_window_start', 'check_in_window_end',
   'apply_scope', 'status', 'created_at', 'updated_at'], newWsRowsOut);
 
-emitInsert('payroll_holidays', ['id', 'name', 'holiday_date', 'created_at', 'updated_at'], holidayRows);
+emitInsert(OUT, 'payroll_holidays', ['id', 'name', 'holiday_date', 'created_at', 'updated_at'], holidayRows);
 
-emitInsert('salary_templates', ['id', 'name', 'main_salary_type', 'main_base_wage', 'main_advanced_rates',
+emitInsert(OUT, 'salary_templates', ['id', 'name', 'main_salary_type', 'main_base_wage', 'main_advanced_rates',
   'overtime_enabled', 'overtime_rates', 'created_at', 'updated_at'], salaryTemplateRows);
 
-emitInsert('violation_types', ['id', 'name', 'penalty_amount', 'deleted', 'created_at', 'updated_at'], violationTypeRows);
+emitInsert(OUT, 'violation_types', ['id', 'name', 'penalty_amount', 'deleted', 'created_at', 'updated_at'], violationTypeRows);
 
-emitInsert('work_schedules', ['id', 'employee_id', 'shift_id', 'work_date', 'rule_id', 'substitute_employee_id',
+emitInsert(OUT, 'work_schedules', ['id', 'employee_id', 'shift_id', 'work_date', 'rule_id', 'substitute_employee_id',
   'created_at', 'updated_at'], wsRows);
 
-emitInsert('attendance_records', ['id', 'schedule_id', 'type', 'actual_check_in', 'actual_check_out',
+emitInsert(OUT, 'attendance_records', ['id', 'schedule_id', 'type', 'actual_check_in', 'actual_check_out',
   'worked_minutes', 'late_minutes', 'early_leave_minutes', 'ot_minutes', 'work_credit', 'auto_filled', 'note',
   'created_by', 'created_at', 'updated_at'], arRows);
 
-emitInsert('violations', ['id', 'attendance_record_id', 'violation_type_id', 'count', 'applied_penalty',
+emitInsert(OUT, 'violations', ['id', 'attendance_record_id', 'violation_type_id', 'count', 'applied_penalty',
   'created_at', 'updated_at'], vioRows);
 
-emitInsert('orders', ['id', 'code', 'table_id', 'cashier_id', 'status', 'note', 'customer_name', 'customer_phone',
+emitInsert(OUT, 'orders', ['id', 'code', 'table_id', 'cashier_id', 'status', 'note', 'customer_name', 'customer_phone',
   'customer_email', 'created_at', 'updated_at'], orderRows);
 
-emitInsert('order_items', ['id', 'order_id', 'menu_item_id', 'menu_item_name', 'quantity', 'unit_price', 'note',
+emitInsert(OUT, 'order_items', ['id', 'order_id', 'menu_item_id', 'menu_item_name', 'quantity', 'unit_price', 'note',
   'cooking_status', 'rejection_note', 'is_qr_order'], orderItemRows);
 
 // MERGED rows carry a self-referencing FK (merged_into_invoice_id -> another row in this
@@ -762,53 +1004,59 @@ emitInsert('order_items', ['id', 'order_id', 'menu_item_id', 'menu_item_name', '
 // IS NULL) is emitted before any row that references it.
 invoiceRows.sort((a, b) => (a[9] === null ? 0 : 1) - (b[9] === null ? 0 : 1));
 
-emitInsert('invoices', ['id', 'code', 'order_id', 'subtotal', 'discount_amount', 'total_amount', 'promotion_id',
+emitInsert(OUT, 'invoices', ['id', 'code', 'order_id', 'subtotal', 'discount_amount', 'total_amount', 'promotion_id',
   'is_paid', 'status', 'merged_into_invoice_id', 'split_from_invoice_id', 'created_by', 'created_at'], invoiceRows);
 
-emitInsert('invoice_item_allocations', ['id', 'invoice_id', 'order_item_id', 'allocated_quantity',
+emitInsert(OUT, 'invoice_item_allocations', ['id', 'invoice_id', 'order_item_id', 'allocated_quantity',
   'unit_price_snapshot', 'active', 'created_at'], allocationRows);
 
-emitInsert('shifts', ['id', 'cashier_id', 'business_date', 'opened_at', 'closed_at', 'opening_cash', 'closing_cash',
+emitInsert(OUT, 'shifts', ['id', 'cashier_id', 'business_date', 'opened_at', 'closed_at', 'opening_cash', 'closing_cash',
   'total_revenue', 'status', 'shift_type', 'closed_by', 'handover_amount', 'card_batch_total', 'closing_note'], shiftRows);
 
-emitInsert('payments', ['id', 'invoice_id', 'shift_id', 'cashier_id', 'method', 'amount', 'gateway_ref', 'status',
+emitInsert(OUT, 'payments', ['id', 'invoice_id', 'shift_id', 'cashier_id', 'method', 'amount', 'gateway_ref', 'status',
   'received_amount', 'change_amount', 'expires_at', 'paid_at', 'created_at'], paymentRows);
 
-emitInsert('cashbook_vouchers', ['id', 'code', 'type', 'occurred_at', 'category_id', 'method', 'partner_group',
+emitInsert(OUT, 'cashbook_vouchers', ['id', 'code', 'type', 'occurred_at', 'category_id', 'method', 'partner_group',
   'partner_id', 'partner_name', 'amount', 'note', 'accounting_to_income', 'source_type', 'source_reference_id',
   'created_by', 'voided', 'created_at'], voucherRows);
 
-emitInsert('reservations', ['id', 'table_id', 'guest_name', 'phone', 'party_size', 'datetime', 'note', 'status',
+emitInsert(OUT, 'reservations', ['id', 'table_id', 'guest_name', 'phone', 'party_size', 'datetime', 'note', 'status',
   'guest_email', 'reminder_sent', 'created_by', 'cancel_token', 'cancel_otp', 'cancel_otp_expires', 'created_at',
   'updated_at'], reservationRows);
 
-emitInsert('payroll_sheets', ['id', 'code', 'name', 'pay_term', 'period_start', 'period_end', 'scope', 'status',
+emitInsert(OUT, 'payroll_sheets', ['id', 'code', 'name', 'pay_term', 'period_start', 'period_end', 'scope', 'status',
   'payment_status', 'note', 'created_by', 'finalized_by', 'finalized_at', 'data_refreshed_at', 'created_at',
   'updated_at'], payrollSheetRows);
 
-emitInsert('payslips', ['id', 'code', 'payroll_sheet_id', 'employee_id', 'employee_code', 'employee_name',
+emitInsert(OUT, 'payslips', ['id', 'code', 'payroll_sheet_id', 'employee_id', 'employee_code', 'employee_name',
   'salary_type', 'main_salary', 'overtime_salary', 'deduction', 'main_overridden', 'overtime_overridden',
   'deduction_overridden', 'paid_amount', 'payment_status', 'status', 'shift_count', 'worked_minutes', 'ot_minutes',
   'attendance_snapshot', 'created_at', 'updated_at'], payslipRows);
 
-emitInsert('payslip_payments', ['id', 'payslip_id', 'voucher_code', 'amount', 'method', 'paid_at', 'note',
+emitInsert(OUT, 'payslip_payments', ['id', 'payslip_id', 'voucher_code', 'amount', 'method', 'paid_at', 'note',
   'created_by', 'created_at'], payslipPaymentRows);
 
 for (const [promoId, count] of Object.entries(PROMO_USAGE)) {
-  emitRaw(`UPDATE promotions SET used_count = used_count + ${count} WHERE id = '${promoId}';`);
+  emitRaw(OUT, `UPDATE promotions SET used_count = used_count + ${count} WHERE id = '${promoId}';`);
 }
 
-emitRaw("UPDATE cashbook_opening_balances SET amount = 5000000, updated_by = 'manager01', " +
+emitRaw(OUT, "UPDATE cashbook_opening_balances SET amount = 5000000, updated_by = 'manager01', " +
   "updated_at = SYSUTCDATETIME() WHERE method = 'CASH';");
-emitRaw("UPDATE cashbook_opening_balances SET amount = 20000000, updated_by = 'manager01', " +
+emitRaw(OUT, "UPDATE cashbook_opening_balances SET amount = 20000000, updated_by = 'manager01', " +
   "updated_at = SYSUTCDATETIME() WHERE method = 'BANK';");
 
-emitRaw(`ALTER SEQUENCE dbo.order_code_seq RESTART WITH ${COUNTERS.order_seq + 1};`);
-emitRaw(`ALTER SEQUENCE dbo.invoice_code_seq RESTART WITH ${COUNTERS.invoice_seq + 1};`);
+// Advance the live sequences past whatever this run just used -- COUNTERS were seeded from
+// the LIVE current_value above, so this never drags the sequence backward (the bug in the
+// old script, which restarted from a stale 2026-07-24 snapshot).
+emitRaw(OUT, `ALTER SEQUENCE dbo.order_code_seq RESTART WITH ${COUNTERS.order_seq + 1};`);
+emitRaw(OUT, `ALTER SEQUENCE dbo.invoice_code_seq RESTART WITH ${COUNTERS.invoice_seq + 1};`);
 
 fs.writeFileSync(OUT_PATH, OUT.join('\n'), 'utf8');
 console.log(`Wrote ${OUT_PATH} (${OUT.length} statements)`);
-console.log(`orders=${orderRows.length} invoices=${invoiceRows.length} payments=${paymentRows.length} ` +
-  `vouchers=${voucherRows.length} schedules=${wsRows.length} attendance=${arRows.length} ` +
-  `violations=${vioRows.length} reservations=${reservationRows.length} shifts=${shiftRows.length} ` +
-  `payslips=${payslipRows.length}`);
+console.log(`window=${fmtDate(START_DATE)}..${fmtDate(END_DATE)} orders=${orderRows.length} invoices=${invoiceRows.length} ` +
+  `payments=${paymentRows.length} vouchers=${voucherRows.length} schedules=${wsRows.length} attendance=${arRows.length} ` +
+  `violations=${vioRows.length} reservations=${reservationRows.length} shifts=${shiftRows.length} payslips=${payslipRows.length}`);
+
+console.log('[5/5] Applying seed_3_months.sql...');
+sqlcmdRunFile(OUT_PATH);
+console.log('Done. Seed data applied successfully.');
