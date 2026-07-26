@@ -384,16 +384,16 @@ const VT_LATE_PENALTY = 50000;
 // Attendance settings (singleton row) -- read live instead of hardcoding grace/threshold values.
 const asRows = sqlcmdQuery("SELECT half_day_enabled, half_day_min_minutes, half_day_max_minutes, " +
   "late_enabled, late_grace_minutes, early_leave_enabled, early_leave_grace_minutes, " +
-  "ot_before_enabled, ot_before_min_minutes, ot_after_enabled, ot_after_min_minutes " +
+  "late_penalty_enabled, late_penalty_rounding_minutes, overtime_enabled, ot_rounding_minutes " +
   "FROM attendance_settings WHERE id = 'a0000000-0000-0000-0000-000000000001'");
 if (!asRows.length) throw new Error('attendance_settings singleton row not found live.');
-const [hdEn, hdMin, hdMax, lateEn, lateGrace, earlyEn, earlyGrace, otBEn, otBMin, otAEn, otAMin] = asRows[0];
+const [hdEn, hdMin, hdMax, lateEn, lateGrace, earlyEn, earlyGrace, latePenEn, latePenRoundMin, otEn, otRoundMin] = asRows[0];
 const ATTENDANCE_SETTINGS = {
   halfDayEnabled: hdEn === '1', halfDayMinMinutes: parseInt(hdMin, 10), halfDayMaxMinutes: parseInt(hdMax, 10),
   lateEnabled: lateEn === '1', lateGraceMinutes: parseInt(lateGrace, 10),
   earlyLeaveEnabled: earlyEn === '1', earlyLeaveGraceMinutes: parseInt(earlyGrace, 10),
-  otBeforeEnabled: otBEn === '1', otBeforeMinMinutes: parseInt(otBMin, 10),
-  otAfterEnabled: otAEn === '1', otAfterMinMinutes: parseInt(otAMin, 10),
+  latePenaltyEnabled: latePenEn === '1', latePenaltyRoundingMinutes: parseInt(latePenRoundMin, 10),
+  overtimeEnabled: otEn === '1', otRoundingMinutes: parseInt(otRoundMin, 10),
 };
 
 // Code counters -- live sequence current_value / MAX(code) suffix instead of a stale snapshot.
@@ -455,8 +455,12 @@ const ROSTER_SPECS = [
   { name: 'Nguyen Van A', pos: 'MANAGER', salaryType: 'FIXED', wage: 12000000, overtime: false, userId: USER_MANAGER01, username: 'manager01' },
   { name: 'Nguyen Van B', pos: 'CASHIER', salaryType: 'SHIFT', wage: 250000, overtime: true, userId: USER_CASHIER01, username: 'cashier01' },
   { name: 'Nguyen Van C', pos: 'CASHIER', salaryType: 'SHIFT', wage: 230000, overtime: true, userId: null, username: 'cashier02' },
-  { name: 'Nguyen Van D', pos: 'WAITER', salaryType: 'SHIFT', wage: 200000, overtime: true, userId: USER_WAITER01, username: 'waiter01' },
-  { name: 'Nguyen Van E', pos: 'WAITER', salaryType: 'SHIFT', wage: 190000, overtime: true, userId: null, username: 'waiter02' },
+  // D: SHIFT with overtime disabled -- exercises the "employee opted out of OT pay" path
+  // (SalaryCalculator.computeShift's setting.isOvertimeEnabled() gate).
+  { name: 'Nguyen Van D', pos: 'WAITER', salaryType: 'SHIFT', wage: 200000, overtime: false, userId: USER_WAITER01, username: 'waiter01' },
+  // E: HOURLY -- the only non-SHIFT/FIXED salary type in the roster, so the "Lương"/"Lương dự
+  // kiến" hourly-rate path (and payroll's computeHourly-equivalent below) gets real data too.
+  { name: 'Nguyen Van E', pos: 'WAITER', salaryType: 'HOURLY', wage: 25000, overtime: false, userId: null, username: 'waiter02' },
 ];
 let phoneSeq = 1;
 const ROSTER = ROSTER_SPECS.map((spec) => {
@@ -491,7 +495,6 @@ function scheduledWindow(workDate, shiftId) {
   return [start, end];
 }
 function beyondGrace(enabled, raw, grace) { return enabled && raw > grace ? raw - grace : 0; }
-function beyondMinimum(enabled, raw, minimum) { return enabled && raw > minimum ? raw : 0; }
 
 function computeAttendance(workDate, shiftId, actualIn, actualOut) {
   if (!actualIn || !actualOut) return { worked: 0, late: 0, early: 0, ot: 0, credit: 0 };
@@ -504,8 +507,10 @@ function computeAttendance(workDate, shiftId, actualIn, actualOut) {
   const otAfterRaw = Math.max(0, diffMinutes(schedEnd, actualOut));
   let late = beyondGrace(s.lateEnabled, lateRaw, s.lateGraceMinutes);
   let early = beyondGrace(s.earlyLeaveEnabled, earlyRaw, s.earlyLeaveGraceMinutes);
-  const otBefore = beyondMinimum(s.otBeforeEnabled, otBeforeRaw, s.otBeforeMinMinutes);
-  const otAfter = beyondMinimum(s.otAfterEnabled, otAfterRaw, s.otAfterMinMinutes);
+  // BR-AT-10: no minimum threshold -- any time outside the shift window counts as OT when
+  // enabled, expressed in decimal hours (otMinutes / 60.0) by the payroll OT formula.
+  const otBefore = s.overtimeEnabled ? otBeforeRaw : 0;
+  const otAfter = s.overtimeEnabled ? otAfterRaw : 0;
   const ot = otBefore + otAfter;
   if (s.halfDayEnabled && worked >= s.halfDayMinMinutes && worked < s.halfDayMaxMinutes) {
     late = 0; early = 0; // half-day zeroes late/early, never OT
@@ -519,8 +524,31 @@ function syntheticWindow(emp, d) { return scheduledWindow(d, emp.primaryShift); 
 // ---------------------------------------------------------------------------------------
 // Precompute every employee's schedule + attendance across the whole window
 // ---------------------------------------------------------------------------------------
-const SCHEDULE_INDEX = new Map(); // `${employeeId}|${dateKey}` -> info
+// SCHEDULE_INDEX maps `${employeeId}|${dateKey}` -> an ARRAY of shift infos (usually length 1;
+// occasionally 2 -- see the "second shift" roll below -- so the Timesheet UI's history popups
+// have real multi-shift-same-day data to group/stack, matching the reference mockups).
+const SCHEDULE_INDEX = new Map();
 const VIOLATIONS_BY_EMP = {}; // employeeId -> [[date, penalty], ...]
+
+/** One worked shift's actual in/out + computed metrics, with realistic jitter: usually close
+ * to on-time, occasionally late arrival (8%), late departure/extra OT (6%), or early leave (6%). */
+function generateShiftAttendance(d, shiftId) {
+  const [baseIn, baseOut] = scheduledWindow(d, shiftId);
+  let jitterIn = randInt(-5, 5);
+  let jitterOut = randInt(-5, 10);
+  const r2 = randFloat();
+  if (r2 < 0.08) jitterIn += randInt(20, 90);
+  else if (r2 < 0.14) jitterOut += randInt(30, 120);
+  else if (r2 < 0.20) jitterOut -= randInt(15, 90);
+  const actualIn = addMinutes(baseIn, jitterIn);
+  const actualOut = addMinutes(baseOut, jitterOut);
+  return { shiftId, type: 'PRESENT', actualIn, actualOut, scheduleId: newId(), recordId: newId(),
+    ...computeAttendance(d, shiftId, actualIn, actualOut) };
+}
+function leaveAttendance(shiftId, type) {
+  return { shiftId, type, actualIn: null, actualOut: null, scheduleId: newId(), recordId: newId(),
+    worked: 0, late: 0, early: 0, ot: 0, credit: 0 };
+}
 
 for (const emp of ROSTER) {
   VIOLATIONS_BY_EMP[emp.id] = [];
@@ -529,25 +557,19 @@ for (const emp of ROSTER) {
     let shiftId = emp.primaryShift;
     if (randFloat() < 0.08) shiftId = choice(SHIFT_IDS);
     const roll = randFloat();
-    let atype, actualIn, actualOut;
-    if (roll < 0.03) { atype = 'LEAVE_UNAPPROVED'; actualIn = null; actualOut = null; }
-    else if (roll < 0.06) { atype = 'LEAVE_APPROVED'; actualIn = null; actualOut = null; }
+    let infos;
+    if (roll < 0.03) infos = [leaveAttendance(shiftId, 'LEAVE_UNAPPROVED')];
+    else if (roll < 0.06) infos = [leaveAttendance(shiftId, 'LEAVE_APPROVED')];
     else {
-      atype = 'PRESENT';
-      const [baseIn, baseOut] = scheduledWindow(d, shiftId);
-      let jitterIn = randInt(-5, 5);
-      let jitterOut = randInt(-5, 10);
-      const r2 = randFloat();
-      if (r2 < 0.08) jitterIn += randInt(20, 90);
-      else if (r2 < 0.14) jitterOut += randInt(30, 120);
-      actualIn = addMinutes(baseIn, jitterIn);
-      actualOut = addMinutes(baseOut, jitterOut);
+      infos = [generateShiftAttendance(d, shiftId)];
+      // Occasionally work a second shift the same day -- a separate schedule/record from a
+      // merged punch (BR-AT-11), just two ordinary shifts stacked under one date.
+      if (randFloat() < 0.04) {
+        const otherShiftId = choice(SHIFT_IDS.filter((id) => id !== shiftId));
+        infos.push(generateShiftAttendance(d, otherShiftId));
+      }
     }
-    const metrics = atype === 'PRESENT' ? computeAttendance(d, shiftId, actualIn, actualOut)
-      : { worked: 0, late: 0, early: 0, ot: 0, credit: 0 };
-    SCHEDULE_INDEX.set(`${emp.id}|${dateKey(d)}`, {
-      shiftId, type: atype, actualIn, actualOut, scheduleId: newId(), recordId: newId(), ...metrics,
-    });
+    SCHEDULE_INDEX.set(`${emp.id}|${dateKey(d)}`, infos);
   }
 }
 
@@ -556,21 +578,23 @@ const wsRows = [], arRows = [], vioRows = [];
 for (const emp of ROSTER) {
   for (const d of ALL_DATES) {
     const key = `${emp.id}|${dateKey(d)}`;
-    const info = SCHEDULE_INDEX.get(key);
-    if (!info) continue;
+    const infos = SCHEDULE_INDEX.get(key);
+    if (!infos) continue;
     const postedAt = fmtDateTime(mkDate(d.getFullYear(), d.getMonth() + 1, d.getDate(), 7, 0, 0));
-    wsRows.push([info.scheduleId, emp.id, info.shiftId, fmtDate(d), null, null, postedAt, postedAt]);
-    arRows.push([info.recordId, info.scheduleId, info.type, fmtDateTime(info.actualIn), fmtDateTime(info.actualOut),
-      info.worked, info.late, info.early, info.ot, info.credit, false, null, 'seed-script', postedAt, postedAt]);
-    if (info.type === 'LEAVE_UNAPPROVED') {
-      vioRows.push([newId(), info.recordId, VT_NOSHOW, 1, 200000, postedAt, postedAt]);
-      VIOLATIONS_BY_EMP[emp.id].push([d, 200000]);
-    } else if (info.type === 'PRESENT' && info.late > 0 && randFloat() < 0.5) {
-      vioRows.push([newId(), info.recordId, VT_LATE, 1, VT_LATE_PENALTY, postedAt, postedAt]);
-      VIOLATIONS_BY_EMP[emp.id].push([d, VT_LATE_PENALTY]);
-    } else if (info.type === 'PRESENT' && randFloat() < 0.01) {
-      vioRows.push([newId(), info.recordId, VT_UNIFORM, 1, 30000, postedAt, postedAt]);
-      VIOLATIONS_BY_EMP[emp.id].push([d, 30000]);
+    for (const info of infos) {
+      wsRows.push([info.scheduleId, emp.id, info.shiftId, fmtDate(d), null, null, postedAt, postedAt]);
+      arRows.push([info.recordId, info.scheduleId, info.type, fmtDateTime(info.actualIn), fmtDateTime(info.actualOut),
+        info.worked, info.late, info.early, info.ot, info.credit, false, null, 'seed-script', postedAt, postedAt]);
+      if (info.type === 'LEAVE_UNAPPROVED') {
+        vioRows.push([newId(), info.recordId, VT_NOSHOW, 1, 200000, postedAt, postedAt]);
+        VIOLATIONS_BY_EMP[emp.id].push([d, 200000]);
+      } else if (info.type === 'PRESENT' && info.late > 0 && randFloat() < 0.5) {
+        vioRows.push([newId(), info.recordId, VT_LATE, 1, VT_LATE_PENALTY, postedAt, postedAt]);
+        VIOLATIONS_BY_EMP[emp.id].push([d, VT_LATE_PENALTY]);
+      } else if (info.type === 'PRESENT' && randFloat() < 0.01) {
+        vioRows.push([newId(), info.recordId, VT_UNIFORM, 1, 30000, postedAt, postedAt]);
+        VIOLATIONS_BY_EMP[emp.id].push([d, 30000]);
+      }
     }
   }
 }
@@ -579,7 +603,10 @@ for (const emp of ROSTER) {
 // Cashier POS shifts, orders, invoices, payments, cashbook vouchers, reservations
 // ---------------------------------------------------------------------------------------
 function cashierWindow(c, d) {
-  const info = SCHEDULE_INDEX.get(`${c.id}|${dateKey(d)}`);
+  // Only the primary (first) shift of the day drives the POS register window -- an extra
+  // second shift that day (see SCHEDULE_INDEX above) is an attendance/payroll fact only, not
+  // a second cash register shift.
+  const info = SCHEDULE_INDEX.get(`${c.id}|${dateKey(d)}`)?.[0];
   if (info && info.type === 'PRESENT') return [info.actualIn, info.actualOut];
   return syntheticWindow(c, d);
 }
@@ -615,7 +642,7 @@ for (const c of CASHIERS) prevHandover[c.id] = 500000;
 
 for (const d of ALL_DATES) {
   const presentCashiers = CASHIERS.filter((c) => {
-    const info = SCHEDULE_INDEX.get(`${c.id}|${dateKey(d)}`);
+    const info = SCHEDULE_INDEX.get(`${c.id}|${dateKey(d)}`)?.[0];
     return info && info.type === 'PRESENT';
   });
   const workingCashiers = presentCashiers.length ? presentCashiers : [CASHIERS[0]];
@@ -831,13 +858,23 @@ function scheduledMinutes(shiftId) {
   const [start, end] = scheduledWindow(mkDate(2026, 1, 1), shiftId);
   return diffMinutes(start, end);
 }
+// Automatic late/early wage deduction (opt-in, SHIFT-type only, mirrors SalaryCalculator's
+// lateEarlyPenalty()): rounds UP to the nearest multiple of roundingMin, always at least one
+// block even on an exact multiple. E.g. roundingMin=15: 1 actual minute -> 0.25h; 16 min -> 0.5h.
+function lateEarlyPenaltyAmount(wage, scheduledMin, minutes, roundingMin) {
+  if (minutes <= 0 || roundingMin <= 0 || scheduledMin <= 0) return 0;
+  const hourlyBase = (wage * 60) / scheduledMin;
+  const blocks = Math.floor(minutes / roundingMin) + 1;
+  const hours = (blocks * roundingMin) / 60;
+  return round0(hourlyBase * hours);
+}
 
 function computePayslip(emp, periodStart, periodEnd) {
   const records = [];
   for (const d of ALL_DATES) {
     if (d < periodStart || d > periodEnd) continue;
-    const info = SCHEDULE_INDEX.get(`${emp.id}|${dateKey(d)}`);
-    if (info) records.push([d, info]);
+    const infos = SCHEDULE_INDEX.get(`${emp.id}|${dateKey(d)}`);
+    if (infos) for (const info of infos) records.push([d, info]);
   }
   const snapshot = [];
   if (emp.salaryType === 'FIXED') {
@@ -851,10 +888,31 @@ function computePayslip(emp, periodStart, periodEnd) {
         workedMinutes: info.worked, otMinutes: 0, dayType: dayTypeFor(d), rateApplied: null, amount: 0,
         note: 'Luong co dinh - khong tinh theo cong' });
     }
-    return { main, overtime, shiftCount, workedMinutes, otMinutes: 0, snapshot };
+    return { main, overtime, shiftCount, workedMinutes, otMinutes: 0, snapshot, lateEarlyDeduction: 0 };
+  }
+  if (emp.salaryType === 'HOURLY') {
+    // Mirrors SalaryCalculator.computeHourly(): paid strictly by workedMinutes, day-type
+    // adjusted rate, no OT (BR-PAY-05) and no late/early deduction (already paid less for the
+    // minutes actually missed).
+    let mainTotal = 0, shiftCount = 0, workedMinutesTotal = 0;
+    for (const [d, info] of records) {
+      workedMinutesTotal += info.worked;
+      const dt = dayTypeFor(d);
+      const pct = DAY_RATE[dt];
+      const hourlyRate = applyRate(emp.wage, pct);
+      const isPaid = info.type === 'PRESENT' && info.actualOut !== null && info.worked > 0;
+      const amount = isPaid ? round0((hourlyRate * info.worked) / 60) : 0;
+      if (isPaid) shiftCount += 1;
+      mainTotal += amount;
+      snapshot.push({ date: fmtDate(d), shiftName: SHIFT_NAMES[info.shiftId], status: info.type,
+        checkInAt: fmtIsoDateTime(info.actualIn), checkOutAt: fmtIsoDateTime(info.actualOut),
+        workedMinutes: info.worked, otMinutes: 0, dayType: dt, rateApplied: pct ? `${pct}%` : null,
+        amount, note: null });
+    }
+    return { main: mainTotal, overtime: 0, shiftCount, workedMinutes: workedMinutesTotal, otMinutes: 0, snapshot, lateEarlyDeduction: 0 };
   }
 
-  let mainTotal = 0, otTotal = 0, otMinutesTotal = 0, shiftCount = 0, workedMinutesTotal = 0;
+  let mainTotal = 0, otTotal = 0, otMinutesTotal = 0, shiftCount = 0, workedMinutesTotal = 0, lateEarlyDeductionTotal = 0;
   for (const [d, info] of records) {
     workedMinutesTotal += info.worked;
     const dt = dayTypeFor(d);
@@ -863,24 +921,33 @@ function computePayslip(emp, periodStart, periodEnd) {
     const isPaid = info.type === 'PRESENT' && info.actualOut !== null;
     const amount = isPaid ? round0(shiftWage) : 0;
     if (isPaid) shiftCount += 1;
+    const scheduled = scheduledMinutes(info.shiftId);
     const otMin = emp.overtime ? info.ot : 0;
     let otAmount = 0;
-    if (otMin > 0) {
-      const scheduled = scheduledMinutes(info.shiftId);
-      if (scheduled > 0) {
-        const hourlyBase = (emp.wage * 60) / scheduled;
-        const otPct = OT_RATE[dt] != null ? OT_RATE[dt] : OT_RATE.normal;
-        const perHour = applyRate(hourlyBase, otPct);
-        otAmount = round0((perHour * otMin) / 60);
-      }
+    if (otMin > 0 && scheduled > 0) {
+      const hourlyBase = (emp.wage * 60) / scheduled;
+      const otPct = OT_RATE[dt] != null ? OT_RATE[dt] : OT_RATE.normal;
+      const perHour = applyRate(hourlyBase, otPct);
+      // Pay rounds actual OT minutes DOWN to the nearest multiple of otRoundingMinutes
+      // before converting to decimal hours (mirrors SalaryCalculator.otAmount()).
+      const roundMin = ATTENDANCE_SETTINGS.otRoundingMinutes;
+      const roundedOtMin = roundMin > 0 ? Math.floor(otMin / roundMin) * roundMin : otMin;
+      otAmount = round0((perHour * roundedOtMin) / 60);
+    }
+    let rowDeduction = 0;
+    if (ATTENDANCE_SETTINGS.latePenaltyEnabled) {
+      rowDeduction = lateEarlyPenaltyAmount(emp.wage, scheduled, info.late, ATTENDANCE_SETTINGS.latePenaltyRoundingMinutes)
+        + lateEarlyPenaltyAmount(emp.wage, scheduled, info.early, ATTENDANCE_SETTINGS.latePenaltyRoundingMinutes);
+      lateEarlyDeductionTotal += rowDeduction;
     }
     mainTotal += amount; otTotal += otAmount; otMinutesTotal += otMin;
     snapshot.push({ date: fmtDate(d), shiftName: SHIFT_NAMES[info.shiftId], status: info.type,
       checkInAt: fmtIsoDateTime(info.actualIn), checkOutAt: fmtIsoDateTime(info.actualOut),
       workedMinutes: info.worked, otMinutes: otMin, dayType: dt, rateApplied: pct ? `${pct}%` : null,
-      amount: amount + otAmount, note: null });
+      amount: amount + otAmount, note: rowDeduction > 0 ? `Tru luong di muon/ve som: ${rowDeduction}d` : null });
   }
-  return { main: mainTotal, overtime: otTotal, shiftCount, workedMinutes: workedMinutesTotal, otMinutes: otMinutesTotal, snapshot };
+  return { main: mainTotal, overtime: otTotal, shiftCount, workedMinutes: workedMinutesTotal, otMinutes: otMinutesTotal,
+    snapshot, lateEarlyDeduction: lateEarlyDeductionTotal };
 }
 
 const payrollSheetRows = [], payslipRows = [], payslipPaymentRows = [];
@@ -912,10 +979,12 @@ for (const period of PERIODS) {
 
   for (const emp of ROSTER) {
     const periodEndClamped = period.end < END_DATE ? period.end : END_DATE;
-    const { main, overtime, shiftCount, workedMinutes, otMinutes, snapshot } = computePayslip(emp, period.start, periodEndClamped);
-    const deduction = VIOLATIONS_BY_EMP[emp.id]
+    const { main, overtime, shiftCount, workedMinutes, otMinutes, snapshot, lateEarlyDeduction } =
+      computePayslip(emp, period.start, periodEndClamped);
+    const violationDeduction = VIOLATIONS_BY_EMP[emp.id]
       .filter(([dd]) => dd >= period.start && dd <= period.end)
       .reduce((a, [, p]) => a + p, 0);
+    const deduction = violationDeduction + lateEarlyDeduction;
     const payslipId = newId();
     const payslipCode = nextCode('PL');
     let paidAmount = 0, payStatus = 'UNPAID';
