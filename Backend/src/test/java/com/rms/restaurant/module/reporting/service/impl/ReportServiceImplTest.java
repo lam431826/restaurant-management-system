@@ -19,6 +19,7 @@ import com.rms.restaurant.module.payment.repository.PaymentRepository;
 import com.rms.restaurant.module.payroll.repository.PayrollSheetRepository;
 import com.rms.restaurant.module.payroll.repository.PayslipRepository;
 import com.rms.restaurant.module.reporting.dto.DashboardOverviewResponse;
+import com.rms.restaurant.module.reporting.service.FinancialCustomLineService;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +61,7 @@ class ReportServiceImplTest {
     @Mock MenuItemRepository menuItemRepository;
     @Mock PayrollSheetRepository payrollSheetRepository;
     @Mock PayslipRepository payslipRepository;
+    @Mock FinancialCustomLineService financialCustomLineService;
 
     private ReportServiceImpl service;
 
@@ -71,7 +73,7 @@ class ReportServiceImplTest {
         service = new ReportServiceImpl(
                 invoiceRepository, orderRepository, orderItemRepository, invoiceItemAllocationRepository,
                 paymentRepository, userRepository, tableRepository, menuItemRepository,
-                payrollSheetRepository, payslipRepository);
+                payrollSheetRepository, payslipRepository, financialCustomLineService);
 
         lenient().when(orderRepository.findAllById(anyCollection())).thenReturn(List.of());
         lenient().when(invoiceRepository.findAllById(anyCollection())).thenReturn(List.of());
