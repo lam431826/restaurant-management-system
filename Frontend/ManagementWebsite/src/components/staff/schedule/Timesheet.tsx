@@ -883,7 +883,7 @@ const Timesheet = () => {
   useEffect(() => { void reload() }, [reload])
 
   /* "+" in the shift column header — opens the "Thêm ca làm việc" popup directly (BR-AT-01 A1). */
-  const AddShiftButton = () => (
+  const addShiftButton = (
     <button onClick={() => setAddShiftOpen(true)} aria-label="Thêm ca làm việc"
       className="w-6 h-6 flex items-center justify-center rounded-md text-primary hover:bg-primary-25 cursor-pointer text-xl leading-none">+</button>
   )
@@ -1129,7 +1129,7 @@ const Timesheet = () => {
                 <th className="sticky top-0 left-0 z-3 bg-card text-left px-4 py-4 w-[14rem] border-b border-r border-line">
                   <div className="flex items-center justify-between">
                     <span className="text-md font-bold text-ink">Ca làm việc</span>
-                    <AddShiftButton />
+                    {addShiftButton}
                   </div>
                 </th>
                 {weekDays.map(d => (
@@ -1171,7 +1171,7 @@ const Timesheet = () => {
                 <th className="text-left px-4 py-4 w-[14rem] border-b border-r border-line">
                   <div className="flex items-center justify-between">
                     <span className="text-md font-bold text-ink">Ca làm việc</span>
-                    <AddShiftButton />
+                    {addShiftButton}
                   </div>
                 </th>
                 <th className="text-left px-4 py-4 border-b border-line">
@@ -1203,7 +1203,7 @@ const Timesheet = () => {
             <thead>
               <tr>
                 <th className="sticky top-0 left-0 z-3 bg-card text-left px-3 py-3 w-[11rem] border-b border-r border-line">
-                  <div className="flex items-center justify-between"><span className="text-md font-bold text-ink">Ca làm việc</span><AddShiftButton /></div>
+                  <div className="flex items-center justify-between"><span className="text-md font-bold text-ink">Ca làm việc</span>{addShiftButton}</div>
                 </th>
                 <th className="sticky top-0 z-2 bg-card text-left px-3 py-3 w-[10rem] border-b border-r border-line">
                   <span className="text-md font-bold text-ink">Nhân viên</span>

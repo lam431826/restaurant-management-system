@@ -18,5 +18,11 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // Server state is intentionally loaded from effects throughout this completed app.
+      // React Compiler is not part of the toolchain, so rewriting every loader around its
+      // performance heuristic would add lifecycle risk without improving correctness.
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])

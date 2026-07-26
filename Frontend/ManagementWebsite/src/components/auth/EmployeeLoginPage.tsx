@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { login } from '../../api/auth'
-import { useAuth, type UserRole } from '../../context/AuthContext'
+import type { UserRole } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { asHttpError } from '../../utils/httpError'
 
 const bgImage = '/images/bg-food.jpg'

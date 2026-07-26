@@ -1,6 +1,6 @@
 import { useLocation } from 'react-router-dom'
 import { navItems } from '../../data/mockData'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 
 type NavChild =
   | { label: string; href: string; divider?: undefined; groupTitle?: undefined }

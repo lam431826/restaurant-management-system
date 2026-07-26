@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { getMyEmployeeProfile, saveMyEmployeeProfile } from '../../api/employees'
 import type { MyEmployeeProfileDto } from '../../api/employees'
 import { inputCls, Field, SectionCard } from './EmployeeModal'

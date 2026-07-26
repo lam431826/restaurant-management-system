@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { IconBell, IconSettings } from "../common/Icon";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../context/useAuth";
 import { logout } from "../../api/auth";
 import ChangePasswordModal from "../auth/ChangePasswordModal";
 import {

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Employee } from '../../data/mockData'
 import Avatar from '../common/Avatar'
-import EmployeeModal, { rateLabel, parseRates } from './EmployeeModal'
-import type { OtRates } from './EmployeeModal'
+import EmployeeModal from './EmployeeModal'
+import { parseRates, rateLabel, type OtRates } from './employeeSalary'
 import { updateEmployee, toEmployee, getSalarySetting } from '../../api/employees'
 import type { SalarySettingDto } from '../../api/employees'
 import { getUser } from '../../api/users'
@@ -151,15 +151,15 @@ const SalarySetupTab = ({ employee, onSave }: { employee: Employee; onSave: (upd
   const [loading, setLoading] = useState(true)
   const [showEditModal, setShowEditModal] = useState(false)
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true)
     getSalarySetting(employee.id)
       .then(res => setSetting(res.data.data))
       .catch(() => setSetting(null))
       .finally(() => setLoading(false))
-  }
+  }, [employee.id])
 
-  useEffect(() => { load() }, [employee.id])
+  useEffect(() => { load() }, [load])
 
   const hasSetting = !!setting?.id
   const def = hasSetting ? parseRates(setting!.mainAdvancedRatesJson) : null
@@ -417,15 +417,15 @@ const PayslipTab = ({ employee }: { employee: Employee }) => {
   const [rows, setRows] = useState<PayslipDetailDto[]>([])
   const [loading, setLoading] = useState(true)
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true)
     listEmployeePayslips(employee.id)
       .then(res => setRows(res.data.data))
       .catch(() => setRows([]))
       .finally(() => setLoading(false))
-  }
+  }, [employee.id])
 
-  useEffect(() => { load() }, [employee.id])
+  useEffect(() => { load() }, [load])
 
   const filtered = rows.filter(p => filter === 'ALL' || payslipFilterKey(p) === filter)
 

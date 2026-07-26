@@ -1,21 +1,7 @@
 import { Fragment, useState } from 'react'
 import type { Employee } from '../../data/mockData'
 import EmployeeDetail from './EmployeeDetail'
-
-export interface EmployeeColumn { key: string; label: string; width?: string; render: (e: Employee) => React.ReactNode }
-
-// Toggleable via the "Tùy chọn cột" dropdown in EmployeeToolbar — kept in one place so the
-// toolbar's checkbox list and the table's rendering never drift out of sync.
-export const EMPLOYEE_COLUMNS: EmployeeColumn[] = [
-  { key: 'code', label: 'Mã nhân viên', width: 'w-[13rem]', render: e => <span className="text-primary font-medium">{e.code}</span> },
-  { key: 'timekeepCode', label: 'Mã chấm công', width: 'w-[13rem]', render: e => e.timekeepCode },
-  { key: 'name', label: 'Tên nhân viên', render: e => e.name },
-  { key: 'phone', label: 'Số điện thoại', width: 'w-[14rem]', render: e => e.phone },
-  { key: 'idNumber', label: 'Số CMND/CCCD', width: 'w-[15rem]', render: e => e.idNumber },
-  { key: 'note', label: 'Ghi chú', width: 'w-[16rem]', render: e => <span className="text-ink-muted">{e.note}</span> },
-]
-export const DEFAULT_VISIBLE_COLUMNS: Record<string, boolean> =
-  Object.fromEntries(EMPLOYEE_COLUMNS.map(c => [c.key, true]))
+import { EMPLOYEE_COLUMNS } from './employeeColumns'
 
 interface Props {
   employees: Employee[]

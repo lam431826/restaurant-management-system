@@ -607,7 +607,7 @@ const FinancialLineSettings = ({ lines, onChanged }: { lines: FinancialCustomLin
     }
   }
 
-  const LineTable = ({ group, title, last }: { group: FinancialLineGroupParam; title: string; last?: boolean }) => {
+  const renderLineTable = (group: FinancialLineGroupParam, title: string, last = false) => {
     const rows = lines.filter(l => l.group === group).sort((a, b) => a.sortOrder - b.sortOrder)
     return (
       <Block title={title} last={last}
@@ -645,8 +645,8 @@ const FinancialLineSettings = ({ lines, onChanged }: { lines: FinancialCustomLin
   return (
     <div>
       <h2 className="text-lg font-bold text-ink mb-2">Tài chính</h2>
-      <LineTable group="EXPENSE" title="Danh mục chi phí" />
-      <LineTable group="OTHER_INCOME" title="Danh mục thu nhập khác" last />
+      {renderLineTable('EXPENSE', 'Danh mục chi phí')}
+      {renderLineTable('OTHER_INCOME', 'Danh mục thu nhập khác', true)}
 
       {modal && (
         <FinancialCustomLineModal

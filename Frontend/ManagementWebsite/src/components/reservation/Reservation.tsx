@@ -7,7 +7,7 @@ import ListView from './ListView'
 import ReservationModal from './ReservationModal'
 import EditReservationModal from './EditReservationModal'
 import type { Reservation as Res } from '../../data/mockData'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { logout } from '../../api/auth'
 import {
   listReservations,

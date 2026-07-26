@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Employee } from '../../data/mockData'
-import type { EmployeeColumn } from './EmployeeTable'
+import type { EmployeeColumn } from './employeeColumns'
 
 interface Props {
   search: string

@@ -3,7 +3,7 @@ import { Field, Picker, SectionCard, inputCls } from '../staff/EmployeeModal'
 import CategoryModal from './CategoryModal'
 import { listEmployees } from '../../api/employees'
 import type { EmployeeDto } from '../../api/employees'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { METHOD_LABEL } from '../../api/cashbook'
 import type {
   CashFlowCategory, CashFlowMethod, CashFlowType, CreateVoucherPayload, PartnerGroup,

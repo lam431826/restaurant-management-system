@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { logout } from '../../api/auth'
 import {
   listUsers, createUser, updateUser, deleteUser, unlockUser,

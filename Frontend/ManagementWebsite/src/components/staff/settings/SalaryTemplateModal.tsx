@@ -3,9 +3,16 @@ import type { SalaryTemplateDto, SalaryTemplatePayload } from '../../../api/sala
 import { createSalaryTemplate, updateSalaryTemplate } from '../../../api/salaryTemplates'
 import {
   Field, Picker, SectionCard, ShiftSalaryBody, inputCls,
-  salaryTypes, LABEL_TO_SALARY_TYPE, SALARY_TYPE_TO_LABEL, parseRates, defaultSalaryConfig,
 } from '../EmployeeModal'
-import type { SalaryConfig, OtRates } from '../EmployeeModal'
+import {
+  LABEL_TO_SALARY_TYPE,
+  SALARY_TYPE_TO_LABEL,
+  defaultSalaryConfig,
+  parseRates,
+  salaryTypes,
+  type OtRates,
+  type SalaryConfig,
+} from '../employeeSalary'
 
 interface Props {
   template?: SalaryTemplateDto | null

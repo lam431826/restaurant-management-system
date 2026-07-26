@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import AuthLayout from "./AuthLayout";
 import { login, verifyInfo, verifyOtp, resendOtp } from "../../api/auth";
-import { useAuth, type UserRole } from "../../context/AuthContext";
+import type { UserRole } from "../../context/AuthContext";
+import { useAuth } from "../../context/useAuth";
 import { asHttpError } from "../../utils/httpError";
 
 /* ── icons ── */

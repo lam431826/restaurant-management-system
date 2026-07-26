@@ -1,34 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { AuthContext, type AuthUser, type Session } from './authState'
 
-export type UserRole = 'WAITER' | 'CASHIER' | 'MANAGER' | 'ADMIN'
+export type { AuthUser, UserRole } from './authState'
 
 // BR-AUTH-03: idle/inactivity timeout (default 30 min). Timing out is equivalent to a
 // logout — it only clears the client session; the work shift / cash shift live on the
 // server and are restored on the next login (BR-AUTH-02).
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000
-
-export interface AuthUser {
-  id: string
-  username: string
-  fullName: string
-  role: UserRole
-}
-
-interface Session {
-  accessToken: string
-  refreshToken: string
-  user: AuthUser
-}
-
-interface AuthContextType {
-  user: AuthUser | null
-  saveSession: (session: Session) => void
-  updateUser: (patch: Partial<AuthUser>) => void
-  signOut: () => void
-  isAuthenticated: boolean
-}
-
-const AuthContext = createContext<AuthContextType | null>(null)
 
 const readStoredUser = (): AuthUser | null => {
   const stored = localStorage.getItem('user')
@@ -62,12 +40,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }
 
-  const signOut = () => {
+  const signOut = useCallback(() => {
     localStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
     localStorage.removeItem('user')
     setUser(null)
-  }
+  }, [])
 
   // BR-AUTH-03: auto sign-out after a period of inactivity.
   useEffect(() => {
@@ -84,18 +62,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(timer)
       events.forEach(e => window.removeEventListener(e, reset))
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user])
+  }, [signOut, user])
 
   return (
     <AuthContext.Provider value={{ user, saveSession, updateUser, signOut, isAuthenticated: !!user }}>
       {children}
     </AuthContext.Provider>
   )
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
-  return ctx
 }

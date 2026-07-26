@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useRealtime } from "../../hooks/useRealtime";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../context/useAuth";
 import { logout } from "../../api/auth";
 import { ApiError } from "../../services/api";
 import { ApiClientError } from "../../services/apiClient";
@@ -1120,6 +1120,9 @@ const CashierOrders = () => {
         );
         setActiveArea(resolvedTable.area);
         setOrderActionMessage(null);
+        // Both callbacks are stable useCallback values and restoration only runs after the
+        // component has initialized them; the compiler lint cannot infer that ordering.
+        // eslint-disable-next-line react-hooks/immutability
         resetInvoiceLink();
 
         // Await the full invoice refresh and read its returned snapshot directly — not
@@ -1127,6 +1130,7 @@ const CashierOrders = () => {
         // made against not-yet-settled invoiceListLoading/invoiceListOrderId. One retry
         // covers the (now normally unreachable, since the reactive effect above no longer
         // interferes while suppressed) case of the request being discarded as stale.
+        // eslint-disable-next-line react-hooks/immutability -- see initialization note above
         let invoiceSnapshot = await refreshInvoices(orderId, invoiceId ?? null);
         if (!invoiceSnapshot) {
           invoiceSnapshot = await refreshInvoices(orderId, invoiceId ?? null);
@@ -1354,6 +1358,7 @@ const CashierOrders = () => {
     });
   };
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- dependencies are intentionally empty
   const resetInvoiceLink = useCallback(() => {
     invoiceListRequestRef.current += 1;
     invoiceDetailRequestRef.current += 1;
@@ -1416,6 +1421,7 @@ const CashierOrders = () => {
   // away from the value it awaited, instead of re-deriving it from React state that may not
   // have settled (or may have been reset again by something else) by the next line.
   const refreshInvoices = useCallback(
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- loadInvoiceDetail is stable
     async (
       orderId: string,
       preferredInvoiceId: string | null = null,

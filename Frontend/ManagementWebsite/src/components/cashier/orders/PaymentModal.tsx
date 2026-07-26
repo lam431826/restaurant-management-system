@@ -10,10 +10,8 @@ import type { SelectablePaymentMethod } from "../../../services/paymentApi";
 import type { UserRole } from "../../../context/AuthContext";
 import type { TableItem } from "./types";
 import { SplitInvoiceModal } from "./SplitInvoiceModal";
-import {
-  isInvoiceMergeEligible,
-  MergeInvoiceModal,
-} from "./MergeInvoiceModal";
+import { MergeInvoiceModal } from "./MergeInvoiceModal";
+import { isInvoiceMergeEligible } from "./mergeInvoiceRules";
 import {
   ChevronDownIcon,
   CashMethodIcon,

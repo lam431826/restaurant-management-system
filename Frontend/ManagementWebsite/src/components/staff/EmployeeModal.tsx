@@ -1,11 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Employee } from '../../data/mockData'
 import { getSalarySetting, putSalarySetting } from '../../api/employees'
-import type { EmployeeDto, EmployeeFormPayload, SalaryType } from '../../api/employees'
+import type { EmployeeDto, EmployeeFormPayload } from '../../api/employees'
 import { listUsers, createUser } from '../../api/users'
 import type { UserDto } from '../../api/users'
 import { listSalaryTemplates, createSalaryTemplate } from '../../api/salaryTemplates'
 import type { SalaryTemplateDto } from '../../api/salaryTemplates'
+import {
+  LABEL_TO_SALARY_TYPE,
+  SALARY_TYPE_TO_LABEL,
+  defaultSalaryConfig,
+  parseRates,
+  rateLabel,
+  salaryTypes,
+  type DayRates,
+  type OtRates,
+  type Rate,
+  type SalaryConfig,
+} from './employeeSalary'
 
 type TabKey = 'info' | 'salary'
 
@@ -266,7 +278,6 @@ const ShiftPicker = ({ value, onChange }: { value: string; onChange: (v: string)
 }
 
 // a day-type rate cell that can hold a % or a fixed VND amount, edited in a popover
-export type Rate = { amount: string; unit: 'percent' | 'vnd' } | null
 // limits: 999 for %, 99,999,999 for VND. Returns a display string ("," separators for VND).
 const fmtRate = (raw: string, unit: 'percent' | 'vnd') => {
   const digits = raw.replace(/\D/g, '')
@@ -274,7 +285,6 @@ const fmtRate = (raw: string, unit: 'percent' | 'vnd') => {
   const n = Math.min(parseInt(digits, 10), unit === 'percent' ? 999 : 99999999)
   return unit === 'vnd' ? n.toLocaleString('en-US') : String(n)
 }
-export const rateLabel = (r: Rate) => r ? (r.unit === 'percent' ? `${r.amount}%` : `${Number(r.amount || 0).toLocaleString('en-US')}`) : ''
 const RateCell = ({ value, onChange }: { value: Rate; onChange: (v: Rate) => void }) => {
   const [open, setOpen] = useState(false)
   const [amt, setAmt] = useState('')
@@ -318,17 +328,6 @@ interface CondRow { id: number; shift: string; wage: string; sat: Rate; sun: Rat
 
 // Lifted salary-config state, round-tripped to /api/employees/{id}/salary-setting.
 // The JSON shape of `def`/`ot` is the canonical rates format the payroll module parses.
-export interface DayRates { sat: Rate; sun: Rate; off: Rate; holiday: Rate }
-export interface OtRates extends DayRates { normal: Rate }
-export interface SalaryConfig { base: string; def: DayRates; overtimeEnabled: boolean; ot: OtRates }
-const pct = (a: string): Rate => ({ amount: a, unit: 'percent' })
-export const defaultSalaryConfig = (): SalaryConfig => ({
-  base: '0',
-  def: { sat: null, sun: null, off: pct('100'), holiday: pct('100') },
-  overtimeEnabled: false,
-  ot: { normal: pct('150'), sat: pct('200'), sun: pct('200'), off: pct('200'), holiday: pct('300') },
-})
-
 export const ShiftSalaryBody = ({ value, onChange, suffix = '/ ca', firstCol = 'Ca', wageCol = 'Lương/ca', showOvertime = true, noAdvanced = false }: { value: SalaryConfig; onChange: (v: SalaryConfig) => void; suffix?: string; firstCol?: string; wageCol?: string; showOvertime?: boolean; noAdvanced?: boolean }) => {
   // Auto-expand when an already-saved setting has weekend rates, so loaded data is visible
   // without the manager having to know to flip the toggle themselves. Never for noAdvanced
@@ -454,25 +453,6 @@ export const ShiftSalaryBody = ({ value, onChange, suffix = '/ ca', firstCol = '
 }
 
 // Salary-type labels ↔ backend enum values.
-export const salaryTypes = ['Theo ca làm việc', 'Theo giờ làm việc', 'Cố định']
-export const LABEL_TO_SALARY_TYPE: Record<string, SalaryType> = {
-  'Theo ca làm việc': 'SHIFT',
-  'Theo giờ làm việc': 'HOURLY',
-  'Cố định': 'FIXED',
-}
-export const SALARY_TYPE_TO_LABEL: Record<SalaryType, string> = {
-  SHIFT: 'Theo ca làm việc',
-  HOURLY: 'Theo giờ làm việc',
-  FIXED: 'Cố định',
-}
-export const parseRates = (json: string | null): DayRates | null => {
-  if (!json) return null
-  try {
-    return JSON.parse(json) as DayRates
-  } catch {
-    return null
-  }
-}
 // Manager may create accounts, but never with role ADMIN (enforced server-side too) — so
 // "Quản trị viên" is intentionally not offered here at all.
 const ROLE_LABELS: Record<string, string> = { 'Phục vụ': 'WAITER', 'Thu ngân': 'CASHIER', 'Quản lý': 'MANAGER' }
