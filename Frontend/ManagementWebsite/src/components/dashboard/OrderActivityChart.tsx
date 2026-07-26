@@ -1,13 +1,14 @@
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
+import type { TooltipContentProps } from 'recharts'
 import Card, { CardHeader, CardBody } from '../common/Card'
 import { Skeleton, EmptyState, ErrorState } from './DashboardStates'
 import { fmtBucketLabel, fmtInt } from './dashboardUtils'
 import type { DashboardGranularity } from '../../api/dashboard'
 import type { OverviewState } from './Dashboard'
 
-const OrderTooltip = ({ active, payload }: any) => {
+const OrderTooltip = ({ active, payload }: Partial<TooltipContentProps<number, string>>) => {
   if (!active || !payload?.length) return null
   const p = payload[0].payload
   return (

@@ -9,15 +9,37 @@ import type { EndOfDayFilterState } from '../../data/endOfDayReportMockData'
 
 interface StaffOption { id: string; fullName: string }
 
+const pad = (value: number) => String(value).padStart(2, '0')
+const formatLocalDateTime = (value: Date) =>
+  `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
+  + `T${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`
+
+const exclusiveEndOfDay = (date: string) => {
+  const [year, month, day] = date.split('-').map(Number)
+  return formatLocalDateTime(new Date(year, month - 1, day + 1, 0, 0, 0))
+}
+
+// Time filters have minute precision, so 12:30 includes that minute and ends at 12:31.
+// With no explicit end time, the exclusive boundary is midnight of the next day.
+const exclusiveEndOfMinute = (date: string, time: string) => {
+  if (!time) return exclusiveEndOfDay(date)
+  const [year, month, day] = date.split('-').map(Number)
+  const [hour, minute] = time.split(':').map(Number)
+  return formatLocalDateTime(new Date(year, month - 1, day, hour, minute + 1, 0))
+}
+
 /** Single-day mode: date + optional time-of-day window. Custom range: full days. Either way
- * this collapses to one LocalDateTime bound pair the backend query understands directly. */
+ * this collapses to one half-open [from, to) LocalDateTime pair. */
 const buildDateTimeBounds = (f: EndOfDayFilterState): { from: string; to: string } | null => {
   if (f.useCustomRange) {
     if (!f.customFrom || !f.customTo) return null
-    return { from: `${f.customFrom}T00:00:00`, to: `${f.customTo}T23:59:59` }
+    return { from: `${f.customFrom}T00:00:00`, to: exclusiveEndOfDay(f.customTo) }
   }
   if (!f.date) return null
-  return { from: `${f.date}T${f.timeFrom || '00:00'}:00`, to: `${f.date}T${f.timeTo || '23:59'}:59` }
+  return {
+    from: `${f.date}T${f.timeFrom || '00:00'}:00`,
+    to: exclusiveEndOfMinute(f.date, f.timeTo),
+  }
 }
 
 const errMsg = (err: unknown, fallback: string): string =>

@@ -6,7 +6,6 @@ import './styles/tailwind.css'
 import './styles/components.css'
 import './styles/global.css'
 import App from './App'
-import { AuthProvider } from './contexts/AuthContext'
 
 // The app is HashRouter-based (routes live under '#/...'), but the backend's VNPAY Return
 // handler redirects to VNPAY_FRONTEND_RESULT_URL as a plain path
@@ -21,9 +20,7 @@ if (window.location.pathname === '/payment/vnpay-result' && !window.location.has
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <HashRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <App />
     </HashRouter>
   </StrictMode>,
 )

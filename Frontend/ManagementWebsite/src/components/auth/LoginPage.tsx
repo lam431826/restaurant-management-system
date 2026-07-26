@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import AuthLayout from "./AuthLayout";
 import { login, verifyInfo, verifyOtp, resendOtp } from "../../api/auth";
 import { useAuth, type UserRole } from "../../context/AuthContext";
-//import { useAuth } from '../../contexts/AuthContext'
+import { asHttpError } from "../../utils/httpError";
 
 /* ── icons ── */
 const PersonIcon = () => (
@@ -172,7 +172,8 @@ const LoginPage = () => {
         });
         navigate(defaultRoute(data.user.role), { replace: true });
       }
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error);
       const status = err.response?.status;
       if (status === 401) setError("Tên đăng nhập hoặc mật khẩu không đúng.");
       else if (status === 423)
@@ -216,7 +217,8 @@ const LoginPage = () => {
       });
       setMaskedEmail(res.data.data.maskedEmail);
       setStep("enter-otp");
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error);
       const code = err.response?.data?.error;
       if (code === "DUPLICATE_EMAIL")
         setProfileErrors({ email: "Email đã được sử dụng bởi tài khoản khác" });
@@ -244,7 +246,8 @@ const LoginPage = () => {
         user: data.user,
       });
       navigate(defaultRoute(data.user.role), { replace: true });
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error);
       const status = err.response?.status;
       if (status === 400) setError("Mã OTP không đúng.");
       else if (status === 429)
@@ -265,7 +268,8 @@ const LoginPage = () => {
       // updating state here, the next verifyOtp() call would 401 on the now-used old token.
       setVerifyToken(res.data.data.verifyToken);
       setResendMsg("Đã gửi lại OTP.");
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error);
       const status = err.response?.status;
       if (status === 429)
         setError("Đã đạt giới hạn gửi lại OTP (3 lần / 10 phút).");

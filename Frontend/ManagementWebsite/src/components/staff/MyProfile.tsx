@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { getMyEmployeeProfile, saveMyEmployeeProfile } from '../../api/employees'
 import type { MyEmployeeProfileDto } from '../../api/employees'
 import { inputCls, Field, SectionCard } from './EmployeeModal'
+import { asHttpError } from '../../utils/httpError'
 
 const defaultRouteForRole = (role?: string) => {
   if (role === 'ADMIN') return '/admin'
@@ -83,7 +84,8 @@ const MyProfile = () => {
       // keeps showing stale data until the next login.
       updateUser({ fullName: res.data.data.name })
       setSuccess('Đã lưu hồ sơ.')
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error)
       const code = err.response?.data?.error
       if (code === 'DUPLICATE_EMPLOYEE_PHONE' || code === 'DUPLICATE_PHONE') {
         setFieldErrors({ phone: 'Số điện thoại đã được sử dụng' })

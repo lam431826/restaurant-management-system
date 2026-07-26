@@ -1,40 +1,41 @@
 import { Routes, Route, Navigate } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
-import Layout from "./components/layout/Layout";
-import DashboardPage from "./components/dashboard/DashboardPage";
-import Menu from "./components/menu/Menu";
-import Rooms from "./components/rooms/Rooms";
-import Invoices from "./components/transactions/Invoices";
-import Employees from "./components/staff/Employees";
-import Schedule from "./components/staff/schedule/Schedule";
-import Timesheet from "./components/staff/schedule/Timesheet";
-import SettingsPage from "./components/settings/SettingsPage";
-import Payroll from "./components/staff/payroll/Payroll";
-import PayrollUpdate from "./components/staff/payroll/PayrollUpdate";
-import MyProfile from "./components/staff/MyProfile";
-import MySchedule from "./components/staff/MySchedule";
-import ShiftReconciliation from "./components/reports/ShiftReconciliation";
-import EndOfDayReport from "./components/reports/EndOfDayReport";
-import FinancialReport from "./components/reports/FinancialReport";
-import Reservation from "./components/reservation/Reservation";
-import CashierOrders from "./components/cashier/CashierOrders";
-import AdminDashboard from "./components/admin/AdminDashboard";
-import AuditLogPage from "./components/audit/AuditLogPage";
-import LoginPage from "./components/auth/LoginPage";
-import EmployeeLoginPage from "./components/auth/EmployeeLoginPage";
-import ForgotPasswordPage from "./components/auth/ForgotPasswordPage";
-import NewPasswordPage from "./components/auth/NewPasswordPage";
-import PromotionManagement from "./components/promotions/PromotionManagement";
-import CashBook from "./components/cashbook/CashBook";
-import VnpayResultPage from "./components/payment/VnpayResultPage";
 
-//import { ProtectedRoute } from './contexts/AuthContext'
+const Layout = lazy(() => import("./components/layout/Layout"));
+const DashboardPage = lazy(() => import("./components/dashboard/DashboardPage"));
+const Menu = lazy(() => import("./components/menu/Menu"));
+const Rooms = lazy(() => import("./components/rooms/Rooms"));
+const Invoices = lazy(() => import("./components/transactions/Invoices"));
+const Employees = lazy(() => import("./components/staff/Employees"));
+const Schedule = lazy(() => import("./components/staff/schedule/Schedule"));
+const Timesheet = lazy(() => import("./components/staff/schedule/Timesheet"));
+const SettingsPage = lazy(() => import("./components/settings/SettingsPage"));
+const Payroll = lazy(() => import("./components/staff/payroll/Payroll"));
+const PayrollUpdate = lazy(() => import("./components/staff/payroll/PayrollUpdate"));
+const MyProfile = lazy(() => import("./components/staff/MyProfile"));
+const MySchedule = lazy(() => import("./components/staff/MySchedule"));
+const ShiftReconciliation = lazy(() => import("./components/reports/ShiftReconciliation"));
+const EndOfDayReport = lazy(() => import("./components/reports/EndOfDayReport"));
+const FinancialReport = lazy(() => import("./components/reports/FinancialReport"));
+const Reservation = lazy(() => import("./components/reservation/Reservation"));
+const CashierOrders = lazy(() => import("./components/cashier/CashierOrders"));
+const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard"));
+const AuditLogPage = lazy(() => import("./components/audit/AuditLogPage"));
+const LoginPage = lazy(() => import("./components/auth/LoginPage"));
+const EmployeeLoginPage = lazy(() => import("./components/auth/EmployeeLoginPage"));
+const ForgotPasswordPage = lazy(() => import("./components/auth/ForgotPasswordPage"));
+const NewPasswordPage = lazy(() => import("./components/auth/NewPasswordPage"));
+const PromotionManagement = lazy(() => import("./components/promotions/PromotionManagement"));
+const CashBook = lazy(() => import("./components/cashbook/CashBook"));
+const VnpayResultPage = lazy(() => import("./components/payment/VnpayResultPage"));
 
 function App() {
   return (
     <AuthProvider>
-      <Routes>
+      <Suspense fallback={<div className="min-h-screen bg-surface" aria-label="Đang tải" />}>
+        <Routes>
         {/* ── Auth (public) ── */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/employee-login" element={<EmployeeLoginPage />} />
@@ -135,7 +136,8 @@ function App() {
 
         {/* ── Default → login ── */}
         <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
+        </Routes>
+      </Suspense>
     </AuthProvider>
   );
 }

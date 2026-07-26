@@ -1,6 +1,7 @@
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
+import type { TooltipContentProps } from 'recharts'
 import Card, { CardHeader, CardBody } from '../common/Card'
 import { Skeleton, EmptyState, ErrorState } from './DashboardStates'
 import { fmtBucketLabel, fmtCurrency, fmtInt } from './dashboardUtils'
@@ -12,7 +13,7 @@ const fmtAxis = (v: number) =>
   : v >= 1_000 ? `${Math.round(v / 1_000)}k`
   : `${v}`
 
-const RevenueTooltip = ({ active, payload }: any) => {
+const RevenueTooltip = ({ active, payload }: Partial<TooltipContentProps<number, string>>) => {
   if (!active || !payload?.length) return null
   const p = payload[0].payload
   return (

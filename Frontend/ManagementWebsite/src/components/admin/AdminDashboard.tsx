@@ -8,6 +8,7 @@ import {
 } from '../../api/users'
 import ChangePasswordModal from '../auth/ChangePasswordModal'
 import { SwitchScreenIcon } from '../cashier/orders/icons'
+import { asHttpError } from '../../utils/httpError'
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 const STATUS_LABEL: Record<string, string> = {
@@ -244,7 +245,8 @@ const CreateModal = ({ onClose, onCreated }: { onClose: () => void; onCreated: (
         role: form.role,
       })
       onCreated(res.data.data.user, res.data.data.tempPassword)
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error)
       const code = err.response?.data?.error
       const msg = err.response?.data?.message ?? 'Có lỗi xảy ra, vui lòng thử lại'
       if (code === 'DUPLICATE_USERNAME') setErrors({ username: 'Tên đăng nhập đã tồn tại' })
@@ -400,7 +402,8 @@ const EditModal = ({ user, isSelf, onClose, onSaved }: { user: UserDto; isSelf: 
         status: isSelf ? undefined : status,
       })
       onSaved(res.data.data)
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error)
       const code = err.response?.data?.error
       const msg = err.response?.data?.message ?? 'Có lỗi xảy ra'
       if (code === 'DUPLICATE_EMAIL') setErrors({ email: 'Email đã được sử dụng' })
@@ -607,7 +610,8 @@ const AdminDashboard = () => {
       setUsers(prev => prev.map(u => u.id === modal.user.id ? { ...u, status: 'INACTIVE' } : u))
       setModal(null)
       showToast('Đã vô hiệu hóa tài khoản')
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error)
       showToast(err.response?.data?.message ?? 'Có lỗi xảy ra', 'error')
     } finally {
       setConfirmLoading(false)
@@ -622,7 +626,8 @@ const AdminDashboard = () => {
       setUsers(prev => prev.map(u => u.id === modal.user.id ? { ...u, status: 'ACTIVE' } : u))
       setModal(null)
       showToast('Đã mở khóa tài khoản thành công')
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error)
       showToast(err.response?.data?.message ?? 'Có lỗi xảy ra', 'error')
     } finally {
       setConfirmLoading(false)

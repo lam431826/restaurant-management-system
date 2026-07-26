@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { login } from '../../api/auth'
 import { useAuth, type UserRole } from '../../context/AuthContext'
+import { asHttpError } from '../../utils/httpError'
 
 const bgImage = '/images/bg-food.jpg'
 const logoImage = '/images/wasabi-logo.svg'
@@ -81,7 +82,8 @@ const EmployeeLoginPage = () => {
       }
       saveSession({ accessToken: data.accessToken, refreshToken: data.refreshToken, user: data.user })
       navigate(defaultRoute(data.user.role), { replace: true })
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error)
       const status = err.response?.status
       if (status === 401) setError('PIN không đúng.')
       else if (status === 423) setError('Tài khoản đang bị khóa. Liên hệ quản lý.')

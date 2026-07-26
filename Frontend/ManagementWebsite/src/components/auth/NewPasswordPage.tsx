@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useLocation, Navigate } from 'react-router-dom'
 import AuthLayout from './AuthLayout'
 import { resetPassword } from '../../api/auth'
+import { asHttpError } from '../../utils/httpError'
 
 const LockIcon = () => (
   <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
@@ -55,7 +56,8 @@ const NewPasswordPage = () => {
     try {
       await resetPassword(state.resetToken!, otp, newPassword)
       navigate('/login', { replace: true, state: { message: 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập.' } })
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error)
       const status = err.response?.status
       if (status === 400) setError('Mã OTP không đúng hoặc đã hết hạn.')
       else if (status === 429) setError('Đã nhập sai OTP quá nhiều lần.')

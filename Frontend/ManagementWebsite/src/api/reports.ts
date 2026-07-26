@@ -1,11 +1,14 @@
 import apiClient from './apiClient'
 
-export type ReportPaymentMethod = 'CASH' | 'CARD' | 'QR' | 'E_WALLET'
+// CASH and VNPAY are selectable today; the other values remain for historical rows.
+export type ReportPaymentMethod = 'CASH' | 'CARD' | 'QR' | 'E_WALLET' | 'VNPAY'
 
 export const PAYMENT_METHOD_LABEL: Record<ReportPaymentMethod, string> = {
+  VNPAY: 'VNPAY',
   CASH: 'Tiền mặt', CARD: 'Thẻ', QR: 'QR', E_WALLET: 'Ví điện tử',
 }
 export const PAYMENT_METHOD_ABBR: Record<ReportPaymentMethod, string> = {
+  VNPAY: 'VNPAY',
   CASH: 'TM', CARD: 'Thẻ', QR: 'QR', E_WALLET: 'Ví',
 }
 
@@ -32,7 +35,7 @@ export interface EndOfDaySalesRow {
 
 export interface EndOfDaySalesParams {
   from: string // ISO LocalDateTime, e.g. '2026-07-19T00:00:00'
-  to: string
+  to: string // exclusive upper bound
   staffIds?: string[]
   paymentMethod?: ReportPaymentMethod
   areaName?: string

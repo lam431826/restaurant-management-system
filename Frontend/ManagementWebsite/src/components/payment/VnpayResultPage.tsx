@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ComponentType } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getVnpayStatus, reconcileVnpayPayment } from "../../services/paymentApi";
@@ -90,7 +90,7 @@ const VnpayResultPage = () => {
   const [result, setResult] = useState<VnpayStatusResult | null>(null);
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(true);
-  const pollStartRef = useRef(Date.now());
+  const [pollingWindowOpen, setPollingWindowOpen] = useState(true);
 
   // True when this tab was opened via window.open() from the cashier screen (see
   // handleInitiateVnpay) rather than navigated to directly. In that case the cashier's
@@ -136,7 +136,7 @@ const VnpayResultPage = () => {
 
   // On load: reconcile once, then keep polling only while genuinely PENDING.
   useEffect(() => {
-    pollStartRef.current = Date.now();
+    const pollStartedAt = Date.now();
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -144,9 +144,11 @@ const VnpayResultPage = () => {
       const status = await runReconcile();
       if (cancelled) return;
       const stillPending = !status || !TERMINAL_STATUSES.has(status.status);
-      const withinWindow = Date.now() - pollStartRef.current < POLL_TIMEOUT_MS;
+      const withinWindow = Date.now() - pollStartedAt < POLL_TIMEOUT_MS;
       if (stillPending && withinWindow) {
         timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
+      } else {
+        setPollingWindowOpen(false);
       }
     };
 
@@ -162,7 +164,7 @@ const VnpayResultPage = () => {
   const autoPolling =
     status !== null &&
     !TERMINAL_STATUSES.has(status) &&
-    Date.now() - pollStartRef.current < POLL_TIMEOUT_MS;
+    pollingWindowOpen;
 
   // An unrecognised status falls back to the neutral treatment, not the amber "pending" one,
   // so an unexpected value can never be mistaken for a transaction still in flight.

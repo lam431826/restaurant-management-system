@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createReservation, type ReservationDto } from '../../api/reservations'
 import { listTables, type TableDto } from '../../api/tables'
+import { asHttpError } from '../../utils/httpError'
 
 interface Props {
   reservations: ReservationDto[]
@@ -234,7 +235,8 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
         guestEmail: email.trim() || null,
       })
       onSaved()
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error)
       const msg = err.response?.data?.message
       const fieldErrors = err.response?.data?.fieldErrors
       if (fieldErrors) {

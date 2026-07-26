@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthLayout from './AuthLayout'
 import { forgotPassword } from '../../api/auth'
+import { asHttpError } from '../../utils/httpError'
 
 const PersonIcon = () => (
   <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
@@ -23,7 +24,8 @@ const ForgotPasswordPage = () => {
       const res = await forgotPassword(username)
       const { resetToken, maskedEmail } = res.data.data
       navigate('/new-password', { state: { resetToken, maskedEmail } })
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error)
       const status = err.response?.status
       if (status === 404) setError('Không tìm thấy tài khoản với tên đăng nhập này.')
       else if (status === 403) setError('Tài khoản không hoạt động.')

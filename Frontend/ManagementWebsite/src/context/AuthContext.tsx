@@ -30,9 +30,19 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+const readStoredUser = (): AuthUser | null => {
   const stored = localStorage.getItem('user')
-  const [user, setUser] = useState<AuthUser | null>(stored ? JSON.parse(stored) : null)
+  if (!stored) return null
+  try {
+    return JSON.parse(stored) as AuthUser
+  } catch {
+    localStorage.removeItem('user')
+    return null
+  }
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(readStoredUser)
 
   const saveSession = ({ accessToken, refreshToken, user: u }: Session) => {
     localStorage.setItem('access_token', accessToken)

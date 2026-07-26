@@ -63,12 +63,14 @@ export const SplitInvoiceModal = ({
   const onCloseRef = useRef(onClose);
   const submittingRef = useRef(submitting);
 
-  onCloseRef.current = onClose;
-  submittingRef.current = submitting;
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    submittingRef.current = submitting;
+  }, [onClose, submitting]);
 
   useEffect(() => {
     if (open) setQuantities(createInitialQuantities(invoiceDetail));
-  }, [open, invoiceDetail.id]);
+  }, [open, invoiceDetail]);
 
   useEffect(() => {
     if (!open) return;

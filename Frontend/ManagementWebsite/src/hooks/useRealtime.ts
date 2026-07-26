@@ -9,7 +9,10 @@ import { subscribeRealtime } from '../services/realtimeClient'
  */
 export function useRealtime(destination: string, onMessage: (body: unknown) => void) {
   const handlerRef = useRef(onMessage)
-  handlerRef.current = onMessage
+
+  useEffect(() => {
+    handlerRef.current = onMessage
+  }, [onMessage])
 
   useEffect(() => {
     if (!destination) return

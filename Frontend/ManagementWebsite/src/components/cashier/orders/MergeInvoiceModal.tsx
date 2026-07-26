@@ -80,8 +80,10 @@ export const MergeInvoiceModal = ({
   const onCloseRef = useRef(onClose);
   const submittingRef = useRef(submitting);
 
-  onCloseRef.current = onClose;
-  submittingRef.current = submitting;
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    submittingRef.current = submitting;
+  }, [onClose, submitting]);
 
   const eligibleIds = useMemo(
     () => new Set(invoices.filter(isInvoiceMergeEligible).map(({ id }) => id)),

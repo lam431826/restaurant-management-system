@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { changePassword } from '../../api/auth'
+import { asHttpError } from '../../utils/httpError'
 
 const LockIcon = () => (
   <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
@@ -51,7 +52,8 @@ const ChangePasswordModal = ({ onClose }: Props) => {
     try {
       await changePassword(currentPassword, newPassword)
       setSuccess(true)
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = asHttpError(error)
       const status = err.response?.status
       if (status === 401) setError('Mật khẩu hiện tại không đúng.')
       else if (status === 400) setError(err.response?.data?.message ?? 'Dữ liệu không hợp lệ.')

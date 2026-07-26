@@ -638,6 +638,12 @@ const CashierOrders = () => {
   // VNPAY success now reuses successTotal/SuccessToast below, so this only ever holds a
   // failure message — see restoreFromVnpayState.
   const [vnpayFailureNotice, setVnpayFailureNotice] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [showChangePw, setShowChangePw] = useState(false);
   const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
   const [invoiceListOrderId, setInvoiceListOrderId] = useState<string | null>(
@@ -1212,12 +1218,15 @@ const CashierOrders = () => {
         })),
     );
     setOrderItems(combinedItems);
-  }, [selectedTable?.id, selectedTable?.occupied, activeOrders]);
+  }, [selectedTable, activeOrders]);
 
   const hasSelectedMenu = cart.length > 0;
   const selectedOrderId = selectedTable?.orderId ?? "";
-  selectedTableIdRef.current = selectedTable?.id ?? "";
-  selectedOrderIdRef.current = selectedOrderId;
+
+  useEffect(() => {
+    selectedTableIdRef.current = selectedTable?.id ?? "";
+    selectedOrderIdRef.current = selectedOrderId;
+  }, [selectedOrderId, selectedTable?.id]);
 
   // The payment module otherwise broadcasts nothing (see RealtimeEventPublisher), so two
   // cashiers — or the same cashier in two tabs — looking at the same invoice would silently
@@ -1298,7 +1307,6 @@ const CashierOrders = () => {
       (candidate) => candidate.id === selectedInvoiceId,
     ) ?? null;
 
-  console.log("ACTIVE ORDERS:", activeOrders);
   const pendingOrders = activeOrders.filter(
     (o) =>
       o.status === "PENDING" ||
@@ -2754,7 +2762,7 @@ const CashierOrders = () => {
             error={reservationError}
             canSeatWalkIn={
               new Date(selectedTable.upcomingReservation.datetime).getTime() -
-                Date.now() >
+                currentTime >
               WALK_IN_MIN_GAP_MINUTES * 60000
             }
             onSeatWalkIn={() => setWalkInOverrideTableId(selectedTable.id)}
