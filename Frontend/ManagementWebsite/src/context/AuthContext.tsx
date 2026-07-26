@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { AuthContext, type AuthUser, type Session } from './authState'
+import { clearAuth, getStoredUser, saveSession as persistSession } from '../services/tokenStorage'
 
 export type { AuthUser, UserRole } from './authState'
 
@@ -8,25 +9,12 @@ export type { AuthUser, UserRole } from './authState'
 // server and are restored on the next login (BR-AUTH-02).
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000
 
-const readStoredUser = (): AuthUser | null => {
-  const stored = localStorage.getItem('user')
-  if (!stored) return null
-  try {
-    return JSON.parse(stored) as AuthUser
-  } catch {
-    localStorage.removeItem('user')
-    return null
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(readStoredUser)
+  const [user, setUser] = useState<AuthUser | null>(getStoredUser)
 
-  const saveSession = ({ accessToken, refreshToken, user: u }: Session) => {
-    localStorage.setItem('access_token', accessToken)
-    localStorage.setItem('refresh_token', refreshToken)
-    localStorage.setItem('user', JSON.stringify(u))
-    setUser(u)
+  const saveSession = (session: Session) => {
+    persistSession(session)
+    setUser(session.user)
   }
 
   // Bug fix: profile edits (e.g. /my-profile) previously only updated the server-side
@@ -41,9 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signOut = useCallback(() => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
-    localStorage.removeItem('user')
+    clearAuth()
     setUser(null)
   }, [])
 

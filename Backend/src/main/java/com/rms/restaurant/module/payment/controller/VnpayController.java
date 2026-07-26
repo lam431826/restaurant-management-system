@@ -4,7 +4,7 @@ import com.rms.restaurant.common.utils.wrapper.ApiResponse;
 import com.rms.restaurant.module.payment.dto.VnpayCreateRequest;
 import com.rms.restaurant.module.payment.dto.VnpayCreateResponse;
 import com.rms.restaurant.module.payment.dto.VnpayStatusResponse;
-import com.rms.restaurant.module.payment.service.PaymentService;
+import com.rms.restaurant.module.payment.service.VnpayPaymentService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +35,7 @@ import java.util.Map;
 @RequestMapping("/api/payments/vnpay")
 @RequiredArgsConstructor
 public class VnpayController {
-    private final PaymentService paymentService;
+    private final VnpayPaymentService paymentService;
 
     @PostMapping("/create")
     @PreAuthorize("hasAnyRole('CASHIER')")

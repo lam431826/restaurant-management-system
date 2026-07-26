@@ -5,7 +5,7 @@ import type {
   InvoiceDetail as InvoiceDetailData,
   InvoiceSummary,
 } from "../../services/invoiceApi";
-import { ApiClientError } from "../../services/apiClient";
+import { ApiError } from "../../services/api";
 import { Skeleton } from "../dashboard/DashboardStates";
 import {
   getLifecycleBadgeClass,
@@ -55,7 +55,7 @@ const INVOICE_DETAIL_MESSAGE_FALLBACKS: Record<string, string> = {
 const INVOICE_DETAIL_FALLBACK_ERROR = "Không thể tải chi tiết hóa đơn.";
 
 const getInvoiceDetailErrorMessage = (error: unknown): string => {
-  if (error instanceof ApiClientError && error.code) {
+  if (error instanceof ApiError && error.code) {
     return (
       INVOICE_DETAIL_ERROR_MESSAGES[error.code] ??
       INVOICE_DETAIL_FALLBACK_ERROR

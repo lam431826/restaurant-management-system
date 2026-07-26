@@ -11,8 +11,8 @@ public record PaymentResponse(
         PaymentMethod method,
         BigDecimal amount,
         String status,
-        // Transaction/reference code. CASH: unused (null). QR: the simulated
-        // external gateway's transaction reference.
+        // Transaction/reference code. CASH: unused (null). VNPAY: vnp_TxnRef.
+        // Historical QR rows may still carry their former gateway reference.
         String gatewayRef,
         BigDecimal receivedAmount,
         BigDecimal changeAmount,

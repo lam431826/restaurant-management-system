@@ -77,9 +77,8 @@ public class Payment {
     @Column(name = "vnp_card_type", length = 50)
     private String vnpCardType;
 
-    // When the payment actually reached PAID (immediate for CASH, on simulated
-    // gateway confirmation for QR) — distinct from createdAt for QR, where the
-    // PENDING row is created before the payment is settled.
+    // When the payment actually reached PAID, distinct from immutable createdAt.
+    // Historical QR rows may still have been created before their settlement.
     @Column(name = "paid_at")
     private LocalDateTime paidAt;
 

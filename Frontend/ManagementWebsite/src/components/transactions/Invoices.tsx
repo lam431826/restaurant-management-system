@@ -6,7 +6,7 @@ import InvoiceTable from "./InvoiceTable";
 import InvoiceToolbar from "./InvoiceToolbar";
 import { getInvoices } from "../../services/invoiceApi";
 import type { InvoiceStatus, InvoiceSummary } from "../../services/invoiceApi";
-import { ApiClientError } from "../../services/apiClient";
+import { ApiError } from "../../services/api";
 import { HISTORY_STATUSES, OPERATIONAL_STATUSES } from "./invoiceLifecycle";
 import type { InvoiceViewTab } from "./invoiceLifecycle";
 
@@ -47,7 +47,7 @@ const INVOICE_LIST_MESSAGE_FALLBACKS: Record<string, string> = {
 const INVOICE_LIST_FALLBACK_ERROR = "Không thể tải danh sách hóa đơn.";
 
 const getInvoiceListErrorMessage = (error: unknown): string => {
-  if (error instanceof ApiClientError && error.code) {
+  if (error instanceof ApiError && error.code) {
     return INVOICE_LIST_ERROR_MESSAGES[error.code] ?? INVOICE_LIST_FALLBACK_ERROR;
   }
 

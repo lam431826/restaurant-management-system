@@ -19,7 +19,6 @@ import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.repository.OrderRepository;
 import com.rms.restaurant.module.payment.dto.PaymentResponse;
 import com.rms.restaurant.module.payment.dto.ProcessPaymentRequest;
-import com.rms.restaurant.module.payment.dto.QrInitiateRequest;
 import com.rms.restaurant.module.payment.dto.VnpayCreateRequest;
 import com.rms.restaurant.module.payment.dto.VnpayCreateResponse;
 import com.rms.restaurant.module.payment.dto.VnpayStatusResponse;
@@ -30,7 +29,7 @@ import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.payment.repository.PaymentRepository;
 import com.rms.restaurant.module.payment.config.VnpayProperties;
 import com.rms.restaurant.module.payment.service.PaymentService;
-import com.rms.restaurant.module.payment.service.internal.MockQrPaymentGateway;
+import com.rms.restaurant.module.payment.service.VnpayPaymentService;
 import com.rms.restaurant.module.payment.service.internal.VnpayQueryClient;
 import com.rms.restaurant.module.payment.service.internal.VnpayQueryResult;
 import com.rms.restaurant.module.payment.service.internal.VnpayService;
@@ -39,8 +38,7 @@ import com.rms.restaurant.module.shift.model.Shift;
 import com.rms.restaurant.module.shift.repository.ShiftRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,7 +57,7 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 @Transactional
-public class PaymentServiceImpl implements PaymentService {
+public class PaymentServiceImpl implements PaymentService, VnpayPaymentService {
 
     private static final String STATUS_PAID      = "PAID";
     private static final String STATUS_PENDING   = "PENDING";
@@ -67,8 +65,6 @@ public class PaymentServiceImpl implements PaymentService {
     private static final String STATUS_FAILED    = "FAILED";
     private static final String STATUS_EXPIRED   = "EXPIRED";
     private static final String SHIFT_OPEN  = "OPEN";
-    // BR-PM-02: a simulated QR payment window; informational only, not enforced.
-    private static final long QR_EXPIRY_MINUTES = 15;
     // VNPAY Sandbox payment window. A still-PENDING attempt past this point is reported
     // as EXPIRED to the frontend (computed at read time, not persisted) and no longer
     // counts as "unexpired" for the conflicting-attempt guard below.
@@ -82,7 +78,6 @@ public class PaymentServiceImpl implements PaymentService {
     private final AuditService auditService;
     private final UserRepository userRepository;
     private final ShiftRepository shiftRepository;
-    private final MockQrPaymentGateway qrGateway;
     private final CashbookService cashbookService;
     private final VnpayService vnpayService;
     private final VnpayQueryClient vnpayQueryClient;
@@ -96,9 +91,7 @@ public class PaymentServiceImpl implements PaymentService {
      * a plain {@code this.reconcile...()} call would join their transaction and have the
      * settlement rolled back with them — silently losing a payment VNPAY already took.
      */
-    @Autowired
-    @Lazy
-    private PaymentService self;
+    private final ObjectProvider<VnpayPaymentService> selfProvider;
 
     // ── BR-PM-01: CASH — immediate payment ─────────────────────────────────────
 
@@ -107,9 +100,7 @@ public class PaymentServiceImpl implements PaymentService {
         if (request.method() != PaymentMethod.CASH) {
             throw new ApplicationException(
                     ApplicationError.PAYMENT_METHOD_NOT_SUPPORTED,
-                    request.method() == PaymentMethod.QR
-                            ? "Use /api/payments/qr/initiate for QR payments"
-                            : "Only CASH and QR payment methods are supported"
+                    "Only CASH is supported here; VNPAY uses /api/payments/vnpay/create"
             );
         }
 
@@ -174,137 +165,6 @@ public class PaymentServiceImpl implements PaymentService {
                 "{\"invoiceId\":\"" + esc(invoice.getId()) + "\",\"amount\":" + savedPayment.getAmount()
                         + ",\"method\":\"" + esc(String.valueOf(savedPayment.getMethod())) + "\"}");
         realtimeEventPublisher.publishInvoiceEvent("PAID", order.getId(), invoice.getId());
-
-        return paymentMapper.toResponse(savedPayment);
-    }
-
-    // ── BR-PM-02: QR — simulated external payment gateway ───────────────────────
-
-    @Override
-    public PaymentResponse initiateQrPayment(QrInitiateRequest request, String cashierUsername) {
-        CashierShiftContext cashierShift = requireCashierWithOpenShift(cashierUsername);
-
-        LockedPaymentContext lockContext = lockOrderAndInvoice(request.invoiceId());
-        Order order = lockContext.order();
-        Invoice invoice = lockContext.invoice();
-
-        if (invoice.getStatus() != InvoiceStatus.ACTIVE) {
-            throw new ApplicationException(ApplicationError.INVOICE_NOT_PAYABLE);
-        }
-        if (invoice.isPaid() || hasPaidPayment(invoice.getId())) {
-            throw new ApplicationException(
-                    ApplicationError.INVOICE_ALREADY_PAID,
-                    "Invoice has already been paid"
-            );
-        }
-        validateOrderCanBePaid(order);
-        validateInvoiceTotalBeforePayment(invoice);
-
-        // Idempotent: reuse an already-open PENDING QR transaction for this invoice
-        // instead of creating unlimited duplicates.
-        Payment existingPending = paymentRepository
-                .findFirstByInvoiceIdAndMethodAndStatus(invoice.getId(), PaymentMethod.QR, STATUS_PENDING)
-                .orElse(null);
-        if (existingPending != null) {
-            return paymentMapper.toResponse(existingPending);
-        }
-
-        String transactionRef = qrGateway.generateTransactionReference();
-        Payment payment = Payment.builder()
-                .invoiceId(invoice.getId())
-                .method(PaymentMethod.QR)
-                .amount(invoice.getTotalAmount())
-                .status(STATUS_PENDING)
-                .gatewayRef(transactionRef)
-                .expiresAt(LocalDateTime.now().plusMinutes(QR_EXPIRY_MINUTES))
-                .shiftId(cashierShift.shift().getId())     // BR-CS-08
-                .cashierId(cashierShift.cashier().getId()) // BR-CS-08
-                .build();
-
-        Payment savedPayment = paymentRepository.save(payment);
-
-        audit("PAYMENT_QR_INITIATE", savedPayment.getId(),
-                "{\"invoiceId\":\"" + esc(invoice.getId()) + "\",\"amount\":" + savedPayment.getAmount()
-                        + ",\"transactionRef\":\"" + esc(transactionRef) + "\"}");
-
-        return paymentMapper.toResponse(savedPayment);
-    }
-
-    @Override
-    public PaymentResponse simulateQrSuccess(String paymentId, String cashierUsername) {
-        requireCashierWithOpenShift(cashierUsername);
-
-        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
-                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.PAYMENT_NOT_FOUND));
-
-        if (payment.getMethod() != PaymentMethod.QR) {
-            throw new ApplicationException(
-                    ApplicationError.PAYMENT_METHOD_MISMATCH,
-                    "Only QR payments can be confirmed through the simulated gateway callback"
-            );
-        }
-        if (!STATUS_PENDING.equals(payment.getStatus())) {
-            throw new ApplicationException(
-                    ApplicationError.PAYMENT_NOT_PENDING,
-                    "QR payment is not pending and cannot be confirmed"
-            );
-        }
-
-        LockedPaymentContext lockContext = lockOrderAndInvoice(payment.getInvoiceId());
-        Order order = lockContext.order();
-        Invoice invoice = lockContext.invoice();
-
-        if (invoice.getStatus() != InvoiceStatus.ACTIVE) {
-            throw new ApplicationException(ApplicationError.INVOICE_NOT_PAYABLE);
-        }
-        if (invoice.isPaid() || hasPaidPayment(invoice.getId())) {
-            throw new ApplicationException(
-                    ApplicationError.INVOICE_ALREADY_PAID,
-                    "Invoice has already been paid"
-            );
-        }
-        validateOrderCanBePaid(order);
-
-        payment.setStatus(STATUS_PAID);
-        payment.setPaidAt(LocalDateTime.now());
-        Payment savedPayment = paymentRepository.save(payment);
-        invoice.setPaid(true);
-        invoiceRepository.save(invoice);
-        createReceiptVoucher(order, savedPayment, cashierUsername);
-
-        audit("PAYMENT_QR_CONFIRM", savedPayment.getId(),
-                "{\"invoiceId\":\"" + esc(invoice.getId()) + "\",\"amount\":" + savedPayment.getAmount()
-                        + ",\"transactionRef\":\"" + esc(savedPayment.getGatewayRef()) + "\"}");
-        realtimeEventPublisher.publishInvoiceEvent("PAID", order.getId(), invoice.getId());
-
-        return paymentMapper.toResponse(savedPayment);
-    }
-
-    @Override
-    public PaymentResponse cancelQrPayment(String paymentId, String cashierUsername) {
-        requireCashierWithOpenShift(cashierUsername);
-
-        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
-                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.PAYMENT_NOT_FOUND));
-
-        if (payment.getMethod() != PaymentMethod.QR) {
-            throw new ApplicationException(
-                    ApplicationError.PAYMENT_METHOD_MISMATCH,
-                    "Only QR payments can be cancelled through this action"
-            );
-        }
-        if (!STATUS_PENDING.equals(payment.getStatus())) {
-            throw new ApplicationException(
-                    ApplicationError.PAYMENT_NOT_PENDING,
-                    "QR payment is not pending and cannot be cancelled"
-            );
-        }
-
-        payment.setStatus(STATUS_CANCELLED);
-        Payment savedPayment = paymentRepository.save(payment);
-
-        audit("PAYMENT_QR_CANCEL", savedPayment.getId(),
-                "{\"invoiceId\":\"" + esc(savedPayment.getInvoiceId()) + "\"}");
 
         return paymentMapper.toResponse(savedPayment);
     }
@@ -670,7 +530,7 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     // REQUIRES_NEW so a confirmed settlement survives even when the caller that triggered
-    // the reconciliation subsequently fails and rolls back (see the `self` field).
+    // the reconciliation subsequently fails and rolls back (see selfProvider).
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public VnpayStatusResponse reconcileVnpayPayment(String txnRef, String clientIp) {
@@ -776,9 +636,9 @@ public class PaymentServiceImpl implements PaymentService {
             if (pending.getGatewayRef() == null || pending.getVnpCreateDate() == null) continue;
             if (!vnpayProperties.isConfigured()) continue;
             try {
-                // Through the proxy on purpose — see the `self` field: this must commit
+                // Through the proxy on purpose — see selfProvider: this must commit
                 // independently of the caller's transaction.
-                self.reconcileVnpayPayment(pending.getGatewayRef(), null);
+                selfProvider.getObject().reconcileVnpayPayment(pending.getGatewayRef(), null);
             } catch (RuntimeException e) {
                 log.warn("VNPAY reconciliation skipped for txnRef {}: {}",
                         pending.getGatewayRef(), e.getMessage());

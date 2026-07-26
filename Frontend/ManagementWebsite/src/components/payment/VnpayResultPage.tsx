@@ -3,7 +3,7 @@ import type { ComponentType } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getVnpayStatus, reconcileVnpayPayment } from "../../services/paymentApi";
 import type { VnpayStatusResult } from "../../services/paymentApi";
-import { ApiClientError } from "../../services/apiClient";
+import { ApiError } from "../../services/api";
 
 // Terminal states stop polling; PENDING keeps polling until one of these or the timeout.
 const TERMINAL_STATUSES = new Set(["PAID", "FAILED", "CANCELLED", "EXPIRED"]);
@@ -101,7 +101,7 @@ const VnpayResultPage = () => {
     typeof window !== "undefined" && !!window.opener && window.opener !== window;
 
   const readErrorMessage = (thrown: unknown, fallback: string) =>
-    thrown instanceof ApiClientError ? thrown.message : fallback;
+    thrown instanceof ApiError ? thrown.message : fallback;
 
   /** Asks VNPAY (server-side QueryDR) and then reflects whatever the backend settled on. */
   const runReconcile = useCallback(async (): Promise<VnpayStatusResult | null> => {

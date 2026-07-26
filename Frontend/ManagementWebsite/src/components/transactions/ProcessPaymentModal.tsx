@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { InvoiceSummary } from '../../services/invoiceApi'
 import type { PaymentMethod } from '../../services/paymentApi'
-import { ApiClientError } from '../../services/apiClient'
+import { ApiError } from '../../services/api'
 
 interface Props {
   invoice: InvoiceSummary
@@ -45,7 +45,7 @@ const PAYMENT_FALLBACK_ERROR =
   'Không thể xử lý thanh toán. Vui lòng thử lại.'
 
 const getPaymentErrorMessage = (error: unknown): string => {
-  if (error instanceof ApiClientError && error.code) {
+  if (error instanceof ApiError && error.code) {
     return PAYMENT_ERROR_MESSAGES[error.code] ?? PAYMENT_FALLBACK_ERROR
   }
 

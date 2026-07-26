@@ -52,7 +52,6 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -559,77 +558,6 @@ public class InvoiceServiceImpl implements InvoiceService {
         );
     }
 
-    // ── PM-07: invoice / payment history list ────────────────────────────
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<InvoiceListItem> listInvoices() {
-        Map<String, String> tableNames = tableRepository.findAll().stream()
-                .collect(Collectors.toMap(RestaurantTable::getId, RestaurantTable::getName));
-
-        List<Invoice> invoices = invoiceRepository.findAllByOrderByCreatedAtDescIdDesc();
-        Map<String, List<ResolvedAllocationLine>> linesByInvoiceId = resolveAllocationLines(invoices);
-
-        List<InvoiceListItem> result = new ArrayList<>();
-        for (Invoice inv : invoices) {
-            Order order = orderRepository.findById(inv.getOrderId()).orElse(null);
-            String tableName = order != null ? tableNames.get(order.getTableId()) : null;
-            String note = order != null ? order.getNote() : null;
-            String cashierName = (order != null && order.getCashierId() != null)
-                    ? userRepository.findById(order.getCashierId()).map(User::getFullName).orElse(null)
-                    : null;
-            String itemsText = linesByInvoiceId.get(inv.getId()).stream()
-                    .map(line -> line.orderItem().getMenuItemName())
-                    .collect(Collectors.joining(", "));
-
-            Payment latest = paymentRepository.findByInvoiceId(inv.getId()).stream()
-                    .max(Comparator.comparing(Payment::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder())))
-                    .orElse(null);
-            String method = latest != null ? latest.getMethod().name() : null;
-            String status = latest != null ? latest.getStatus() : (inv.isPaid() ? "PAID" : "PENDING");
-
-            result.add(new InvoiceListItem(
-                    inv.getId(), inv.getCode(), inv.getCreatedAt(), tableName,
-                    inv.getSubtotal(), inv.getDiscountAmount(), inv.getTotalAmount(),
-                    inv.isPaid(), method, status, note, cashierName, itemsText,
-                    inv.getStatus(), inv.getMergedIntoInvoiceId(), inv.getSplitFromInvoiceId()));
-        }
-        return result;
-    }
-
-    // ── PM-06: invoice details ───────────────────────────────────────────
-
-    @Override
-    @Transactional(readOnly = true)
-    public InvoiceDetailItem getDetail(String invoiceId) {
-        Invoice inv = invoiceRepository.findById(invoiceId)
-                .orElseThrow(() -> new ResourceNotFoundException(ApplicationError.INVOICE_NOT_FOUND));
-
-        Order order = orderRepository.findById(inv.getOrderId()).orElse(null);
-        String tableName = order != null
-                ? tableRepository.findById(order.getTableId()).map(RestaurantTable::getName).orElse(null)
-                : null;
-
-        List<InvoiceDetailItem.LineItem> lines = resolveAllocationLines(inv).stream()
-                .map(line -> new InvoiceDetailItem.LineItem(
-                        line.orderItem().getMenuItemName(),
-                        line.allocation().getAllocatedQuantity(),
-                        line.allocation().getUnitPriceSnapshot(),
-                        line.lineTotal(),
-                        line.orderItem().getId(),
-                        line.orderItem().getMenuItemId()))
-                .collect(Collectors.toList());
-
-        List<InvoiceDetailItem.PaymentRecord> payments = paymentRepository.findByInvoiceId(invoiceId).stream()
-                .map(p -> new InvoiceDetailItem.PaymentRecord(
-                        p.getMethod().name(), p.getAmount(), p.getStatus(), p.getCreatedAt()))
-                .collect(Collectors.toList());
-
-        return new InvoiceDetailItem(
-                inv.getId(), inv.getCode(), inv.getOrderId(), inv.getCreatedAt(), tableName,
-                inv.getSubtotal(), inv.getDiscountAmount(), inv.getTotalAmount(), inv.isPaid(),
-                lines, payments, inv.getStatus(), inv.getMergedIntoInvoiceId(), inv.getSplitFromInvoiceId());
-    }
 
     private List<ResolvedAllocationLine> resolveAllocationLines(Invoice invoice) {
         List<InvoiceItemAllocation> allocations = loadAllocations(invoice);

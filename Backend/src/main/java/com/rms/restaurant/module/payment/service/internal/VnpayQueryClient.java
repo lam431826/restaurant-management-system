@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.payment.service.internal;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
@@ -123,7 +124,10 @@ public class VnpayQueryClient {
 
     private Map<String, String> parseResponse(String responseBody, String txnRef) {
         try {
-            Map<String, Object> parsed = objectMapper.readValue(responseBody, Map.class);
+            Map<String, Object> parsed = objectMapper.readValue(
+                    responseBody,
+                    new TypeReference<>() {}
+            );
             Map<String, String> flat = new LinkedHashMap<>();
             parsed.forEach((key, value) -> flat.put(key, value == null ? null : String.valueOf(value)));
             return flat;

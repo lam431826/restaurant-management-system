@@ -6,7 +6,7 @@ import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
 
-/** CASH-only immediate payment. QR goes through /api/payments/qr/*. */
+/** CASH-only immediate payment. VNPAY uses the dedicated redirect flow. */
 public record ProcessPaymentRequest(
         @NotBlank String invoiceId,
         @NotNull PaymentMethod method,

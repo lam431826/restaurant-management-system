@@ -122,7 +122,6 @@ public enum ApplicationError {
     PAYMENT_RECEIVED_AMOUNT_INVALID("Received amount must be provided and cannot be less than the payable amount", HttpStatus.UNPROCESSABLE_ENTITY),
     PAYMENT_NOT_FOUND("Payment not found", HttpStatus.NOT_FOUND),
     PAYMENT_NOT_PENDING("Payment is not pending and cannot be confirmed or cancelled", HttpStatus.CONFLICT),
-    PAYMENT_METHOD_MISMATCH("Payment method does not match the requested operation", HttpStatus.UNPROCESSABLE_ENTITY),
     PAYMENT_ATTEMPT_PENDING("An unexpired payment attempt already exists for this invoice", HttpStatus.CONFLICT),
     PAYMENT_GATEWAY_NOT_CONFIGURED("VNPAY sandbox is not configured on this server", HttpStatus.SERVICE_UNAVAILABLE),
     PAYMENT_GATEWAY_UNAVAILABLE("Could not reach VNPAY to check this transaction. Please try again.", HttpStatus.SERVICE_UNAVAILABLE),

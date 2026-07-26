@@ -1,4 +1,4 @@
-import { apiData } from './apiClient'
+import { api, type ApiResponse } from './api'
 
 export interface Promotion {
   id: string
@@ -28,24 +28,17 @@ export interface UpdatePromotionRequest extends CreatePromotionRequest {
   active: boolean
 }
 
-export const getPromotions = () => apiData<Promotion[]>('/api/promotions')
+export const getPromotions = () =>
+  api.get<ApiResponse<Promotion[]>>('/api/promotions').then(response => response.data)
 
 export const getPromotionById = (id: string) =>
-  apiData<Promotion>(`/api/promotions/${id}`)
+  api.get<ApiResponse<Promotion>>(`/api/promotions/${id}`).then(response => response.data)
 
 export const createPromotion = (request: CreatePromotionRequest) =>
-  apiData<Promotion>('/api/promotions', {
-    method: 'POST',
-    body: JSON.stringify(request),
-  })
+  api.post<ApiResponse<Promotion>>('/api/promotions', request).then(response => response.data)
 
 export const updatePromotion = (id: string, request: UpdatePromotionRequest) =>
-  apiData<Promotion>(`/api/promotions/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(request),
-  })
+  api.put<ApiResponse<Promotion>>(`/api/promotions/${id}`, request).then(response => response.data)
 
 export const deletePromotion = (id: string) =>
-  apiData<void>(`/api/promotions/${id}`, {
-    method: 'DELETE',
-  })
+  api.del<void>(`/api/promotions/${id}`)

@@ -1,4 +1,4 @@
-import { apiData } from './apiClient'
+import { api, type ApiResponse } from './api'
 
 export type InvoiceStatus = 'ACTIVE' | 'MERGED' | 'SPLIT'
 
@@ -130,37 +130,23 @@ export const getInvoices = (filters: InvoiceFilters = {}) => {
   if (filters.orderId) params.set('orderId', filters.orderId)
   if (filters.status?.length) params.set('status', filters.status.join(','))
   const query = params.toString()
-  return apiData<InvoiceSummary[]>(`/api/invoices${query ? `?${query}` : ''}`)
+  return api.get<ApiResponse<InvoiceSummary[]>>(`/api/invoices${query ? `?${query}` : ''}`).then(response => response.data)
 }
 
 export const getInvoiceById = (id: string) =>
-  apiData<InvoiceDetail>(`/api/invoices/${id}`)
+  api.get<ApiResponse<InvoiceDetail>>(`/api/invoices/${id}`).then(response => response.data)
 
 export const generateInvoice = (request: GenerateInvoiceRequest) =>
-  apiData<InvoiceMutationResponse>('/api/invoices', {
-    method: 'POST',
-    body: JSON.stringify(request),
-  })
+  api.post<ApiResponse<InvoiceMutationResponse>>('/api/invoices', request).then(response => response.data)
 
 export const applyInvoiceDiscount = (invoiceId: string, promotionCode: string) =>
-  apiData<InvoiceMutationResponse>(`/api/invoices/${invoiceId}/discount`, {
-    method: 'PUT',
-    body: JSON.stringify({ promotionCode }),
-  })
+  api.put<ApiResponse<InvoiceMutationResponse>>(`/api/invoices/${invoiceId}/discount`, { promotionCode }).then(response => response.data)
 
 export const sendInvoice = (invoiceId: string) =>
-  apiData<SendInvoiceResponse>(`/api/invoices/${invoiceId}/send`, {
-    method: 'POST',
-  })
+  api.post<ApiResponse<SendInvoiceResponse>>(`/api/invoices/${invoiceId}/send`).then(response => response.data)
 
 export const splitInvoice = (invoiceId: string, request: SplitInvoiceRequest) =>
-  apiData<SplitInvoiceResponse>(`/api/invoices/${invoiceId}/split`, {
-    method: 'POST',
-    body: JSON.stringify(request),
-  })
+  api.post<ApiResponse<SplitInvoiceResponse>>(`/api/invoices/${invoiceId}/split`, request).then(response => response.data)
 
 export const mergeInvoices = (request: MergeInvoiceRequest) =>
-  apiData<MergeInvoiceResponse>('/api/invoices/merge', {
-    method: 'POST',
-    body: JSON.stringify(request),
-  })
+  api.post<ApiResponse<MergeInvoiceResponse>>('/api/invoices/merge', request).then(response => response.data)

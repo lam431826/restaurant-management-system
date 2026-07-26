@@ -4,7 +4,7 @@ import { sendInvoice } from "../../services/invoiceApi";
 import { getPayments } from "../../services/paymentApi";
 import type { Payment, PaymentMethod } from "../../services/paymentApi";
 import { getStoredUser } from "../../services/tokenStorage";
-import { ApiClientError } from "../../services/apiClient";
+import { ApiError } from "../../services/api";
 import {
   getLifecycleBadgeClass,
   getLifecycleLabel,
@@ -73,7 +73,7 @@ const getInvoiceActionErrorMessage = (
   error: unknown,
   fallbackMessage: string,
 ): string => {
-  if (error instanceof ApiClientError && error.code) {
+  if (error instanceof ApiError && error.code) {
     return INVOICE_ACTION_ERROR_MESSAGES[error.code] ?? fallbackMessage;
   }
 
@@ -93,8 +93,8 @@ const paymentMethodLabels: Record<PaymentMethod, string> = {
   VNPAY: "VNPAY Sandbox",
 };
 
-// PENDING/CANCELLED only occur for QR (simulated external payment); CASH is
-// always created as PAID immediately.
+// CASH is created as PAID immediately. VNPAY and historical QR rows may expose
+// pending or terminal gateway states.
 const paymentStatusLabels: Record<string, string> = {
   PENDING: "Chờ thanh toán",
   PAID: "Đã thanh toán",

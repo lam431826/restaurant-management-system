@@ -21,7 +21,7 @@ import com.rms.restaurant.module.payment.model.Invoice;
 import com.rms.restaurant.module.payment.model.Payment;
 import com.rms.restaurant.module.payment.repository.InvoiceRepository;
 import com.rms.restaurant.module.payment.repository.PaymentRepository;
-import com.rms.restaurant.module.payment.service.internal.MockQrPaymentGateway;
+import com.rms.restaurant.module.payment.service.VnpayPaymentService;
 import com.rms.restaurant.module.payment.service.internal.VnpayQueryClient;
 import com.rms.restaurant.module.payment.service.internal.VnpayService;
 import com.rms.restaurant.module.shift.model.Shift;
@@ -34,6 +34,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -57,12 +58,12 @@ class PaymentServiceImplTest {
     @Mock private AuditService auditService;
     @Mock private UserRepository userRepository;
     @Mock private ShiftRepository shiftRepository;
-    @Mock private MockQrPaymentGateway qrGateway;
     @Mock private CashbookService cashbookService;
     @Mock private VnpayService vnpayService;
     @Mock private VnpayQueryClient vnpayQueryClient;
     @Mock private VnpayProperties vnpayProperties;
     @Mock private RealtimeEventPublisher realtimeEventPublisher;
+    @Mock private ObjectProvider<VnpayPaymentService> selfProvider;
 
     @Captor private ArgumentCaptor<SystemVoucherRequest> voucherCaptor;
 
@@ -72,8 +73,8 @@ class PaymentServiceImplTest {
     void setUp() {
         service = new PaymentServiceImpl(
                 invoiceRepository, paymentRepository, orderRepository, new PaymentMapper(), auditService,
-                userRepository, shiftRepository, qrGateway, cashbookService, vnpayService,
-                vnpayQueryClient, vnpayProperties, realtimeEventPublisher);
+                userRepository, shiftRepository, cashbookService, vnpayService,
+                vnpayQueryClient, vnpayProperties, realtimeEventPublisher, selfProvider);
     }
 
     @Test

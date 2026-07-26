@@ -1,4 +1,4 @@
-import { apiData } from './apiClient'
+import { api, type ApiResponse } from './api'
 
 // Full method space, kept for safely displaying any historical QR/CARD/E_WALLET
 // payment rows. Only CASH and VNPAY are selectable/creatable going forward.
@@ -54,35 +54,27 @@ export interface VnpayStatusResult {
 
 // CASH only — immediate PAID. receivedAmount is required and must cover the total.
 export const processCashPayment = (invoiceId: string, receivedAmount: number) =>
-  apiData<Payment>('/api/payments', {
-    method: 'POST',
-    body: JSON.stringify({ invoiceId, method: 'CASH', receivedAmount }),
-  })
+  api.post<ApiResponse<Payment>>('/api/payments', { invoiceId, method: 'CASH', receivedAmount }).then(response => response.data)
 
 // VNPAY Sandbox — creates (or reuses) a PENDING attempt and returns a signed redirect URL.
 // The caller must navigate the browser to paymentUrl; there is no in-app "confirm" step.
 export const createVnpayPayment = (invoiceId: string) =>
-  apiData<VnpayCreateResult>('/api/payments/vnpay/create', {
-    method: 'POST',
-    body: JSON.stringify({ invoiceId }),
-  })
+  api.post<ApiResponse<VnpayCreateResult>>('/api/payments/vnpay/create', { invoiceId }).then(response => response.data)
 
 // Polled by the VNPAY result page after the browser returns from the gateway. Never trust
 // the Return URL's own query parameters — this is the only source of truth on the frontend.
 export const getVnpayStatus = (txnRef: string) =>
-  apiData<VnpayStatusResult>(`/api/payments/vnpay/status/${encodeURIComponent(txnRef)}`)
+  api.get<ApiResponse<VnpayStatusResult>>(`/api/payments/vnpay/status/${encodeURIComponent(txnRef)}`).then(response => response.data)
 
 // Asks the backend to query VNPAY directly (QueryDR) and settle the attempt. Needed because
 // VNPAY cannot deliver IPN to localhost, which otherwise leaves a paid transaction stuck
 // PENDING locally. Safe to call repeatedly — settlement side effects happen only once.
 export const reconcileVnpayPayment = (txnRef: string) =>
-  apiData<VnpayStatusResult>(`/api/payments/vnpay/reconcile/${encodeURIComponent(txnRef)}`, {
-    method: 'POST',
-  })
+  api.post<ApiResponse<VnpayStatusResult>>(`/api/payments/vnpay/reconcile/${encodeURIComponent(txnRef)}`).then(response => response.data)
 
 export const getPayments = (invoiceId?: string) => {
   const params = new URLSearchParams()
   if (invoiceId) params.set('invoiceId', invoiceId)
   const query = params.toString()
-  return apiData<Payment[]>(`/api/payments${query ? `?${query}` : ''}`)
+  return api.get<ApiResponse<Payment[]>>(`/api/payments${query ? `?${query}` : ''}`).then(response => response.data)
 }

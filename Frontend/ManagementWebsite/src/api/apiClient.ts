@@ -1,10 +1,12 @@
 import axios from 'axios'
 import { refreshAccessToken, handleAuthFailure } from '../services/authRefresh'
+import { apiBaseUrl } from '../services/apiConfig'
+import { getAccessToken } from '../services/tokenStorage'
 
-const apiClient = axios.create({ baseURL: '/api' })
+const apiClient = axios.create({ baseURL: apiBaseUrl })
 
 apiClient.interceptors.request.use(config => {
-  const token = localStorage.getItem('access_token')
+  const token = getAccessToken()
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })

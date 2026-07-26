@@ -35,9 +35,6 @@ const roleLabel: Record<string, string> = {
   CASHIER: "Thu ngân",
   WAITER: "Phục vụ",
 };
-//import { logout } from '../../services/authApi'
-import { clearAuth } from "../../services/tokenStorage";
-
 type DropdownName = "notifications" | "help" | "user" | null;
 
 const menuRow =
@@ -52,7 +49,7 @@ const ActionArea = () => {
   const [unseenCount, setUnseenCount] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
 
   const failedCount = notifLogs.filter((n) => n.status === "FAILED").length;
   const badgeCount = unseenCount > 0 ? unseenCount : failedCount;
@@ -90,17 +87,6 @@ const ActionArea = () => {
     setUnseenCount((c) => c + 1);
   });
 
-  // const handleLogout = async () => {
-  //   setOpen(null);
-  //   try {
-  //     await logout();
-  //   } catch {
-  //     /* ignore — clear local session regardless */
-  //   }
-  //   signOut();
-  //   navigate("/login", { replace: true });
-  // };
-
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(null);
@@ -118,9 +104,9 @@ const ActionArea = () => {
     } catch {
       // Local logout must still complete when the backend is unavailable.
     } finally {
-      clearAuth();
+      signOut();
       setOpen(null);
-      navigate("/login");
+      navigate("/login", { replace: true });
     }
   };
 

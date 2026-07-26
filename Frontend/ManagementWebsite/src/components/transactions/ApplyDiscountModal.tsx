@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { InvoiceSummary } from '../../services/invoiceApi'
-import { ApiClientError } from '../../services/apiClient'
+import { ApiError } from '../../services/api'
 
 interface Props {
   invoice: InvoiceSummary
@@ -68,7 +68,7 @@ const DISCOUNT_FALLBACK_ERROR =
   'Không thể áp dụng khuyến mãi. Vui lòng thử lại.'
 
 const getDiscountErrorMessage = (error: unknown): string => {
-  if (error instanceof ApiClientError && error.code) {
+  if (error instanceof ApiError && error.code) {
     return DISCOUNT_ERROR_MESSAGES[error.code] ?? DISCOUNT_FALLBACK_ERROR
   }
 

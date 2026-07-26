@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ApiClientError } from '../../services/apiClient'
+import { ApiError } from '../../services/api'
 
 interface Props {
   onClose: () => void
@@ -82,7 +82,7 @@ const CREATE_INVOICE_FALLBACK_ERROR =
   'Không thể tạo hóa đơn. Vui lòng thử lại.'
 
 const getCreateInvoiceErrorMessage = (error: unknown): string => {
-  if (error instanceof ApiClientError && error.code) {
+  if (error instanceof ApiError && error.code) {
     return (
       CREATE_INVOICE_ERROR_MESSAGES[error.code] ??
       CREATE_INVOICE_FALLBACK_ERROR
