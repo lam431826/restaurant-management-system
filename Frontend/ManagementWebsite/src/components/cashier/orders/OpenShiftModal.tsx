@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import {
   openShift,
   getSuggestedOpeningFloat,
-  openFloatingShift,
 } from "../../../services/shiftService";
 import type { ShiftSummary } from "../../../services/shiftService";
 import { ApiError } from "../../../services/api";
@@ -65,20 +64,6 @@ export const OpenShiftModal = ({
         /* no prior handover — leave the field empty */
       });
   }, []);
-
-  // BR-CS-18: open a floating shift to cover for a main shift owner.
-  const handleOpenFloating = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const shift = await openFloatingShift();
-      onOpened(shift);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Không thể mở ca tạm.");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -206,32 +191,21 @@ export const OpenShiftModal = ({
             </div>
           )}
 
-          <div className="flex items-center justify-between gap-3 mt-8">
-            {/* BR-CS-18: cover for an active cashier with a floating shift */}
+          <div className="flex items-center justify-end gap-3 mt-8">
             <button
               type="button"
-              onClick={() => void handleOpenFloating()}
-              disabled={loading}
-              className="h-10 px-4 rounded-lg border border-[#025cca] text-[13px] text-[#025cca] font-medium hover:bg-[#025cca]/5 disabled:opacity-60 transition-colors"
+              onClick={onLogout}
+              className="px-7 h-11 rounded-xl bg-[#e8f1fc] text-[#025cca] font-semibold text-[15px] hover:bg-[#d7e7fa] transition-colors"
             >
-              Mở ca tạm để hỗ trợ thu ngân khác
+              Đăng xuất
             </button>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={onLogout}
-                className="px-7 h-11 rounded-xl bg-[#e8f1fc] text-[#025cca] font-semibold text-[15px] hover:bg-[#d7e7fa] transition-colors"
-              >
-                Đăng xuất
-              </button>
-              <button
-                type="submit"
-                disabled={loading || !openingCash}
-                className="px-9 h-11 rounded-xl bg-[#025cca] text-white font-semibold text-[15px] hover:bg-[#0251b3] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? "Đang mở ca..." : "Mở ca"}
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={loading || !openingCash}
+              className="px-9 h-11 rounded-xl bg-[#025cca] text-white font-semibold text-[15px] hover:bg-[#0251b3] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? "Đang mở ca..." : "Mở ca"}
+            </button>
           </div>
         </form>
       </div>

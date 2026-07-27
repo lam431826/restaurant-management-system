@@ -31,11 +31,6 @@ const PlayIcon = () => (
     <circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none" />
   </svg>
 )
-const KeyIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
-  </svg>
-)
 const PencilIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted shrink-0">
     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
@@ -545,9 +540,6 @@ const EmployeeDetail = ({ employee, onSave, onToggleActive }: Props) => {
               {employee.status === 'ACTIVE' ? <PauseIcon /> : <PlayIcon />} {employee.status === 'ACTIVE' ? 'Ngừng làm việc' : 'Cho phép làm việc'}
             </button>
             <div className="flex items-center gap-2">
-              <button className="kv-btn kv-btn-outline-neutral h-10" onClick={() => window.alert(`Đã gửi mã xác nhận cho ${employee.name}.`)}>
-                <KeyIcon /> Lấy mã xác nhận
-              </button>
               <button className="kv-btn kv-btn-primary h-10" onClick={() => setShowEditModal(true)}>Cập nhật</button>
             </div>
           </div>

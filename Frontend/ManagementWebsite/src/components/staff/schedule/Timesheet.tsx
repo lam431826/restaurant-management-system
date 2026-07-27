@@ -1,22 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
-  AttendanceSettingsDto, AttendanceSummaryRowDto, AttendanceType,
+  AttendanceSettingsDto, AttendanceType,
   ShiftDto, TimesheetCellDto, TimesheetStatus, ViolationTypeDto,
 } from '../../../api/attendance'
 import {
-  ATTENDANCE_TYPE_LABEL, createSchedules, createViolationType, deleteRecord, formatTime, getSettings, getSummary,
+  ATTENDANCE_TYPE_LABEL, createSchedules, createViolationType, deleteRecord, deleteSchedule, formatTime, getSettings,
   getTimesheet, listShifts, listViolationTypes, saveViolations,
   TIMESHEET_STATUS_COLOR, TIMESHEET_STATUS_LABEL, upsertRecord,
 } from '../../../api/attendance'
-import { listEmployees } from '../../../api/employees'
+import type { SalarySettingDto } from '../../../api/employees'
+import { getSalarySetting, listEmployees } from '../../../api/employees'
+import type { PayrollHolidayDto } from '../../../api/payrollHolidays'
+import { listPayrollHolidays } from '../../../api/payrollHolidays'
 import { ApiError } from '../../../services/api'
 import ShiftTemplateModal from './ShiftTemplateModal'
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Bảng chấm công (Timesheet) — faithful re-creation of the KiotViet screen,
- * wired to the real UC-AT-03/04/06/07 API. "Đổi ca" (shift-swap) stayed out
- * of SRS_AT scope and was removed; bulk/merged marking remain backend-only
- * capabilities not yet exposed by this grid (single-cell marking only).
+ * wired to the real UC-AT-03/04/06/07 API. "Đổi ca" (shift-swap) re-added from
+ * the Chấm công popup — client-side create/delete orchestration, no dedicated
+ * backend swap endpoint; bulk/merged marking remain backend-only capabilities
+ * not yet exposed by this grid (single-cell marking only).
  * ──────────────────────────────────────────────────────────────────────────── */
 
 interface EmployeeSummary { id: string; name: string; code: string }
@@ -33,6 +37,7 @@ const sameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 const toYMD = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const fmtDMY = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 const startOfWeek = (d: Date) => { const day = d.getDay(); return addDays(d, (day === 0 ? -6 : 1) - day) }
 const weekOfMonth = (d: Date) => Math.ceil(d.getDate() / 7)
 const daysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate()
@@ -67,11 +72,25 @@ const NoteIcon = () => (
 const InfoIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted shrink-0"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
 )
+const PersonIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><circle cx="12" cy="8" r="4" /><path d="M4 21v-1a8 8 0 0 1 16 0v1" /></svg>
+)
+const IdIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><rect x="2" y="5" width="20" height="14" rx="2" /><circle cx="8" cy="12" r="1.5" /><line x1="13" y1="10" x2="18" y2="10" /><line x1="13" y1="14" x2="18" y2="14" /></svg>
+)
 const TrashIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
 )
 const CloseIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+)
+const SwapIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /></svg>
+)
+const CalendarIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted shrink-0">
+    <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+  </svg>
 )
 
 const fullDateLabel = (d: Date) => {
@@ -102,10 +121,10 @@ const cellStatusLabel = (c: TimesheetCellDto) =>
  * Chấm công modal — opens when a shift assignment card is clicked.
  * Tabs: "Chấm công", "Lịch sử chấm công" and "Phạt vi phạm".
  * ──────────────────────────────────────────────────────────────────────────── */
-const ModalField = ({ label, info, align = 'center', children }: { label: string; info?: boolean; align?: 'center' | 'top'; children: React.ReactNode }) => (
+const ModalField = ({ label, info, align = 'center', wide, children }: { label: string; info?: boolean; align?: 'center' | 'top'; wide?: boolean; children: React.ReactNode }) => (
   <div className={`flex ${align === 'top' ? 'items-start' : 'items-center'} gap-6 py-2`}>
     <label className={`w-[8rem] shrink-0 flex items-center gap-1 text-md text-ink ${align === 'top' ? 'pt-2' : ''}`}>{label}{info && <InfoIcon />}</label>
-    <div className="flex-1 min-w-0 max-w-[38rem]">{children}</div>
+    <div className={`flex-1 min-w-0 ${wide ? '' : 'max-w-[38rem]'}`}>{children}</div>
   </div>
 )
 
@@ -282,8 +301,8 @@ const computeOtLateEarly = (
 
   const otBeforeRaw = Math.max(0, shiftStartMin - inMin)
   const otAfterRaw = Math.max(0, outMin - shiftEndMin)
-  const otBefore = settings.otBeforeEnabled && otBeforeRaw > settings.otBeforeMinMinutes ? otBeforeRaw : 0
-  const otAfter = settings.otAfterEnabled && otAfterRaw > settings.otAfterMinMinutes ? otAfterRaw : 0
+  const otBefore = settings.overtimeEnabled ? otBeforeRaw : 0
+  const otAfter = settings.overtimeEnabled ? otAfterRaw : 0
 
   const lateRaw = Math.max(0, inMin - shiftStartMin)
   const earlyRaw = Math.max(0, shiftEndMin - outMin)
@@ -302,24 +321,129 @@ const fmtOtDuration = (totalMinutes: number) => {
   return `${h}h${String(m).padStart(2, '0')}`
 }
 
-/**
- * "Làm thêm TC 15p, Làm thêm SC 2h" summary for the timesheet card. Re-derives the
- * before/after split live from the saved check-in/out vs the shift window (same formula
- * as the marking modal) since attendance_records only stores the combined total.
- */
-const cardOtLabel = (c: TimesheetCellDto, settings: AttendanceSettingsDto | null): string | null => {
-  if (!settings || !c.record || c.record.type !== 'PRESENT') return null
-  if (!c.record.actualCheckIn || !c.record.actualCheckOut || !c.shiftStartTime || !c.shiftEndTime) return null
-  const inTime = c.record.actualCheckIn.slice(11, 16)
-  const outTime = c.record.actualCheckOut.slice(11, 16)
-  if (!isValidTime(inTime) || !isValidTime(outTime)) return null
-  const inDayOffset = c.record.actualCheckIn.slice(0, 10) === c.workDate ? 0 : 1
-  const outDayOffset = c.record.actualCheckOut.slice(0, 10) === c.workDate ? 0 : 1
-  const { otBefore, otAfter } = computeOtLateEarly(c.shiftStartTime, c.shiftEndTime, inTime, inDayOffset, outTime, outDayOffset, settings)
-  const parts: string[] = []
-  if (otBefore > 0) parts.push(`Làm thêm TC ${fmtOtDuration(otBefore)}`)
-  if (otAfter > 0) parts.push(`Làm thêm SC ${fmtOtDuration(otAfter)}`)
-  return parts.length ? parts.join(', ') : null
+/** "3 Giờ 45 Phút" / "4 Giờ" / "15 Phút" style — matches the history-popup mockups (distinct
+ * from fmtOtDuration's compact "3h45"/"15p" card style). */
+const fmtHourMin = (totalMinutes: number) => {
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  if (h === 0) return `${m} Phút`
+  if (m === 0) return `${h} Giờ`
+  return `${h} Giờ ${m} Phút`
+}
+
+/** Scheduled shift duration in minutes (handles overnight shifts, mirrors shiftEndMinutes). */
+const shiftDurationMinutes = (start: string | null, end: string | null) =>
+  !start || !end ? 0 : shiftEndMinutes(start, end) - timeToMin(formatTime(start))
+
+/* ── "Loại ngày" (BR-PAY-04 mirrored for display only, not a payroll recompute) ──────────── */
+type DayTypeKey = 'normal' | 'sat' | 'sun' | 'holiday'
+const DAY_TYPE_LABEL: Record<DayTypeKey, string> = { normal: 'Ngày thường', sat: 'Thứ 7', sun: 'Chủ nhật', holiday: 'Ngày lễ tết' }
+const dayTypeOf = (ymd: string, holidaySet: Set<string>): DayTypeKey => {
+  if (holidaySet.has(ymd)) return 'holiday'
+  const weekday = new Date(`${ymd}T00:00:00`).getDay()
+  if (weekday === 6) return 'sat'
+  if (weekday === 0) return 'sun'
+  return 'normal'
+}
+
+/** Groups cells by workDate (ascending), each date's own cells sorted by shift start time —
+ * powers the "one row per date, one line per shift that day" layout in the history popups. */
+interface DateGroup { workDate: string; cells: TimesheetCellDto[] }
+const groupByDate = (list: TimesheetCellDto[]): DateGroup[] => {
+  const map = new Map<string, TimesheetCellDto[]>()
+  for (const c of list) {
+    const arr = map.get(c.workDate)
+    if (arr) arr.push(c); else map.set(c.workDate, [c])
+  }
+  return Array.from(map.entries())
+    .map(([workDate, cs]) => ({ workDate, cells: cs.slice().sort((a, b) => (a.shiftStartTime ?? '').localeCompare(b.shiftStartTime ?? '')) }))
+    .sort((a, b) => a.workDate.localeCompare(b.workDate))
+}
+
+/* ── "Lương dự kiến" / "Lương" columns -- mirrors SalaryCalculator's formulas client-side for a
+ * live preview (BR-PAY-02..05, BR-PAY-10); the payroll module recomputes authoritatively when a
+ * real payslip is generated. Rate JSON shape: {"sat":{"amount":"150","unit":"percent"},...}. */
+interface RateSpec { amount: string; unit: string }
+function parseRateJson(json: string | null): Partial<Record<DayTypeKey | 'normal', RateSpec>> {
+  if (!json) return {}
+  try {
+    const parsed = JSON.parse(json) as Record<string, RateSpec | null>
+    const out: Partial<Record<DayTypeKey | 'normal', RateSpec>> = {}
+    for (const [k, v] of Object.entries(parsed)) if (v) out[k as DayTypeKey | 'normal'] = v
+    return out
+  } catch { return {} }
+}
+function applyRateSpec(base: number, spec: RateSpec): number {
+  const amount = parseFloat((spec.amount ?? '').replace(/[^0-9.]/g, ''))
+  if (Number.isNaN(amount)) return base
+  return (spec.unit ?? '').toLowerCase() === 'percent' ? (base * amount) / 100 : amount
+}
+/** Main-wage rate: falls back to the plain base wage when no spec is configured for the day type. */
+const resolveMainRate = (base: number, spec: RateSpec | undefined) => (spec ? applyRateSpec(base, spec) : base)
+/** OT rate: falls back to "normal", but stays undefined (=> no OT pay) if neither is configured. */
+const otRateFor = (otRates: Partial<Record<DayTypeKey | 'normal', RateSpec>>, dayType: DayTypeKey) => otRates[dayType] ?? otRates.normal
+
+/** Automatic late/early wage deduction -- mirrors SalaryCalculator.lateEarlyPenalty(): rounds UP
+ * to the nearest multiple of roundingMinutes, always at least one block even on an exact multiple. */
+function lateEarlyPenaltyAmount(baseWage: number, scheduledMinutes: number, minutes: number, roundingMinutes: number): number {
+  if (minutes <= 0 || roundingMinutes <= 0 || scheduledMinutes <= 0) return 0
+  const hourlyBase = (baseWage * 60) / scheduledMinutes
+  const blocks = Math.floor(minutes / roundingMinutes) + 1
+  const hours = (blocks * roundingMinutes) / 60
+  return Math.round(hourlyBase * hours)
+}
+
+/** OT pay amount for one PRESENT cell, mirroring SalaryCalculator.otAmount() (0 if OT disabled
+ * for this employee, otMinutes is 0, or no rate configured for the day type nor "normal"). */
+function otAmountFor(c: TimesheetCellDto, salary: SalarySettingDto, dayType: DayTypeKey, otRoundingMinutes: number): number {
+  if (!salary.overtimeEnabled || !c.record || c.record.otMinutes <= 0) return 0
+  const scheduled = shiftDurationMinutes(c.shiftStartTime, c.shiftEndTime)
+  if (scheduled <= 0) return 0
+  const spec = otRateFor(parseRateJson(salary.overtimeRatesJson), dayType)
+  if (!spec) return 0
+  const roundedOt = roundOtMinutes(c.record.otMinutes, otRoundingMinutes)
+  const hourlyBase = (salary.mainBaseWage * 60) / scheduled
+  const perHour = applyRateSpec(hourlyBase, spec)
+  return Math.round((perHour * roundedOt) / 60)
+}
+
+/** Main (shift/hourly/fixed) wage amount for one cell, mirroring shiftAmount()/computeHourly()/
+ * computeFixed() -- FIXED returns 0 per-row (its full base wage is a period total, not a per-day
+ * amount, matching AttendanceDetailRow's own "amount:0" snapshot convention for FIXED). */
+function mainAmountFor(c: TimesheetCellDto, salary: SalarySettingDto, dayType: DayTypeKey): number {
+  if (!c.record) return 0
+  if (salary.mainSalaryType === 'FIXED') return 0
+  if (salary.mainSalaryType === 'HOURLY') {
+    if (c.record.type !== 'PRESENT' || c.record.workedMinutes <= 0) return 0
+    const hourlyRate = resolveMainRate(salary.mainBaseWage, parseRateJson(salary.mainAdvancedRatesJson)[dayType])
+    return Math.round((hourlyRate * c.record.workedMinutes) / 60)
+  }
+  // SHIFT: full wage whenever checked in and out, regardless of late/early (BR-PAY-05 shiftAmount()).
+  if (c.record.type !== 'PRESENT' || !c.record.actualCheckOut) return 0
+  const shiftWage = resolveMainRate(salary.mainBaseWage, parseRateJson(salary.mainAdvancedRatesJson)[dayType])
+  return Math.round(shiftWage)
+}
+
+/** "0,25h" / "1,5h" / "2h" — decimal-hour OT display (Số phút tăng ca / 60.0), comma decimal
+ * separator per Vietnamese convention. Trims to at most 2 decimals, no trailing zeros. */
+const fmtOtHours = (totalMinutes: number) => {
+  const hours = Math.round((totalMinutes / 60) * 100) / 100
+  return String(hours).replace('.', ',')
+}
+
+/** Rounds raw OT minutes DOWN to the nearest otRoundingMinutes block, mirroring the same
+ * rounding SalaryCalculator.otAmount() applies before converting to pay -- used everywhere OT
+ * is displayed so the shown hours always match what's actually being paid for. */
+const roundOtMinutes = (otMinutes: number, otRoundingMinutes: number) =>
+  otRoundingMinutes > 0 ? Math.floor(otMinutes / otRoundingMinutes) * otRoundingMinutes : otMinutes
+
+/** "Làm thêm: 0,25h" summary for the timesheet card — otMinutes is rounded down to the
+ * configured block before display, matching the pay amount. */
+const cardOtLabel = (c: TimesheetCellDto, otRoundingMinutes: number): string | null => {
+  if (!c.record || c.record.type !== 'PRESENT' || c.record.otMinutes <= 0) return null
+  const rounded = roundOtMinutes(c.record.otMinutes, otRoundingMinutes)
+  if (rounded <= 0) return null
+  return `Làm thêm: ${fmtOtHours(rounded)}h`
 }
 
 /** "Đi muộn 30p, Về sớm 30p" summary for the timesheet card — lateMinutes/earlyLeaveMinutes are already persisted on the record (BR-AT-09), no live recompute needed. */
@@ -430,10 +554,156 @@ const AddViolationTypeModal = ({ onClose, onSave }: { onClose: () => void; onSav
   )
 }
 
-const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTypeAdded, onClose, onSaved }: {
+/** Date field styled like a KiotViet date picker — native `type=date` input, transparent text, dd/mm/yyyy overlay. */
+const SwapDateField = ({ value, onChange, disabled }: { value: string; onChange?: (v: string) => void; disabled?: boolean }) => (
+  <div className="relative w-full">
+    <input type="date" value={value} disabled={disabled} onChange={e => onChange?.(e.target.value)}
+      className="w-full h-10 pl-3 pr-9 bg-card border border-line-default rounded-md text-md text-transparent disabled:opacity-70 disabled:cursor-not-allowed focus:border-primary outline-none [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer" />
+    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-md text-ink">{value ? fmtDMY(new Date(`${value}T00:00:00`)) : ''}</span>
+    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"><CalendarIcon /></span>
+  </div>
+)
+
+/**
+ * "Đổi ca làm việc" — two-way swap between the schedule being viewed (fixed, left column)
+ * and a schedule the manager picks (employee/date/shift, right column). Save deletes both
+ * originals (the left one always; the right one only if it already existed) and recreates
+ * them with the employee assignments crossed over. No dedicated backend swap endpoint —
+ * orchestrated client-side from create/delete schedule calls, creates-before-deletes so a
+ * failed create never leaves either side without a schedule.
+ */
+const ChangeShiftModal = ({ cell, shifts, employees, cells, onClose, onSaved }: {
   cell: TimesheetCellDto
   shifts: ShiftDto[]
   employees: EmployeeSummary[]
+  cells: TimesheetCellDto[]
+  onClose: () => void
+  onSaved: () => void
+}) => {
+  const activeShifts = shifts.filter(s => s.status === 'ACTIVE')
+  const leftShiftName = shifts.find(s => s.id === cell.shiftId)?.name ?? cell.shiftName ?? ''
+
+  const [rightDate, setRightDate] = useState(toYMD(new Date()))
+  const [rightEmployeeId, setRightEmployeeId] = useState('')
+  const [rightShiftId, setRightShiftId] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const rightEmployeeOptions = employees.filter(e => e.id !== cell.employeeId)
+
+  const existingRight = rightEmployeeId && rightDate && rightShiftId
+    ? cells.find(c => c.employeeId === rightEmployeeId && c.workDate === rightDate && c.shiftId === rightShiftId)
+    : undefined
+
+  const handleSave = async () => {
+    if (!rightDate || !rightEmployeeId || !rightShiftId) return
+    setError('')
+    // Checked upfront (not just left to the backend's delete-time check) so a blocked swap
+    // never gets partway through — otherwise the two creates below would already have run,
+    // leaving both employees double-booked once the delete rejects.
+    if (cell.record) {
+      setError(`${cell.employeeName ?? 'Nhân viên'} đã chấm công cho ca này, không thể đổi ca.`)
+      return
+    }
+    if (existingRight?.record) {
+      setError(`${existingRight.employeeName ?? 'Nhân viên được chọn'} đã chấm công cho ca đó, không thể đổi ca.`)
+      return
+    }
+    setSaving(true)
+    try {
+      const scheduleBase = { repeatWeekly: false, repeatDays: [], repeatEnd: null, workOnHolidays: true }
+      await createSchedules({ employeeIds: [cell.employeeId], shiftIds: [rightShiftId], date: rightDate, ...scheduleBase })
+      await createSchedules({ employeeIds: [rightEmployeeId], shiftIds: [cell.shiftId], date: cell.workDate, ...scheduleBase })
+      await deleteSchedule(cell.scheduleId)
+      if (existingRight) await deleteSchedule(existingRight.scheduleId)
+      onSaved()
+    } catch (err) {
+      const msg = err instanceof ApiError
+        ? err.code === 'AT_SCHEDULE_HAS_ATTENDANCE' ? 'Ca làm việc đã có dữ liệu chấm công, không thể đổi ca.' : err.message
+        : 'Không thể đổi ca.'
+      setError(msg)
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4" onMouseDown={onClose}>
+      <div className="bg-card rounded-xl shadow-2xl w-full max-w-[720px]" onMouseDown={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 pt-5 pb-4">
+          <h2 className="text-xl font-bold text-ink">Đổi ca làm việc</h2>
+          <button onClick={onClose} aria-label="Đóng" className="w-8 h-8 flex items-center justify-center rounded-full text-ink-muted hover:bg-fill hover:text-ink cursor-pointer"><CloseIcon /></button>
+        </div>
+
+        <div className="px-6 pb-2 grid grid-cols-2 gap-8">
+          <div className="flex flex-col gap-4 pr-6 border-r border-dashed border-line">
+            <h3 className="text-md font-bold text-ink">Nhân viên</h3>
+            <div>
+              <label className="block text-md text-ink mb-1.5">Ngày làm việc</label>
+              <SwapDateField value={cell.workDate} disabled />
+            </div>
+            <div>
+              <label className="block text-md text-ink mb-1.5">Nhân viên</label>
+              <input value={cell.employeeName ?? ''} disabled
+                className="w-full h-10 px-3 bg-card border border-line-default rounded-md text-md text-ink disabled:opacity-70 disabled:cursor-not-allowed outline-none" />
+            </div>
+            <div>
+              <label className="block text-md text-ink mb-1.5">Ca</label>
+              <input value={leftShiftName} disabled
+                className="w-full h-10 px-3 bg-card border border-line-default rounded-md text-md text-ink disabled:opacity-70 disabled:cursor-not-allowed outline-none" />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <h3 className="text-md font-bold text-ink">Đổi cho nhân viên</h3>
+            <div>
+              <label className="block text-md text-ink mb-1.5">Ngày làm việc</label>
+              <SwapDateField value={rightDate} onChange={setRightDate} />
+            </div>
+            <div>
+              <label className="block text-md text-ink mb-1.5">Nhân viên</label>
+              <div className="relative">
+                <select value={rightEmployeeId} onChange={e => setRightEmployeeId(e.target.value)}
+                  className={`w-full h-10 pl-3 pr-9 bg-card border border-line-default rounded-md text-md appearance-none cursor-pointer focus:border-primary outline-none ${rightEmployeeId ? 'text-ink' : 'text-ink-muted'}`}>
+                  <option value="">Chọn nhân viên</option>
+                  {rightEmployeeOptions.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"><ChevronDown /></span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-md text-ink mb-1.5">Ca</label>
+              <div className="relative">
+                <select value={rightShiftId} onChange={e => setRightShiftId(e.target.value)}
+                  className={`w-full h-10 pl-3 pr-9 bg-card border border-line-default rounded-md text-md appearance-none cursor-pointer focus:border-primary outline-none ${rightShiftId ? 'text-ink' : 'text-ink-muted'}`}>
+                  <option value="">Chọn ca làm việc</option>
+                  {activeShifts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"><ChevronDown /></span>
+              </div>
+              {existingRight?.record && (
+                <p className="mt-1.5 text-sm text-danger">{existingRight.employeeName ?? 'Nhân viên này'} đã chấm công cho ca đó, không thể đổi ca.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {error && <p className="px-6 pt-3 text-md text-danger">{error}</p>}
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 mt-2 border-t border-line">
+          <button onClick={onClose} disabled={saving} className="kv-btn kv-btn-outline-neutral h-10 bg-card">Bỏ qua</button>
+          <button onClick={() => void handleSave()} disabled={saving || !rightDate || !rightEmployeeId || !rightShiftId || !!existingRight?.record}
+            className="kv-btn kv-btn-primary h-10 disabled:opacity-50">{saving ? 'Đang lưu...' : 'Lưu'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const AttendanceModal = ({ cell, shifts, employees, cells, settings, vioTypes, onVioTypeAdded, onClose, onSaved }: {
+  cell: TimesheetCellDto
+  shifts: ShiftDto[]
+  employees: EmployeeSummary[]
+  cells: TimesheetCellDto[]
   settings: AttendanceSettingsDto | null
   vioTypes: ViolationTypeDto[]
   onVioTypeAdded: (t: ViolationTypeDto) => void
@@ -483,7 +753,14 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
   const handleInTimeChange = (t: string) => { setInTime(t); setInDate(autoDate(t, shiftStartAnchorMin)) }
   const handleOutTimeChange = (t: string) => { setOutTime(t); setOutDate(autoDate(t, shiftEndAnchorMin)) }
   const [substitute, setSubstitute] = useState(cell.substituteEmployeeId ?? '')
-  const subOptions = employees.filter(e => e.id !== cell.employeeId)
+  // Chỉ loại nhân viên đã có đúng CA này trong ngày (trùng ca với người bị thay) — có ca khác
+  // trong ngày vẫn được chọn. Trừ người đang được chọn sẵn (nếu có), vì họ đã được auto-đặt
+  // lịch từ lần lưu trước nên vẫn phải hiện lại trong danh sách.
+  const busyEmployeeIds = useMemo(
+    () => new Set(cells.filter(c => c.workDate === cell.workDate && c.shiftId === cell.shiftId).map(c => c.employeeId)),
+    [cells, cell.workDate, cell.shiftId])
+  const subOptions = employees.filter(e =>
+    e.id !== cell.employeeId && (!busyEmployeeIds.has(e.id) || e.id === cell.substituteEmployeeId))
 
   // Làm thêm (OT) — live-suggested from check-in/out vs shift window (BR-AT-10), editable.
   const [otBeforeOn, setOtBeforeOn] = useState(false)
@@ -513,6 +790,7 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [changingShift, setChangingShift] = useState(false)
 
   // Phạt vi phạm state — prefilled from the cell's already-loaded violations (no extra fetch).
   const [vioRows, setVioRows] = useState<ViolationRow[]>(() =>
@@ -598,8 +876,8 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
             <span className="text-md text-ink">{shift?.name ?? cell.shiftName} ({formatTime(shift?.startTime ?? cell.shiftStartTime)} - {formatTime(shift?.endTime ?? cell.shiftEndTime)})</span>
           </ModalField>
 
-          <ModalField label="Ghi chú" align="top">
-            <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
+          <ModalField label="Ghi chú" align="top" wide>
+            <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
               className="w-full p-3 bg-card border border-line-default rounded-md text-md text-ink resize-none focus:border-primary outline-none" />
           </ModalField>
 
@@ -710,7 +988,12 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
 
         {/* footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-line mt-auto">
-          <button onClick={handleDelete} disabled={saving} className="flex items-center gap-1.5 text-md text-ink-subtle hover:text-danger cursor-pointer disabled:opacity-50"><TrashIcon /> Hủy</button>
+          <div className="flex items-center gap-5">
+            <button onClick={handleDelete} disabled={saving} className="flex items-center gap-1.5 text-md text-ink-subtle hover:text-danger cursor-pointer disabled:opacity-50"><TrashIcon /> Hủy</button>
+            <button onClick={() => setChangingShift(true)} disabled={saving || !!cell.record}
+              title={cell.record ? 'Đã chấm công, không thể đổi ca' : undefined}
+              className="flex items-center gap-1.5 text-md text-ink-subtle hover:text-ink cursor-pointer disabled:opacity-50 disabled:hover:text-ink-subtle disabled:cursor-not-allowed"><SwapIcon /> Đổi ca</button>
+          </div>
           <div className="flex items-center gap-3">
             <button onClick={onClose} className="kv-btn kv-btn-outline-neutral h-10 bg-card">Bỏ qua</button>
             <button onClick={() => void handleSave()} disabled={saving} className="kv-btn kv-btn-primary h-10 disabled:opacity-60">{saving ? 'Đang lưu...' : 'Lưu'}</button>
@@ -720,6 +1003,10 @@ const AttendanceModal = ({ cell, shifts, employees, settings, vioTypes, onVioTyp
     </div>
     {addTypeForRow !== null && (
       <AddViolationTypeModal onClose={() => setAddTypeForRow(null)} onSave={(n, a) => void saveVioType(n, a)} />
+    )}
+    {changingShift && (
+      <ChangeShiftModal cell={cell} shifts={shifts} employees={employees} cells={cells}
+        onClose={() => setChangingShift(false)} onSaved={onSaved} />
     )}
     </>
   )
@@ -801,14 +1088,342 @@ const ScheduleCellModal = ({ shift, date, employees, onClose, onSaved }: { shift
   )
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Employee history popups (Đi làm / Nghỉ làm / Đi muộn - Về sớm / Làm thêm), opened by
+ * clicking a cell in the "Xem theo nhân viên" summary table. All four read straight from
+ * the already-loaded `cells` (no extra fetch, no new backend endpoint, no new DB table --
+ * work_schedules/attendance_records/work_shifts already carry everything shown here)
+ * filtered to one employee; "Loại ngày" is computed client-side (mirrors
+ * SalaryCalculator.dayType(), display-only) against the payroll holiday calendar.
+ * ──────────────────────────────────────────────────────────────────────────── */
+type DayTypeFilterValue = 'ALL' | DayTypeKey
+const DAY_TYPE_FILTER_OPTIONS: { v: DayTypeFilterValue; label: string }[] = [
+  { v: 'ALL', label: 'Tất cả loại ngày' },
+  { v: 'normal', label: DAY_TYPE_LABEL.normal },
+  { v: 'sat', label: DAY_TYPE_LABEL.sat },
+  { v: 'sun', label: DAY_TYPE_LABEL.sun },
+  { v: 'holiday', label: DAY_TYPE_LABEL.holiday },
+]
+const DayTypeFilter = ({ value, onChange }: { value: DayTypeFilterValue; onChange: (v: DayTypeFilterValue) => void }) => {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+  const label = DAY_TYPE_FILTER_OPTIONS.find(o => o.v === value)?.label ?? 'Tất cả loại ngày'
+  return (
+    <div ref={ref} className="relative w-[16rem]">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="flex items-center justify-between gap-2 w-full h-10 px-3 bg-card border border-line-default rounded-md text-md text-ink cursor-pointer focus:border-primary outline-none">
+        <span className="truncate">{label}</span>
+        <ChevronDown />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-[calc(100%+0.3rem)] w-full bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] py-1">
+          {DAY_TYPE_FILTER_OPTIONS.map(o => (
+            <button key={o.v} type="button" onClick={() => { onChange(o.v); setOpen(false) }}
+              className={`block w-full text-left px-4 py-2 text-md cursor-pointer hover:bg-[var(--kv-state-hover-bg)] ${o.v === value ? 'text-primary font-semibold bg-primary-25' : 'text-ink'}`}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const HistoryModalHeader = ({ title, employeeName, employeeCode, rangeLabel, onClose }: {
+  title: string; employeeName: string | null; employeeCode: string | null; rangeLabel: string; onClose: () => void
+}) => (
+  <div className="flex items-start justify-between px-6 pt-5 pb-3">
+    <div>
+      <h2 className="text-xl font-bold text-ink">{title}</h2>
+      <div className="flex items-center gap-4 mt-2 text-md text-ink-subtle">
+        <span className="flex items-center gap-1.5"><PersonIcon /> {employeeName}</span>
+        <span className="flex items-center gap-1.5"><IdIcon /> {employeeCode}</span>
+        <span className="flex items-center gap-1.5"><CalIcon /> {rangeLabel}</span>
+      </div>
+    </div>
+    <button onClick={onClose} aria-label="Đóng" className="w-8 h-8 flex items-center justify-center rounded-full text-ink-muted hover:bg-fill hover:text-ink cursor-pointer"><CloseIcon /></button>
+  </div>
+)
+
+interface HistoryModalBaseProps {
+  employeeId: string
+  employeeName: string | null
+  employeeCode: string | null
+  rangeStart: Date
+  rangeEnd: Date
+  cells: TimesheetCellDto[]
+  holidaySet: Set<string>
+  salary: SalarySettingDto | undefined
+  settings: AttendanceSettingsDto | null
+  onClose: () => void
+}
+
+/** "Đi làm" — Ngày | Loại ngày | Ca làm việc | Giờ vào - ra | Giờ thực tế | Lương. */
+const WorkHistoryModal = ({ employeeId, employeeName, employeeCode, rangeStart, rangeEnd, cells, holidaySet, salary, onClose }: HistoryModalBaseProps) => {
+  const [filter, setFilter] = useState<DayTypeFilterValue>('ALL')
+  const all = useMemo(() => cells.filter(c => c.employeeId === employeeId && c.record?.type === 'PRESENT'), [cells, employeeId])
+  const filtered = useMemo(() => filter === 'ALL' ? all : all.filter(c => dayTypeOf(c.workDate, holidaySet) === filter), [all, filter, holidaySet])
+  const groups = useMemo(() => groupByDate(filtered), [filtered])
+  const totalWorkedMinutes = filtered.reduce((sum, c) => sum + (c.record?.workedMinutes ?? 0), 0)
+  const wageFor = (c: TimesheetCellDto) => salary ? mainAmountFor(c, salary, dayTypeOf(c.workDate, holidaySet)) : 0
+  const totalWage = filtered.reduce((sum, c) => sum + wageFor(c), 0)
+
+  return (
+    <div className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center bg-black/50 p-6 overflow-y-auto" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-card rounded-xl shadow-2xl w-full max-w-[88rem] my-6 flex flex-col max-h-[calc(100vh-6rem)]" onMouseDown={e => e.stopPropagation()}>
+        <HistoryModalHeader title="Đi làm" employeeName={employeeName} employeeCode={employeeCode}
+          rangeLabel={`${fmtDMY(rangeStart)} - ${fmtDMY(rangeEnd)}`} onClose={onClose} />
+        <div className="px-6 pb-3 flex items-center gap-3">
+          <span className="text-md text-ink">Loại ngày</span>
+          <DayTypeFilter value={filter} onChange={setFilter} />
+        </div>
+        <div className="px-6 pb-6 overflow-y-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-fill">
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Ngày</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Loại ngày</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Ca làm việc</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Giờ vào - ra</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Giờ thực tế</th>
+                <th className="text-right px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Lương</th>
+              </tr>
+              <tr className="bg-fill">
+                <td className="px-4 py-2" colSpan={2} />
+                <td className="px-4 py-2 text-md font-bold text-ink whitespace-nowrap">{filtered.length} ca</td>
+                <td className="px-4 py-2" />
+                <td className="px-4 py-2 text-md font-bold text-ink whitespace-nowrap">{fmtHourMin(totalWorkedMinutes)}</td>
+                <td className="px-4 py-2 text-md font-bold text-ink text-right whitespace-nowrap">{totalWage.toLocaleString('vi-VN')}</td>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-md text-ink-subtle">Không có dữ liệu chấm công phù hợp</td></tr>
+              ) : groups.map(g => g.cells.map((c, i) => (
+                <tr key={c.scheduleId} className="border-b border-line">
+                  {i === 0 && (
+                    <>
+                      <td rowSpan={g.cells.length} className="px-4 py-3 align-top text-md text-ink whitespace-nowrap">{fmtDMY(new Date(`${g.workDate}T00:00:00`))}</td>
+                      <td rowSpan={g.cells.length} className="px-4 py-3 align-top text-md text-ink whitespace-nowrap">{DAY_TYPE_LABEL[dayTypeOf(g.workDate, holidaySet)]}</td>
+                    </>
+                  )}
+                  <td className="px-4 py-3 text-md text-ink whitespace-nowrap">{c.shiftName} ({formatTime(c.shiftStartTime)} - {formatTime(c.shiftEndTime)})</td>
+                  <td className="px-4 py-3 text-md text-ink whitespace-nowrap">{c.record?.actualCheckIn?.slice(11, 16) ?? '--'} - {c.record?.actualCheckOut?.slice(11, 16) ?? '--'}</td>
+                  <td className="px-4 py-3 text-md text-ink whitespace-nowrap">{fmtHourMin(c.record?.workedMinutes ?? 0)}</td>
+                  <td className="px-4 py-3 text-md text-ink text-right whitespace-nowrap">{wageFor(c).toLocaleString('vi-VN')}</td>
+                </tr>
+              )))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** "Nghỉ làm" — Ngày | Ca làm việc | Trạng thái (no Loại ngày: leave pay doesn't vary by day type). */
+const LeaveHistoryModal = ({ employeeId, employeeName, employeeCode, rangeStart, rangeEnd, cells, onClose }: HistoryModalBaseProps) => {
+  const all = useMemo(() => cells.filter(c => c.employeeId === employeeId
+    && (c.record?.type === 'LEAVE_APPROVED' || c.record?.type === 'LEAVE_UNAPPROVED')), [cells, employeeId])
+  const groups = useMemo(() => groupByDate(all), [all])
+
+  return (
+    <div className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center bg-black/50 p-6 overflow-y-auto" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-card rounded-xl shadow-2xl w-full max-w-[64rem] my-6 flex flex-col max-h-[calc(100vh-6rem)]" onMouseDown={e => e.stopPropagation()}>
+        <HistoryModalHeader title="Nghỉ làm" employeeName={employeeName} employeeCode={employeeCode}
+          rangeLabel={`${fmtDMY(rangeStart)} - ${fmtDMY(rangeEnd)}`} onClose={onClose} />
+        <div className="px-6 pb-6 pt-2 overflow-y-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-fill">
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Ngày</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Ca làm việc</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.length === 0 ? (
+                <tr><td colSpan={3} className="px-4 py-10 text-center text-md text-ink-subtle">Không có dữ liệu nghỉ làm</td></tr>
+              ) : groups.map(g => g.cells.map((c, i) => (
+                <tr key={c.scheduleId} className="border-b border-line">
+                  {i === 0 && (
+                    <td rowSpan={g.cells.length} className="px-4 py-3 align-top text-md text-ink whitespace-nowrap">{fmtDMY(new Date(`${g.workDate}T00:00:00`))}</td>
+                  )}
+                  <td className="px-4 py-3 text-md text-ink whitespace-nowrap">{c.shiftName} ({formatTime(c.shiftStartTime)} - {formatTime(c.shiftEndTime)})</td>
+                  <td className="px-4 py-3 text-md text-ink whitespace-nowrap">{c.record ? ATTENDANCE_TYPE_LABEL[c.record.type] : '-'}</td>
+                </tr>
+              )))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** "Đi muộn - Về sớm" — Ngày | Ca làm việc | Giờ vào - ra | Đi muộn | Về sớm (no Loại ngày:
+ * late/early penalties don't vary by day type). */
+const LateEarlyHistoryModal = ({ employeeId, employeeName, employeeCode, rangeStart, rangeEnd, cells, onClose }: HistoryModalBaseProps) => {
+  const all = useMemo(() => cells.filter(c => c.employeeId === employeeId && c.record?.type === 'PRESENT'
+    && ((c.record.lateMinutes ?? 0) > 0 || (c.record.earlyLeaveMinutes ?? 0) > 0)), [cells, employeeId])
+  const groups = useMemo(() => groupByDate(all), [all])
+  const totalLate = all.reduce((sum, c) => sum + (c.record?.lateMinutes ?? 0), 0)
+  const totalEarly = all.reduce((sum, c) => sum + (c.record?.earlyLeaveMinutes ?? 0), 0)
+
+  return (
+    <div className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center bg-black/50 p-6 overflow-y-auto" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-card rounded-xl shadow-2xl w-full max-w-[76rem] my-6 flex flex-col max-h-[calc(100vh-6rem)]" onMouseDown={e => e.stopPropagation()}>
+        <HistoryModalHeader title="Đi muộn - Về sớm" employeeName={employeeName} employeeCode={employeeCode}
+          rangeLabel={`${fmtDMY(rangeStart)} - ${fmtDMY(rangeEnd)}`} onClose={onClose} />
+        <div className="px-6 pb-6 pt-2 overflow-y-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-fill">
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Ngày</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Ca làm việc</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Giờ vào - ra</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Đi muộn</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Về sớm</th>
+              </tr>
+              <tr className="bg-fill">
+                <td className="px-4 py-2" colSpan={2} /><td className="px-4 py-2" />
+                <td className="px-4 py-2 text-md font-bold text-ink whitespace-nowrap">{fmtHourMin(totalLate)}</td>
+                <td className="px-4 py-2 text-md font-bold text-ink whitespace-nowrap">{fmtHourMin(totalEarly)}</td>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.length === 0 ? (
+                <tr><td colSpan={5} className="px-4 py-10 text-center text-md text-ink-subtle">Không có dữ liệu đi muộn / về sớm</td></tr>
+              ) : groups.map(g => g.cells.map((c, i) => (
+                <tr key={c.scheduleId} className="border-b border-line">
+                  {i === 0 && (
+                    <td rowSpan={g.cells.length} className="px-4 py-3 align-top text-md text-ink whitespace-nowrap">{fmtDMY(new Date(`${g.workDate}T00:00:00`))}</td>
+                  )}
+                  <td className="px-4 py-3 text-md text-ink whitespace-nowrap">{c.shiftName} ({formatTime(c.shiftStartTime)} - {formatTime(c.shiftEndTime)})</td>
+                  <td className="px-4 py-3 text-md text-ink whitespace-nowrap">{c.record?.actualCheckIn?.slice(11, 16) ?? '--'} - {c.record?.actualCheckOut?.slice(11, 16) ?? '--'}</td>
+                  <td className="px-4 py-3 text-md text-ink whitespace-nowrap">{(c.record?.lateMinutes ?? 0) > 0 ? fmtHourMin(c.record!.lateMinutes) : '-'}</td>
+                  <td className="px-4 py-3 text-md text-ink whitespace-nowrap">{(c.record?.earlyLeaveMinutes ?? 0) > 0 ? fmtHourMin(c.record!.earlyLeaveMinutes) : '-'}</td>
+                </tr>
+              )))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** "Làm thêm" — Ngày | Loại ngày | Ca làm việc | Giờ vào - ra | Làm thêm (day type matters:
+ * OT rate varies by day type per SalaryCalculator's overtimeRates). */
+const OvertimeHistoryModal = ({ employeeId, employeeName, employeeCode, rangeStart, rangeEnd, cells, holidaySet, salary, settings, onClose }: HistoryModalBaseProps) => {
+  const [filter, setFilter] = useState<DayTypeFilterValue>('ALL')
+  const otMinutesFor = (c: TimesheetCellDto) => roundOtMinutes(c.record?.otMinutes ?? 0, settings?.otRoundingMinutes ?? 0)
+  const wageFor = (c: TimesheetCellDto) => salary && settings ? otAmountFor(c, salary, dayTypeOf(c.workDate, holidaySet), settings.otRoundingMinutes) : 0
+  // Only shifts that actually earn OT pay are shown (excludes e.g. employees with OT disabled).
+  const all = useMemo(() => cells.filter(c => c.employeeId === employeeId && c.record?.type === 'PRESENT' && wageFor(c) > 0), [cells, employeeId, salary, settings, holidaySet])
+  const filtered = useMemo(() => filter === 'ALL' ? all : all.filter(c => dayTypeOf(c.workDate, holidaySet) === filter), [all, filter, holidaySet])
+  const groups = useMemo(() => groupByDate(filtered), [filtered])
+  const totalOt = filtered.reduce((sum, c) => sum + otMinutesFor(c), 0)
+  const totalWage = filtered.reduce((sum, c) => sum + wageFor(c), 0)
+
+  return (
+    <div className="fixed inset-0 z-[var(--kv-z-modal)] flex items-start justify-center bg-black/50 p-6 overflow-y-auto" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-card rounded-xl shadow-2xl w-full max-w-[88rem] my-6 flex flex-col max-h-[calc(100vh-6rem)]" onMouseDown={e => e.stopPropagation()}>
+        <HistoryModalHeader title="Làm thêm" employeeName={employeeName} employeeCode={employeeCode}
+          rangeLabel={`${fmtDMY(rangeStart)} - ${fmtDMY(rangeEnd)}`} onClose={onClose} />
+        <div className="px-6 pb-3 flex items-center gap-3">
+          <span className="text-md text-ink">Loại ngày</span>
+          <DayTypeFilter value={filter} onChange={setFilter} />
+        </div>
+        <div className="px-6 pb-6 overflow-y-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-fill">
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Ngày</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Loại ngày</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Ca làm việc</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Giờ vào - ra</th>
+                <th className="text-left px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Làm thêm</th>
+                <th className="text-right px-4 py-2.5 text-sm font-semibold text-ink-subtle whitespace-nowrap">Lương</th>
+              </tr>
+              <tr className="bg-fill">
+                <td className="px-4 py-2" colSpan={3} /><td className="px-4 py-2" />
+                <td className="px-4 py-2 text-md font-bold text-ink whitespace-nowrap">{fmtHourMin(totalOt)}</td>
+                <td className="px-4 py-2 text-md font-bold text-ink text-right whitespace-nowrap">{totalWage.toLocaleString('vi-VN')}</td>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-md text-ink-subtle">Không có dữ liệu làm thêm</td></tr>
+              ) : groups.map(g => g.cells.map((c, i) => (
+                <tr key={c.scheduleId} className="border-b border-line">
+                  {i === 0 && (
+                    <>
+                      <td rowSpan={g.cells.length} className="px-4 py-3 align-top text-md text-ink whitespace-nowrap">{fmtDMY(new Date(`${g.workDate}T00:00:00`))}</td>
+                      <td rowSpan={g.cells.length} className="px-4 py-3 align-top text-md text-ink whitespace-nowrap">{DAY_TYPE_LABEL[dayTypeOf(g.workDate, holidaySet)]}</td>
+                    </>
+                  )}
+                  <td className="px-4 py-3 text-md text-ink whitespace-nowrap">{c.shiftName} ({formatTime(c.shiftStartTime)} - {formatTime(c.shiftEndTime)})</td>
+                  <td className="px-4 py-3 text-md text-ink whitespace-nowrap">{c.record?.actualCheckIn?.slice(11, 16) ?? '--'} - {c.record?.actualCheckOut?.slice(11, 16) ?? '--'}</td>
+                  <td className="px-4 py-3 text-md text-ink whitespace-nowrap">{fmtHourMin(otMinutesFor(c))}</td>
+                  <td className="px-4 py-3 text-md text-ink text-right whitespace-nowrap">{wageFor(c).toLocaleString('vi-VN')}</td>
+                </tr>
+              )))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** One clickable stat cell in the "Xem theo nhân viên" table — "{count} {unit}" bold on top,
+ * total duration muted below; opens the matching history popup. Renders a plain "0" (no click)
+ * when there's nothing to show. */
+const StatCell = ({ count, unit, minutes, onClick }: { count: number; unit: string; minutes: number; onClick: () => void }) => (
+  <td className="px-4 py-4 align-top text-right">
+    {count > 0 ? (
+      <button type="button" onClick={onClick} className="text-right cursor-pointer hover:underline">
+        <div className="text-md font-semibold text-ink whitespace-nowrap">{count} {unit}</div>
+        <div className="text-sm text-ink-subtle mt-0.5 whitespace-nowrap">{fmtHourMin(minutes)}</div>
+      </button>
+    ) : (
+      <span className="text-md text-ink-subtle">0</span>
+    )}
+  </td>
+)
+
+/** "Làm thêm" column cell — headline is the decimal-hour total (matching the card label format),
+ * count of qualifying (actually paid) OT shifts is the subtitle. */
+const OtStatCell = ({ count, totalMinutes, onClick }: { count: number; totalMinutes: number; onClick: () => void }) => (
+  <td className="px-4 py-4 align-top text-right">
+    {count > 0 ? (
+      <button type="button" onClick={onClick} className="text-right cursor-pointer hover:underline">
+        <div className="text-md font-semibold text-ink whitespace-nowrap">{fmtOtHours(totalMinutes)}h</div>
+        <div className="text-sm text-ink-subtle mt-0.5 whitespace-nowrap">{count} lần</div>
+      </button>
+    ) : (
+      <span className="text-md text-ink-subtle">0</span>
+    )}
+  </td>
+)
+
 const Timesheet = () => {
   const today = useMemo(() => stripTime(new Date()), [])
   const [shifts, setShifts] = useState<ShiftDto[]>([])
   const [employees, setEmployees] = useState<EmployeeSummary[]>([])
   const [cells, setCells] = useState<TimesheetCellDto[]>([])
-  const [summaryRows, setSummaryRows] = useState<AttendanceSummaryRowDto[]>([])
   const [settings, setSettings] = useState<AttendanceSettingsDto | null>(null)
   const [vioTypes, setVioTypes] = useState<ViolationTypeDto[]>([])
+  const [holidays, setHolidays] = useState<PayrollHolidayDto[]>([])
+  // "Lương dự kiến" / "Lương" columns -- one salary setting per employee, fetched once the
+  // employee list itself loads (no batch endpoint; team sizes here are small).
+  const [salaryByEmployee, setSalaryByEmployee] = useState<Map<string, SalarySettingDto>>(new Map())
   const [loadErr, setLoadErr] = useState('')
 
   const [search, setSearch] = useState('')
@@ -833,6 +1448,8 @@ const Timesheet = () => {
   // "Đặt lịch" cell popup — pick an employee to schedule into a shift on a day
   const [scheduleCell, setScheduleCell] = useState<{ shift: ShiftDto; date: Date } | null>(null)
   const openSchedule = (shift: ShiftDto, date: Date) => setScheduleCell({ shift, date })
+  // Employee history popups ("Xem theo nhân viên" cells) — Đi làm / Nghỉ làm / Đi muộn-Về sớm / Làm thêm
+  const [historyPopup, setHistoryPopup] = useState<{ kind: 'work' | 'leave' | 'lateEarly' | 'overtime'; employeeId: string } | null>(null)
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -848,12 +1465,18 @@ const Timesheet = () => {
 
   const loadStatic = useCallback(() => {
     listShifts({ status: 'ACTIVE' }).then(res => setShifts(res.data.data)).catch(() => {})
-    listEmployees({ status: 'ACTIVE', size: 500 }).then(res =>
-      setEmployees(res.data.data.map(e => ({ id: e.id, name: e.name, code: e.code })))).catch(() => {})
+    listEmployees({ status: 'ACTIVE', size: 500 }).then(res => {
+      const list = res.data.data
+      setEmployees(list.map(e => ({ id: e.id, name: e.name, code: e.code })))
+      Promise.all(list.map(e => getSalarySetting(e.id).then(r => [e.id, r.data.data] as const).catch(() => null)))
+        .then(pairs => setSalaryByEmployee(new Map(pairs.filter((p): p is [string, SalarySettingDto] => !!p))))
+    }).catch(() => {})
     getSettings().then(res => setSettings(res.data.data)).catch(() => {})
     listViolationTypes().then(res => setVioTypes(res.data.data)).catch(() => {})
+    listPayrollHolidays().then(res => setHolidays(res.data.data)).catch(() => {})
   }, [])
   useEffect(() => { loadStatic() }, [loadStatic])
+  const holidaySet = useMemo(() => new Set(holidays.map(h => h.holidayDate)), [holidays])
 
   const weekStart = useMemo(() => startOfWeek(cursor), [cursor])
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
@@ -872,14 +1495,10 @@ const Timesheet = () => {
     try {
       const cellRes = await getTimesheet(toYMD(rangeStart), toYMD(rangeEnd))
       setCells(cellRes.data.data)
-      if (viewMode === 'employee') {
-        const sumRes = await getSummary(toYMD(rangeStart), toYMD(rangeEnd))
-        setSummaryRows(sumRes.data.data)
-      }
     } catch (err) {
       setLoadErr(err instanceof ApiError ? err.message : 'Không tải được dữ liệu chấm công.')
     }
-  }, [rangeStart, rangeEnd, viewMode])
+  }, [rangeStart, rangeEnd])
   useEffect(() => { void reload() }, [reload])
 
   /* "+" in the shift column header — opens the "Thêm ca làm việc" popup directly (BR-AT-01 A1). */
@@ -896,6 +1515,67 @@ const Timesheet = () => {
   const cellFor = (shiftId: string, date: Date) =>
     cells.filter(c => c.shiftId === shiftId && c.workDate === toYMD(date)
       && (!search.trim() || (c.employeeName ?? '').toLowerCase().includes(search.trim().toLowerCase())))
+
+  /* ── "Xem theo nhân viên" summary — derived entirely from `cells` (already loaded for the
+   * active range regardless of view mode), so every count/total here is consistent with what
+   * a history popup shows for the same employee. */
+  const employeeStats = useMemo(() => {
+    const map = new Map<string, {
+      employeeId: string; employeeName: string | null; employeeCode: string | null
+      presentCount: number; presentMinutes: number
+      leaveCount: number; leaveMinutes: number
+      lateCount: number; lateMinutes: number
+      earlyCount: number; earlyMinutes: number
+      otCount: number; otMinutes: number
+      penaltyTotal: number
+      estimatedWage: number
+    }>()
+    for (const c of cells) {
+      let s = map.get(c.employeeId)
+      if (!s) {
+        s = { employeeId: c.employeeId, employeeName: c.employeeName, employeeCode: c.employeeCode,
+          presentCount: 0, presentMinutes: 0, leaveCount: 0, leaveMinutes: 0,
+          lateCount: 0, lateMinutes: 0, earlyCount: 0, earlyMinutes: 0, otCount: 0, otMinutes: 0,
+          penaltyTotal: 0, estimatedWage: 0 }
+        map.set(c.employeeId, s)
+      }
+      s.penaltyTotal += c.penaltyTotal
+      s.estimatedWage -= c.penaltyTotal
+      const salary = salaryByEmployee.get(c.employeeId)
+      const r = c.record
+      if (!r) continue
+      if (r.type === 'PRESENT') {
+        s.presentCount += 1
+        s.presentMinutes += r.workedMinutes
+        if (r.lateMinutes > 0) { s.lateCount += 1; s.lateMinutes += r.lateMinutes }
+        if (r.earlyLeaveMinutes > 0) { s.earlyCount += 1; s.earlyMinutes += r.earlyLeaveMinutes }
+        if (salary && settings) {
+          const dt = dayTypeOf(c.workDate, holidaySet)
+          const otWage = otAmountFor(c, salary, dt, settings.otRoundingMinutes)
+          // Only count OT shifts that actually earn pay (excludes e.g. employees with OT disabled).
+          if (otWage > 0) { s.otCount += 1; s.otMinutes += roundOtMinutes(r.otMinutes, settings.otRoundingMinutes) }
+          s.estimatedWage += mainAmountFor(c, salary, dt)
+          s.estimatedWage += otWage
+          if (settings.latePenaltyEnabled && salary.mainSalaryType === 'SHIFT') {
+            const scheduled = shiftDurationMinutes(c.shiftStartTime, c.shiftEndTime)
+            s.estimatedWage -= lateEarlyPenaltyAmount(salary.mainBaseWage, scheduled, r.lateMinutes, settings.latePenaltyRoundingMinutes)
+            s.estimatedWage -= lateEarlyPenaltyAmount(salary.mainBaseWage, scheduled, r.earlyLeaveMinutes, settings.latePenaltyRoundingMinutes)
+          }
+        }
+      } else {
+        s.leaveCount += 1
+        s.leaveMinutes += shiftDurationMinutes(c.shiftStartTime, c.shiftEndTime)
+      }
+    }
+    // FIXED salary is a period total, not a per-day amount (BR-PAY-03) -- add once per employee.
+    for (const s of map.values()) {
+      const salary = salaryByEmployee.get(s.employeeId)
+      if (salary?.mainSalaryType === 'FIXED') s.estimatedWage += salary.mainBaseWage
+    }
+    return Array.from(map.values())
+      .filter(s => !search.trim() || (s.employeeName ?? '').toLowerCase().includes(search.trim().toLowerCase()))
+      .sort((a, b) => (a.employeeCode ?? '').localeCompare(b.employeeCode ?? ''))
+  }, [cells, search, salaryByEmployee, settings, holidaySet])
 
   /* ── period navigation ──────────────────────────────────────────────────── */
   const step = (dir: -1 | 1) => {
@@ -929,8 +1609,9 @@ const Timesheet = () => {
 
   /* ── employee card (week / month cell) ──────────────────────────────────── */
   const WeekCard = ({ c }: { c: TimesheetCellDto }) => {
-    const otLabel = cardOtLabel(c, settings)
+    const otLabel = cardOtLabel(c, settings?.otRoundingMinutes ?? 0)
     const lateEarlyLabel = cardLateEarlyLabel(c)
+    const violations = c.violations ?? []
     return (
       <button type="button" onClick={e => { e.stopPropagation(); setAttnCell(c) }}
         className={`block w-full rounded-md px-3 py-2 text-left cursor-pointer transition-shadow hover:ring-1 hover:ring-primary/50 ${cardStyle(c.displayStatus)}`}>
@@ -946,17 +1627,23 @@ const Timesheet = () => {
         )}
         {lateEarlyLabel && <div className="text-sm mt-0.5 text-primary font-medium">{lateEarlyLabel}</div>}
         {otLabel && <div className="text-sm mt-0.5 text-primary font-medium">{otLabel}</div>}
-        {(c.violations ?? []).map(v => (
-          <div key={v.id} className="text-sm mt-0.5 text-primary font-medium">{v.violationTypeName} {v.count}</div>
-        ))}
+        {violations.length > 0 && (
+          <>
+            <div className="text-sm mt-0.5 text-primary font-medium">Phạt:</div>
+            {violations.map(v => (
+              <div key={v.id} className="text-sm text-primary font-medium pl-2">{v.violationTypeName} {v.count}</div>
+            ))}
+          </>
+        )}
       </button>
     )
   }
 
   /* ── employee card (day view — richer) ──────────────────────────────────── */
   const DayCard = ({ c }: { c: TimesheetCellDto }) => {
-    const otLabel = cardOtLabel(c, settings)
+    const otLabel = cardOtLabel(c, settings?.otRoundingMinutes ?? 0)
     const lateEarlyLabel = cardLateEarlyLabel(c)
+    const violations = c.violations ?? []
     return (
       <button type="button" onClick={e => { e.stopPropagation(); setAttnCell(c) }}
         className={`block rounded-md px-4 py-3 w-[22rem] max-w-full text-left cursor-pointer transition-shadow hover:ring-1 hover:ring-primary/50 ${cardStyle(c.displayStatus)}`}>
@@ -966,9 +1653,14 @@ const Timesheet = () => {
         <div className="flex items-center gap-2 text-sm"><NoteIcon /> {cellStatusLabel(c)}</div>
         {lateEarlyLabel && <div className="text-sm mt-1 text-primary font-medium">{lateEarlyLabel}</div>}
         {otLabel && <div className="text-sm mt-1 text-primary font-medium">{otLabel}</div>}
-        {(c.violations ?? []).map(v => (
-          <div key={v.id} className="text-sm mt-1 text-primary font-medium">{v.violationTypeName} {v.count}</div>
-        ))}
+        {violations.length > 0 && (
+          <>
+            <div className="text-sm mt-1 text-primary font-medium">Phạt:</div>
+            {violations.map(v => (
+              <div key={v.id} className="text-sm text-primary font-medium pl-2">{v.violationTypeName} {v.count}</div>
+            ))}
+          </>
+        )}
       </button>
     )
   }
@@ -978,10 +1670,10 @@ const Timesheet = () => {
   )
 
   const handleExport = () => {
-    const header = ['Mã NV', 'Tên NV', 'Số công', 'Phút đi muộn', 'Phút về sớm', 'Giờ làm thêm', 'Tổng tiền phạt']
-    const rows = summaryRows.map(r => [
-      r.employeeCode ?? '', r.employeeName ?? '', r.workCreditTotal, r.lateMinutesTotal,
-      r.earlyLeaveMinutesTotal, (r.otMinutesTotal / 60).toFixed(1), r.penaltyTotal,
+    const header = ['Mã NV', 'Tên NV', 'Số ca đi làm', 'Số ca nghỉ làm', 'Phút đi muộn', 'Phút về sớm', 'Giờ làm thêm', 'Tổng tiền phạt', 'Lương dự kiến']
+    const rows = employeeStats.map(r => [
+      r.employeeCode ?? '', r.employeeName ?? '', r.presentCount, r.leaveCount, r.lateMinutes,
+      r.earlyMinutes, (r.otMinutes / 60).toFixed(1), r.penaltyTotal, r.estimatedWage,
     ])
     const csv = [header, ...rows].map(line => line.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
@@ -1092,31 +1784,36 @@ const Timesheet = () => {
                 <th className="sticky top-0 z-2 bg-primary-25 text-left px-4 py-3 w-[18rem] border-b border-line text-sm font-semibold text-ink-subtle">Nhân viên</th>
                 <th className="sticky top-0 z-2 bg-primary-25 text-right px-4 py-3 border-b border-line text-sm font-semibold text-ink-subtle whitespace-nowrap">Đi làm</th>
                 <th className="sticky top-0 z-2 bg-primary-25 text-right px-4 py-3 border-b border-line text-sm font-semibold text-ink-subtle whitespace-nowrap">Nghỉ làm</th>
-                <th className="sticky top-0 z-2 bg-primary-25 text-right px-4 py-3 border-b border-line text-sm font-semibold text-ink-subtle whitespace-nowrap">Đi muộn (phút)</th>
-                <th className="sticky top-0 z-2 bg-primary-25 text-right px-4 py-3 border-b border-line text-sm font-semibold text-ink-subtle whitespace-nowrap">Về sớm (phút)</th>
-                <th className="sticky top-0 z-2 bg-primary-25 text-right px-4 py-3 border-b border-line text-sm font-semibold text-ink-subtle whitespace-nowrap">Làm thêm (giờ)</th>
+                <th className="sticky top-0 z-2 bg-primary-25 text-right px-4 py-3 border-b border-line text-sm font-semibold text-ink-subtle whitespace-nowrap">Đi muộn</th>
+                <th className="sticky top-0 z-2 bg-primary-25 text-right px-4 py-3 border-b border-line text-sm font-semibold text-ink-subtle whitespace-nowrap">Về sớm</th>
+                <th className="sticky top-0 z-2 bg-primary-25 text-right px-4 py-3 border-b border-line text-sm font-semibold text-ink-subtle whitespace-nowrap">Làm thêm</th>
                 <th className="sticky top-0 z-2 bg-primary-25 text-right px-4 py-3 border-b border-line text-sm font-semibold text-ink-subtle whitespace-nowrap">Tổng tiền phạt</th>
+                <th className="sticky top-0 z-2 bg-primary-25 text-right px-4 py-3 border-b border-line text-sm font-semibold text-ink-subtle whitespace-nowrap">Lương dự kiến</th>
               </tr>
             </thead>
             <tbody>
-              {summaryRows.length === 0 ? (
+              {employeeStats.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-md text-ink-subtle border-b border-line">Không có dữ liệu chấm công trong kỳ này</td>
+                  <td colSpan={8} className="px-4 py-10 text-center text-md text-ink-subtle border-b border-line">Không có dữ liệu chấm công trong kỳ này</td>
                 </tr>
-              ) : summaryRows
-                .filter(r => !search.trim() || (r.employeeName ?? '').toLowerCase().includes(search.trim().toLowerCase()))
-                .map(r => (
+              ) : employeeStats.map(r => (
                 <tr key={r.employeeId} className="border-b border-line hover:bg-[var(--kv-state-hover-bg)]">
                   <td className="px-4 py-4 align-top">
                     <div className="text-md font-semibold text-ink leading-tight">{r.employeeName}</div>
                     <div className="text-sm text-ink-subtle mt-0.5">{r.employeeCode}</div>
                   </td>
-                  <td className="px-4 py-4 align-top text-md text-ink text-right">{r.workCreditTotal}</td>
-                  <td className="px-4 py-4 align-top text-md text-ink text-right">{r.leaveApprovedCount + r.leaveUnapprovedCount}</td>
-                  <td className="px-4 py-4 align-top text-md text-ink text-right">{r.lateMinutesTotal}</td>
-                  <td className="px-4 py-4 align-top text-md text-ink text-right">{r.earlyLeaveMinutesTotal}</td>
-                  <td className="px-4 py-4 align-top text-md text-ink text-right">{(r.otMinutesTotal / 60).toFixed(1)}</td>
+                  <StatCell count={r.presentCount} unit="ca" minutes={r.presentMinutes}
+                    onClick={() => setHistoryPopup({ kind: 'work', employeeId: r.employeeId })} />
+                  <StatCell count={r.leaveCount} unit="ca" minutes={r.leaveMinutes}
+                    onClick={() => setHistoryPopup({ kind: 'leave', employeeId: r.employeeId })} />
+                  <StatCell count={r.lateCount} unit="lần" minutes={r.lateMinutes}
+                    onClick={() => setHistoryPopup({ kind: 'lateEarly', employeeId: r.employeeId })} />
+                  <StatCell count={r.earlyCount} unit="lần" minutes={r.earlyMinutes}
+                    onClick={() => setHistoryPopup({ kind: 'lateEarly', employeeId: r.employeeId })} />
+                  <OtStatCell count={r.otCount} totalMinutes={r.otMinutes}
+                    onClick={() => setHistoryPopup({ kind: 'overtime', employeeId: r.employeeId })} />
                   <td className="px-4 py-4 align-top text-md text-ink text-right">{r.penaltyTotal.toLocaleString('vi-VN')}</td>
+                  <td className="px-4 py-4 align-top text-md font-semibold text-ink text-right">{r.estimatedWage.toLocaleString('vi-VN')}</td>
                 </tr>
               ))}
             </tbody>
@@ -1270,7 +1967,7 @@ const Timesheet = () => {
       {/* ── Chấm công modal ─────────────────────────────────────────────────── */}
       {attnCell && (
         <AttendanceModal
-          cell={attnCell} shifts={shifts} employees={employees} settings={settings} vioTypes={vioTypes}
+          cell={attnCell} shifts={shifts} employees={employees} cells={cells} settings={settings} vioTypes={vioTypes}
           onVioTypeAdded={t => setVioTypes(ts => [...ts, t])}
           onClose={() => setAttnCell(null)}
           onSaved={() => { setAttnCell(null); void reload() }}
@@ -1292,6 +1989,21 @@ const Timesheet = () => {
           onSaved={() => { setAddShiftOpen(false); loadStatic() }}
         />
       )}
+      {/* ── Employee history popups ("Xem theo nhân viên" cell clicks) ───────── */}
+      {historyPopup && (() => {
+        const emp = employeeStats.find(s => s.employeeId === historyPopup.employeeId)
+        const base = {
+          employeeId: historyPopup.employeeId, employeeName: emp?.employeeName ?? null, employeeCode: emp?.employeeCode ?? null,
+          rangeStart, rangeEnd, cells, holidaySet, salary: salaryByEmployee.get(historyPopup.employeeId), settings,
+          onClose: () => setHistoryPopup(null),
+        }
+        switch (historyPopup.kind) {
+          case 'work': return <WorkHistoryModal {...base} />
+          case 'leave': return <LeaveHistoryModal {...base} />
+          case 'lateEarly': return <LateEarlyHistoryModal {...base} />
+          case 'overtime': return <OvertimeHistoryModal {...base} />
+        }
+      })()}
     </div>
   )
 }

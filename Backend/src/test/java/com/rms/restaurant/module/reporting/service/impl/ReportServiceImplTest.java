@@ -7,6 +7,8 @@ import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.enums.PaymentMethod;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
+import com.rms.restaurant.module.cashbook.repository.CashbookCategoryRepository;
+import com.rms.restaurant.module.cashbook.repository.CashbookVoucherRepository;
 import com.rms.restaurant.module.order.model.Order;
 import com.rms.restaurant.module.order.model.OrderItem;
 import com.rms.restaurant.module.order.repository.OrderItemRepository;
@@ -22,7 +24,6 @@ import com.rms.restaurant.module.payroll.repository.PayslipRepository;
 import com.rms.restaurant.module.reporting.dto.DashboardOverviewResponse;
 import com.rms.restaurant.module.reporting.dto.EndOfDaySalesRow;
 import com.rms.restaurant.module.reporting.dto.FinancialPeriodResponse;
-import com.rms.restaurant.module.reporting.service.FinancialCustomLineService;
 import com.rms.restaurant.module.table.model.RestaurantTable;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,7 +35,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -65,7 +65,8 @@ class ReportServiceImplTest {
     @Mock TableRepository tableRepository;
     @Mock PayrollSheetRepository payrollSheetRepository;
     @Mock PayslipRepository payslipRepository;
-    @Mock FinancialCustomLineService financialCustomLineService;
+    @Mock CashbookCategoryRepository cashbookCategoryRepository;
+    @Mock CashbookVoucherRepository cashbookVoucherRepository;
 
     private ReportServiceImpl service;
 
@@ -77,7 +78,7 @@ class ReportServiceImplTest {
         service = new ReportServiceImpl(
                 invoiceRepository, orderRepository, orderItemRepository, invoiceItemAllocationRepository,
                 paymentRepository, userRepository, tableRepository,
-                payrollSheetRepository, payslipRepository, financialCustomLineService);
+                payrollSheetRepository, payslipRepository, cashbookCategoryRepository, cashbookVoucherRepository);
 
         lenient().when(orderRepository.findAllById(anyCollection())).thenReturn(List.of());
         lenient().when(invoiceRepository.findAllById(anyCollection())).thenReturn(List.of());
@@ -145,8 +146,6 @@ class ReportServiceImplTest {
         when(invoiceItemAllocationRepository.findAllByInvoiceIds(List.of("inv-1")))
                 .thenReturn(List.of(allocation));
         when(payrollSheetRepository.findFinalizedOverlapping(any(), any())).thenReturn(List.of());
-        when(financialCustomLineService.list()).thenReturn(List.of());
-        when(financialCustomLineService.getValuesForYear(2026)).thenReturn(Map.of());
 
         List<FinancialPeriodResponse> periods =
                 service.getFinancialReport(2026, FinancialGranularity.MONTH);

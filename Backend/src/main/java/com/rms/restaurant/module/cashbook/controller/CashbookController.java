@@ -103,6 +103,11 @@ public class CashbookController {
                 .body(ApiResponse.success(created));
     }
 
+    @PutMapping("/vouchers/{id}")
+    public ApiResponse<VoucherResponse> updateVoucher(@PathVariable String id, @Valid @RequestBody CreateVoucherRequest request) {
+        return ApiResponse.success(cashbookService.updateVoucher(id, request));
+    }
+
     @PutMapping("/vouchers/{id}/void")
     public ApiResponse<VoucherResponse> voidVoucher(@PathVariable String id) {
         return ApiResponse.success(cashbookService.voidVoucher(id));

@@ -19,9 +19,10 @@ interface Props {
   loading?: boolean
   onToggleExpand: (voucher: CashFlowVoucher) => void
   onVoid: (voucherId: string) => void
+  onEdit: (voucher: CashFlowVoucher) => void
 }
 
-const CashBookTable = ({ vouchers, categories, visibleColumns, expandedId, loading, onToggleExpand, onVoid }: Props) => {
+const CashBookTable = ({ vouchers, categories, visibleColumns, expandedId, loading, onToggleExpand, onVoid, onEdit }: Props) => {
   const categoryName = (id: string) => categories.find(c => c.id === id)?.name ?? '—'
   const colCount = 1 + (Object.values(visibleColumns).filter(Boolean).length)
 
@@ -80,6 +81,7 @@ const CashBookTable = ({ vouchers, categories, visibleColumns, expandedId, loadi
                           voucher={voucher}
                           categoryName={categoryName(voucher.categoryId)}
                           onVoid={() => onVoid(voucher.id)}
+                          onEdit={() => onEdit(voucher)}
                         />
                       </td>
                     </tr>

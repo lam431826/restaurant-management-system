@@ -46,10 +46,10 @@ public class AttendanceSettingServiceImpl implements AttendanceSettingService {
         s.setLateGraceMinutes(request.lateGraceMinutes());
         s.setEarlyLeaveEnabled(request.earlyLeaveEnabled());
         s.setEarlyLeaveGraceMinutes(request.earlyLeaveGraceMinutes());
-        s.setOtBeforeEnabled(request.otBeforeEnabled());
-        s.setOtBeforeMinMinutes(request.otBeforeMinMinutes());
-        s.setOtAfterEnabled(request.otAfterEnabled());
-        s.setOtAfterMinMinutes(request.otAfterMinMinutes());
+        s.setLatePenaltyEnabled(request.latePenaltyEnabled());
+        s.setLatePenaltyRoundingMinutes(request.latePenaltyRoundingMinutes());
+        s.setOvertimeEnabled(request.overtimeEnabled());
+        s.setOtRoundingMinutes(request.otRoundingMinutes());
         s.setMergedShiftEnabled(request.mergedShiftEnabled());
         s.setMergedShiftMaxCount(request.mergedShiftMaxCount());
         s.setMergedShiftMaxBreakMinutes(request.mergedShiftMaxBreakMinutes());
@@ -61,7 +61,7 @@ public class AttendanceSettingServiceImpl implements AttendanceSettingService {
         boolean invalid = r.halfDayMinMinutes() < 0 || r.halfDayMaxMinutes() < 0
                 || (r.halfDayEnabled() && r.halfDayMinMinutes() >= r.halfDayMaxMinutes())
                 || r.lateGraceMinutes() < 0 || r.earlyLeaveGraceMinutes() < 0
-                || r.otBeforeMinMinutes() < 0 || r.otAfterMinMinutes() < 0
+                || r.otRoundingMinutes() < 1 || r.latePenaltyRoundingMinutes() < 1
                 || (r.mergedShiftEnabled() && (r.mergedShiftMaxCount() < 2 || r.mergedShiftMaxBreakMinutes() < 0));
         if (invalid) {
             throw new ApplicationException(ApplicationError.AT_SETTING_INVALID);

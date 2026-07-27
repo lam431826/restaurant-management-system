@@ -22,6 +22,7 @@ import com.rms.restaurant.module.attendance.repository.WorkScheduleRepository;
 import com.rms.restaurant.module.attendance.repository.WorkShiftRepository;
 import com.rms.restaurant.module.attendance.service.AttendanceCalculator;
 import com.rms.restaurant.module.attendance.service.AttendanceSettingService;
+import com.rms.restaurant.module.attendance.service.WorkScheduleService;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.employee.model.Employee;
 import com.rms.restaurant.module.employee.repository.EmployeeRepository;
@@ -56,6 +57,7 @@ class AttendanceServiceImplTest {
     @Mock private EmployeeRepository employeeRepository;
     @Mock private UserRepository userRepository;
     @Mock private AttendanceSettingService settingService;
+    @Mock private WorkScheduleService workScheduleService;
 
     private AttendanceServiceImpl service;
 
@@ -68,7 +70,7 @@ class AttendanceServiceImplTest {
             .id("s1").employeeId("e1").shiftId("sh1").workDate(DAY).build();
     private final AttendanceSetting settings = AttendanceSetting.builder()
             .id(AttendanceSetting.FIXED_ID)
-            .lateEnabled(true).earlyLeaveEnabled(true).otBeforeEnabled(true).otAfterEnabled(true)
+            .lateEnabled(true).earlyLeaveEnabled(true).overtimeEnabled(true)
             .mergedShiftEnabled(true).mergedShiftMaxCount(2).mergedShiftMaxBreakMinutes(60)
             .build();
 
@@ -76,7 +78,7 @@ class AttendanceServiceImplTest {
     void setUp() {
         service = new AttendanceServiceImpl(recordRepository, scheduleRepository, shiftRepository,
                 violationRepository, violationTypeRepository, employeeRepository, userRepository, settingService,
-                new AttendanceCalculator(), new AttendanceMapper());
+                new AttendanceCalculator(), new AttendanceMapper(), workScheduleService);
         lenient().when(settingService.current()).thenReturn(settings);
         lenient().when(scheduleRepository.findById("s1")).thenReturn(Optional.of(schedule));
         lenient().when(shiftRepository.findById("sh1")).thenReturn(Optional.of(morning));
@@ -130,6 +132,8 @@ class AttendanceServiceImplTest {
 
     @Test
     void upsertRejectsCheckOutNotAfterCheckIn() {
+        // Explicit same-day checkOutDate — must NOT trigger the legacy overnight-rollover
+        // heuristic (which pins equal check-in/check-out times to a valid next-day range).
         AttendanceUpsertRequest request = new AttendanceUpsertRequest(
                 AttendanceType.PRESENT, DAY, LocalTime.of(8, 0), DAY, LocalTime.of(8, 0),
                 null, null, null, null);
@@ -191,7 +195,7 @@ class AttendanceServiceImplTest {
         when(recordRepository.findByScheduleId(anyString())).thenReturn(Optional.empty());
         AttendanceSetting mergeSettings = AttendanceSetting.builder()
                 .id(AttendanceSetting.FIXED_ID)
-                .lateEnabled(true).earlyLeaveEnabled(true).otBeforeEnabled(true).otAfterEnabled(true)
+                .lateEnabled(true).earlyLeaveEnabled(true).overtimeEnabled(true)
                 .mergedShiftEnabled(true).mergedShiftMaxCount(3).mergedShiftMaxBreakMinutes(60)
                 .build();
         when(settingService.current()).thenReturn(mergeSettings);

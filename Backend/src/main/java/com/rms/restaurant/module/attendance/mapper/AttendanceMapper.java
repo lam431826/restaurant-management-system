@@ -32,8 +32,8 @@ public class AttendanceMapper {
                 s.isHalfDayEnabled(), s.getHalfDayMinMinutes(), s.getHalfDayMaxMinutes(),
                 s.isLateEnabled(), s.getLateGraceMinutes(),
                 s.isEarlyLeaveEnabled(), s.getEarlyLeaveGraceMinutes(),
-                s.isOtBeforeEnabled(), s.getOtBeforeMinMinutes(),
-                s.isOtAfterEnabled(), s.getOtAfterMinMinutes(),
+                s.isLatePenaltyEnabled(), s.getLatePenaltyRoundingMinutes(),
+                s.isOvertimeEnabled(), s.getOtRoundingMinutes(),
                 s.isMergedShiftEnabled(), s.getMergedShiftMaxCount(), s.getMergedShiftMaxBreakMinutes(),
                 s.getManualDefaultTimeMode());
     }

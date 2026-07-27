@@ -48,14 +48,26 @@ public class SalaryCalculator {
 
     record RateSpec(String amount, String unit) {}
 
-    public ComputedPayslip compute(SalarySetting setting, List<AttendanceForPayroll> attendance, Set<LocalDate> holidayDates) {
+    /**
+     * @param otRoundingMinutes AttendanceSetting.otRoundingMinutes -- OT pay rounds actual
+     *                          otMinutes DOWN to the nearest multiple of this before converting
+     *                          to decimal hours (1 = no rounding, every minute pays proportionally).
+     * @param latePenaltyEnabled AttendanceSetting.latePenaltyEnabled -- when true, SHIFT-type
+     *                          salary automatically deducts wages for late/early minutes.
+     * @param latePenaltyRoundingMinutes AttendanceSetting.latePenaltyRoundingMinutes -- block
+     *                          size for the late/early deduction formula (rounds UP).
+     */
+    public ComputedPayslip compute(SalarySetting setting, List<AttendanceForPayroll> attendance,
+                                    Set<LocalDate> holidayDates, int otRoundingMinutes,
+                                    boolean latePenaltyEnabled, int latePenaltyRoundingMinutes) {
         if (setting == null) {
             return new ComputedPayslip(null, BigDecimal.ZERO, BigDecimal.ZERO,
-                    0, 0, 0, toJson(snapshotRows(attendance, holidayDates, "Chưa có thiết lập lương")));
+                    0, 0, 0, toJson(snapshotRows(attendance, holidayDates, "Chưa có thiết lập lương")), BigDecimal.ZERO);
         }
         return switch (setting.getMainSalaryType()) {
             case FIXED -> computeFixed(setting, attendance, holidayDates);
-            case SHIFT -> computeShift(setting, attendance, holidayDates);
+            case SHIFT -> computeShift(setting, attendance, holidayDates, otRoundingMinutes,
+                    latePenaltyEnabled, latePenaltyRoundingMinutes);
             case HOURLY -> computeHourly(setting, attendance, holidayDates);
         };
     }
@@ -64,14 +76,17 @@ public class SalaryCalculator {
     private ComputedPayslip computeFixed(SalarySetting setting, List<AttendanceForPayroll> attendance, Set<LocalDate> holidayDates) {
         List<AttendanceDetailRow> rows = snapshotRows(attendance, holidayDates, "Lương cố định — không tính theo công");
         return new ComputedPayslip(SalaryType.FIXED, scale(setting.getMainBaseWage()), BigDecimal.ZERO,
-                countPaidShifts(attendance), sumWorkedMinutes(attendance), 0, toJson(rows));
+                countPaidShifts(attendance), sumWorkedMinutes(attendance), 0, toJson(rows), BigDecimal.ZERO);
     }
 
-    private ComputedPayslip computeShift(SalarySetting setting, List<AttendanceForPayroll> attendance, Set<LocalDate> holidayDates) {
+    private ComputedPayslip computeShift(SalarySetting setting, List<AttendanceForPayroll> attendance,
+                                         Set<LocalDate> holidayDates, int otRoundingMinutes,
+                                         boolean latePenaltyEnabled, int latePenaltyRoundingMinutes) {
         Map<String, RateSpec> dayRates = parseRates(setting.getMainAdvancedRates());
         Map<String, RateSpec> otRates = parseRates(setting.getOvertimeRates());
         BigDecimal main = BigDecimal.ZERO;
         BigDecimal overtime = BigDecimal.ZERO;
+        BigDecimal lateEarlyDeduction = BigDecimal.ZERO;
         int otMinutesTotal = 0;
         List<AttendanceDetailRow> rows = new ArrayList<>();
 
@@ -81,14 +96,23 @@ public class SalaryCalculator {
             BigDecimal amount = shiftAmount(a, shiftWage);
             int otMin = setting.isOvertimeEnabled() ? a.otMinutes() : 0;
             BigDecimal otAmount = otMin > 0
-                    ? otAmount(setting.getMainBaseWage(), a, otMin, otRate(otRates, dayType)) : BigDecimal.ZERO;
+                    ? otAmount(setting.getMainBaseWage(), a, otMin, otRate(otRates, dayType), otRoundingMinutes) : BigDecimal.ZERO;
             main = main.add(amount);
             overtime = overtime.add(otAmount);
             otMinutesTotal += otMin;
-            rows.add(row(a, dayType, rateLabel(dayRates.get(dayType)), amount.add(otAmount), otMin, null));
+            String note = null;
+            if (latePenaltyEnabled) {
+                BigDecimal rowDeduction = lateEarlyPenalty(setting.getMainBaseWage(), a, a.lateMinutes(), latePenaltyRoundingMinutes)
+                        .add(lateEarlyPenalty(setting.getMainBaseWage(), a, a.earlyLeaveMinutes(), latePenaltyRoundingMinutes));
+                if (rowDeduction.signum() > 0) {
+                    lateEarlyDeduction = lateEarlyDeduction.add(rowDeduction);
+                    note = "Trừ lương đi muộn/về sớm: " + rowDeduction + "đ";
+                }
+            }
+            rows.add(row(a, dayType, rateLabel(dayRates.get(dayType)), amount.add(otAmount), otMin, note));
         }
         return new ComputedPayslip(SalaryType.SHIFT, scale(main), scale(overtime),
-                countPaidShifts(attendance), sumWorkedMinutes(attendance), otMinutesTotal, toJson(rows));
+                countPaidShifts(attendance), sumWorkedMinutes(attendance), otMinutesTotal, toJson(rows), scale(lateEarlyDeduction));
     }
 
     private ComputedPayslip computeHourly(SalarySetting setting, List<AttendanceForPayroll> attendance, Set<LocalDate> holidayDates) {
@@ -107,9 +131,11 @@ public class SalaryCalculator {
             main = main.add(amount);
             rows.add(row(a, dayType, rateLabel(dayRates.get(dayType)), amount, 0, null));
         }
-        // BR-PAY-05: overtime applies to SHIFT-type main salary only.
+        // BR-PAY-05: overtime (and the late/early auto-deduction, same restriction) applies to
+        // SHIFT-type main salary only -- HOURLY already pays strictly by workedMinutes, so
+        // lateness already reduces its pay naturally.
         return new ComputedPayslip(SalaryType.HOURLY, scale(main), BigDecimal.ZERO,
-                countPaidShifts(attendance), sumWorkedMinutes(attendance), 0, toJson(rows));
+                countPaidShifts(attendance), sumWorkedMinutes(attendance), 0, toJson(rows), BigDecimal.ZERO);
     }
 
     /**
@@ -121,15 +147,40 @@ public class SalaryCalculator {
         return isPaid(a) ? scale(shiftWage) : BigDecimal.ZERO;
     }
 
-    /** BR-AT-10 already applied upstream — otMinutes is used as-is, never recomputed here. */
-    private BigDecimal otAmount(BigDecimal baseWage, AttendanceForPayroll a, int otMin, RateSpec coefficient) {
+    /**
+     * BR-AT-10 already applied upstream — otMinutes reflects actual worked OT time, never
+     * recomputed here. Pay rounds it DOWN to the nearest multiple of otRoundingMinutes first
+     * (1 = no rounding), then converts to decimal hours (/60.0).
+     */
+    private BigDecimal otAmount(BigDecimal baseWage, AttendanceForPayroll a, int otMin, RateSpec coefficient, int otRoundingMinutes) {
         if (coefficient == null) return BigDecimal.ZERO;
+        int scheduled = scheduledPaidMinutes(a);
+        if (scheduled <= 0) return BigDecimal.ZERO;
+        int roundedOtMin = otRoundingMinutes > 0 ? (otMin / otRoundingMinutes) * otRoundingMinutes : otMin;
+        BigDecimal hourlyBase = baseWage.multiply(BigDecimal.valueOf(60))
+                .divide(BigDecimal.valueOf(scheduled), 6, RoundingMode.HALF_UP);
+        BigDecimal perHour = applyRate(hourlyBase, coefficient);
+        return scale(perHour.multiply(BigDecimal.valueOf(roundedOtMin)).divide(BigDecimal.valueOf(60), 0, RoundingMode.HALF_UP));
+    }
+
+    /**
+     * Automatic late/early wage deduction (opt-in, SHIFT-type only). Rounds UP to the nearest
+     * multiple of roundingMinutes -- always at least one block, even on an exact multiple:
+     * blocks = (minutes / roundingMinutes) + 1 (integer division), hours = blocks * roundingMinutes / 60.
+     * E.g. roundingMinutes=15: 1 actual minute -> 1 block -> 0.25h; 16 minutes -> 2 blocks -> 0.5h.
+     * Uses the same plain-baseWage hourly rate as OT (no day-type coefficient -- lateness isn't
+     * rate-adjusted by weekday/holiday).
+     */
+    private BigDecimal lateEarlyPenalty(BigDecimal baseWage, AttendanceForPayroll a, int minutes, int roundingMinutes) {
+        if (minutes <= 0 || roundingMinutes <= 0) return BigDecimal.ZERO;
         int scheduled = scheduledPaidMinutes(a);
         if (scheduled <= 0) return BigDecimal.ZERO;
         BigDecimal hourlyBase = baseWage.multiply(BigDecimal.valueOf(60))
                 .divide(BigDecimal.valueOf(scheduled), 6, RoundingMode.HALF_UP);
-        BigDecimal perHour = applyRate(hourlyBase, coefficient);
-        return scale(perHour.multiply(BigDecimal.valueOf(otMin)).divide(BigDecimal.valueOf(60), 0, RoundingMode.HALF_UP));
+        int blocks = (minutes / roundingMinutes) + 1;
+        BigDecimal hours = BigDecimal.valueOf((long) blocks * roundingMinutes)
+                .divide(BigDecimal.valueOf(60), 6, RoundingMode.HALF_UP);
+        return scale(hourlyBase.multiply(hours));
     }
 
     /** Coefficient for the day type, falling back to the weekday ("normal") coefficient. */

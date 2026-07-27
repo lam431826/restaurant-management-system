@@ -3,6 +3,7 @@ package com.rms.restaurant.module.employee.service.impl;
 import com.rms.restaurant.common.utils.enums.EmployeeStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ConflictException;
+import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.employee.dto.*;
 import com.rms.restaurant.module.employee.mapper.EmployeeMapper;
@@ -82,10 +83,11 @@ class EmployeeServiceImplTest {
         when(employeeRepository.findAll()).thenReturn(List.of(
                 Employee.builder().code("NV000005").build(),
                 Employee.builder().code("NV000012").build()));
+        when(userRepository.findById("user-1")).thenReturn(Optional.of(User.builder().id("user-1").build()));
 
         CreateEmployeeRequest req = new CreateEmployeeRequest(
                 null, "Nguyen Van A", "0912345678", null, null, null, null,
-                null, null, null, null, null, null);
+                null, null, null, null, null, "user-1");
 
         EmployeeResponse result = service.create(req);
 

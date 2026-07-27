@@ -92,10 +92,17 @@ export interface AttendanceSettingsDto {
   lateGraceMinutes: number
   earlyLeaveEnabled: boolean
   earlyLeaveGraceMinutes: number
-  otBeforeEnabled: boolean
-  otBeforeMinMinutes: number
-  otAfterEnabled: boolean
-  otAfterMinMinutes: number
+  /** When true, SHIFT-type salary automatically deducts wages for late/early minutes, rounding
+   * UP to the nearest multiple of latePenaltyRoundingMinutes -- always at least one block, even
+   * on an exact multiple. E.g. rounding=15: 1 actual late minute -> 0.25h deducted; 16 minutes
+   * -> 0.5h deducted. */
+  latePenaltyEnabled: boolean
+  latePenaltyRoundingMinutes: number
+  /** When true, all time outside the shift window counts as OT -- no minimum threshold. */
+  overtimeEnabled: boolean
+  /** OT pay rounds actual otMinutes DOWN to the nearest multiple of this before converting to
+   * decimal hours. E.g. 15: 29 actual OT min -> 15min -> 0.25h paid; 30 min -> 0.5h paid. */
+  otRoundingMinutes: number
   mergedShiftEnabled: boolean
   mergedShiftMaxCount: number
   mergedShiftMaxBreakMinutes: number
