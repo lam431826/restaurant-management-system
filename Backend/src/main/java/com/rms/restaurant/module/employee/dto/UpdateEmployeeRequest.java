@@ -13,7 +13,7 @@ public record UpdateEmployeeRequest(
         LocalDate startDate,
         String timekeepCode,
         String note,
-        String idNumber,
+        @Pattern(regexp = "^\\d*$") String idNumber,
         LocalDate birthday,
         String gender,
         String address,

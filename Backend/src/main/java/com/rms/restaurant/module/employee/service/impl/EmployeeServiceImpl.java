@@ -1,6 +1,8 @@
 package com.rms.restaurant.module.employee.service.impl;
 
+import com.rms.restaurant.common.utils.audit.AuditDetailBuilder;
 import com.rms.restaurant.common.utils.enums.EmployeeStatus;
+import com.rms.restaurant.common.utils.validation.AgeValidator;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
@@ -81,6 +83,7 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     @Override
     public EmployeeResponse create(CreateEmployeeRequest request) {
+        AgeValidator.validateEmployeeAge(request.birthday());
         String code = StringUtils.hasText(request.code()) ? request.code().trim() : null;
         if (code != null) {
             if (employeeRepository.existsByCode(code)) {
@@ -116,13 +119,41 @@ public class EmployeeServiceImpl implements EmployeeService {
 
         Employee saved = employeeRepository.save(employee);
         log.info("Created employee '{}' [{}]", saved.getCode(), saved.getName());
-        audit("EMPLOYEE_CREATE", saved);
+        audit("EMPLOYEE_CREATE", saved.getId(), AuditDetailBuilder.create()
+                .field("code", saved.getCode())
+                .field("name", saved.getName())
+                .field("phone", saved.getPhone())
+                .field("status", saved.getStatus().name())
+                .field("startDate", String.valueOf(saved.getStartDate()))
+                .field("timekeepCode", saved.getTimekeepCode())
+                .field("note", saved.getNote())
+                .field("idNumber", saved.getIdNumber())
+                .field("birthday", String.valueOf(saved.getBirthday()))
+                .field("gender", saved.getGender())
+                .field("address", saved.getAddress())
+                .field("email", saved.getEmail())
+                .field("userId", saved.getUserId())
+                .build());
         return employeeMapper.toResponse(saved);
     }
 
     @Override
     public EmployeeResponse update(String id, UpdateEmployeeRequest request) {
+        AgeValidator.validateEmployeeAge(request.birthday());
         Employee employee = findEmployeeById(id);
+        String oldName = employee.getName();
+        String oldPhone = employee.getPhone();
+        EmployeeStatus oldStatus = employee.getStatus();
+        LocalDate oldStartDate = employee.getStartDate();
+        String oldTimekeepCode = employee.getTimekeepCode();
+        String oldNote = employee.getNote();
+        String oldIdNumber = employee.getIdNumber();
+        LocalDate oldBirthday = employee.getBirthday();
+        String oldGender = employee.getGender();
+        String oldAddress = employee.getAddress();
+        String oldEmail = employee.getEmail();
+        String oldAvatarUrl = employee.getAvatarUrl();
+        String oldUserId = employee.getUserId();
 
         if (StringUtils.hasText(request.name())) {
             employee.setName(request.name().trim());
@@ -174,7 +205,22 @@ public class EmployeeServiceImpl implements EmployeeService {
 
         Employee saved = employeeRepository.save(employee);
         syncLinkedUser(saved, request);
-        audit("EMPLOYEE_UPDATE", saved);
+        audit("EMPLOYEE_UPDATE", saved.getId(), AuditDetailBuilder.create()
+                .field("code", saved.getCode())
+                .changed("name", oldName, saved.getName())
+                .changed("phone", oldPhone, saved.getPhone())
+                .changed("status", oldStatus, saved.getStatus())
+                .changed("startDate", String.valueOf(oldStartDate), String.valueOf(saved.getStartDate()))
+                .changed("timekeepCode", oldTimekeepCode, saved.getTimekeepCode())
+                .changed("note", oldNote, saved.getNote())
+                .changed("idNumber", oldIdNumber, saved.getIdNumber())
+                .changed("birthday", String.valueOf(oldBirthday), String.valueOf(saved.getBirthday()))
+                .changed("gender", oldGender, saved.getGender())
+                .changed("address", oldAddress, saved.getAddress())
+                .changed("email", oldEmail, saved.getEmail())
+                .changed("avatarUrl", oldAvatarUrl, saved.getAvatarUrl())
+                .changed("userId", oldUserId, saved.getUserId())
+                .build());
         return employeeMapper.toResponse(saved);
     }
 
@@ -224,10 +270,15 @@ public class EmployeeServiceImpl implements EmployeeService {
         Employee employee = findEmployeeById(id);
         // NOTE: SRS §9 gap #2 (blocking conditions e.g. an open shift) is deferred until
         // SRS_AT_Attendance_Shift.md exists; no such check is implemented here.
+        EmployeeStatus oldStatus = employee.getStatus();
         employee.setStatus(EmployeeStatus.INACTIVE);
         employeeRepository.save(employee);
         log.info("Deactivated employee '{}'", employee.getCode());
-        audit("EMPLOYEE_DEACTIVATE", employee);
+        audit("EMPLOYEE_DEACTIVATE", employee.getId(), AuditDetailBuilder.create()
+                .field("code", employee.getCode())
+                .field("name", employee.getName())
+                .changed("status", oldStatus, EmployeeStatus.INACTIVE)
+                .build());
     }
 
     // ── Self-service profile ("Hồ sơ của tôi") ────────────────────────────
@@ -246,6 +297,7 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     @Override
     public EmployeeResponse saveMyProfile(String username, SelfEmployeeProfileRequest request) {
+        AgeValidator.validateEmployeeAge(request.birthday());
         User user = findUserByUsername(username);
         syncUserProfile(user, request);
 
@@ -255,19 +307,48 @@ public class EmployeeServiceImpl implements EmployeeService {
                     && employeeRepository.existsByPhoneAndIdNot(request.phone().trim(), employee.getId())) {
                 throw new ConflictException(ApplicationError.DUPLICATE_EMPLOYEE_PHONE);
             }
+            String oldName = employee.getName();
+            String oldPhone = employee.getPhone();
+            LocalDate oldStartDate = employee.getStartDate();
+            String oldNote = employee.getNote();
+            String oldIdNumber = employee.getIdNumber();
+            LocalDate oldBirthday = employee.getBirthday();
+            String oldGender = employee.getGender();
+            String oldAddress = employee.getAddress();
+            String oldEmail = employee.getEmail();
+            // Backfill for a row that reached first-login activation with no start date yet
+            // set (e.g. a manager pre-created the Employee record without one before linking
+            // it to this login) — never overwrites an already-known start date.
+            if (employee.getStartDate() == null) {
+                employee.setStartDate(LocalDate.now());
+            }
             applyProfileFields(employee, request);
             Employee saved = employeeRepository.save(employee);
-            audit("EMPLOYEE_SELF_UPDATE", saved);
+            audit("EMPLOYEE_SELF_UPDATE", saved.getId(), AuditDetailBuilder.create()
+                    .field("code", saved.getCode())
+                    .changed("name", oldName, saved.getName())
+                    .changed("phone", oldPhone, saved.getPhone())
+                    .changed("startDate", String.valueOf(oldStartDate), String.valueOf(saved.getStartDate()))
+                    .changed("note", oldNote, saved.getNote())
+                    .changed("idNumber", oldIdNumber, saved.getIdNumber())
+                    .changed("birthday", String.valueOf(oldBirthday), String.valueOf(saved.getBirthday()))
+                    .changed("gender", oldGender, saved.getGender())
+                    .changed("address", oldAddress, saved.getAddress())
+                    .changed("email", oldEmail, saved.getEmail())
+                    .build());
             return employeeMapper.toResponse(saved);
         }
 
         if (employeeRepository.existsByPhone(request.phone().trim())) {
             throw new ConflictException(ApplicationError.DUPLICATE_EMPLOYEE_PHONE);
         }
+        // BR: start date is never user-entered — it's the date the employee's profile (i.e.
+        // their account) was first created, stamped here rather than taken from the request.
         Employee newEmployee = Employee.builder()
                 .code(generateNextCode())
                 .status(EmployeeStatus.ACTIVE)
                 .userId(user.getId())
+                .startDate(LocalDate.now())
                 .build();
         applyProfileFields(newEmployee, request);
 
@@ -280,14 +361,25 @@ public class EmployeeServiceImpl implements EmployeeService {
             throw new ConflictException(ApplicationError.EMPLOYEE_USER_ALREADY_LINKED);
         }
         log.info("Self-created employee '{}' [{}] for user '{}'", saved.getCode(), saved.getName(), username);
-        audit("EMPLOYEE_SELF_CREATE", saved);
+        audit("EMPLOYEE_SELF_CREATE", saved.getId(), AuditDetailBuilder.create()
+                .field("code", saved.getCode())
+                .field("name", saved.getName())
+                .field("phone", saved.getPhone())
+                .field("startDate", String.valueOf(saved.getStartDate()))
+                .field("note", saved.getNote())
+                .field("idNumber", saved.getIdNumber())
+                .field("birthday", String.valueOf(saved.getBirthday()))
+                .field("gender", saved.getGender())
+                .field("address", saved.getAddress())
+                .field("email", saved.getEmail())
+                .build());
         return employeeMapper.toResponse(saved);
     }
 
     private void applyProfileFields(Employee employee, SelfEmployeeProfileRequest request) {
         employee.setName(request.name().trim());
         employee.setPhone(request.phone().trim());
-        employee.setStartDate(request.startDate());
+        // startDate is intentionally not settable here — see saveMyProfile()'s create branch.
         employee.setNote(trimToNull(request.note()));
         employee.setIdNumber(trimToNull(request.idNumber()));
         employee.setBirthday(request.birthday());
@@ -339,6 +431,10 @@ public class EmployeeServiceImpl implements EmployeeService {
         findEmployeeById(employeeId);
         SalarySetting setting = salarySettingRepository.findByEmployeeId(employeeId)
                 .orElseGet(() -> SalarySetting.builder().employeeId(employeeId).build());
+        var oldSalaryType = setting.getMainSalaryType();
+        var oldBaseWage = setting.getMainBaseWage();
+        boolean oldOvertimeEnabled = setting.isOvertimeEnabled();
+        String oldSalaryTemplate = setting.getSalaryTemplate();
 
         setting.setMainSalaryType(request.mainSalaryType());
         setting.setMainBaseWage(request.mainBaseWage());
@@ -348,7 +444,12 @@ public class EmployeeServiceImpl implements EmployeeService {
         setting.setSalaryTemplate(trimToNull(request.salaryTemplate()));
 
         SalarySetting saved = salarySettingRepository.save(setting);
-        audit("EMPLOYEE_SALARY_SETTING_SAVE", employeeId, "{}");
+        audit("EMPLOYEE_SALARY_SETTING_SAVE", employeeId, AuditDetailBuilder.create()
+                .changed("mainSalaryType", oldSalaryType, saved.getMainSalaryType())
+                .changed("mainBaseWage", oldBaseWage, saved.getMainBaseWage())
+                .changed("overtimeEnabled", oldOvertimeEnabled, saved.isOvertimeEnabled())
+                .changed("salaryTemplate", oldSalaryTemplate, saved.getSalaryTemplate())
+                .build());
         return employeeMapper.toResponse(saved);
     }
 
@@ -524,10 +625,6 @@ public class EmployeeServiceImpl implements EmployeeService {
         if (employeeRepository.existsByUserId(userId)) {
             throw new ConflictException(ApplicationError.EMPLOYEE_USER_ALREADY_LINKED);
         }
-    }
-
-    private void audit(String action, Employee employee) {
-        audit(action, employee.getId(), "{\"code\":\"" + employee.getCode() + "\",\"name\":\"" + employee.getName() + "\"}");
     }
 
     private void audit(String action, String targetId, String detail) {

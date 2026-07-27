@@ -9,9 +9,8 @@ import java.time.LocalDate;
 public record SelfEmployeeProfileRequest(
         @NotBlank String name,
         @NotBlank @Pattern(regexp = "^0\\d{9,10}$") String phone,
-        LocalDate startDate,
         String note,
-        String idNumber,
+        @Pattern(regexp = "^\\d*$") String idNumber,
         LocalDate birthday,
         String gender,
         String address,

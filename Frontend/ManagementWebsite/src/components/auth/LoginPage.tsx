@@ -5,6 +5,7 @@ import { login, verifyInfo, verifyOtp, resendOtp } from "../../api/auth";
 import type { UserRole } from "../../context/AuthContext";
 import { useAuth } from "../../context/useAuth";
 import { asHttpError } from "../../utils/httpError";
+import { validateBirthday, validateIdNumber } from "../../utils/employeeValidation";
 
 /* ── icons ── */
 const PersonIcon = () => (
@@ -144,7 +145,6 @@ const LoginPage = () => {
   const [profileFullName, setProfileFullName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
   const [profilePhone, setProfilePhone] = useState("");
-  const [profileStartDate, setProfileStartDate] = useState("");
   const [profileNote, setProfileNote] = useState("");
   const [profileIdNumber, setProfileIdNumber] = useState("");
   const [profileBirthday, setProfileBirthday] = useState("");
@@ -164,6 +164,8 @@ const LoginPage = () => {
       const data = res.data;
       if (data.requiresVerification) {
         setVerifyToken(data.verifyToken);
+        setProfileFullName(data.pendingFullName ?? "");
+        setProfilePhone(data.pendingPhone ?? "");
         setStep("send-otp");
       } else {
         saveSession({
@@ -195,6 +197,10 @@ const LoginPage = () => {
     if (!profilePhone.trim()) e.phone = "Bắt buộc";
     else if (!/^0\d{9,10}$/.test(profilePhone.trim()))
       e.phone = "SĐT phải bắt đầu bằng 0, 10-11 chữ số";
+    const birthdayError = validateBirthday(profileBirthday);
+    if (birthdayError) e.birthday = birthdayError;
+    const idNumberError = validateIdNumber(profileIdNumber);
+    if (idNumberError) e.idNumber = idNumberError;
     setProfileErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -209,7 +215,6 @@ const LoginPage = () => {
         fullName: profileFullName.trim(),
         email: profileEmail.trim(),
         phone: profilePhone.trim(),
-        startDate: profileStartDate || undefined,
         note: profileNote.trim() || undefined,
         idNumber: profileIdNumber.trim() || undefined,
         birthday: profileBirthday || undefined,
@@ -257,6 +262,15 @@ const LoginPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  /* back from OTP entry to the profile form, in case something in it needs fixing
+     (e.g. a typo'd email means the OTP will never arrive) */
+  const handleBackToProfile = () => {
+    setOtp("");
+    setError("");
+    setResendMsg("");
+    setStep("send-otp");
   };
 
   /* resend OTP */
@@ -404,29 +418,43 @@ const LoginPage = () => {
               </p>
             )}
           </div>
-          <InputField
-            label="Ngày bắt đầu làm việc"
-            icon={<PersonIcon />}
-            placeholder=""
-            type="date"
-            value={profileStartDate}
-            onChange={(e) => setProfileStartDate(e.target.value)}
-          />
-          <InputField
-            label="Số CMND/CCCD"
-            icon={<PersonIcon />}
-            placeholder="012345678901"
-            value={profileIdNumber}
-            onChange={(e) => setProfileIdNumber(e.target.value)}
-          />
-          <InputField
-            label="Ngày sinh"
-            icon={<PersonIcon />}
-            placeholder=""
-            type="date"
-            value={profileBirthday}
-            onChange={(e) => setProfileBirthday(e.target.value)}
-          />
+          <div className="flex flex-col gap-1">
+            <InputField
+              label="Số CMND/CCCD"
+              icon={<PersonIcon />}
+              placeholder="012345678901"
+              value={profileIdNumber}
+              onChange={(e) => {
+                setProfileIdNumber(e.target.value);
+                if (profileErrors.idNumber)
+                  setProfileErrors((p) => ({ ...p, idNumber: "" }));
+              }}
+            />
+            {profileErrors.idNumber && (
+              <p className="text-[13px] text-red-500 leading-[1.5]">
+                {profileErrors.idNumber}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1">
+            <InputField
+              label="Ngày sinh"
+              icon={<PersonIcon />}
+              placeholder=""
+              type="date"
+              value={profileBirthday}
+              onChange={(e) => {
+                setProfileBirthday(e.target.value);
+                if (profileErrors.birthday)
+                  setProfileErrors((p) => ({ ...p, birthday: "" }));
+              }}
+            />
+            {profileErrors.birthday && (
+              <p className="text-[13px] text-red-500 leading-[1.5]">
+                {profileErrors.birthday}
+              </p>
+            )}
+          </div>
           <div className="flex flex-col gap-3">
             <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">
               Giới tính
@@ -522,12 +550,20 @@ const LoginPage = () => {
           </span>
         </button>
       </form>
-      <button
-        onClick={handleResend}
-        className="text-[14px] text-[#357dd5] leading-[1.5] hover:underline text-center"
-      >
-        Gửi lại OTP
-      </button>
+      <div className="flex items-center justify-between mt-1">
+        <button
+          onClick={handleBackToProfile}
+          className="text-[14px] text-[#636566] leading-[1.5] hover:underline"
+        >
+          ← Quay lại
+        </button>
+        <button
+          onClick={handleResend}
+          className="text-[14px] text-[#357dd5] leading-[1.5] hover:underline"
+        >
+          Gửi lại OTP
+        </button>
+      </div>
     </AuthLayout>
   );
 };

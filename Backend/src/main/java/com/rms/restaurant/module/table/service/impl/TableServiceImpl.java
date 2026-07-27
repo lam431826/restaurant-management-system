@@ -1,6 +1,7 @@
 package com.rms.restaurant.module.table.service.impl;
 
 import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
+import com.rms.restaurant.common.utils.audit.AuditDetailBuilder;
 import com.rms.restaurant.common.utils.enums.TableStatus;
 import com.rms.restaurant.common.utils.enums.ReservationStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
@@ -115,13 +116,27 @@ public class TableServiceImpl implements TableService {
                 .qrToken("QR-" + name)
                 .build();
         RestaurantTable saved = tableRepository.save(table);
-        audit("TABLE_CREATE", "Table", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        audit("TABLE_CREATE", "Table", saved.getId(), AuditDetailBuilder.create()
+                .field("name", saved.getName())
+                .field("area", saved.getArea())
+                .field("capacity", saved.getCapacity())
+                .field("note", saved.getNote())
+                .field("displayOrder", saved.getDisplayOrder())
+                .field("active", saved.isActive())
+                .build());
         return tableMapper.toResponse(saved);
     }
 
     @Override
     public TableResponse updateTable(String id, UpdateTableRequest request) {
         RestaurantTable table = findTable(id);
+        String oldName = table.getName();
+        String oldNote = table.getNote();
+        String oldArea = table.getArea();
+        Integer oldCapacity = table.getCapacity();
+        Integer oldDisplayOrder = table.getDisplayOrder();
+        boolean oldActive = table.isActive();
+
         if (StringUtils.hasText(request.name())) {
             String newName = request.name().trim();
             if (!newName.equalsIgnoreCase(table.getName()) && tableRepository.existsByNameIgnoreCase(newName)) {
@@ -136,7 +151,14 @@ public class TableServiceImpl implements TableService {
         if (request.displayOrder() != null) table.setDisplayOrder(request.displayOrder());
         if (request.active() != null) table.setActive(request.active());
         RestaurantTable saved = tableRepository.save(table);
-        audit("TABLE_UPDATE", "Table", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        audit("TABLE_UPDATE", "Table", saved.getId(), AuditDetailBuilder.create()
+                .changed("name", oldName, saved.getName())
+                .changed("area", oldArea, saved.getArea())
+                .changed("capacity", oldCapacity, saved.getCapacity())
+                .changed("note", oldNote, saved.getNote())
+                .changed("displayOrder", oldDisplayOrder, saved.getDisplayOrder())
+                .changed("active", oldActive, saved.isActive())
+                .build());
         return tableMapper.toResponse(saved);
     }
 
@@ -150,15 +172,23 @@ public class TableServiceImpl implements TableService {
             throw new ConflictException(ApplicationError.TABLE_IN_USE);
         }
         tableRepository.delete(table);
-        audit("TABLE_DELETE", "Table", id, "{\"name\":\"" + esc(table.getName()) + "\"}");
+        audit("TABLE_DELETE", "Table", id, AuditDetailBuilder.create()
+                .field("name", table.getName())
+                .field("area", table.getArea())
+                .field("capacity", table.getCapacity())
+                .build());
     }
 
     @Override
     public void setActive(String id, boolean active) {
         RestaurantTable table = findTable(id);
+        boolean oldActive = table.isActive();
         table.setActive(active);
         tableRepository.save(table);
-        audit("TABLE_UPDATE", "Table", id, "{\"name\":\"" + esc(table.getName()) + "\",\"active\":" + active + "}");
+        audit("TABLE_UPDATE", "Table", id, AuditDetailBuilder.create()
+                .field("name", table.getName())
+                .changed("active", oldActive, active)
+                .build());
     }
 
     // BE-TBL-03 fix: updateStatus() previously applied any requested status with zero
@@ -183,6 +213,7 @@ public class TableServiceImpl implements TableService {
                     ApplicationError.INVALID_STATUS_TRANSITION,
                     "Cannot transition table from " + current + " to " + next);
         }
+        String tableName = table.getName();
         // Walk-in check-in: staff seating a walk-in (no reservation) moves the table straight
         // AVAILABLE -> OCCUPIED here. Stamp occupiedSince so ReservationServiceImpl can block
         // assigning a new reservation to this table until the dining+cleanup window elapses.
@@ -195,6 +226,10 @@ public class TableServiceImpl implements TableService {
         table.setStatus(next);
         RestaurantTable saved = tableRepository.save(table);
         realtimeEventPublisher.publishTableStatus(saved);
+        audit("TABLE_UPDATE", "Table", id, AuditDetailBuilder.create()
+                .field("name", tableName)
+                .changed("status", current, next)
+                .build());
         return tableMapper.toResponse(saved);
     }
 
@@ -330,8 +365,11 @@ public class TableServiceImpl implements TableService {
             throw new ConflictException(ApplicationError.TABLE_IMPORT_INVALID);
         }
 
-        audit("TABLE_IMPORT", "Table", null, "{\"created\":" + created + ",\"updated\":" + updated
-                + ",\"errors\":" + errors.size() + "}");
+        audit("TABLE_IMPORT", "Table", null, AuditDetailBuilder.create()
+                .field("created", created)
+                .field("updated", updated)
+                .field("errors", errors.size())
+                .build());
 
         return new TableImportResult(created, updated, errors.size(), errors);
     }
@@ -358,7 +396,11 @@ public class TableServiceImpl implements TableService {
                 .displayOrder(request.displayOrder() == null ? 0 : request.displayOrder())
                 .build();
         TableArea saved = areaRepository.save(area);
-        audit("AREA_CREATE", "Area", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        audit("AREA_CREATE", "Area", saved.getId(), AuditDetailBuilder.create()
+                .field("name", saved.getName())
+                .field("note", saved.getNote())
+                .field("displayOrder", saved.getDisplayOrder())
+                .build());
         return tableMapper.toAreaResponse(saved);
     }
 
@@ -370,7 +412,9 @@ public class TableServiceImpl implements TableService {
             throw new ConflictException(ApplicationError.AREA_HAS_TABLES);
         }
         areaRepository.delete(area);
-        audit("AREA_DELETE", "Area", id, "{\"name\":\"" + esc(area.getName()) + "\"}");
+        audit("AREA_DELETE", "Area", id, AuditDetailBuilder.create()
+                .field("name", area.getName())
+                .build());
     }
 
     // ── TM-04 (not yet implemented) ──────────────────────────────────────
@@ -597,9 +641,5 @@ public class TableServiceImpl implements TableService {
     private void audit(String action, String targetEntity, String id, String detail) {
         try { auditService.log(action, targetEntity, id, detail); }
         catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
-    }
-
-    private static String esc(String s) {
-        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

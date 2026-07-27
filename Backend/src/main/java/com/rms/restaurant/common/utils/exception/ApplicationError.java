@@ -53,6 +53,7 @@ public enum ApplicationError {
     EMPLOYEE_USER_ALREADY_LINKED("This user account is already linked to another employee", HttpStatus.CONFLICT),
     EMPLOYEE_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
     EMPLOYEE_IMPORT_TOO_MANY_ROWS("Import file exceeds the 500-row limit", HttpStatus.BAD_REQUEST),
+    EMPLOYEE_AGE_OUT_OF_RANGE("Employee must be between 18 and 60 years old", HttpStatus.UNPROCESSABLE_ENTITY),
 
     // Table Management
     DUPLICATE_TABLE_NAME("A table with this name already exists", HttpStatus.CONFLICT),

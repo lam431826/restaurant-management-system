@@ -1,6 +1,7 @@
 package com.rms.restaurant.module.authentication.service.impl;
 
 import com.rms.restaurant.common.security.JwtService;
+import com.rms.restaurant.common.utils.validation.AgeValidator;
 import com.rms.restaurant.common.utils.enums.UserStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
@@ -19,6 +20,7 @@ import com.rms.restaurant.module.authentication.repository.RefreshTokenRepositor
 import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.authentication.service.AuthService;
 import com.rms.restaurant.module.employee.dto.SelfEmployeeProfileRequest;
+import com.rms.restaurant.module.employee.model.Employee;
 import com.rms.restaurant.module.employee.repository.EmployeeRepository;
 import com.rms.restaurant.module.employee.service.EmployeeService;
 import com.rms.restaurant.module.user.service.AuditService;
@@ -139,12 +141,12 @@ public class AuthServiceImpl implements AuthService {
             throw new ConflictException(ApplicationError.DUPLICATE_EMPLOYEE_PHONE);
         }
         // B2 (required fields / formats) is enforced by @Valid on VerifyInfoRequest already.
+        AgeValidator.validateEmployeeAge(request.birthday());
 
         record.setInfoRequestCount(record.getInfoRequestCount() + 1);
         record.setPendingFullName(request.fullName());
         record.setPendingEmail(request.email());
         record.setPendingPhone(request.phone());
-        record.setPendingStartDate(request.startDate());
         record.setPendingNote(request.note());
         record.setPendingIdNumber(request.idNumber());
         record.setPendingBirthday(request.birthday());
@@ -210,7 +212,6 @@ public class AuthServiceImpl implements AuthService {
                 employeeService.saveMyProfile(user.getUsername(), new SelfEmployeeProfileRequest(
                         record.getPendingFullName(),
                         record.getPendingPhone(),
-                        record.getPendingStartDate(),
                         record.getPendingNote(),
                         record.getPendingIdNumber(),
                         record.getPendingBirthday(),
@@ -256,7 +257,6 @@ public class AuthServiceImpl implements AuthService {
                 .pendingFullName(oldRecord.getPendingFullName())
                 .pendingEmail(oldRecord.getPendingEmail())
                 .pendingPhone(oldRecord.getPendingPhone())
-                .pendingStartDate(oldRecord.getPendingStartDate())
                 .pendingNote(oldRecord.getPendingNote())
                 .pendingIdNumber(oldRecord.getPendingIdNumber())
                 .pendingBirthday(oldRecord.getPendingBirthday())
@@ -404,7 +404,10 @@ public class AuthServiceImpl implements AuthService {
                 .createdAt(LocalDateTime.now())
                 .build();
         otpRecordRepository.save(record);
-        return new LoginResponse(null, null, null, null, true, verifyToken);
+        String pendingPhone = employeeRepository.findByUserId(user.getId())
+                .map(Employee::getPhone)
+                .orElse(user.getPhone());
+        return new LoginResponse(null, null, null, null, true, verifyToken, user.getFullName(), pendingPhone);
     }
 
     private LoginResponse issueTokenPair(User user) {
@@ -431,6 +434,8 @@ public class AuthServiceImpl implements AuthService {
                 rawRefreshToken,
                 accessTokenExpirationMs / 1000,
                 new LoginResponse.UserInfo(user.getId(), user.getUsername(), user.getFullName(), user.getRole()),
+                null,
+                null,
                 null,
                 null
         );

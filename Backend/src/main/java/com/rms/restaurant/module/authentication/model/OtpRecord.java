@@ -59,9 +59,9 @@ public class OtpRecord {
     // Full employee-profile fields collected alongside name/email/phone at verify/info —
     // committed onto a linked Employee row (via EmployeeService.saveMyProfile) once verify/otp
     // confirms the OTP. See EmployeeServiceImpl for the target field shapes.
-    @Column(name = "pending_start_date")
-    private LocalDate pendingStartDate;
-
+    // NOTE: pending_start_date (V40) is intentionally unmapped here — start date is no longer
+    // user-submitted; EmployeeServiceImpl.saveMyProfile() stamps LocalDate.now() at creation
+    // instead. The DB column stays (Flyway is additive-only), just orphaned like V16/V19.
     @Column(name = "pending_note", length = 1000)
     private String pendingNote;
 

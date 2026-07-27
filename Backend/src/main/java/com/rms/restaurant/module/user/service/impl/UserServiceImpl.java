@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.user.service.impl;
 
+import com.rms.restaurant.common.utils.audit.AuditDetailBuilder;
 import com.rms.restaurant.common.utils.enums.UserRole;
 import com.rms.restaurant.common.utils.enums.UserStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
@@ -100,8 +101,13 @@ public class UserServiceImpl implements UserService {
         }
 
         try {
-            auditService.log("USER_CREATE", "User", saved.getId(),
-                    "{\"username\":\"" + saved.getUsername() + "\",\"role\":\"" + saved.getRole() + "\"}");
+            auditService.log("USER_CREATE", "User", saved.getId(), AuditDetailBuilder.create()
+                    .field("username", saved.getUsername())
+                    .field("fullName", saved.getFullName())
+                    .field("email", saved.getEmail())
+                    .field("phone", saved.getPhone())
+                    .field("role", saved.getRole().name())
+                    .build());
         } catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
 
         return new CreateUserResponse(userProfileMapper.toResponse(saved), tempPassword);
@@ -110,6 +116,11 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserResponse updateUser(String id, UpdateUserRequest request) {
         User user = findUserById(id);
+        String oldFullName = user.getFullName();
+        String oldEmail = user.getEmail();
+        String oldPhone = user.getPhone();
+        UserRole oldRole = user.getRole();
+        UserStatus oldStatus = user.getStatus();
 
         if (StringUtils.hasText(request.fullName())) {
             user.setFullName(request.fullName());
@@ -148,8 +159,14 @@ public class UserServiceImpl implements UserService {
         User saved = userRepository.save(user);
         syncLinkedEmployee(saved, request);
         try {
-            auditService.log("USER_UPDATE", "User", saved.getId(),
-                    "{\"username\":\"" + saved.getUsername() + "\",\"role\":\"" + saved.getRole() + "\",\"status\":\"" + saved.getStatus() + "\"}");
+            auditService.log("USER_UPDATE", "User", saved.getId(), AuditDetailBuilder.create()
+                    .field("username", saved.getUsername())
+                    .changed("fullName", oldFullName, saved.getFullName())
+                    .changed("email", oldEmail, saved.getEmail())
+                    .changed("phone", oldPhone, saved.getPhone())
+                    .changed("role", oldRole, saved.getRole())
+                    .changed("status", oldStatus, saved.getStatus())
+                    .build());
         } catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
         return userProfileMapper.toResponse(saved);
     }
@@ -196,8 +213,11 @@ public class UserServiceImpl implements UserService {
         userRepository.save(user);
         log.info("Soft-deleted user '{}'", user.getUsername());
         try {
-            auditService.log("USER_DELETE", "User", user.getId(),
-                    "{\"username\":\"" + user.getUsername() + "\"}");
+            auditService.log("USER_DELETE", "User", user.getId(), AuditDetailBuilder.create()
+                    .field("username", user.getUsername())
+                    .field("fullName", user.getFullName())
+                    .field("role", user.getRole().name())
+                    .build());
         } catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
     }
 
@@ -213,8 +233,10 @@ public class UserServiceImpl implements UserService {
         userRepository.save(user);
         log.info("Unlocked user '{}'", user.getUsername());
         try {
-            auditService.log("USER_UNLOCK", "User", user.getId(),
-                    "{\"username\":\"" + user.getUsername() + "\"}");
+            auditService.log("USER_UNLOCK", "User", user.getId(), AuditDetailBuilder.create()
+                    .field("username", user.getUsername())
+                    .changed("status", UserStatus.LOCKED, UserStatus.ACTIVE)
+                    .build());
         } catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
     }
 

@@ -4,89 +4,89 @@ import { useRealtime } from '../../hooks/useRealtime'
 
 // ── Action metadata ──────────────────────────────────────────────────────────
 
-interface ActionMeta { label: string; color: string; bg: string }
+interface ActionMeta { label: string }
 
 // Every action string ever emitted, including ones from now-removed modules
 // (ROSTER_*, see CLAUDE.md) — kept so historic rows still render a readable
 // label instead of a raw backend string. FILTERABLE_ACTIONS below is the
 // reachable subset offered in the "Hành động" dropdown.
 const ACTION_META: Record<string, ActionMeta> = {
-  RESERVATION_CREATE:         { label: 'Tạo đặt bàn',          color: '#025cca', bg: '#025cca18' },
-  RESERVATION_CONFIRM:        { label: 'Xác nhận đặt bàn',     color: '#025cca', bg: '#025cca18' },
-  RESERVATION_ASSIGN_TABLE:   { label: 'Xếp bàn',              color: '#025cca', bg: '#025cca18' },
-  RESERVATION_CHECK_IN:       { label: 'Check-in',              color: '#0d9e6e', bg: '#0d9e6e18' },
-  RESERVATION_COMPLETE:       { label: 'Hoàn tất lượt khách',   color: '#0d9e6e', bg: '#0d9e6e18' },
-  RESERVATION_TRANSFER_TABLE: { label: 'Chuyển bàn đặt trước',  color: '#025cca', bg: '#025cca18' },
-  RESERVATION_NO_SHOW:        { label: 'Không đến',             color: '#888',    bg: '#88888818' },
-  RESERVATION_CANCEL:         { label: 'Hủy đặt bàn',          color: '#e53935', bg: '#e5393518' },
-  RESERVATION_UPDATE:         { label: 'Sửa đặt bàn',          color: '#025cca', bg: '#025cca18' },
-  USER_CREATE:                { label: 'Tạo tài khoản',         color: '#7c3aed', bg: '#7c3aed18' },
-  USER_UPDATE:                { label: 'Sửa tài khoản',         color: '#7c3aed', bg: '#7c3aed18' },
-  USER_DELETE:                { label: 'Xóa tài khoản',         color: '#e53935', bg: '#e5393518' },
-  USER_UNLOCK:                { label: 'Mở khóa tài khoản',     color: '#0d9e6e', bg: '#0d9e6e18' },
-  EMPLOYEE_CREATE:              { label: 'Tạo hồ sơ nhân viên',   color: '#9333ea', bg: '#9333ea18' },
-  EMPLOYEE_UPDATE:              { label: 'Sửa hồ sơ nhân viên',   color: '#9333ea', bg: '#9333ea18' },
-  EMPLOYEE_DEACTIVATE:          { label: 'Vô hiệu hóa nhân viên', color: '#e53935', bg: '#e5393518' },
-  EMPLOYEE_SELF_UPDATE:         { label: 'Tự cập nhật hồ sơ',     color: '#9333ea', bg: '#9333ea18' },
-  EMPLOYEE_SELF_CREATE:         { label: 'Tự tạo hồ sơ',          color: '#9333ea', bg: '#9333ea18' },
-  EMPLOYEE_SALARY_SETTING_SAVE: { label: 'Cập nhật lương',        color: '#9333ea', bg: '#9333ea18' },
-  AUTH_LOGIN:                 { label: 'Đăng nhập',             color: '#e67e00', bg: '#e67e0018' },
-  AUTH_LOGIN_FAILED:          { label: 'Đăng nhập thất bại',    color: '#e53935', bg: '#e5393518' },
-  AUTH_LOGOUT:                { label: 'Đăng xuất',             color: '#e67e00', bg: '#e67e0018' },
-  AUTH_PASSWORD_CHANGED:      { label: 'Đổi mật khẩu',         color: '#e67e00', bg: '#e67e0018' },
-  AUTH_PASSWORD_RESET:        { label: 'Reset mật khẩu',       color: '#e67e00', bg: '#e67e0018' },
-  AUTH_ACCOUNT_ACTIVATED:     { label: 'Kích hoạt tài khoản',   color: '#0d9e6e', bg: '#0d9e6e18' },
-  PAYMENT_PROCESS:            { label: 'Thanh toán',            color: '#0891b2', bg: '#0891b218' },
-  PAYMENT_QR_INITIATE:        { label: 'Khởi tạo thanh toán QR', color: '#0891b2', bg: '#0891b218' },
-  PAYMENT_QR_CONFIRM:         { label: 'Xác nhận thanh toán QR', color: '#0891b2', bg: '#0891b218' },
-  PAYMENT_QR_CANCEL:          { label: 'Hủy thanh toán QR',     color: '#e53935', bg: '#e5393518' },
-  PAYMENT_VNPAY_CREATE:                       { label: 'Tạo giao dịch VNPAY',              color: '#0891b2', bg: '#0891b218' },
-  PAYMENT_VNPAY_RETURN:                       { label: 'VNPAY: khách quay lại',            color: '#0891b2', bg: '#0891b218' },
-  PAYMENT_VNPAY_RETURN_AMOUNT_MISMATCH:       { label: 'VNPAY Return: sai số tiền',         color: '#e53935', bg: '#e5393518' },
-  PAYMENT_VNPAY_RETURN_TERMINAL:              { label: 'VNPAY: giao dịch kết thúc',         color: '#888',    bg: '#88888818' },
-  PAYMENT_VNPAY_IPN_INVALID_SIGNATURE:        { label: 'VNPAY IPN: chữ ký không hợp lệ',    color: '#e53935', bg: '#e5393518' },
-  PAYMENT_VNPAY_IPN_INVALID_TMNCODE:          { label: 'VNPAY IPN: mã đối tác không hợp lệ', color: '#e53935', bg: '#e5393518' },
-  PAYMENT_VNPAY_IPN_AMOUNT_MISMATCH:          { label: 'VNPAY IPN: sai số tiền',            color: '#e53935', bg: '#e5393518' },
-  PAYMENT_VNPAY_IPN_FAILED:                   { label: 'VNPAY IPN: thanh toán thất bại',    color: '#e53935', bg: '#e5393518' },
-  PAYMENT_VNPAY_IPN_SUCCESS:                  { label: 'VNPAY IPN: thanh toán thành công',  color: '#0d9e6e', bg: '#0d9e6e18' },
-  PAYMENT_VNPAY_QUERYDR_INVALID_SIGNATURE:    { label: 'VNPAY đối soát: chữ ký không hợp lệ', color: '#e53935', bg: '#e5393518' },
-  PAYMENT_VNPAY_QUERYDR_INVALID_TMNCODE:      { label: 'VNPAY đối soát: mã đối tác không hợp lệ', color: '#e53935', bg: '#e5393518' },
-  PAYMENT_VNPAY_QUERYDR_TXNREF_MISMATCH:      { label: 'VNPAY đối soát: sai mã giao dịch',  color: '#e53935', bg: '#e5393518' },
-  PAYMENT_VNPAY_QUERYDR_NO_RESULT:            { label: 'VNPAY đối soát: không có kết quả',  color: '#888',    bg: '#88888818' },
-  PAYMENT_VNPAY_QUERYDR_AMOUNT_MISMATCH:      { label: 'VNPAY đối soát: sai số tiền',       color: '#e53935', bg: '#e5393518' },
-  PAYMENT_VNPAY_QUERYDR_SUCCESS:               { label: 'VNPAY đối soát: xác nhận thành công', color: '#0d9e6e', bg: '#0d9e6e18' },
-  PAYMENT_VNPAY_QUERYDR_FAILED:                { label: 'VNPAY đối soát: xác nhận thất bại', color: '#e53935', bg: '#e5393518' },
-  INVOICE_GENERATE:           { label: 'Tạo hóa đơn',          color: '#0891b2', bg: '#0891b218' },
-  INVOICE_APPLY_DISCOUNT:     { label: 'Áp mã giảm giá',       color: '#0891b2', bg: '#0891b218' },
-  PROMOTION_CREATE:           { label: 'Tạo khuyến mãi',        color: '#c026d3', bg: '#c026d318' },
-  PROMOTION_UPDATE:           { label: 'Sửa khuyến mãi',        color: '#c026d3', bg: '#c026d318' },
-  PROMOTION_DELETE:           { label: 'Xóa khuyến mãi',        color: '#e53935', bg: '#e5393518' },
-  MENU_ITEM_CREATE:           { label: 'Tạo món',               color: '#4f46e5', bg: '#4f46e518' },
-  MENU_ITEM_UPDATE:           { label: 'Sửa món',               color: '#4f46e5', bg: '#4f46e518' },
-  MENU_ITEM_DELETE:           { label: 'Xóa món',               color: '#e53935', bg: '#e5393518' },
-  MENU_CATEGORY_CREATE:       { label: 'Tạo danh mục',          color: '#4f46e5', bg: '#4f46e518' },
-  MENU_CATEGORY_UPDATE:       { label: 'Sửa danh mục',          color: '#4f46e5', bg: '#4f46e518' },
-  MENU_CATEGORY_DELETE:       { label: 'Xóa danh mục',          color: '#e53935', bg: '#e5393518' },
-  MENU_CATEGORY_REORDER:      { label: 'Sắp xếp danh mục',      color: '#4f46e5', bg: '#4f46e518' },
-  MENU_IMPORT:                { label: 'Nhập thực đơn',         color: '#4f46e5', bg: '#4f46e518' },
-  TABLE_CREATE:                { label: 'Tạo bàn',               color: '#0ea5e9', bg: '#0ea5e918' },
-  TABLE_UPDATE:                { label: 'Sửa bàn',               color: '#0ea5e9', bg: '#0ea5e918' },
-  TABLE_DELETE:                { label: 'Xóa bàn',               color: '#e53935', bg: '#e5393518' },
-  TABLE_IMPORT:                { label: 'Nhập danh sách bàn',    color: '#0ea5e9', bg: '#0ea5e918' },
-  AREA_CREATE:                 { label: 'Tạo khu vực',           color: '#0ea5e9', bg: '#0ea5e918' },
-  AREA_DELETE:                 { label: 'Xóa khu vực',           color: '#e53935', bg: '#e5393518' },
-  SHIFT_OPEN:                  { label: 'Mở ca',                  color: '#ca8a04', bg: '#ca8a0418' },
-  SHIFT_CLOSE:                  { label: 'Đóng ca',                color: '#ca8a04', bg: '#ca8a0418' },
-  SHIFT_CASH_MOVEMENT:          { label: 'Thu/chi tiền mặt',       color: '#ca8a04', bg: '#ca8a0418' },
+  RESERVATION_CREATE: { label: 'Tạo đặt bàn' },
+  RESERVATION_CONFIRM: { label: 'Xác nhận đặt bàn' },
+  RESERVATION_ASSIGN_TABLE: { label: 'Xếp bàn' },
+  RESERVATION_CHECK_IN: { label: 'Check-in' },
+  RESERVATION_COMPLETE: { label: 'Hoàn tất lượt khách' },
+  RESERVATION_TRANSFER_TABLE: { label: 'Chuyển bàn đặt trước' },
+  RESERVATION_NO_SHOW: { label: 'Không đến' },
+  RESERVATION_CANCEL: { label: 'Hủy đặt bàn' },
+  RESERVATION_UPDATE: { label: 'Sửa đặt bàn' },
+  USER_CREATE: { label: 'Tạo tài khoản' },
+  USER_UPDATE: { label: 'Sửa tài khoản' },
+  USER_DELETE: { label: 'Xóa tài khoản' },
+  USER_UNLOCK: { label: 'Mở khóa tài khoản' },
+  EMPLOYEE_CREATE: { label: 'Tạo hồ sơ nhân viên' },
+  EMPLOYEE_UPDATE: { label: 'Sửa hồ sơ nhân viên' },
+  EMPLOYEE_DEACTIVATE: { label: 'Vô hiệu hóa nhân viên' },
+  EMPLOYEE_SELF_UPDATE: { label: 'Tự cập nhật hồ sơ' },
+  EMPLOYEE_SELF_CREATE: { label: 'Tự tạo hồ sơ' },
+  EMPLOYEE_SALARY_SETTING_SAVE: { label: 'Cập nhật lương' },
+  AUTH_LOGIN: { label: 'Đăng nhập' },
+  AUTH_LOGIN_FAILED: { label: 'Đăng nhập thất bại' },
+  AUTH_LOGOUT: { label: 'Đăng xuất' },
+  AUTH_PASSWORD_CHANGED: { label: 'Đổi mật khẩu' },
+  AUTH_PASSWORD_RESET: { label: 'Reset mật khẩu' },
+  AUTH_ACCOUNT_ACTIVATED: { label: 'Kích hoạt tài khoản' },
+  PAYMENT_PROCESS: { label: 'Thanh toán' },
+  PAYMENT_QR_INITIATE: { label: 'Khởi tạo thanh toán QR' },
+  PAYMENT_QR_CONFIRM: { label: 'Xác nhận thanh toán QR' },
+  PAYMENT_QR_CANCEL: { label: 'Hủy thanh toán QR' },
+  PAYMENT_VNPAY_CREATE: { label: 'Tạo giao dịch VNPAY' },
+  PAYMENT_VNPAY_RETURN: { label: 'VNPAY: khách quay lại' },
+  PAYMENT_VNPAY_RETURN_AMOUNT_MISMATCH: { label: 'VNPAY Return: sai số tiền' },
+  PAYMENT_VNPAY_RETURN_TERMINAL: { label: 'VNPAY: giao dịch kết thúc' },
+  PAYMENT_VNPAY_IPN_INVALID_SIGNATURE: { label: 'VNPAY IPN: chữ ký không hợp lệ' },
+  PAYMENT_VNPAY_IPN_INVALID_TMNCODE: { label: 'VNPAY IPN: mã đối tác không hợp lệ' },
+  PAYMENT_VNPAY_IPN_AMOUNT_MISMATCH: { label: 'VNPAY IPN: sai số tiền' },
+  PAYMENT_VNPAY_IPN_FAILED: { label: 'VNPAY IPN: thanh toán thất bại' },
+  PAYMENT_VNPAY_IPN_SUCCESS: { label: 'VNPAY IPN: thanh toán thành công' },
+  PAYMENT_VNPAY_QUERYDR_INVALID_SIGNATURE: { label: 'VNPAY đối soát: chữ ký không hợp lệ' },
+  PAYMENT_VNPAY_QUERYDR_INVALID_TMNCODE: { label: 'VNPAY đối soát: mã đối tác không hợp lệ' },
+  PAYMENT_VNPAY_QUERYDR_TXNREF_MISMATCH: { label: 'VNPAY đối soát: sai mã giao dịch' },
+  PAYMENT_VNPAY_QUERYDR_NO_RESULT: { label: 'VNPAY đối soát: không có kết quả' },
+  PAYMENT_VNPAY_QUERYDR_AMOUNT_MISMATCH: { label: 'VNPAY đối soát: sai số tiền' },
+  PAYMENT_VNPAY_QUERYDR_SUCCESS: { label: 'VNPAY đối soát: xác nhận thành công' },
+  PAYMENT_VNPAY_QUERYDR_FAILED: { label: 'VNPAY đối soát: xác nhận thất bại' },
+  INVOICE_GENERATE: { label: 'Tạo hóa đơn' },
+  INVOICE_APPLY_DISCOUNT: { label: 'Áp mã giảm giá' },
+  PROMOTION_CREATE: { label: 'Tạo khuyến mãi' },
+  PROMOTION_UPDATE: { label: 'Sửa khuyến mãi' },
+  PROMOTION_DELETE: { label: 'Xóa khuyến mãi' },
+  MENU_ITEM_CREATE: { label: 'Tạo món' },
+  MENU_ITEM_UPDATE: { label: 'Sửa món' },
+  MENU_ITEM_DELETE: { label: 'Xóa món' },
+  MENU_CATEGORY_CREATE: { label: 'Tạo danh mục' },
+  MENU_CATEGORY_UPDATE: { label: 'Sửa danh mục' },
+  MENU_CATEGORY_DELETE: { label: 'Xóa danh mục' },
+  MENU_CATEGORY_REORDER: { label: 'Sắp xếp danh mục' },
+  MENU_IMPORT: { label: 'Nhập thực đơn' },
+  TABLE_CREATE: { label: 'Tạo bàn' },
+  TABLE_UPDATE: { label: 'Sửa bàn' },
+  TABLE_DELETE: { label: 'Xóa bàn' },
+  TABLE_IMPORT: { label: 'Nhập danh sách bàn' },
+  AREA_CREATE: { label: 'Tạo khu vực' },
+  AREA_DELETE: { label: 'Xóa khu vực' },
+  SHIFT_OPEN: { label: 'Mở ca' },
+  SHIFT_CLOSE: { label: 'Đóng ca' },
+  SHIFT_CASH_MOVEMENT: { label: 'Thu/chi tiền mặt' },
   // Legacy — emitted by the roster/ module before it was removed. No longer
   // reachable via the filter dropdown (see FILTERABLE_ACTIONS), kept only so
   // pre-existing rows still render a readable label instead of a raw string.
-  ROSTER_ASSIGNMENT_CREATE:    { label: 'Xếp lịch làm việc',      color: '#0f766e', bg: '#0f766e18' },
-  ROSTER_ASSIGNMENT_UPDATE:    { label: 'Sửa lịch làm việc',      color: '#0f766e', bg: '#0f766e18' },
-  ROSTER_ASSIGNMENT_DELETE:    { label: 'Xóa lịch làm việc',      color: '#e53935', bg: '#e5393518' },
-  ROSTER_WEEK_PUBLISH:         { label: 'Công bố lịch tuần',      color: '#0f766e', bg: '#0f766e18' },
-  ROSTER_REQUEST_APPROVE:      { label: 'Duyệt yêu cầu ca',       color: '#0d9e6e', bg: '#0d9e6e18' },
-  ROSTER_REQUEST_REJECT:       { label: 'Từ chối yêu cầu ca',     color: '#e53935', bg: '#e5393518' },
+  ROSTER_ASSIGNMENT_CREATE: { label: 'Xếp lịch làm việc' },
+  ROSTER_ASSIGNMENT_UPDATE: { label: 'Sửa lịch làm việc' },
+  ROSTER_ASSIGNMENT_DELETE: { label: 'Xóa lịch làm việc' },
+  ROSTER_WEEK_PUBLISH: { label: 'Công bố lịch tuần' },
+  ROSTER_REQUEST_APPROVE: { label: 'Duyệt yêu cầu ca' },
+  ROSTER_REQUEST_REJECT: { label: 'Từ chối yêu cầu ca' },
 }
 
 const FILTERABLE_ACTIONS = Object.keys(ACTION_META).filter(a => !a.startsWith('ROSTER_'))
@@ -119,7 +119,12 @@ const fmtDate = (iso: string) => {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-type DetailValue = string | number | boolean
+type Scalar = string | number | boolean | null
+interface ChangedPair { from: Scalar; to: Scalar }
+type DetailValue = Scalar | ChangedPair
+
+const isChangedPair = (v: unknown): v is ChangedPair =>
+  typeof v === 'object' && v !== null && 'from' in v && 'to' in v
 
 const parseDetail = (raw: string | null): Record<string, DetailValue> => {
   if (!raw) return {}
@@ -135,13 +140,19 @@ const td = 'px-3 py-3 border-b border-line align-middle text-md'
 // things depending on the row's action/entity, so labels are resolved with
 // that context rather than from a flat key→label map alone.
 
-const MONEY_KEYS = new Set(['amount', 'totalAmount', 'discountAmount', 'openingCash', 'closingCash', 'cashVariance', 'totalRevenue'])
+const MONEY_KEYS = new Set([
+  'amount', 'totalAmount', 'discountAmount', 'openingCash', 'closingCash', 'cashVariance',
+  'totalRevenue', 'price', 'costPrice', 'mainBaseWage',
+])
+const PERCENT_KEYS = new Set(['discountPercent'])
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = { CASH: 'Tiền mặt', CARD: 'Thẻ', QR: 'QR', E_WALLET: 'Ví điện tử' }
 const CASH_MOVEMENT_TYPE_LABELS: Record<string, string> = { CASH_IN: 'Thu tiền', CASH_OUT: 'Chi tiền' }
 const ROLE_LABELS: Record<string, string> = { WAITER: 'Phục vụ', CASHIER: 'Thu ngân', MANAGER: 'Quản lý', ADMIN: 'Quản trị viên' }
 const USER_STATUS_LABELS: Record<string, string> = { ACTIVE: 'Hoạt động', UN_ACTIVE: 'Chưa kích hoạt', INACTIVE: 'Ngừng hoạt động', LOCKED: 'Bị khóa' }
 const SHIFT_STATUS_LABELS: Record<string, string> = { OPEN: 'Đang mở', CLOSED: 'Đã đóng', PENDING_RECON: 'Chờ đối soát' }
+const TABLE_STATUS_LABELS: Record<string, string> = { AVAILABLE: 'Trống', OCCUPIED: 'Đang phục vụ', RESERVED: 'Đã đặt trước', BILLING: 'Đang thanh toán', CLEANING: 'Đang dọn dẹp' }
+const EMPLOYEE_STATUS_LABELS: Record<string, string> = { ACTIVE: 'Đang làm việc', INACTIVE: 'Ngừng làm việc' }
 const RESERVATION_STATUS_LABELS: Record<string, string> = {
   PENDING: 'Chờ xác nhận', CONFIRMED: 'Đã xác nhận', CHECKED_IN: 'Đã check-in',
   NO_SHOW: 'Không đến', CANCELLED: 'Đã hủy', COMPLETED: 'Hoàn tất',
@@ -157,6 +168,20 @@ const DETAIL_KEY_LABELS: Record<string, string> = {
   cashVariance: 'Chênh lệch tiền mặt', totalRevenue: 'Tổng doanh thu', type: 'Loại giao dịch',
   username: 'Tài khoản', role: 'Vai trò', reason: 'Lý do', locked: 'Tài khoản bị khóa',
   name: 'Tên', code: 'Mã', status: 'Trạng thái', from: 'Trước', to: 'Sau', raw: 'Nội dung',
+  // Table / Area
+  area: 'Khu vực', capacity: 'Sức chứa', note: 'Ghi chú', displayOrder: 'Thứ tự hiển thị',
+  // Menu item / category
+  categoryId: 'Danh mục', price: 'Giá bán', costPrice: 'Giá vốn', description: 'Mô tả',
+  menuType: 'Loại thực đơn', itemType: 'Loại món', tag: 'Nhãn', trackStock: 'Theo dõi tồn kho',
+  imageUrl: 'Ảnh', icon: 'Biểu tượng', names: 'Danh sách món',
+  // Promotion
+  discountPercent: 'Giảm giá (%)', validFrom: 'Hiệu lực từ', validTo: 'Hiệu lực đến', usageLimit: 'Giới hạn lượt dùng',
+  // User / Employee
+  fullName: 'Họ tên', email: 'Email', phone: 'Số điện thoại', startDate: 'Ngày bắt đầu làm việc',
+  timekeepCode: 'Mã chấm công', idNumber: 'Số CMND/CCCD', birthday: 'Ngày sinh', gender: 'Giới tính',
+  address: 'Địa chỉ', userId: 'Tài khoản liên kết', avatarUrl: 'Ảnh đại diện',
+  // Salary setting
+  mainSalaryType: 'Loại lương chính', mainBaseWage: 'Mức lương', overtimeEnabled: 'Tăng ca', salaryTemplate: 'Mẫu lương',
 }
 
 // Fallback for any key not covered above: someNewField -> "Some New Field".
@@ -165,26 +190,26 @@ const humanize = (key: string) => {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
-const resolveDetailField = (
-  key: string, value: DetailValue, action: string, targetEntity: string | null,
-): { label: string; text: string } => {
-  let label = DETAIL_KEY_LABELS[key] ?? humanize(key)
+// Renders a single scalar value to display text — shared between plain fields and each side
+// (from/to) of a changed-field pair, so a status enum etc. resolves the same way either way.
+const formatScalar = (key: string, value: Scalar, action: string, targetEntity: string | null): string => {
+  if (value === null || value === '') return '—'
   let text = typeof value === 'boolean'
     ? (value ? 'Có' : 'Không')
     : typeof value === 'number'
-      ? (MONEY_KEYS.has(key) ? `${value.toLocaleString('vi-VN')}đ` : value.toLocaleString('vi-VN'))
+      ? (MONEY_KEYS.has(key) ? `${value.toLocaleString('vi-VN')}đ` : PERCENT_KEYS.has(key) ? `${value}%` : value.toLocaleString('vi-VN'))
       : String(value)
 
-  if (key === 'code' && targetEntity) {
-    label = targetEntity === 'Employee' ? 'Mã nhân viên' : targetEntity === 'Promotion' ? 'Mã khuyến mãi' : label
-  } else if (key === 'status') {
-    if (targetEntity === 'Shift') { label = 'Trạng thái ca'; text = SHIFT_STATUS_LABELS[String(value)] ?? text }
-    else if (targetEntity === 'User') { label = 'Trạng thái tài khoản'; text = USER_STATUS_LABELS[String(value)] ?? text }
+  if (key === 'status') {
+    if (targetEntity === 'Shift') text = SHIFT_STATUS_LABELS[String(value)] ?? text
+    else if (targetEntity === 'User') text = USER_STATUS_LABELS[String(value)] ?? text
+    else if (targetEntity === 'Table') text = TABLE_STATUS_LABELS[String(value)] ?? text
+    else if (targetEntity === 'Employee') text = EMPLOYEE_STATUS_LABELS[String(value)] ?? text
+    else if (action.startsWith('RESERVATION_')) text = RESERVATION_STATUS_LABELS[String(value)] ?? text
   } else if (key === 'from' || key === 'to') {
-    if (action === 'RESERVATION_TRANSFER_TABLE') {
-      label = key === 'from' ? 'Bàn cũ' : 'Bàn mới'
-    } else if (action.startsWith('RESERVATION_')) {
-      label = key === 'from' ? 'Trạng thái trước' : 'Trạng thái sau'
+    // Legacy flat from/to (single-value transitions hand-built by e.g. ReservationServiceImpl),
+    // distinct from the nested per-field {from,to} pairs this component also renders below.
+    if (action.startsWith('RESERVATION_') && action !== 'RESERVATION_TRANSFER_TABLE') {
       text = RESERVATION_STATUS_LABELS[String(value)] ?? text
     }
   } else if (key === 'method') {
@@ -198,20 +223,48 @@ const resolveDetailField = (
   } else if (key === 'channel' && value === 'ONLINE') {
     text = 'Đặt online'
   }
+  return text
+}
 
-  return { label, text }
+const resolveDetailLabel = (key: string, targetEntity: string | null): string => {
+  if (key === 'code' && targetEntity) {
+    return targetEntity === 'Employee' ? 'Mã nhân viên' : targetEntity === 'Promotion' ? 'Mã khuyến mãi' : DETAIL_KEY_LABELS[key] ?? humanize(key)
+  }
+  if (key === 'status') {
+    if (targetEntity === 'Shift') return 'Trạng thái ca'
+    if (targetEntity === 'User') return 'Trạng thái tài khoản'
+    if (targetEntity === 'Table') return 'Trạng thái bàn'
+    if (targetEntity === 'Employee') return 'Trạng thái làm việc'
+  }
+  if (key === 'from' || key === 'to') {
+    // RESERVATION_TRANSFER_TABLE's flat from/to means "bàn cũ/mới", not a status transition —
+    // everywhere else with a flat from/to means "trạng thái trước/sau".
+    return key === 'from' ? 'Trước' : 'Sau'
+  }
+  return DETAIL_KEY_LABELS[key] ?? humanize(key)
+}
+
+const resolveDetailField = (
+  key: string, value: DetailValue, action: string, targetEntity: string | null,
+): { label: string; text: string } => {
+  let label = resolveDetailLabel(key, targetEntity)
+  if ((key === 'from' || key === 'to') && action === 'RESERVATION_TRANSFER_TABLE') {
+    label = key === 'from' ? 'Bàn cũ' : 'Bàn mới'
+  }
+
+  if (isChangedPair(value)) {
+    const fromText = formatScalar(key, value.from, action, targetEntity)
+    const toText = formatScalar(key, value.to, action, targetEntity)
+    return { label, text: `${fromText} → ${toText}` }
+  }
+  return { label, text: formatScalar(key, value, action, targetEntity) }
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
 const ActionBadge = ({ action }: { action: string }) => {
-  const meta = ACTION_META[action] ?? { label: action, color: '#888', bg: '#88888818' }
-  return (
-    <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-          style={{ color: meta.color, background: meta.bg }}>
-      {meta.label}
-    </span>
-  )
+  const meta = ACTION_META[action] ?? { label: action }
+  return <span className="text-md text-ink font-medium whitespace-nowrap">{meta.label}</span>
 }
 
 const DetailCell = ({ raw, action, targetEntity }: { raw: string | null; action: string; targetEntity: string | null }) => {

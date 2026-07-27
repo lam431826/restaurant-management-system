@@ -12,9 +12,8 @@ public record VerifyInfoRequest(
         @NotBlank String fullName,
         @NotBlank @Email String email,
         @NotBlank @Pattern(regexp = "^0\\d{9,10}$") String phone,
-        LocalDate startDate,
         String note,
-        String idNumber,
+        @Pattern(regexp = "^\\d*$") String idNumber,
         LocalDate birthday,
         String gender,
         String address

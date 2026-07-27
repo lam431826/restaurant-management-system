@@ -18,6 +18,7 @@ import {
   type Rate,
   type SalaryConfig,
 } from './employeeSalary'
+import { validateBirthday, validateIdNumber } from '../../utils/employeeValidation'
 
 type TabKey = 'info' | 'salary'
 
@@ -197,9 +198,9 @@ const Toggle = ({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 
 // ── White card section, optionally collapsible ──────────────────────────
 export const SectionCard = ({
-  title, collapsible, children, extra,
-}: { title?: string; collapsible?: boolean; children: React.ReactNode; extra?: React.ReactNode }) => {
-  const [open, setOpen] = useState(true)
+  title, collapsible, children, extra, defaultOpen = true,
+}: { title?: string; collapsible?: boolean; children: React.ReactNode; extra?: React.ReactNode; defaultOpen?: boolean }) => {
+  const [open, setOpen] = useState(defaultOpen)
   return (
     <div className="bg-card rounded-lg p-5">
       {title && (
@@ -697,6 +698,18 @@ const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props
       setTab('info')
       return
     }
+    const birthdayError = validateBirthday(birthday)
+    if (birthdayError) {
+      setError(birthdayError)
+      setTab('info')
+      return
+    }
+    const idNumberError = validateIdNumber(idNumber)
+    if (idNumberError) {
+      setError(idNumberError)
+      setTab('info')
+      return
+    }
     if (createTemplateAfter && !salaryType) {
       setError('Vui lòng chọn loại lương trước khi tạo mẫu')
       setTab('salary')
@@ -842,11 +855,11 @@ const EmployeeModal = ({ employee, onClose, onSave, initialTab = 'info' }: Props
                   <Field label="Số CMND/CCCD">
                     <input className={inputCls} inputMode="numeric" value={idNumber} onChange={e => setIdNumber(e.target.value)} />
                   </Field>
-                  <div className="flex gap-6">
-                    <Field label="Ngày sinh" className="flex-1">
+                  <div className="flex gap-6 min-w-0">
+                    <Field label="Ngày sinh" className="flex-1 min-w-0">
                       <input type="date" className={inputCls} value={birthday} onChange={e => setBirthday(e.target.value)} />
                     </Field>
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-1.5 shrink-0">
                       <label className="text-md text-ink-subtle">Giới tính</label>
                       <div className="flex items-center gap-5 h-11">
                         {['Nam', 'Nữ'].map(g => (

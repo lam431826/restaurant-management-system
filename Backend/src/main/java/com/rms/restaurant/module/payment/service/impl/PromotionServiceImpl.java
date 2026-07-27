@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.payment.service.impl;
 
+import com.rms.restaurant.common.utils.audit.AuditDetailBuilder;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ConflictException;
@@ -68,14 +69,31 @@ public class PromotionServiceImpl implements PromotionService {
                 .build();
 
         Promotion saved = promotionRepository.save(promotion);
-        audit("PROMOTION_CREATE", saved.getId(),
-                "{\"code\":\"" + esc(saved.getCode()) + "\"}");
+        audit("PROMOTION_CREATE", saved.getId(), AuditDetailBuilder.create()
+                .field("code", saved.getCode())
+                .field("description", saved.getDescription())
+                .field("discountPercent", saved.getDiscountPercent())
+                .field("discountAmount", saved.getDiscountAmount())
+                .field("validFrom", String.valueOf(saved.getValidFrom()))
+                .field("validTo", String.valueOf(saved.getValidTo()))
+                .field("usageLimit", saved.getUsageLimit())
+                .field("active", saved.isActive())
+                .build());
         return promotionMapper.toResponse(saved);
     }
 
     @Override
     public PromotionResponse update(String id, UpdatePromotionRequest request) {
         Promotion promotion = findPromotionForUpdate(id);
+        String oldCode = promotion.getCode();
+        String oldDescription = promotion.getDescription();
+        BigDecimal oldDiscountPercent = promotion.getDiscountPercent();
+        BigDecimal oldDiscountAmount = promotion.getDiscountAmount();
+        LocalDate oldValidFrom = promotion.getValidFrom();
+        LocalDate oldValidTo = promotion.getValidTo();
+        Integer oldUsageLimit = promotion.getUsageLimit();
+        boolean oldActive = promotion.isActive();
+
         validateDiscount(request.discountPercent(), request.discountAmount());
         validateValidityRange(request.validFrom(), request.validTo());
         validateUsageLimit(request.usageLimit(), promotion.getUsedCount());
@@ -91,8 +109,16 @@ public class PromotionServiceImpl implements PromotionService {
         promotion.setActive(request.active() == null ? promotion.isActive() : request.active());
 
         Promotion saved = promotionRepository.save(promotion);
-        audit("PROMOTION_UPDATE", saved.getId(),
-                "{\"code\":\"" + esc(saved.getCode()) + "\",\"active\":" + saved.isActive() + "}");
+        audit("PROMOTION_UPDATE", saved.getId(), AuditDetailBuilder.create()
+                .changed("code", oldCode, saved.getCode())
+                .changed("description", oldDescription, saved.getDescription())
+                .changed("discountPercent", oldDiscountPercent, saved.getDiscountPercent())
+                .changed("discountAmount", oldDiscountAmount, saved.getDiscountAmount())
+                .changed("validFrom", String.valueOf(oldValidFrom), String.valueOf(saved.getValidFrom()))
+                .changed("validTo", String.valueOf(oldValidTo), String.valueOf(saved.getValidTo()))
+                .changed("usageLimit", oldUsageLimit, saved.getUsageLimit())
+                .changed("active", oldActive, saved.isActive())
+                .build());
         return promotionMapper.toResponse(saved);
     }
 
@@ -101,8 +127,10 @@ public class PromotionServiceImpl implements PromotionService {
         Promotion promotion = findPromotionForUpdate(id);
         promotion.setActive(false);
         Promotion saved = promotionRepository.save(promotion);
-        audit("PROMOTION_DELETE", saved.getId(),
-                "{\"code\":\"" + esc(saved.getCode()) + "\"}");
+        audit("PROMOTION_DELETE", saved.getId(), AuditDetailBuilder.create()
+                .field("code", saved.getCode())
+                .field("description", saved.getDescription())
+                .build());
     }
 
     private Promotion findPromotion(String id) {
@@ -182,9 +210,5 @@ public class PromotionServiceImpl implements PromotionService {
     private void audit(String action, String id, String detail) {
         try { auditService.log(action, "Promotion", id, detail); }
         catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
-    }
-
-    private static String esc(String s) {
-        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

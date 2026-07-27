@@ -1,5 +1,6 @@
 package com.rms.restaurant.module.menu.service.impl;
 
+import com.rms.restaurant.common.utils.audit.AuditDetailBuilder;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
@@ -95,13 +96,38 @@ public class MenuServiceImpl implements MenuService {
                 .available(request.available() == null || request.available())
                 .build();
         MenuItem saved = itemRepository.save(item);
-        audit("MENU_ITEM_CREATE", "MenuItem", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        audit("MENU_ITEM_CREATE", "MenuItem", saved.getId(), AuditDetailBuilder.create()
+                .field("code", saved.getCode())
+                .field("name", saved.getName())
+                .field("categoryId", saved.getCategoryId())
+                .field("price", saved.getPrice())
+                .field("costPrice", saved.getCostPrice())
+                .field("description", saved.getDescription())
+                .field("menuType", saved.getMenuType())
+                .field("itemType", saved.getItemType())
+                .field("tag", saved.getTag())
+                .field("trackStock", saved.isTrackStock())
+                .field("available", saved.isAvailable())
+                .build());
         return menuMapper.toResponse(saved);
     }
 
     @Override
     public MenuItemResponse updateItem(String id, UpdateMenuItemRequest request) {
         MenuItem item = findItem(id);
+        String oldCode = item.getCode();
+        String oldCategoryId = item.getCategoryId();
+        String oldName = item.getName();
+        BigDecimal oldPrice = item.getPrice();
+        BigDecimal oldCostPrice = item.getCostPrice();
+        String oldDescription = item.getDescription();
+        String oldImageUrl = item.getImageUrl();
+        String oldMenuType = item.getMenuType();
+        String oldItemType = item.getItemType();
+        String oldTag = item.getTag();
+        boolean oldTrackStock = item.isTrackStock();
+        boolean oldAvailable = item.isAvailable();
+
         if (StringUtils.hasText(request.categoryId())) {
             requireCategory(request.categoryId());
             item.setCategoryId(request.categoryId());
@@ -140,16 +166,33 @@ public class MenuServiceImpl implements MenuService {
             item.setAvailable(request.available());
         }
         MenuItem saved = itemRepository.save(item);
-        audit("MENU_ITEM_UPDATE", "MenuItem", saved.getId(), "{\"name\":\"" + esc(saved.getName()) + "\"}");
+        audit("MENU_ITEM_UPDATE", "MenuItem", saved.getId(), AuditDetailBuilder.create()
+                .changed("code", oldCode, saved.getCode())
+                .changed("name", oldName, saved.getName())
+                .changed("categoryId", oldCategoryId, saved.getCategoryId())
+                .changed("price", oldPrice, saved.getPrice())
+                .changed("costPrice", oldCostPrice, saved.getCostPrice())
+                .changed("description", oldDescription, saved.getDescription())
+                .changed("imageUrl", oldImageUrl, saved.getImageUrl())
+                .changed("menuType", oldMenuType, saved.getMenuType())
+                .changed("itemType", oldItemType, saved.getItemType())
+                .changed("tag", oldTag, saved.getTag())
+                .changed("trackStock", oldTrackStock, saved.isTrackStock())
+                .changed("available", oldAvailable, saved.isAvailable())
+                .build());
         return menuMapper.toResponse(saved);
     }
 
     @Override
     public void setAvailability(String id, boolean available) {
         MenuItem item = findItem(id);
+        boolean oldAvailable = item.isAvailable();
         item.setAvailable(available);
         itemRepository.save(item);
-        audit("MENU_ITEM_UPDATE", "MenuItem", id, "{\"name\":\"" + esc(item.getName()) + "\",\"available\":" + available + "}");
+        audit("MENU_ITEM_UPDATE", "MenuItem", id, AuditDetailBuilder.create()
+                .field("name", item.getName())
+                .changed("available", oldAvailable, available)
+                .build());
     }
 
     @Override
@@ -160,7 +203,10 @@ public class MenuServiceImpl implements MenuService {
                     "Món \"" + item.getName() + "\" đã có trong đơn hàng và không thể xóa. Hãy ngừng bán thay vì xóa.");
         }
         itemRepository.delete(item);
-        audit("MENU_ITEM_DELETE", "MenuItem", id, "{\"name\":\"" + esc(item.getName()) + "\"}");
+        audit("MENU_ITEM_DELETE", "MenuItem", id, AuditDetailBuilder.create()
+                .field("code", item.getCode())
+                .field("name", item.getName())
+                .build());
     }
 
     @Override
@@ -168,7 +214,11 @@ public class MenuServiceImpl implements MenuService {
         List<MenuItem> items = itemRepository.findAllById(ids);
         items.forEach(item -> item.setAvailable(available));
         itemRepository.saveAll(items);
-        audit("MENU_ITEM_UPDATE", "MenuItem", null, "{\"bulk\":true,\"count\":" + items.size() + ",\"available\":" + available + "}");
+        audit("MENU_ITEM_UPDATE", "MenuItem", null, AuditDetailBuilder.create()
+                .field("bulk", true)
+                .field("count", items.size())
+                .field("available", available)
+                .build());
     }
 
     @Override
@@ -184,7 +234,11 @@ public class MenuServiceImpl implements MenuService {
                             + ". Hãy ngừng bán thay vì xóa.");
         }
         itemRepository.deleteAll(items);
-        audit("MENU_ITEM_DELETE", "MenuItem", null, "{\"bulk\":true,\"count\":" + items.size() + "}");
+        audit("MENU_ITEM_DELETE", "MenuItem", null, AuditDetailBuilder.create()
+                .field("bulk", true)
+                .field("count", items.size())
+                .field("names", items.stream().map(MenuItem::getName).collect(Collectors.joining(", ")))
+                .build());
     }
 
     // ── Categories (MM-02) ───────────────────────────────────────────────
@@ -208,13 +262,20 @@ public class MenuServiceImpl implements MenuService {
                 .icon(request.icon())
                 .build();
         category = categoryRepository.save(category);
-        audit("MENU_CATEGORY_CREATE", "MenuCategory", category.getId(), "{\"name\":\"" + esc(category.getName()) + "\"}");
+        audit("MENU_CATEGORY_CREATE", "MenuCategory", category.getId(), AuditDetailBuilder.create()
+                .field("name", category.getName())
+                .field("icon", category.getIcon())
+                .field("displayOrder", category.getDisplayOrder())
+                .build());
         return menuMapper.toCategoryResponse(category, 0);
     }
 
     @Override
     public CategoryResponse updateCategory(String id, CategoryRequest request) {
         MenuCategory category = findCategory(id);
+        String oldName = category.getName();
+        String oldIcon = category.getIcon();
+        Integer oldDisplayOrder = category.getDisplayOrder();
         String newName = request.name().trim();
         categoryRepository.findByNameIgnoreCase(newName)
                 .filter(existing -> !existing.getId().equals(id))
@@ -223,7 +284,11 @@ public class MenuServiceImpl implements MenuService {
         category.setDisplayOrder(request.displayOrder());
         category.setIcon(request.icon());
         categoryRepository.save(category);
-        audit("MENU_CATEGORY_UPDATE", "MenuCategory", category.getId(), "{\"name\":\"" + esc(category.getName()) + "\"}");
+        audit("MENU_CATEGORY_UPDATE", "MenuCategory", category.getId(), AuditDetailBuilder.create()
+                .changed("name", oldName, category.getName())
+                .changed("icon", oldIcon, category.getIcon())
+                .changed("displayOrder", oldDisplayOrder, category.getDisplayOrder())
+                .build());
         return menuMapper.toCategoryResponse(category, itemRepository.countByCategoryId(id));
     }
 
@@ -234,7 +299,9 @@ public class MenuServiceImpl implements MenuService {
             category.setDisplayOrder(i);
             categoryRepository.save(category);
         }
-        audit("MENU_CATEGORY_REORDER", "MenuCategory", null, "{\"count\":" + orderedCategoryIds.size() + "}");
+        audit("MENU_CATEGORY_REORDER", "MenuCategory", null, AuditDetailBuilder.create()
+                .field("count", orderedCategoryIds.size())
+                .build());
     }
 
     @Override
@@ -244,7 +311,9 @@ public class MenuServiceImpl implements MenuService {
             throw new ConflictException(ApplicationError.CATEGORY_HAS_ITEMS);
         }
         categoryRepository.delete(category);
-        audit("MENU_CATEGORY_DELETE", "MenuCategory", id, "{\"name\":\"" + esc(category.getName()) + "\"}");
+        audit("MENU_CATEGORY_DELETE", "MenuCategory", id, AuditDetailBuilder.create()
+                .field("name", category.getName())
+                .build());
     }
 
     // ── Import / Export (MM-04) ──────────────────────────────────────────
@@ -402,8 +471,11 @@ public class MenuServiceImpl implements MenuService {
             throw new ConflictException(ApplicationError.MENU_IMPORT_INVALID);
         }
 
-        audit("MENU_IMPORT", "MenuItem", null, "{\"created\":" + created + ",\"updated\":" + updated
-                + ",\"errors\":" + errors.size() + "}");
+        audit("MENU_IMPORT", "MenuItem", null, AuditDetailBuilder.create()
+                .field("created", created)
+                .field("updated", updated)
+                .field("errors", errors.size())
+                .build());
 
         return new ImportResultResponse(created, updated, errors.size(), errors);
     }
@@ -513,9 +585,5 @@ public class MenuServiceImpl implements MenuService {
     private void audit(String action, String targetEntity, String id, String detail) {
         try { auditService.log(action, targetEntity, id, detail); }
         catch (Exception e) { log.warn("Audit log failed: {}", e.getMessage()); }
-    }
-
-    private static String esc(String s) {
-        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

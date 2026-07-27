@@ -13,7 +13,6 @@ export interface FirstLoginProfile {
   fullName: string
   email: string
   phone: string
-  startDate?: string
   note?: string
   idNumber?: string
   birthday?: string
