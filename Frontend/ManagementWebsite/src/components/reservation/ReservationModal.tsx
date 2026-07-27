@@ -72,12 +72,21 @@ const inputCls =
   'placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary ' +
   'focus:shadow-[0_0_0_0.3rem_rgba(var(--kv-primary-rgb),0.12)]'
 
-const Row = ({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) => (
-  <div className="flex items-center gap-3 min-h-10">
-    <div className="w-[10rem] shrink-0">
+// Mirrors the backend contract (CreateReservationRequest @NotBlank/@Pattern/@Min/@Max/@Email +
+// Reservation entity column lengths) so the form never accepts something the API rejects.
+const GUEST_NAME_MAX = 150 // Reservation.guestName column length 150
+const NOTE_MAX = 500 // Reservation.note column length 500
+const PARTY_SIZE_MAX = 20 // @Max(20)
+
+const Row = ({ label, required, error, hint, children }: { label: string; required?: boolean; error?: string; hint?: string; children: React.ReactNode }) => (
+  <div className="flex items-start gap-3 min-h-10">
+    <div className="w-[10rem] shrink-0 pt-2">
       <label className="text-md text-ink-subtle">{label}{required && <span className="text-danger ml-0.5">*</span>}</label>
     </div>
-    <div className="flex-1 min-w-0">{children}</div>
+    <div className="flex-1 min-w-0 flex flex-col gap-1">
+      {children}
+      <span className={`text-sm min-h-4 ${error ? 'text-danger' : 'text-ink-muted'}`}>{error || hint || ''}</span>
+    </div>
   </div>
 )
 
@@ -98,11 +107,17 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
   const [tableId, setTableId] = useState<string>('')
   const [tables, setTables] = useState<TableDto[]>([])
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const customerRef = useRef<HTMLInputElement>(null)
-  // Captured instead of calling Date.now() directly in the validationMessage computation below
-  // (impure during render) — refreshed periodically so a modal left open still re-validates the
-  // BR-03 lead-time check as time passes, without needing every render to be Date.now()-driven.
+
+  const clearFieldError = (field: string) => {
+    setError('')
+    setFieldErrors(current => (current[field] ? { ...current, [field]: '' } : current))
+  }
+  // Captured instead of calling Date.now() directly in the validate() computation below (impure
+  // during render) — refreshed periodically so a modal left open still re-validates the BR-03
+  // lead-time check as time passes, without needing every render to be Date.now()-driven.
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -198,28 +213,40 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
   // assignable time the waiter is looking for.
   const tableSchedule = [...reservationBlocks, ...liveWalkInBlock].sort((a, b) => a.start.getTime() - b.start.getTime())
 
-  // Single source of truth for both the submit-button's disabled state and the on-click
-  // validation — recomputed on every render (cheap: string ops + a handful of comparisons)
-  // so the button reflects live field edits, not just the last submit attempt.
-  const validationMessage = (() => {
-    if (!customer.trim()) return 'Vui lòng nhập tên khách hàng'
-    if (!phone.trim()) return 'Vui lòng nhập số điện thoại'
-    if (!/^0\d{9,10}$/.test(phone.trim())) return 'Số điện thoại không hợp lệ (bắt đầu bằng 0, 10-11 số)'
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return 'Email không hợp lệ'
-    if (!guests || Number(guests) < 1) return 'Vui lòng nhập số khách (tối thiểu 1)'
-    if (!requestedDt) return 'Vui lòng chọn thời gian đến'
-    if (requestedDt.getTime() < now + MIN_LEAD_MINUTES * 60000) return `Vui lòng đặt bàn trước ít nhất ${MIN_LEAD_MINUTES} phút`
-    return ''
-  })()
-  const isValid = !validationMessage
-  // Only surface the live hint once the waiter has actually started filling the form —
-  // otherwise a blank modal would open already showing a wall of red text.
-  const isDirty = Boolean(customer.trim() || phone.trim() || guests)
+  // Mirrors the checks CreateReservationRequest's Bean Validation runs server-side, one message
+  // per field so each Row can show its own error instead of a single wall-of-text summary —
+  // recomputed on every render (cheap: string ops + a handful of comparisons) so the submit
+  // button's disabled state reflects live field edits, not just the last submit attempt.
+  const validate = (): Record<string, string> => {
+    const next: Record<string, string> = {}
+    const trimmedName = customer.trim()
+    if (!trimmedName) next.customer = 'Vui lòng nhập tên khách hàng'
+    else if (trimmedName.length > GUEST_NAME_MAX) next.customer = `Không được vượt quá ${GUEST_NAME_MAX} ký tự`
+
+    const trimmedPhone = phone.trim()
+    if (!trimmedPhone) next.phone = 'Vui lòng nhập số điện thoại'
+    else if (!/^0\d{9,10}$/.test(trimmedPhone)) next.phone = 'Bắt đầu bằng 0, 10-11 số'
+
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) next.email = 'Email không hợp lệ'
+
+    if (!guests || Number(guests) < 1) next.guests = 'Tối thiểu 1 khách'
+    else if (Number(guests) > PARTY_SIZE_MAX) next.guests = `Tối đa ${PARTY_SIZE_MAX} khách`
+
+    if (!requestedDt) next.datetime = 'Vui lòng chọn thời gian đến'
+    else if (requestedDt.getTime() < now + MIN_LEAD_MINUTES * 60000) next.datetime = `Phải đặt trước ít nhất ${MIN_LEAD_MINUTES} phút`
+
+    if (note.trim().length > NOTE_MAX) next.note = `Không được vượt quá ${NOTE_MAX} ký tự`
+
+    return next
+  }
+  const validationErrors = validate()
+  const isValid = Object.keys(validationErrors).length === 0
 
   const handleSave = async () => {
-    if (validationMessage) {
-      setError(validationMessage)
-      if (!customer.trim()) customerRef.current?.focus()
+    if (!isValid) {
+      setFieldErrors(validationErrors)
+      setError('Vui lòng kiểm tra lại các trường được đánh dấu')
+      if (validationErrors.customer) customerRef.current?.focus()
       return
     }
     setError('')
@@ -261,23 +288,51 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto p-7 flex flex-col gap-5">
-          <Row label="Khách hàng" required>
-            <input ref={customerRef} className={inputCls} placeholder="Tên khách đặt" value={customer} onChange={e => { setCustomer(e.target.value); if (error) setError('') }} />
+          <Row label="Khách hàng" required error={fieldErrors.customer} hint={`Tối đa ${GUEST_NAME_MAX} ký tự`}>
+            <input
+              ref={customerRef}
+              className={`${inputCls} ${fieldErrors.customer ? 'border-danger' : ''}`}
+              maxLength={GUEST_NAME_MAX}
+              placeholder="Tên khách đặt"
+              aria-invalid={!!fieldErrors.customer}
+              value={customer}
+              onChange={e => { setCustomer(e.target.value); clearFieldError('customer') }}
+            />
           </Row>
           <div className="grid grid-cols-2 gap-4">
-            <Row label="Điện thoại" required>
-              <input className={inputCls} inputMode="tel" placeholder="0xxxxxxxxx" value={phone} onChange={e => { setPhone(e.target.value); if (error) setError('') }} />
+            <Row label="Điện thoại" required error={fieldErrors.phone} hint="Bắt đầu bằng 0, 10-11 số">
+              <input
+                className={`${inputCls} ${fieldErrors.phone ? 'border-danger' : ''}`}
+                inputMode="tel"
+                placeholder="0xxxxxxxxx"
+                aria-invalid={!!fieldErrors.phone}
+                value={phone}
+                onChange={e => { setPhone(e.target.value); clearFieldError('phone') }}
+              />
             </Row>
-            <Row label="Email khách">
-              <input className={inputCls} type="email" placeholder="guest@example.com" value={email} onChange={e => { setEmail(e.target.value); if (error) setError('') }} />
+            <Row label="Email khách" error={fieldErrors.email} hint="Không bắt buộc — dùng gửi thông báo">
+              <input
+                className={`${inputCls} ${fieldErrors.email ? 'border-danger' : ''}`}
+                type="email"
+                placeholder="guest@example.com"
+                aria-invalid={!!fieldErrors.email}
+                value={email}
+                onChange={e => { setEmail(e.target.value); clearFieldError('email') }}
+              />
             </Row>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center gap-3 min-h-10">
-              <div className="w-[10rem] shrink-0"><label className="text-md text-ink-subtle">Số khách<span className="text-danger ml-0.5">*</span></label></div>
-              <input className={`${inputCls} text-right`} inputMode="numeric" placeholder="0" value={guests} onChange={e => setGuests(e.target.value.replace(/[^\d]/g, ''))} />
-            </div>
-            <Row label="Chọn bàn">
+            <Row label="Số khách" required error={fieldErrors.guests} hint={`Từ 1 đến ${PARTY_SIZE_MAX} khách`}>
+              <input
+                className={`${inputCls} text-right ${fieldErrors.guests ? 'border-danger' : ''}`}
+                inputMode="numeric"
+                placeholder="0"
+                aria-invalid={!!fieldErrors.guests}
+                value={guests}
+                onChange={e => { setGuests(e.target.value.replace(/[^\d]/g, '').slice(0, 2)); clearFieldError('guests') }}
+              />
+            </Row>
+            <Row label="Chọn bàn" hint="Không bắt buộc — có thể xếp bàn sau">
               <select
                 className={inputCls}
                 value={tableId}
@@ -315,17 +370,26 @@ const ReservationModal = ({ reservations, onClose, onSaved }: Props) => {
               )}
             </div>
           )}
-          <Row label="Giờ đến" required>
+          <Row label="Giờ đến" required error={fieldErrors.datetime} hint={`Phải đặt trước ít nhất ${MIN_LEAD_MINUTES} phút`}>
             <div className="flex gap-2">
-              <input type="date" className={inputCls} value={date} onChange={e => setDate(e.target.value)} />
-              <input type="time" className={inputCls} value={time} onChange={e => setTime(e.target.value)} />
+              <input type="date" className={`${inputCls} ${fieldErrors.datetime ? 'border-danger' : ''}`} aria-invalid={!!fieldErrors.datetime} value={date} onChange={e => { setDate(e.target.value); clearFieldError('datetime') }} />
+              <input type="time" className={`${inputCls} ${fieldErrors.datetime ? 'border-danger' : ''}`} aria-invalid={!!fieldErrors.datetime} value={time} onChange={e => { setTime(e.target.value); clearFieldError('datetime') }} />
             </div>
           </Row>
-          <Row label="Ghi chú"><textarea className={`${inputCls} h-[7rem] py-2 resize-none`} placeholder="Nhập ghi chú" value={note} onChange={e => setNote(e.target.value)} /></Row>
+          <Row label="Ghi chú" error={fieldErrors.note} hint={`${note.length}/${NOTE_MAX} ký tự`}>
+            <textarea
+              className={`${inputCls} h-[7rem] py-2 resize-none ${fieldErrors.note ? 'border-danger' : ''}`}
+              maxLength={NOTE_MAX}
+              placeholder="Nhập ghi chú"
+              aria-invalid={!!fieldErrors.note}
+              value={note}
+              onChange={e => { setNote(e.target.value); clearFieldError('note') }}
+            />
+          </Row>
         </div>
 
         <div className="flex items-center justify-between gap-4 px-7 py-4 border-t border-line shrink-0">
-          <span className="text-md text-danger">{error || (isDirty && validationMessage ? validationMessage : '')}</span>
+          <span className="text-md text-danger">{error}</span>
           <div className="flex items-center gap-2">
             <button className="kv-btn kv-btn-outline-neutral h-10" onClick={onClose} disabled={loading}>Bỏ qua</button>
             <button className="kv-btn kv-btn-primary h-10" onClick={handleSave} disabled={loading || !isValid}>

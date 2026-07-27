@@ -82,6 +82,10 @@ interface FieldProps {
   placeholder: string;
   type?: string;
   value: string;
+  required?: boolean;
+  error?: string;
+  hint?: string;
+  maxLength?: number;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 const InputField = ({
@@ -91,23 +95,34 @@ const InputField = ({
   placeholder,
   type = "text",
   value,
+  required,
+  error,
+  hint,
+  maxLength,
   onChange,
 }: FieldProps) => (
   <div className="flex flex-col gap-3">
     <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">
       {label}
+      {required && <span className="text-red-500 ml-0.5">*</span>}
     </label>
-    <div className="bg-[#f5f5f5] flex gap-3 h-[44px] items-center px-4 rounded-[12px] w-full">
+    <div className={`bg-[#f5f5f5] flex gap-3 h-[44px] items-center px-4 rounded-[12px] w-full border ${error ? "border-red-400" : "border-transparent"}`}>
       <span className="text-[#797b7c]">{icon}</span>
       <input
         type={type}
         placeholder={placeholder}
         value={value}
+        maxLength={maxLength}
+        aria-invalid={!!error}
         onChange={onChange}
         className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none leading-[1.5]"
       />
       {rightIcon && <span className="text-[#797b7c]">{rightIcon}</span>}
     </div>
+    {/* Reserve the message row so validating a field never shifts the form's layout. */}
+    <span className={`text-[13px] leading-[1.5] min-h-[1.1em] ${error ? "text-red-500" : "text-[#979899]"}`}>
+      {error || hint || ""}
+    </span>
   </div>
 );
 
@@ -363,98 +378,75 @@ const LoginPage = () => {
             Điền thông tin cá nhân — chúng tôi sẽ gửi mã OTP đến email bạn
             nhập để kích hoạt tài khoản.
           </p>
-          <div className="flex flex-col gap-1">
-            <InputField
-              label="Họ và tên"
-              icon={<PersonIcon />}
-              placeholder="Nguyễn Văn A"
-              value={profileFullName}
-              onChange={(e) => {
-                setProfileFullName(e.target.value);
-                if (profileErrors.fullName)
-                  setProfileErrors((p) => ({ ...p, fullName: "" }));
-              }}
-            />
-            {profileErrors.fullName && (
-              <p className="text-[13px] text-red-500 leading-[1.5]">
-                {profileErrors.fullName}
-              </p>
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <InputField
-              label="Email"
-              icon={<PersonIcon />}
-              placeholder="ban@example.com"
-              type="email"
-              value={profileEmail}
-              onChange={(e) => {
-                setProfileEmail(e.target.value);
-                if (profileErrors.email)
-                  setProfileErrors((p) => ({ ...p, email: "" }));
-              }}
-            />
-            {profileErrors.email && (
-              <p className="text-[13px] text-red-500 leading-[1.5]">
-                {profileErrors.email}
-              </p>
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <InputField
-              label="Số điện thoại"
-              icon={<PersonIcon />}
-              placeholder="0901234567"
-              value={profilePhone}
-              onChange={(e) => {
-                setProfilePhone(e.target.value);
-                if (profileErrors.phone)
-                  setProfileErrors((p) => ({ ...p, phone: "" }));
-              }}
-            />
-            {profileErrors.phone && (
-              <p className="text-[13px] text-red-500 leading-[1.5]">
-                {profileErrors.phone}
-              </p>
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <InputField
-              label="Số CMND/CCCD"
-              icon={<PersonIcon />}
-              placeholder="012345678901"
-              value={profileIdNumber}
-              onChange={(e) => {
-                setProfileIdNumber(e.target.value);
-                if (profileErrors.idNumber)
-                  setProfileErrors((p) => ({ ...p, idNumber: "" }));
-              }}
-            />
-            {profileErrors.idNumber && (
-              <p className="text-[13px] text-red-500 leading-[1.5]">
-                {profileErrors.idNumber}
-              </p>
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <InputField
-              label="Ngày sinh"
-              icon={<PersonIcon />}
-              placeholder=""
-              type="date"
-              value={profileBirthday}
-              onChange={(e) => {
-                setProfileBirthday(e.target.value);
-                if (profileErrors.birthday)
-                  setProfileErrors((p) => ({ ...p, birthday: "" }));
-              }}
-            />
-            {profileErrors.birthday && (
-              <p className="text-[13px] text-red-500 leading-[1.5]">
-                {profileErrors.birthday}
-              </p>
-            )}
-          </div>
+          <InputField
+            label="Họ và tên"
+            icon={<PersonIcon />}
+            placeholder="Nguyễn Văn A"
+            required
+            value={profileFullName}
+            error={profileErrors.fullName}
+            onChange={(e) => {
+              setProfileFullName(e.target.value);
+              if (profileErrors.fullName)
+                setProfileErrors((p) => ({ ...p, fullName: "" }));
+            }}
+          />
+          <InputField
+            label="Email"
+            icon={<PersonIcon />}
+            placeholder="ban@example.com"
+            type="email"
+            required
+            value={profileEmail}
+            error={profileErrors.email}
+            hint="Dùng để nhận mã OTP kích hoạt tài khoản"
+            onChange={(e) => {
+              setProfileEmail(e.target.value);
+              if (profileErrors.email)
+                setProfileErrors((p) => ({ ...p, email: "" }));
+            }}
+          />
+          <InputField
+            label="Số điện thoại"
+            icon={<PersonIcon />}
+            placeholder="0901234567"
+            required
+            value={profilePhone}
+            error={profileErrors.phone}
+            hint="Bắt đầu bằng 0, 10-11 chữ số"
+            onChange={(e) => {
+              setProfilePhone(e.target.value);
+              if (profileErrors.phone)
+                setProfileErrors((p) => ({ ...p, phone: "" }));
+            }}
+          />
+          <InputField
+            label="Số CMND/CCCD"
+            icon={<PersonIcon />}
+            placeholder="012345678901"
+            value={profileIdNumber}
+            error={profileErrors.idNumber}
+            hint="Chỉ nhập số"
+            onChange={(e) => {
+              setProfileIdNumber(e.target.value);
+              if (profileErrors.idNumber)
+                setProfileErrors((p) => ({ ...p, idNumber: "" }));
+            }}
+          />
+          <InputField
+            label="Ngày sinh"
+            icon={<PersonIcon />}
+            placeholder=""
+            type="date"
+            value={profileBirthday}
+            error={profileErrors.birthday}
+            hint="Từ 18 đến 60 tuổi"
+            onChange={(e) => {
+              setProfileBirthday(e.target.value);
+              if (profileErrors.birthday)
+                setProfileErrors((p) => ({ ...p, birthday: "" }));
+            }}
+          />
           <div className="flex flex-col gap-3">
             <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">
               Giới tính
@@ -528,6 +520,7 @@ const LoginPage = () => {
           icon={<LockIcon />}
           placeholder="Nhập mã OTP"
           value={otp}
+          hint="Chỉ nhập số, đúng 6 chữ số"
           onChange={(e) =>
             setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
           }

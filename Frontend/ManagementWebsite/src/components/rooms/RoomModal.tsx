@@ -28,10 +28,17 @@ const inputCls =
   'placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary ' +
   'focus:shadow-[0_0_0_0.3rem_rgba(var(--kv-primary-rgb),0.12)]'
 
-/** Stacked field: label on top, control below. `action` renders aligned to the right of the label. */
+// Mirrors the backend contract (CreateTableRequest/UpdateTableRequest @Size + RestaurantTable
+// entity column length) so the form never accepts something the API rejects.
+const NAME_MAX = 20 // @Size(max = 20) + column length 20
+const NOTE_MAX = 255 // RestaurantTable.note column length 255
+const CAPACITY_MAX = 99 // business rule — a single table/room cannot exceed 99 seats
+
+/** Stacked field: label on top, control below, error/hint reserved below so validating a field
+ * never shifts the form's layout. `action` renders aligned to the right of the label. */
 const Field = ({
-  label, required, action, children,
-}: { label: string; required?: boolean; action?: React.ReactNode; children: React.ReactNode }) => (
+  label, required, action, error, hint, children,
+}: { label: string; required?: boolean; action?: React.ReactNode; error?: string; hint?: string; children: React.ReactNode }) => (
   <div className="flex flex-col gap-1.5">
     <div className="flex items-center justify-between min-h-5">
       <label className="text-md text-ink-subtle">
@@ -41,6 +48,9 @@ const Field = ({
       {action}
     </div>
     {children}
+    <span className={`text-sm min-h-4 ${error ? 'text-danger' : 'text-ink-muted'}`}>
+      {error || hint || ''}
+    </span>
   </div>
 )
 
@@ -96,9 +106,15 @@ const RoomModal = ({ table, areas, onClose, onSaved, onCreateArea }: Props) => {
   const [note, setNote] = useState(table?.note ?? '')
   const [active, setActive] = useState(table?.active ?? true)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
   const nameRef = useRef<HTMLInputElement>(null)
+
+  const clearFieldError = (field: string) => {
+    setError('')
+    setFieldErrors(current => (current[field] ? { ...current, [field]: '' } : current))
+  }
 
   useEffect(() => {
     nameRef.current?.focus()
@@ -112,10 +128,30 @@ const RoomModal = ({ table, areas, onClose, onSaved, onCreateArea }: Props) => {
     }
   }, [onClose])
 
+  /** Returns a message per invalid field; an empty object means the form is valid. */
+  const validate = (): Record<string, string> => {
+    const next: Record<string, string> = {}
+    const trimmedName = name.trim()
+    if (!trimmedName) next.name = 'Vui lòng nhập tên phòng/bàn'
+    else if (trimmedName.length > NAME_MAX) next.name = `Tên không được vượt quá ${NAME_MAX} ký tự`
+
+    if (note.trim().length > NOTE_MAX) next.note = `Ghi chú không được vượt quá ${NOTE_MAX} ký tự`
+
+    if (seats.trim()) {
+      const n = Number(seats)
+      if (!Number.isInteger(n) || n < 0) next.seats = 'Số ghế phải là số nguyên không âm'
+      else if (n > CAPACITY_MAX) next.seats = `Số ghế không được vượt quá ${CAPACITY_MAX}`
+    }
+
+    return next
+  }
+
   const handleSave = async () => {
-    if (!name.trim()) {
-      setError('Vui lòng nhập tên phòng/bàn')
-      nameRef.current?.focus()
+    const validationErrors = validate()
+    setFieldErrors(validationErrors)
+    if (Object.keys(validationErrors).length > 0) {
+      setError('Vui lòng kiểm tra lại các trường được đánh dấu')
+      if (validationErrors.name) nameRef.current?.focus()
       return
     }
     setSaving(true)
@@ -154,13 +190,20 @@ const RoomModal = ({ table, areas, onClose, onSaved, onCreateArea }: Props) => {
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-4">
-          <Field label="Tên phòng bàn" required>
+          <Field
+            label="Tên phòng bàn"
+            required
+            error={fieldErrors.name}
+            hint={`${name.trim().length}/${NAME_MAX} ký tự`}
+          >
             <input
               ref={nameRef}
-              className={inputCls}
+              className={`${inputCls} ${fieldErrors.name ? 'border-danger' : ''}`}
+              maxLength={NAME_MAX}
               placeholder="Bắt buộc"
+              aria-invalid={!!fieldErrors.name}
               value={name}
-              onChange={e => { setName(e.target.value); if (error) setError('') }}
+              onChange={e => { setName(e.target.value); clearFieldError('name') }}
             />
           </Field>
 
@@ -184,22 +227,34 @@ const RoomModal = ({ table, areas, onClose, onSaved, onCreateArea }: Props) => {
             />
           </Field>
 
-          <Field label="Số ghế">
+          <Field
+            label="Số ghế"
+            error={fieldErrors.seats}
+            hint={`Tối đa ${CAPACITY_MAX} chỗ`}
+          >
             <input
-              className={inputCls}
+              className={`${inputCls} ${fieldErrors.seats ? 'border-danger' : ''}`}
               inputMode="numeric"
+              maxLength={2}
               placeholder="Nhập số ghế"
+              aria-invalid={!!fieldErrors.seats}
               value={seats}
-              onChange={e => setSeats(e.target.value.replace(/[^\d]/g, ''))}
+              onChange={e => { setSeats(e.target.value.replace(/[^\d]/g, '').slice(0, 2)); clearFieldError('seats') }}
             />
           </Field>
 
-          <Field label="Ghi chú">
+          <Field
+            label="Ghi chú"
+            error={fieldErrors.note}
+            hint={`${note.length}/${NOTE_MAX} ký tự`}
+          >
             <textarea
-              className={`${inputCls} h-[8rem] py-2 resize-none`}
+              className={`${inputCls} h-[8rem] py-2 resize-none ${fieldErrors.note ? 'border-danger' : ''}`}
+              maxLength={NOTE_MAX}
               placeholder="Nhập ghi chú"
+              aria-invalid={!!fieldErrors.note}
               value={note}
-              onChange={e => setNote(e.target.value)}
+              onChange={e => { setNote(e.target.value); clearFieldError('note') }}
             />
           </Field>
 

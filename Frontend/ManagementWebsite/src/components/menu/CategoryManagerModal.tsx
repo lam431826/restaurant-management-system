@@ -20,6 +20,9 @@ const inputCls =
   'h-9 px-3 bg-field border border-line-default rounded-md text-md text-ink transition-colors ' +
   'placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary'
 
+// Mirrors the backend contract (CategoryRequest @NotBlank + MenuCategory entity column length).
+const NAME_MAX = 100 // MenuCategory.name column length 100
+
 const CategoryManagerModal = ({ categories, onClose, onChanged }: Props) => {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
@@ -45,6 +48,7 @@ const CategoryManagerModal = ({ categories, onClose, onChanged }: Props) => {
   const handleCreate = async () => {
     const name = newName.trim()
     if (!name) { setError('Tên nhóm không được để trống'); return }
+    if (name.length > NAME_MAX) { setError(`Tên nhóm không được vượt quá ${NAME_MAX} ký tự`); return }
     setBusy(true)
     setError('')
     try {
@@ -64,6 +68,7 @@ const CategoryManagerModal = ({ categories, onClose, onChanged }: Props) => {
   const saveRename = async (c: MenuCategory) => {
     const name = editName.trim()
     if (!name) { setError('Tên nhóm không được để trống'); return }
+    if (name.length > NAME_MAX) { setError(`Tên nhóm không được vượt quá ${NAME_MAX} ký tự`); return }
     setBusy(true)
     setError('')
     try {
@@ -116,17 +121,21 @@ const CategoryManagerModal = ({ categories, onClose, onChanged }: Props) => {
 
         <div className="flex-1 min-h-0 overflow-y-auto p-3">
           {creating && (
-            <div className="flex items-center gap-2 px-2 py-2 rounded-md bg-fill">
-              <input
-                className={`${inputCls} flex-1`}
-                placeholder="Tên nhóm món mới"
-                value={newName}
-                autoFocus
-                onChange={e => setNewName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleCreate() }}
-              />
-              <button className="kv-btn kv-btn-primary h-8" disabled={busy} onClick={handleCreate}>Lưu</button>
-              <button className="kv-btn kv-btn-outline-neutral h-8" disabled={busy} onClick={() => { setCreating(false); setError('') }}>Hủy</button>
+            <div className="flex flex-col gap-1 px-2 py-2 rounded-md bg-fill">
+              <div className="flex items-center gap-2">
+                <input
+                  className={`${inputCls} flex-1`}
+                  maxLength={NAME_MAX}
+                  placeholder="Tên nhóm món mới"
+                  value={newName}
+                  autoFocus
+                  onChange={e => { setNewName(e.target.value); if (error) setError('') }}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreate() }}
+                />
+                <button className="kv-btn kv-btn-primary h-8" disabled={busy} onClick={handleCreate}>Lưu</button>
+                <button className="kv-btn kv-btn-outline-neutral h-8" disabled={busy} onClick={() => { setCreating(false); setError('') }}>Hủy</button>
+              </div>
+              <span className="text-sm text-ink-muted pl-1">{newName.trim().length}/{NAME_MAX} ký tự</span>
             </div>
           )}
           {categories.length === 0 && !creating && (
@@ -137,9 +146,10 @@ const CategoryManagerModal = ({ categories, onClose, onChanged }: Props) => {
               {editingId === c.id ? (
                 <input
                   className={`${inputCls} flex-1`}
+                  maxLength={NAME_MAX}
                   value={editName}
                   autoFocus
-                  onChange={e => setEditName(e.target.value)}
+                  onChange={e => { setEditName(e.target.value); if (error) setError('') }}
                   onKeyDown={e => { if (e.key === 'Enter') saveRename(c) }}
                 />
               ) : (

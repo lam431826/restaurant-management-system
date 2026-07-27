@@ -212,6 +212,13 @@ const AdminHeader = ({ onLogout, onChangePassword }: { onLogout: () => void; onC
 }
 
 /* ── Create modal ─────────────────────────────────────────────────────────── */
+// Mirrors the backend contract (CreateUserRequest @NotBlank/@Email/@Pattern + User entity
+// column lengths) so the form never accepts something the API rejects.
+const USERNAME_MAX = 100 // User.username column length 100
+const FULLNAME_MAX = 150 // User.fullName column length 150
+const EMAIL_MAX = 150 // User.email column length 150
+const PHONE_HINT = 'Bắt đầu bằng 0, 10-11 chữ số' // @Pattern(regexp = "^0\\d{9,10}$")
+
 interface CreateForm { username: string; fullName: string; email: string; phone: string; role: string }
 const CreateModal = ({ onClose, onCreated }: { onClose: () => void; onCreated: (user: UserDto, tempPw: string) => void }) => {
   const [form, setForm] = useState<CreateForm>({ username: '', fullName: '', email: '', phone: '', role: '' })
@@ -223,11 +230,16 @@ const CreateModal = ({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
   const validate = (): boolean => {
     const e: Partial<CreateForm> = {}
-    if (!form.username.trim()) e.username = 'Bắt buộc'
-    if (!form.fullName.trim()) e.fullName = 'Bắt buộc'
+    const username = form.username.trim()
+    if (!username) e.username = 'Bắt buộc'
+    else if (username.length > USERNAME_MAX) e.username = `Tối đa ${USERNAME_MAX} ký tự`
+    const fullName = form.fullName.trim()
+    if (!fullName) e.fullName = 'Bắt buộc'
+    else if (fullName.length > FULLNAME_MAX) e.fullName = `Tối đa ${FULLNAME_MAX} ký tự`
     if (!form.role) e.role = 'Bắt buộc'
-    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Email không hợp lệ'
-    if (form.phone && !/^0\d{9,10}$/.test(form.phone)) e.phone = 'SĐT phải bắt đầu bằng 0, 10-11 chữ số'
+    if (form.email && form.email.length > EMAIL_MAX) e.email = `Tối đa ${EMAIL_MAX} ký tự`
+    else if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Email không hợp lệ'
+    if (form.phone && !/^0\d{9,10}$/.test(form.phone)) e.phone = `SĐT không hợp lệ — ${PHONE_HINT.toLowerCase()}`
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -278,25 +290,33 @@ const CreateModal = ({ onClose, onCreated }: { onClose: () => void; onCreated: (
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-[13px] font-semibold text-[#202325]">Tên đăng nhập <span className="text-red-500">*</span></label>
-              <input ref={usernameRef} {...field('username')} placeholder="vd: nguyen.van.a" className={inputCls} />
-              {errors.username && <p className="text-[12px] text-red-500">{errors.username}</p>}
+              <input ref={usernameRef} {...field('username')} maxLength={USERNAME_MAX} placeholder="vd: nguyen.van.a" className={inputCls} />
+              <p className={`text-[12px] ${errors.username ? 'text-red-500' : 'text-[#979899]'}`}>
+                {errors.username || `${form.username.trim().length}/${USERNAME_MAX} ký tự`}
+              </p>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-[13px] font-semibold text-[#202325]">Họ và tên <span className="text-red-500">*</span></label>
-              <input {...field('fullName')} placeholder="Nguyễn Văn A" className={inputCls} />
-              {errors.fullName && <p className="text-[12px] text-red-500">{errors.fullName}</p>}
+              <input {...field('fullName')} maxLength={FULLNAME_MAX} placeholder="Nguyễn Văn A" className={inputCls} />
+              <p className={`text-[12px] ${errors.fullName ? 'text-red-500' : 'text-[#979899]'}`}>
+                {errors.fullName || `${form.fullName.trim().length}/${FULLNAME_MAX} ký tự`}
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-[13px] font-semibold text-[#202325]">Email</label>
-              <input {...field('email')} type="email" placeholder="email@example.com" className={inputCls} />
-              {errors.email && <p className="text-[12px] text-red-500">{errors.email}</p>}
+              <input {...field('email')} type="email" maxLength={EMAIL_MAX} placeholder="email@example.com" className={inputCls} />
+              <p className={`text-[12px] ${errors.email ? 'text-red-500' : 'text-[#979899]'}`}>
+                {errors.email || 'Không bắt buộc — dùng đăng nhập/khôi phục mật khẩu'}
+              </p>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-[13px] font-semibold text-[#202325]">Số điện thoại</label>
-              <input {...field('phone')} inputMode="tel" placeholder="0901234567" className={inputCls} />
-              {errors.phone && <p className="text-[12px] text-red-500">{errors.phone}</p>}
+              <input {...field('phone')} inputMode="tel" maxLength={11} placeholder="0901234567" className={inputCls} />
+              <p className={`text-[12px] ${errors.phone ? 'text-red-500' : 'text-[#979899]'}`}>
+                {errors.phone || `Không bắt buộc — ${PHONE_HINT.toLowerCase()}`}
+              </p>
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
@@ -309,7 +329,9 @@ const CreateModal = ({ onClose, onCreated }: { onClose: () => void; onCreated: (
               <option value="">-- Chọn vai trò --</option>
               {ALL_ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
             </select>
-            {errors.role && <p className="text-[12px] text-red-500">{errors.role}</p>}
+            <p className={`text-[12px] ${errors.role ? 'text-red-500' : 'text-[#979899]'}`}>
+              {errors.role || 'Quyết định các màn hình và chức năng tài khoản được truy cập'}
+            </p>
           </div>
           <p className="text-[12px] text-[#797b7c]">
             Hệ thống sẽ tạo mật khẩu tạm thời và gửi email kích hoạt tài khoản.
@@ -388,9 +410,12 @@ const EditModal = ({ user, isSelf, onClose, onSaved }: { user: UserDto; isSelf: 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const errs: Record<string, string> = {}
-    if (!fullName.trim()) errs.fullName = 'Bắt buộc'
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Email không hợp lệ'
-    if (phone && !/^0\d{9,10}$/.test(phone)) errs.phone = 'SĐT phải bắt đầu bằng 0, 10-11 chữ số'
+    const trimmedFullName = fullName.trim()
+    if (!trimmedFullName) errs.fullName = 'Bắt buộc'
+    else if (trimmedFullName.length > FULLNAME_MAX) errs.fullName = `Tối đa ${FULLNAME_MAX} ký tự`
+    if (email && email.length > EMAIL_MAX) errs.email = `Tối đa ${EMAIL_MAX} ký tự`
+    else if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Email không hợp lệ'
+    if (phone && !/^0\d{9,10}$/.test(phone)) errs.phone = `SĐT không hợp lệ — ${PHONE_HINT.toLowerCase()}`
     if (Object.keys(errs).length) { setErrors(errs); return }
     setLoading(true)
     try {
@@ -432,24 +457,31 @@ const EditModal = ({ user, isSelf, onClose, onSaved }: { user: UserDto; isSelf: 
           {/* fullName */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[13px] font-semibold text-[#202325]">Họ và tên <span className="text-red-500">*</span></label>
-            <input ref={fullNameRef} value={fullName} onChange={e => { setFullName(e.target.value); setErrors(ev => ({ ...ev, fullName: '' })) }}
+            <input ref={fullNameRef} value={fullName} maxLength={FULLNAME_MAX}
+              onChange={e => { setFullName(e.target.value); setErrors(ev => ({ ...ev, fullName: '' })) }}
               className={inputCls} placeholder="Họ và tên" />
-            {errors.fullName && <p className="text-[12px] text-red-500">{errors.fullName}</p>}
+            <p className={`text-[12px] ${errors.fullName ? 'text-red-500' : 'text-[#979899]'}`}>
+              {errors.fullName || `${fullName.trim().length}/${FULLNAME_MAX} ký tự`}
+            </p>
           </div>
 
           {/* email + phone */}
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-[13px] font-semibold text-[#202325]">Email</label>
-              <input value={email} onChange={e => { setEmail(e.target.value); setErrors(ev => ({ ...ev, email: '' })) }}
+              <input value={email} maxLength={EMAIL_MAX} onChange={e => { setEmail(e.target.value); setErrors(ev => ({ ...ev, email: '' })) }}
                 type="email" placeholder="email@example.com" className={inputCls} />
-              {errors.email && <p className="text-[12px] text-red-500">{errors.email}</p>}
+              <p className={`text-[12px] ${errors.email ? 'text-red-500' : 'text-[#979899]'}`}>
+                {errors.email || 'Định dạng email hợp lệ'}
+              </p>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-[13px] font-semibold text-[#202325]">Số điện thoại</label>
-              <input value={phone} onChange={e => { setPhone(e.target.value); setErrors(ev => ({ ...ev, phone: '' })) }}
+              <input value={phone} maxLength={11} onChange={e => { setPhone(e.target.value); setErrors(ev => ({ ...ev, phone: '' })) }}
                 inputMode="tel" placeholder="0901234567" className={inputCls} />
-              {errors.phone && <p className="text-[12px] text-red-500">{errors.phone}</p>}
+              <p className={`text-[12px] ${errors.phone ? 'text-red-500' : 'text-[#979899]'}`}>
+                {errors.phone || PHONE_HINT}
+              </p>
             </div>
           </div>
 

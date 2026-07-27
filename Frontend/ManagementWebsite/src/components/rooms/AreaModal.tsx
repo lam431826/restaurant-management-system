@@ -19,12 +19,23 @@ const inputCls =
   'placeholder:text-ink-muted hover:border-line-strong focus:outline-none focus:border-primary ' +
   'focus:shadow-[0_0_0_0.3rem_rgba(var(--kv-primary-rgb),0.12)]'
 
+// Mirrors the backend contract (TableArea entity column lengths) so the form never accepts
+// something the API rejects.
+const NAME_MAX = 50 // TableArea.name column length 50
+const NOTE_MAX = 255 // TableArea.note column length 255
+
 const AreaModal = ({ existingNames, onClose, onSaved }: Props) => {
   const [name, setName] = useState('')
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const nameRef = useRef<HTMLInputElement>(null)
+
+  const clearFieldError = (field: string) => {
+    setError('')
+    setFieldErrors(current => (current[field] ? { ...current, [field]: '' } : current))
+  }
 
   useEffect(() => {
     nameRef.current?.focus()
@@ -38,17 +49,26 @@ const AreaModal = ({ existingNames, onClose, onSaved }: Props) => {
     }
   }, [onClose])
 
-  const handleSave = async () => {
+  const validate = (): Record<string, string> => {
+    const next: Record<string, string> = {}
     const trimmed = name.trim()
-    if (!trimmed) {
-      setError('Vui lòng nhập tên khu vực')
-      nameRef.current?.focus()
+    if (!trimmed) next.name = 'Vui lòng nhập tên khu vực'
+    else if (trimmed.length > NAME_MAX) next.name = `Tên khu vực không được vượt quá ${NAME_MAX} ký tự`
+    else if (existingNames.some(n => n.toLowerCase() === trimmed.toLowerCase())) next.name = 'Khu vực này đã tồn tại'
+
+    if (note.trim().length > NOTE_MAX) next.note = `Ghi chú không được vượt quá ${NOTE_MAX} ký tự`
+
+    return next
+  }
+
+  const handleSave = async () => {
+    const validationErrors = validate()
+    setFieldErrors(validationErrors)
+    if (Object.keys(validationErrors).length > 0) {
+      if (validationErrors.name) nameRef.current?.focus()
       return
     }
-    if (existingNames.some(n => n.toLowerCase() === trimmed.toLowerCase())) {
-      setError('Khu vực này đã tồn tại')
-      return
-    }
+    const trimmed = name.trim()
     setSaving(true)
     setError('')
     try {
@@ -80,21 +100,31 @@ const AreaModal = ({ existingNames, onClose, onSaved }: Props) => {
             <label className="text-md text-ink-subtle">Tên khu vực<span className="text-danger ml-0.5">*</span></label>
             <input
               ref={nameRef}
-              className={inputCls}
+              className={`${inputCls} ${fieldErrors.name ? 'border-danger' : ''}`}
+              maxLength={NAME_MAX}
               placeholder="Bắt buộc"
+              aria-invalid={!!fieldErrors.name}
               value={name}
-              onChange={e => { setName(e.target.value); if (error) setError('') }}
+              onChange={e => { setName(e.target.value); clearFieldError('name') }}
               onKeyDown={e => { if (e.key === 'Enter') handleSave() }}
             />
+            <span className={`text-sm min-h-4 ${fieldErrors.name ? 'text-danger' : 'text-ink-muted'}`}>
+              {fieldErrors.name || `${name.trim().length}/${NAME_MAX} ký tự`}
+            </span>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-md text-ink-subtle">Ghi chú</label>
             <textarea
-              className={`${inputCls} h-[7rem] py-2 resize-none`}
+              className={`${inputCls} h-[7rem] py-2 resize-none ${fieldErrors.note ? 'border-danger' : ''}`}
+              maxLength={NOTE_MAX}
               placeholder="Nhập ghi chú"
+              aria-invalid={!!fieldErrors.note}
               value={note}
-              onChange={e => setNote(e.target.value)}
+              onChange={e => { setNote(e.target.value); clearFieldError('note') }}
             />
+            <span className={`text-sm min-h-4 ${fieldErrors.note ? 'text-danger' : 'text-ink-muted'}`}>
+              {fieldErrors.note || `${note.length}/${NOTE_MAX} ký tự`}
+            </span>
           </div>
         </div>
 

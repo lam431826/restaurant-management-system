@@ -12,21 +12,29 @@ interface PasswordFieldProps {
   label: string
   placeholder: string
   value: string
+  error?: string
+  hint?: string
   onChange: (v: string) => void
 }
-const PasswordField = ({ label, placeholder, value, onChange }: PasswordFieldProps) => (
+const PasswordField = ({ label, placeholder, value, error, hint, onChange }: PasswordFieldProps) => (
   <div className="flex flex-col gap-2">
-    <label className="text-[13px] font-semibold text-[#202325]">{label}</label>
-    <div className="bg-[#f5f5f5] flex items-center gap-2 h-[42px] px-3 rounded-[10px]">
+    <label className="text-[13px] font-semibold text-[#202325]">
+      {label}<span className="text-red-500 ml-0.5">*</span>
+    </label>
+    <div className={`bg-[#f5f5f5] flex items-center gap-2 h-[42px] px-3 rounded-[10px] border ${error ? 'border-red-400' : 'border-transparent'}`}>
       <span className="text-[#797b7c]"><LockIcon /></span>
       <input
         type="password"
         placeholder={placeholder}
         value={value}
+        aria-invalid={!!error}
         onChange={e => onChange(e.target.value)}
         className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none"
       />
     </div>
+    <span className={`text-[12px] leading-[1.5] min-h-[1.1em] ${error ? 'text-red-500' : 'text-[#979899]'}`}>
+      {error || hint || ''}
+    </span>
   </div>
 )
 
@@ -40,14 +48,32 @@ const ChangePasswordModal = ({ onClose }: Props) => {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [success, setSuccess] = useState(false)
+
+  const clearFieldError = (field: string) => {
+    setError('')
+    setFieldErrors(current => (current[field] ? { ...current, [field]: '' } : current))
+  }
+
+  // Mirrors ChangePasswordRequest: currentPassword @NotBlank, newPassword @Size(min = 8).
+  const validate = (): Record<string, string> => {
+    const next: Record<string, string> = {}
+    if (!currentPassword) next.currentPassword = 'Vui lòng nhập mật khẩu hiện tại'
+    if (!newPassword) next.newPassword = 'Vui lòng nhập mật khẩu mới'
+    else if (newPassword.length < 8) next.newPassword = 'Mật khẩu mới phải có ít nhất 8 ký tự'
+    else if (newPassword === currentPassword) next.newPassword = 'Mật khẩu mới không được trùng mật khẩu hiện tại'
+    if (!confirmPassword) next.confirmPassword = 'Vui lòng nhập lại mật khẩu mới'
+    else if (newPassword !== confirmPassword) next.confirmPassword = 'Mật khẩu xác nhận không khớp'
+    return next
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    if (newPassword !== confirmPassword) { setError('Mật khẩu xác nhận không khớp.'); return }
-    if (newPassword.length < 8) { setError('Mật khẩu mới phải có ít nhất 8 ký tự.'); return }
-    if (newPassword === currentPassword) { setError('Mật khẩu mới không được trùng mật khẩu hiện tại.'); return }
+    const validationErrors = validate()
+    setFieldErrors(validationErrors)
+    if (Object.keys(validationErrors).length > 0) return
     setLoading(true)
     try {
       await changePassword(currentPassword, newPassword)
@@ -55,7 +81,7 @@ const ChangePasswordModal = ({ onClose }: Props) => {
     } catch (error: unknown) {
       const err = asHttpError(error)
       const status = err.response?.status
-      if (status === 401) setError('Mật khẩu hiện tại không đúng.')
+      if (status === 401) setFieldErrors({ currentPassword: 'Mật khẩu hiện tại không đúng' })
       else if (status === 400) setError(err.response?.data?.message ?? 'Dữ liệu không hợp lệ.')
       else setError('Có lỗi xảy ra, vui lòng thử lại.')
     } finally {
@@ -94,11 +120,14 @@ const ChangePasswordModal = ({ onClose }: Props) => {
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <PasswordField label="Mật khẩu hiện tại" placeholder="Nhập mật khẩu hiện tại"
-              value={currentPassword} onChange={setCurrentPassword} />
+              value={currentPassword} error={fieldErrors.currentPassword}
+              onChange={v => { setCurrentPassword(v); clearFieldError('currentPassword') }} />
             <PasswordField label="Mật khẩu mới" placeholder="Tối thiểu 8 ký tự"
-              value={newPassword} onChange={setNewPassword} />
+              value={newPassword} error={fieldErrors.newPassword} hint="Tối thiểu 8 ký tự, khác mật khẩu hiện tại"
+              onChange={v => { setNewPassword(v); clearFieldError('newPassword') }} />
             <PasswordField label="Xác nhận mật khẩu mới" placeholder="Nhập lại mật khẩu mới"
-              value={confirmPassword} onChange={setConfirmPassword} />
+              value={confirmPassword} error={fieldErrors.confirmPassword} hint="Phải trùng với mật khẩu mới ở trên"
+              onChange={v => { setConfirmPassword(v); clearFieldError('confirmPassword') }} />
 
             {error && <p className="text-[13px] text-red-500 leading-[1.5]">{error}</p>}
 

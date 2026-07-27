@@ -39,10 +39,14 @@ const ForgotPasswordPage = () => {
     <AuthLayout title="Quên mật khẩu" subtitle="Nhập tên đăng nhập để nhận mã OTP qua email">
       <form onSubmit={handleSubmit} className="flex flex-col gap-[10px]">
         <div className="flex flex-col gap-3">
-          <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">Username</label>
-          <div className="bg-[#f5f5f5] flex gap-3 h-[44px] items-center px-4 rounded-[12px] w-full">
+          <label className="text-[14px] font-semibold text-[#202325] leading-[1.5]">
+            Username<span className="text-red-500 ml-0.5">*</span>
+          </label>
+          <div className={`bg-[#f5f5f5] flex gap-3 h-[44px] items-center px-4 rounded-[12px] w-full border ${error ? 'border-red-400' : 'border-transparent'}`}>
             <span className="text-[#797b7c]"><PersonIcon /></span>
-            <input type="text" placeholder="Nhập tài khoản" value={username} onChange={e => setUsername(e.target.value)}
+            <input type="text" placeholder="Nhập tài khoản" value={username}
+              aria-invalid={!!error}
+              onChange={e => { setUsername(e.target.value); if (error) setError('') }}
               className="flex-1 bg-transparent text-[14px] text-[#202325] placeholder-[#797b7c] outline-none leading-[1.5]" />
           </div>
         </div>

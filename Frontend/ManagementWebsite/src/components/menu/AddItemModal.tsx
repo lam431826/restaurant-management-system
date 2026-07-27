@@ -66,6 +66,17 @@ const FieldLabel = ({ children, required, info }: { children: React.ReactNode; r
   </span>
 )
 
+/** Reserves the message row below a field so validating it never shifts the form's layout. */
+const FieldMessage = ({ error, hint }: { error?: string; hint?: string }) => (
+  <span className={`text-sm min-h-4 ${error ? 'text-danger' : 'text-ink-muted'}`}>{error || hint || ''}</span>
+)
+
+// Mirrors the backend contract (CreateMenuItemRequest @NotBlank/@PositiveOrZero + MenuItem
+// entity column lengths/precision) so the form never accepts something the API rejects.
+const NAME_MAX = 200 // MenuItem.name column NVARCHAR(200)
+const CODE_MAX = 50 // MenuItem.code column length 50
+const PRICE_HINT = 'Số nguyên, không âm (đơn vị đồng)' // price/costPrice: precision 12, scale 0
+
 const FormSelect = ({
   value, options, placeholder, onChange, footer, bold,
 }: {
@@ -167,8 +178,14 @@ const AddItemModal = ({ kind, item, categories, onClose, onSaved, onCategoryCrea
   const [components, setComponents] = useState<ComboLine[]>([])
   const [tab, setTab] = useState<Tab>('Thông tin')
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+
+  const clearFieldError = (field: string) => {
+    setError('')
+    setFieldErrors(current => (current[field] ? { ...current, [field]: '' } : current))
+  }
 
   const nameRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -226,9 +243,20 @@ const AddItemModal = ({ kind, item, categories, onClose, onSaved, onCategoryCrea
     : kind === 'combo' ? 'Combo - Buffet'
     : prep === 'che-bien' ? 'Món chế biến' : 'Món thường'
 
-  const buildInput = (): CreateItemInput | null => {
-    if (!name.trim()) { setError('Vui lòng nhập tên'); setTab('Thông tin'); nameRef.current?.focus(); return null }
-    if (!categoryId) { setError('Vui lòng chọn nhóm món'); setTab('Thông tin'); return null }
+  const validate = (): Record<string, string> => {
+    const next: Record<string, string> = {}
+    const trimmedName = name.trim()
+    if (!trimmedName) next.name = 'Vui lòng nhập tên'
+    else if (trimmedName.length > NAME_MAX) next.name = `Không được vượt quá ${NAME_MAX} ký tự`
+    if (!categoryId) next.categoryId = 'Vui lòng chọn nhóm món'
+    if (code.trim().length > CODE_MAX) next.code = `Không được vượt quá ${CODE_MAX} ký tự`
+    const finalPrice = cfg.components ? (price === '' ? comboTotal : Number(price)) : Number(price || 0)
+    if (!Number.isFinite(finalPrice) || finalPrice < 0) next.price = 'Giá bán phải là số không âm'
+    if (cost !== '' && (!Number.isFinite(Number(cost)) || Number(cost) < 0)) next.cost = 'Giá vốn phải là số không âm'
+    return next
+  }
+
+  const buildInput = (): CreateItemInput => {
     const finalPrice = cfg.components ? (price === '' ? comboTotal : Number(price)) : Number(price || 0)
     return {
       categoryId,
@@ -248,13 +276,20 @@ const AddItemModal = ({ kind, item, categories, onClose, onSaved, onCategoryCrea
   const resetForm = () => {
     setName(''); setCode(''); setTag(''); setCost(''); setPrice('')
     setDescription(''); setImage(''); setComponents([]); setMenuType(cfg.defaultMenuType)
-    setPrep('thuong'); setAllowSell(true); setError(''); setTab('Thông tin')
+    setPrep('thuong'); setAllowSell(true); setError(''); setFieldErrors({}); setTab('Thông tin')
     nameRef.current?.focus()
   }
 
   const handleSave = async (addAnother: boolean) => {
+    const validationErrors = validate()
+    if (Object.keys(validationErrors).length > 0) {
+      setFieldErrors(validationErrors)
+      setError('Vui lòng kiểm tra lại các trường được đánh dấu')
+      setTab('Thông tin')
+      if (validationErrors.name) nameRef.current?.focus()
+      return
+    }
     const input = buildInput()
-    if (!input) return
     setSaving(true)
     setError('')
     try {
@@ -312,11 +347,14 @@ const AddItemModal = ({ kind, item, categories, onClose, onSaved, onCategoryCrea
                   <FieldLabel required>{cfg.nameLabel}</FieldLabel>
                   <input
                     ref={nameRef}
-                    className={inputCls}
+                    className={`${inputCls} ${fieldErrors.name ? 'border-danger' : ''}`}
+                    maxLength={NAME_MAX}
                     placeholder="Bắt buộc"
+                    aria-invalid={!!fieldErrors.name}
                     value={name}
-                    onChange={e => { setName(e.target.value); if (error) setError('') }}
+                    onChange={e => { setName(e.target.value); clearFieldError('name') }}
                   />
+                  <FieldMessage error={fieldErrors.name} hint={`${name.trim().length}/${NAME_MAX} ký tự`} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-5">
@@ -331,13 +369,15 @@ const AddItemModal = ({ kind, item, categories, onClose, onSaved, onCategoryCrea
                       value={selectedCategoryName}
                       options={cats.map(c => c.name)}
                       placeholder="Chọn nhóm món"
-                      onChange={n => { const c = cats.find(x => x.name === n); if (c) setCategoryId(c.id) }}
+                      onChange={n => { const c = cats.find(x => x.name === n); if (c) setCategoryId(c.id); clearFieldError('categoryId') }}
                       footer={{ label: 'Tạo nhóm mới', onClick: handleCreateCategory }}
                     />
+                    <FieldMessage error={fieldErrors.categoryId} />
                   </div>
                   <div className="flex flex-col gap-2">
                     <FieldLabel info>Tag món</FieldLabel>
                     <FormSelect value={tag} options={TAGS} placeholder="Chọn tag món" onChange={setTag} bold />
+                    <FieldMessage hint="Không bắt buộc" />
                   </div>
                 </div>
 
@@ -345,10 +385,19 @@ const AddItemModal = ({ kind, item, categories, onClose, onSaved, onCategoryCrea
                   <div className="flex flex-col gap-2">
                     <FieldLabel>Loại thực đơn</FieldLabel>
                     <FormSelect value={menuType} options={MENU_TYPES} onChange={setMenuType} />
+                    <FieldMessage />
                   </div>
                   <div className="flex flex-col gap-2">
                     <FieldLabel>Mã món</FieldLabel>
-                    <input className={inputCls} placeholder="Để trống sẽ tự động tạo mã" value={code} onChange={e => setCode(e.target.value)} />
+                    <input
+                      className={`${inputCls} ${fieldErrors.code ? 'border-danger' : ''}`}
+                      maxLength={CODE_MAX}
+                      placeholder="Để trống sẽ tự động tạo mã"
+                      aria-invalid={!!fieldErrors.code}
+                      value={code}
+                      onChange={e => { setCode(e.target.value); clearFieldError('code') }}
+                    />
+                    <FieldMessage error={fieldErrors.code} hint={`Không bắt buộc, tối đa ${CODE_MAX} ký tự`} />
                   </div>
                 </div>
 
@@ -358,54 +407,21 @@ const AddItemModal = ({ kind, item, categories, onClose, onSaved, onCategoryCrea
                   {cfg.cost && (
                     <div className="flex flex-col gap-2 max-w-[26rem]">
                       <FieldLabel info>Giá vốn</FieldLabel>
-                      <MoneyInput value={cost} onChange={setCost} />
+                      <MoneyInput value={cost} onChange={v => { setCost(v); clearFieldError('cost') }} />
+                      <FieldMessage error={fieldErrors.cost} hint={PRICE_HINT} />
                     </div>
                   )}
                   <div className="flex flex-col gap-2 max-w-[26rem]">
                     <div className="flex items-center justify-between">
-                      <FieldLabel>Giá bán</FieldLabel>
+                      <FieldLabel required>Giá bán</FieldLabel>
                       <span className="inline-flex items-center gap-1 text-md font-medium text-ink-muted">
                         <TagIcon /> {cfg.components ? `Gợi ý: ${comboTotal.toLocaleString('vi-VN')}` : ''}
                       </span>
                     </div>
-                    <MoneyInput value={price} onChange={setPrice} />
+                    <MoneyInput value={price} onChange={v => { setPrice(v); clearFieldError('price') }} />
+                    <FieldMessage error={fieldErrors.price} hint={PRICE_HINT} />
                   </div>
                 </div>
-
-                {/* Chọn loại món */}
-                {cfg.prep && (
-                  <div className="border border-line-default rounded-xl p-5 flex flex-col gap-3">
-                    <div>
-                      <h3 className="text-lg font-bold text-ink">Chọn loại món</h3>
-                      <p className="text-md text-ink-subtle mt-0.5">Chọn cách món này được bán và trừ tồn kho</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      {([
-                        ['che-bien', 'Món chế biến', 'Món được chế biến theo công thức và trừ tồn nguyên liệu khi bán.', 'Cà phê, cơm suất.'],
-                        ['thuong', 'Món thường', 'Món/hàng hóa nhập sẵn để bán và trừ tồn trực tiếp trên món.', 'Nước suối, snack.'],
-                      ] as const).map(([id, title, desc, ex]) => {
-                        const active = prep === id
-                        return (
-                          <button
-                            key={id}
-                            type="button"
-                            onClick={() => setPrep(id)}
-                            className={`text-left flex items-start gap-3 p-4 rounded-xl border-2 transition-colors ${active ? 'border-primary bg-primary-50' : 'border-line-default bg-card hover:border-line-strong'}`}
-                          >
-                            <div className="flex-1 min-w-0">
-                              <p className="text-md font-bold text-ink">{title}</p>
-                              <p className="text-sm text-ink-subtle mt-1 leading-snug">{desc}</p>
-                              <p className="text-sm text-ink-subtle mt-2"><span className="font-semibold text-ink">Ví dụ:</span> {ex}</p>
-                            </div>
-                            <span className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${active ? 'border-primary' : 'border-line-strong'}`}>
-                              {active && <span className="w-2.5 h-2.5 rounded-full bg-primary" />}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
 
                 {/* Combo components (cosmetic — not yet persisted) */}
                 {cfg.components && (
@@ -474,17 +490,9 @@ const AddItemModal = ({ kind, item, categories, onClose, onSaved, onCategoryCrea
 
         {/* Footer */}
         <div className="flex items-center justify-between gap-4 px-7 h-18 border-t border-line shrink-0">
-          <label className="kv-check">
-            <input type="checkbox" checked={allowSell} onChange={() => setAllowSell(v => !v)} />
-            <span className="kv-check-box" />
-            <span className="kv-check-text inline-flex items-center gap-1">Cho phép bán <InfoIcon /></span>
-          </label>
           <div className="flex items-center gap-3">
             {error && <span className="text-md text-danger mr-2">{error}</span>}
             <button className="kv-btn kv-btn-text-primary h-11 text-ink-subtle" disabled={saving} onClick={onClose}>Bỏ qua</button>
-            {!isEdit && (
-              <button className="kv-btn kv-btn-outline-neutral h-11" disabled={saving} onClick={() => handleSave(true)}>Lưu &amp; Tạo thêm món</button>
-            )}
             <button className="kv-btn kv-btn-primary h-11 px-6" disabled={saving} onClick={() => handleSave(false)}>{saving ? 'Đang lưu…' : 'Lưu'}</button>
           </div>
         </div>
