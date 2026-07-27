@@ -19,7 +19,6 @@ import {
   type ReservationDto,
 } from '../../api/reservations'
 import { listTables, type TableDto } from '../../api/tables'
-import { pollReservationNotifResult, getNotificationLogs, type NotificationLogDto } from '../../api/notifications'
 import ChangePasswordModal from '../auth/ChangePasswordModal'
 import { useRealtime } from '../../hooks/useRealtime'
 import { ROLE_LABEL } from '../cashier/orders/types'
@@ -75,64 +74,12 @@ const Reservation = () => {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [tables, setTables] = useState<TableDto[]>([])
   const [bellOpen, setBellOpen] = useState(false)
-  const [notifLogs, setNotifLogs] = useState<NotificationLogDto[]>([])
-  const [notifLoading, setNotifLoading] = useState(false)
   const [newReservations, setNewReservations] = useState<ReservationDto[]>([])
-  const [unseenNotifCount, setUnseenNotifCount] = useState(0)
 
   const showToast = (msg: string, type: 'success' | 'info' | 'error' = 'success', ms = 3500) => {
     if (toastTimer.current) clearTimeout(toastTimer.current)
     setToast({ msg, type })
     toastTimer.current = setTimeout(() => setToast(null), ms)
-  }
-
-  // Load once on mount so the list (and any FAILED badge) is ready even before the bell is
-  // ever opened — the dropdown-open effect below still refreshes it for freshness each time.
-  useEffect(() => {
-    getNotificationLogs({ size: 20 })
-      .then(r => setNotifLogs(r.data.data))
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    if (!bellOpen) return
-    setNotifLoading(true)
-    getNotificationLogs({ size: 20 })
-      .then(r => setNotifLogs(r.data.data))
-      .catch(() => {})
-      .finally(() => setNotifLoading(false))
-  }, [bellOpen])
-
-  // Live push for any notification (payment, reservation confirm/cancel/reminder, table
-  // update, ...) — not just new bookings — so the bell/list update in real time everywhere.
-  useRealtime('/topic/notifications', (body) => {
-    const log = body as NotificationLogDto | null
-    if (!log?.id) return
-    setNotifLogs(prev => prev.some(l => l.id === log.id) ? prev : [log, ...prev].slice(0, 50))
-    setUnseenNotifCount(c => c + 1)
-  })
-
-  const pollEmailResult = async (reservationId: string, _actionLabel: string, expectedTemplate?: string) => {
-    // Poll at 3s / 5s / 7s — async SMTP can be slow; FAILED may only appear after ~10s
-    for (const delay of [3000, 5000, 7000]) {
-      await new Promise(r => setTimeout(r, delay))
-      try {
-        const res = await pollReservationNotifResult(reservationId)
-        const logs = res.data.data
-        // Look for the specific notification template we just triggered; fall back to most recent
-        const log = (expectedTemplate ? logs.find(l => l.template === expectedTemplate) : null) ?? logs[0]
-        if (!log) continue   // async task hasn't written the log yet — retry
-        if (log.status === 'PENDING') continue
-        if (log.status === 'SENT') {
-          showToast(`Email đã được gửi đến ${log.recipient}`, 'info')
-        } else {
-          showToast(`Gửi email thất bại — kiểm tra lại địa chỉ email của khách`, 'error')
-        }
-        return
-      } catch { return }
-    }
-    // All retries exhausted without a conclusive status
-    showToast('Không xác nhận được trạng thái email — vui lòng kiểm tra nhật ký thông báo', 'info')
   }
 
   const handleLogout = async () => {
@@ -162,15 +109,6 @@ const Reservation = () => {
     if (dto) setEditingDto(dto)
   }
 
-  // Bell → "Kết quả gửi email thông báo" list items link back to their reservation via
-  // referenceId. The reservation may have scrolled out of the loaded page (listReservations
-  // only keeps the first 200) or been deleted — surface that instead of silently doing nothing.
-  const handleOpenReservationById = (id: string) => {
-    const dto = dtos.find(d => d.id === id)
-    if (dto) setEditingDto(dto)
-    else showToast('Không tìm thấy đặt bàn này để chỉnh sửa', 'error')
-  }
-
   useEffect(() => { load() }, [load])
 
   useEffect(() => { loadTables() }, [loadTables])
@@ -198,12 +136,7 @@ const Reservation = () => {
     try {
       await confirmReservation(id)
       await load()
-      if (guestEmail) {
-        showToast('Đã xác nhận — đang gửi email cho khách...', 'info', 10000)
-        pollEmailResult(id, 'Xác nhận đặt bàn', 'RESERVATION_CONFIRMATION')
-      } else {
-        showToast('Đã xác nhận đặt bàn')
-      }
+      showToast(guestEmail ? 'Đã xác nhận đặt bàn — email đang được gửi cho khách' : 'Đã xác nhận đặt bàn')
     } catch { showToast('Không thể xác nhận', 'error') }
   }
   const handleCancel = async (id: string) => {
@@ -211,12 +144,7 @@ const Reservation = () => {
     try {
       await cancelReservation(id)
       await load()
-      if (guestEmail) {
-        showToast('Đã hủy — đang gửi email cho khách...', 'info', 10000)
-        pollEmailResult(id, 'Hủy đặt bàn', 'RESERVATION_CANCELLATION')
-      } else {
-        showToast('Đã hủy đặt bàn')
-      }
+      showToast(guestEmail ? 'Đã hủy đặt bàn — email đang được gửi cho khách' : 'Đã hủy đặt bàn')
     } catch { showToast('Không thể hủy', 'error') }
   }
   const handleCheckIn = async (id: string) => {
@@ -228,12 +156,7 @@ const Reservation = () => {
     try {
       await updateReservation(reservationId, { tableId })
       await load()
-      if (guestEmail) {
-        showToast('Đã xếp bàn — đang gửi email cho khách...', 'info', 10000)
-        pollEmailResult(reservationId, 'Xếp bàn', 'RESERVATION_TABLE_UPDATE')
-      } else {
-        showToast('Đã xếp bàn thành công (chưa có email để thông báo)')
-      }
+      showToast(guestEmail ? 'Đã xếp bàn — email đang được gửi cho khách' : 'Đã xếp bàn thành công (chưa có email để thông báo)')
     } catch { showToast('Không thể xếp bàn', 'error') }
   }
 
@@ -242,12 +165,7 @@ const Reservation = () => {
     try {
       await apiTransferTable(reservationId, tableId)
       await load()
-      if (guestEmail) {
-        showToast('Đã chuyển bàn — đang gửi email cho khách...', 'info', 10000)
-        pollEmailResult(reservationId, 'Chuyển bàn', 'RESERVATION_TABLE_UPDATE')
-      } else {
-        showToast('Đã chuyển bàn thành công (chưa có email để thông báo)')
-      }
+      showToast(guestEmail ? 'Đã chuyển bàn — email đang được gửi cho khách' : 'Đã chuyển bàn thành công (chưa có email để thông báo)')
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
       showToast(msg ?? 'Không thể chuyển bàn', 'error')
@@ -259,18 +177,14 @@ const Reservation = () => {
       <ReservationHeader
         onLogout={handleLogout}
         onChangePassword={() => setShowChangePw(true)}
-        notifLogs={notifLogs}
-        notifLoading={notifLoading}
         bellOpen={bellOpen}
         onBellToggle={() => setBellOpen(v => {
           const next = !v
-          if (!next) { setNewReservations([]); setUnseenNotifCount(0) }
+          if (!next) setNewReservations([])
           return next
         })}
         newReservations={newReservations}
-        unseenNotifCount={unseenNotifCount}
         onOpenReservation={(dto) => setEditingDto(dto)}
-        onOpenReservationById={handleOpenReservationById}
         employeeName={user?.fullName ?? user?.username ?? 'Nhân viên'}
         roleLabel={ROLE_LABEL[user?.role ?? ''] ?? user?.role ?? 'Phục vụ'}
       />

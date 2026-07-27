@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import type { NotificationLogDto } from "../../api/notifications";
 import type { ReservationDto } from "../../api/reservations";
 import {
   ChevronDownIcon,
@@ -10,37 +9,13 @@ import {
 
 type Tab = "calendar" | "list";
 
-const TEMPLATE_LABELS: Record<string, string> = {
-  RESERVATION_CONFIRMATION: "Xác nhận đặt bàn",
-  RESERVATION_CANCELLATION: "Hủy đặt bàn",
-  RESERVATION_REMINDER: "Nhắc lịch đặt bàn",
-  RESERVATION_PENDING: "Đặt bàn chờ duyệt",
-  RESERVATION_TABLE_UPDATE: "Cập nhật bàn ngồi",
-  PAYMENT_CONFIRMATION: "Xác nhận thanh toán",
-  MANUAL: "Thủ công",
-};
-
-const timeAgo = (dateStr: string): string => {
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return "Vừa xong";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} phút trước`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} giờ trước`;
-  return `${Math.floor(hours / 24)} ngày trước`;
-};
-
 interface Props {
   onLogout?: () => void;
   onChangePassword?: () => void;
-  notifLogs?: NotificationLogDto[];
-  notifLoading?: boolean;
   bellOpen?: boolean;
   onBellToggle?: () => void;
   newReservations?: ReservationDto[];
-  unseenNotifCount?: number;
   onOpenReservation?: (dto: ReservationDto) => void;
-  onOpenReservationById?: (id: string) => void;
   employeeName?: string;
   roleLabel?: string;
 }
@@ -48,14 +23,10 @@ interface Props {
 const ReservationHeader = ({
   onLogout,
   onChangePassword,
-  notifLogs = [],
-  notifLoading = false,
   bellOpen = false,
   onBellToggle,
   newReservations = [],
-  unseenNotifCount = 0,
   onOpenReservation,
-  onOpenReservationById,
   employeeName = "Nhân viên",
   roleLabel = "Phục vụ",
 }: Props) => {
@@ -79,9 +50,7 @@ const ReservationHeader = ({
     return () => document.removeEventListener("mousedown", handler);
   }, [bellOpen, onBellToggle]);
 
-  const failedCount = notifLogs.filter((n) => n.status === "FAILED").length;
-  const unseenTotal = newReservations.length + unseenNotifCount;
-  const alertCount = unseenTotal > 0 ? unseenTotal : failedCount;
+  const alertCount = newReservations.length;
 
   const initials = employeeName
     .split(" ")
@@ -124,9 +93,7 @@ const ReservationHeader = ({
               <path d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
             </svg>
             {alertCount > 0 && (
-              <span
-                className={`absolute top-0 right-0 text-white text-[10px] font-bold min-w-[1rem] h-4 rounded-full flex items-center justify-center px-0.5 ${unseenTotal > 0 ? "bg-[#025cca]" : "bg-red-400"}`}
-              >
+              <span className="absolute top-0 right-0 text-white text-[10px] font-bold min-w-[1rem] h-4 rounded-full flex items-center justify-center px-0.5 bg-[#025cca]">
                 {alertCount > 9 ? "9+" : alertCount}
               </span>
             )}
@@ -140,8 +107,8 @@ const ReservationHeader = ({
                 </span>
               </div>
 
-              {newReservations.length > 0 && (
-                <div className="border-b border-[#e8e8e8]">
+              {newReservations.length > 0 ? (
+                <div className="overflow-y-auto flex-1">
                   <div className="px-4 pt-3 pb-1 text-[12px] font-bold text-[#025cca] uppercase tracking-wide">
                     Đặt bàn mới ({newReservations.length})
                   </div>
@@ -176,96 +143,11 @@ const ReservationHeader = ({
                     </button>
                   ))}
                 </div>
+              ) : (
+                <div className="flex items-center justify-center py-10 text-[14px] text-[#797b7c]">
+                  Chưa có thông báo nào
+                </div>
               )}
-
-              <div className="px-4 py-2 text-[12px] font-semibold text-[#797b7c] border-b border-[#e8e8e8]">
-                Kết quả gửi email thông báo
-              </div>
-
-              <div className="overflow-y-auto flex-1">
-                {notifLoading ? (
-                  <div className="flex items-center justify-center py-10 text-[14px] text-[#797b7c]">
-                    Đang tải...
-                  </div>
-                ) : notifLogs.length === 0 ? (
-                  <div className="flex items-center justify-center py-10 text-[14px] text-[#797b7c]">
-                    Chưa có thông báo nào
-                  </div>
-                ) : (
-                  notifLogs.map((log) => {
-                    const editable =
-                      log.referenceType === "RESERVATION" && !!log.referenceId && !!onOpenReservationById;
-                    const Wrapper = editable ? "button" : "div";
-                    return (
-                      <Wrapper
-                        key={log.id}
-                        type={editable ? "button" : undefined}
-                        onClick={
-                          editable
-                            ? () => {
-                                onOpenReservationById?.(log.referenceId as string);
-                                onBellToggle?.();
-                              }
-                            : undefined
-                        }
-                        title={editable ? "Xem/chỉnh sửa đặt bàn liên quan" : undefined}
-                        className={`flex items-start gap-3 px-4 py-3 border-b border-[#e8e8e8] last:border-b-0 w-full text-left bg-transparent ${
-                          editable ? "hover:bg-[#f0f6ff] cursor-pointer" : "hover:bg-[#f9fafb]"
-                        }`}
-                      >
-                        <div className="text-[1.3rem] mt-0.5 shrink-0">📧</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[14px] font-semibold text-[#202325]">
-                              {TEMPLATE_LABELS[log.template] ?? log.template}
-                            </span>
-                            <span
-                              className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
-                                log.status === "SENT"
-                                  ? "bg-green-500 text-white"
-                                  : log.status === "FAILED"
-                                    ? "bg-red-500 text-white"
-                                    : "bg-yellow-500 text-white"
-                              }`}
-                              title={
-                                log.status === "SENT"
-                                  ? "Server đã chấp nhận — không đảm bảo vào hòm thư (có thể bị bounce hoặc vào thư rác)"
-                                  : undefined
-                              }
-                            >
-                              {log.status === "SENT"
-                                ? "Đã gửi đi"
-                                : log.status === "FAILED"
-                                  ? "Thất bại"
-                                  : "Đang gửi"}
-                            </span>
-                          </div>
-                          <div className="text-[12px] text-[#636566] mt-0.5 truncate">
-                            {log.recipient}
-                          </div>
-                          {log.status === "FAILED" && log.errorMessage && (
-                            <div className="text-[11px] text-red-400 mt-0.5 truncate">
-                              {log.errorMessage}
-                            </div>
-                          )}
-                          <div className="text-[11px] text-[#797b7c] mt-0.5 flex items-center justify-between gap-2">
-                            <span>{log.sentAt ? timeAgo(log.sentAt) : ""}</span>
-                            {editable && (
-                              <span className="text-primary font-semibold shrink-0">Xem đặt bàn ›</span>
-                            )}
-                          </div>
-                        </div>
-                      </Wrapper>
-                    );
-                  })
-                )}
-              </div>
-              <div className="px-4 py-2 border-t border-[#e8e8e8] bg-[#f9fafb]">
-                <p className="text-[11px] text-[#979899] leading-relaxed">
-                  * "Đã gửi đi" = server nhận thư thành công. Email vẫn có thể
-                  bị bounce hoặc vào thư rác nếu địa chỉ không hợp lệ.
-                </p>
-              </div>
             </div>
           )}
         </div>

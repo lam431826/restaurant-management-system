@@ -3,12 +3,8 @@ package com.rms.restaurant.module.notification.service.impl;
 import com.rms.restaurant.common.utils.enums.NotificationType;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
-import com.rms.restaurant.common.utils.wrapper.PageResponse;
-import com.rms.restaurant.module.notification.dto.NotificationLogResponse;
 import com.rms.restaurant.module.notification.dto.PaymentNotificationRequest;
 import com.rms.restaurant.module.notification.dto.ReservationNotificationRequest;
-import com.rms.restaurant.module.notification.mapper.NotificationMapper;
-import com.rms.restaurant.module.notification.repository.NotificationLogRepository;
 import com.rms.restaurant.module.notification.service.NotificationDispatcher;
 import com.rms.restaurant.module.notification.service.NotificationService;
 import com.rms.restaurant.module.reservation.model.Reservation;
@@ -16,12 +12,10 @@ import com.rms.restaurant.module.reservation.repository.ReservationRepository;
 import com.rms.restaurant.module.table.repository.TableRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -35,8 +29,6 @@ public class NotificationServiceImpl implements NotificationService {
     private final NotificationDispatcher dispatcher;
     private final ReservationRepository reservationRepository;
     private final TableRepository tableRepository;
-    private final NotificationLogRepository notificationLogRepository;
-    private final NotificationMapper notificationMapper;
 
     // ── NM-01: Reservation notifications ─────────────────────────────────────
 
@@ -95,25 +87,6 @@ public class NotificationServiceImpl implements NotificationService {
         log.info("NM-02 payment notification queued for invoice={} — deferred until PM-03",
                 request.invoiceId());
     }
-
-    // ── NM-03: Log query ──────────────────────────────────────────────────────
-
-    @Override
-    @Transactional(readOnly = true)
-    public PageResponse<NotificationLogResponse> getLogs(String type, String status,
-                                                          String referenceId,
-                                                          LocalDate from, LocalDate to,
-                                                          Pageable pageable) {
-        LocalDateTime fromDT = from != null ? from.atStartOfDay() : null;
-        LocalDateTime toDT   = to   != null ? to.plusDays(1).atStartOfDay() : null;
-
-        return PageResponse.of(
-                notificationLogRepository
-                        .findWithFilters(type, status, referenceId, fromDT, toDT, pageable)
-                        .map(notificationMapper::toResponse)
-        );
-    }
-
 
     // ── Helper ────────────────────────────────────────────────────────────────
 
