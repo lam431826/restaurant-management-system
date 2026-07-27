@@ -1,20 +1,13 @@
 package com.rms.restaurant.module.notification.controller;
 
-import com.rms.restaurant.common.utils.wrapper.PageResponse;
-import com.rms.restaurant.module.notification.dto.NotificationLogResponse;
 import com.rms.restaurant.module.notification.dto.PaymentNotificationRequest;
 import com.rms.restaurant.module.notification.dto.ReservationNotificationRequest;
 import com.rms.restaurant.module.notification.service.NotificationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/notifications")
@@ -42,22 +35,5 @@ public class NotificationController {
         notificationService.sendPaymentNotification(request);
         return ResponseEntity.noContent().build();
     }
-
-    // ── NM-03: Xem lịch sử thông báo ─────────────────────────────────────────
-    // WAITER/CASHIER chỉ truy vấn theo referenceId cụ thể; MANAGER/ADMIN xem toàn bộ
-    @GetMapping("/log")
-    @PreAuthorize("hasAnyRole('WAITER','CASHIER','MANAGER')")
-    public PageResponse<NotificationLogResponse> getLogs(
-            @RequestParam(required = false) String type,
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) String referenceId,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        Pageable pageable = PageRequest.of(page, size);
-        return notificationService.getLogs(type, status, referenceId, from, to, pageable);
-    }
-
 
 }

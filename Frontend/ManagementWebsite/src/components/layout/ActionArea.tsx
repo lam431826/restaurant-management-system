@@ -1,33 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { IconBell, IconSettings } from "../common/Icon";
+import { IconSettings } from "../common/Icon";
 import { useAuth } from "../../context/useAuth";
 import { logout } from "../../api/auth";
 import ChangePasswordModal from "../auth/ChangePasswordModal";
-import {
-  getNotificationLogs,
-  type NotificationLogDto,
-} from "../../api/notifications";
-import { useRealtime } from "../../hooks/useRealtime";
-
-const TEMPLATE_LABELS: Record<string, string> = {
-  RESERVATION_CONFIRMATION: "Xác nhận đặt bàn",
-  RESERVATION_CANCELLATION: "Hủy đặt bàn",
-  RESERVATION_REMINDER: "Nhắc lịch đặt bàn",
-  RESERVATION_PENDING: "Đặt bàn chờ duyệt",
-  PAYMENT_CONFIRMATION: "Xác nhận thanh toán",
-  MANUAL: "Thủ công",
-};
-
-const timeAgo = (dateStr: string): string => {
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return "Vừa xong";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} phút trước`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} giờ trước`;
-  return `${Math.floor(hours / 24)} ngày trước`;
-};
 
 const roleLabel: Record<string, string> = {
   ADMIN: "Quản trị viên",
@@ -35,7 +11,7 @@ const roleLabel: Record<string, string> = {
   CASHIER: "Thu ngân",
   WAITER: "Phục vụ",
 };
-type DropdownName = "notifications" | "help" | "user" | null;
+type DropdownName = "help" | "user" | null;
 
 const menuRow =
   "flex items-center justify-between px-5 py-2 min-h-[3.6rem] text-md cursor-pointer text-ink transition-colors hover:bg-[var(--kv-state-hover-bg)]";
@@ -43,49 +19,9 @@ const menuRow =
 const ActionArea = () => {
   const [open, setOpen] = useState<DropdownName>(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
-  const [notifLogs, setNotifLogs] = useState<NotificationLogDto[]>([]);
-  const [notifLoading, setNotifLoading] = useState(false);
-  const [notifTab, setNotifTab] = useState<"all" | "failed">("all");
-  const [unseenCount, setUnseenCount] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
-
-  const failedCount = notifLogs.filter((n) => n.status === "FAILED").length;
-  const badgeCount = unseenCount > 0 ? unseenCount : failedCount;
-
-  // Load once on mount so the list (and any FAILED badge) is ready even before the bell is
-  // ever opened — the dropdown-open effect below still refreshes it for freshness each time.
-  useEffect(() => {
-    getNotificationLogs({ size: 30 })
-      .then((r) => setNotifLogs(r.data.data))
-      .catch(() => {
-        /* silent */
-      });
-  }, []);
-
-  useEffect(() => {
-    if (open !== "notifications") return;
-    setUnseenCount(0);
-    setNotifLoading(true);
-    getNotificationLogs({ size: 30 })
-      .then((r) => setNotifLogs(r.data.data))
-      .catch(() => {
-        /* silent */
-      })
-      .finally(() => setNotifLoading(false));
-  }, [open]);
-
-  // Live push — fires regardless of which page is mounted under this shared header, so a new
-  // notification (payment, reservation confirm/cancel, etc.) surfaces on the bell right away.
-  useRealtime("/topic/notifications", (body) => {
-    const log = body as NotificationLogDto | null;
-    if (!log?.id) return;
-    setNotifLogs((prev) =>
-      prev.some((l) => l.id === log.id) ? prev : [log, ...prev].slice(0, 50),
-    );
-    setUnseenCount((c) => c + 1);
-  });
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -113,120 +49,6 @@ const ActionArea = () => {
   return (
     <>
       <div className="flex items-center gap-2" ref={ref}>
-        {/* ── Notification bell ── */}
-        <div className="relative flex items-center">
-          <div className="relative inline-flex">
-            <button
-              className="kv-btn kv-btn-icon-only kv-btn-outline-primary"
-              onClick={() => toggle("notifications")}
-              aria-label="Thông báo"
-              aria-expanded={open === "notifications"}
-            >
-              <IconBell size={16} />
-            </button>
-            {badgeCount > 0 && (
-              <span
-                className={`absolute -top-1 -right-1 min-w-[1rem] h-4 rounded-full text-white text-[10px] font-bold flex items-center justify-center px-0.5 pointer-events-none ${unseenCount > 0 ? "bg-[#025cca]" : "bg-danger"}`}
-              >
-                {badgeCount > 9 ? "9+" : badgeCount}
-              </span>
-            )}
-          </div>
-
-          {open === "notifications" && (
-            <div className="kv-float-container w-[38rem] max-h-[58rem] overflow-hidden flex flex-col p-0">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-                <h6 className="text-xl font-bold m-0">
-                  Lịch sử email thông báo
-                </h6>
-              </div>
-              <div className="flex px-5 gap-4 border-b border-line">
-                <span
-                  onClick={() => setNotifTab("all")}
-                  className={`py-3 text-md font-semibold border-b-2 cursor-pointer ${notifTab === "all" ? "text-primary border-primary" : "text-ink-subtle border-transparent hover:text-ink"}`}
-                >
-                  Tất cả
-                </span>
-                <span
-                  onClick={() => setNotifTab("failed")}
-                  className={`py-3 text-md font-semibold border-b-2 cursor-pointer flex items-center gap-1.5 ${notifTab === "failed" ? "text-primary border-primary" : "text-ink-subtle border-transparent hover:text-ink"}`}
-                >
-                  Thất bại
-                  {failedCount > 0 && (
-                    <span className="bg-danger text-white text-[11px] font-bold rounded-full px-1.5 py-0.5 leading-none">
-                      {failedCount}
-                    </span>
-                  )}
-                </span>
-              </div>
-
-              <div className="overflow-y-auto flex-1">
-                {notifLoading ? (
-                  <div className="flex items-center justify-center py-10 text-md text-ink-muted">
-                    Đang tải...
-                  </div>
-                ) : (
-                  (() => {
-                    const displayed = notifLogs.filter(
-                      (n) => notifTab === "all" || n.status === "FAILED",
-                    );
-                    if (displayed.length === 0) {
-                      return (
-                        <div className="flex items-center justify-center px-5 py-12 text-md text-ink-muted">
-                          {notifTab === "failed"
-                            ? "Không có email thất bại"
-                            : "Chưa có thông báo nào"}
-                        </div>
-                      );
-                    }
-                    return displayed.map((log) => (
-                      <div
-                        key={log.id}
-                        className="flex items-start gap-3 px-5 py-3 border-b border-line last:border-b-0 hover:bg-[var(--kv-state-hover-bg)]"
-                      >
-                        <div className="text-[1.4rem] mt-0.5 shrink-0">📧</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-md font-semibold text-ink">
-                              {TEMPLATE_LABELS[log.template] ?? log.template}
-                            </span>
-                            <span
-                              className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
-                                log.status === "SENT"
-                                  ? "bg-[var(--kv-success)] text-white"
-                                  : log.status === "FAILED"
-                                    ? "bg-danger text-white"
-                                    : "bg-yellow-500 text-white"
-                              }`}
-                            >
-                              {log.status === "SENT"
-                                ? "Đã gửi"
-                                : log.status === "FAILED"
-                                  ? "Thất bại"
-                                  : "Đang gửi"}
-                            </span>
-                          </div>
-                          <div className="text-sm text-ink-muted mt-0.5 truncate">
-                            {log.recipient}
-                          </div>
-                          {log.status === "FAILED" && log.errorMessage && (
-                            <div className="text-sm text-danger/70 mt-0.5 truncate">
-                              {log.errorMessage}
-                            </div>
-                          )}
-                          <div className="text-xs text-ink-muted mt-0.5">
-                            {timeAgo(log.sentAt)}
-                          </div>
-                        </div>
-                      </div>
-                    ));
-                  })()
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* ── Settings ── */}
         <div className="relative flex items-center">
           <button
