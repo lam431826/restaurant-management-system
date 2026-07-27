@@ -2,17 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useRealtime } from "../../hooks/useRealtime";
 import { useAuth } from "../../context/useAuth";
-import { logout } from "../../api/auth";
-import { ApiError } from "../../services/api";
-import {
-  getMyShift,
-  getOpenNormalShifts,
-  mergeFloatingShift,
-} from "../../services/shiftService";
-import type { ShiftSummary, OpenShiftBrief } from "../../services/shiftService";
-import { OpenShiftModal } from "./orders/OpenShiftModal";
-import { CloseShiftModal } from "./orders/CloseShiftModal";
-import { CashMovementModal } from "./orders/CashMovementModal";
 import {
   listTables,
   checkInWalkIn,
@@ -23,27 +12,6 @@ import {
   cancelStaffReservation,
 } from "../../services/reservationApi";
 import ChangePasswordModal from "../auth/ChangePasswordModal";
-import {
-  applyInvoiceDiscount,
-  generateInvoice,
-  getInvoiceById,
-  getInvoices,
-  mergeInvoices,
-  sendInvoice,
-  splitInvoice,
-} from "../../services/invoiceApi";
-import type {
-  InvoiceDetail,
-  InvoiceSummary,
-  MergeInvoiceRequest,
-  SplitInvoiceRequest,
-} from "../../services/invoiceApi";
-import {
-  processCashPayment,
-  createVnpayPayment,
-  getPayments,
-  reconcileVnpayPayment,
-} from "../../services/paymentApi";
 import { listCategories, searchItems } from "../../services/menuService";
 import type { MenuCategory } from "../../services/menuService";
 import {
@@ -60,17 +28,11 @@ import {
   respondAssistance,
   updateOrderItemStatus,
   updateOrderItemNote,
-  updateOrderCustomer,
 } from "../../services/orderApi";
-import type {
-  AssistanceRequest,
-  Order,
-  OrderCustomerInput,
-} from "../../services/orderApi";
+import type { AssistanceRequest, Order } from "../../services/orderApi";
 
 import type {
   MenuItem,
-  Category,
   TableItem,
   OrderItem,
   CartItem,
@@ -83,43 +45,34 @@ import {
   COOKING_STATUS_FROM_LABEL,
   ROLE_LABEL,
 } from "./orders/types";
-import { printCashierInvoice } from "./orders/printInvoice";
 import { Header } from "./orders/Header";
 import { MenuView } from "./orders/MenuView";
 import { TableView } from "./orders/TableView";
 import { ReservationPanel } from "./orders/ReservationPanel";
 import { AddNoteModal } from "./orders/AddNoteModal";
-import { PaymentModal } from "./orders/PaymentModal";
 import { OrderPanel } from "./orders/OrderPanel";
-import { PaymentResultToast, SuccessToast } from "./orders/SuccessToast";
+import { PaymentResultToast } from "./orders/SuccessToast";
 import { SearchIcon } from "./orders/icons";
 import { QROrderConfirmationModal } from "./orders/QROrderConfirmationModal";
+import { ConfirmActionModal } from "./orders/ConfirmActionModal";
+import { useCashierShiftSession } from "./orders/useCashierShiftSession";
+import { useCashierCheckout } from "./orders/useCashierCheckout";
+import {
+  selectFilteredMenu,
+  selectMenuCategoryPills,
+  selectTableCounts,
+} from "./orders/cashierOrderSelectors";
 import { Skeleton } from "../dashboard/DashboardStates";
 
 /* ─── Main page ──────────────────────────────────────────────────────────── */
 import {
   EMPTY_ORDER_MESSAGE,
-  INVOICE_DETAIL_LOAD_FALLBACK_ERROR,
-  ORDER_ALREADY_INVOICED_MESSAGE,
-  ORDER_FINAL_ITEM_LOCK_MESSAGE,
-  SAVE_CUSTOMER_FALLBACK_ERROR,
-  SEND_INVOICE_FALLBACK_ERROR,
-  STALE_INVOICE_ERROR_CODES,
-  STALE_MERGE_ERROR_CODES,
-  VNPAY_STATUS_MESSAGES,
-  getInvoiceGenerationErrorMessage,
-  getInvoiceUiErrorMessage,
-  getMergeInvoiceErrorMessage,
   getOrderActionErrorMessage,
-  getPaymentProcessErrorMessage,
-  getPromotionDiscountErrorMessage,
-  getSplitInvoiceErrorMessage,
 } from "./orders/cashierOrderErrors";
 import {
   TABLE_FILTERS,
   WALK_IN_MIN_GAP_MINUTES,
   applyActiveOrdersToTable,
-  chooseInvoiceId,
   clearStoredVnpayReturnContext,
   readStoredVnpayReturnContext,
 } from "./orders/cashierOrderRules";
@@ -129,7 +82,9 @@ import type { VnpayReturnContext } from "./orders/cashierOrderRules";
 const CashierOrders = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
+  const shiftSession = useCashierShiftSession();
+  const { shift, loading: shiftLoading } = shiftSession;
   const [tab, setTab] = useState<"menu" | "table">("menu");
   const [activeArea, setActiveArea] = useState<string>("all");
   const [tableFilter, setFilter] = useState("all");
@@ -168,8 +123,6 @@ const CashierOrders = () => {
   }>({ open: false, orderIds: [] });
   const [reservationCancelConfirmOpen, setReservationCancelConfirmOpen] =
     useState(false);
-  const [paymentOpen, setPaymentOpen] = useState(false);
-  const [successTotal, setSuccessTotal] = useState<number | null>(null);
   // VNPAY success now reuses successTotal/SuccessToast below, so this only ever holds a
   // failure message — see restoreFromVnpayState.
   const [vnpayFailureNotice, setVnpayFailureNotice] = useState<string | null>(null);
@@ -180,23 +133,6 @@ const CashierOrders = () => {
     return () => window.clearInterval(timer);
   }, []);
   const [showChangePw, setShowChangePw] = useState(false);
-  const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
-  const [invoiceListOrderId, setInvoiceListOrderId] = useState<string | null>(
-    null,
-  );
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(
-    null,
-  );
-  const [selectedInvoiceDetail, setSelectedInvoiceDetail] =
-    useState<InvoiceDetail | null>(null);
-  const [promotionCode, setPromotionCode] = useState("");
-  const [invoiceListLoading, setInvoiceListLoading] = useState(false);
-  const [invoiceListError, setInvoiceListError] = useState("");
-  const [invoiceDetailLoading, setInvoiceDetailLoading] = useState(false);
-  const [invoiceDetailError, setInvoiceDetailError] = useState("");
-  const [invoiceAction, setInvoiceAction] = useState<string | null>(null);
-  const [customerSaving, setCustomerSaving] = useState(false);
-  const [customerError, setCustomerError] = useState("");
   // Draft contact for the order panel. Before an order exists this is the only copy and
   // is sent with createOrder; once the order exists it mirrors the saved Order record.
   const [customerDraft, setCustomerDraft] = useState({
@@ -204,31 +140,10 @@ const CashierOrders = () => {
     customerPhone: "",
     customerEmail: "",
   });
-  const [splitError, setSplitError] = useState("");
-  const [mergeError, setMergeError] = useState("");
-  const [invoiceMessage, setInvoiceMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
-  const [paymentProcessing, setPaymentProcessing] = useState(false);
-  const [paymentError, setPaymentError] = useState("");
-  const [vnpayLoading, setVnpayLoading] = useState(false);
-  const [vnpayError, setVnpayError] = useState("");
   const loadCashierStateRequestRef = useRef(0);
-  const invoiceListRequestRef = useRef(0);
-  const invoiceDetailRequestRef = useRef(0);
-  const splitSubmissionRef = useRef(false);
-  const mergeSubmissionRef = useRef(false);
   const createOrderSubmissionRef = useRef(false);
-  const selectedOrderIdRef = useRef("");
   const selectedTableIdRef = useRef("");
   const vnpayReturnHandledRef = useRef<string | null>(null);
-  // Set right before handleTableSelect() during VNPAY restoration so the reactive
-  // selectedOrderId-driven refreshInvoices effect below (which always reruns after any
-  // table selection, own its own null invoice preference) skips its own call once for that
-  // order — otherwise it fires after our own explicit, invoiceId-aware refreshInvoices call
-  // and clobbers the specific invoice we're restoring with its default (null) choice.
-  const suppressAutoInvoiceRefreshForOrderRef = useRef<string | null>(null);
   const [createOrderSubmitting, setCreateOrderSubmitting] = useState(false);
   const [checkInWalkInSubmitting, setCheckInWalkInSubmitting] = useState(false);
   const [undoCheckInSubmitting, setUndoCheckInSubmitting] = useState(false);
@@ -246,49 +161,7 @@ const CashierOrders = () => {
   // tracked per table id so switching tables resets it back to the reservation view.
   const [walkInOverrideTableId, setWalkInOverrideTableId] = useState<string | null>(null);
 
-  // ── Cash shift state ──────────────────────────────────────────────────────
-  const [shift, setShift] = useState<ShiftSummary | null>(null);
-  const [shiftLoading, setShiftLoading] = useState(true);
-  const [showCloseShift, setShowCloseShift] = useState(false);
-  const [shiftModalOpen, setShiftModalOpen] = useState(false);
-  const [showCashMovement, setShowCashMovement] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
-
-  // BR-CS-19: merge a floating shift into a main shift.
-  const [mergeOpen, setMergeOpen] = useState(false);
-  const [mergeTargets, setMergeTargets] = useState<OpenShiftBrief[]>([]);
-  const [mergeTargetId, setMergeTargetId] = useState<string>("");
-  const [mergeCash, setMergeCash] = useState<string>("");
-  const [mergeNote, setMergeNote] = useState<string>("");
-  const [mergeLoading, setMergeLoading] = useState(false);
-  const [shiftMergeError, setShiftMergeError] = useState<string>("");
-
-  // BR-AUTH-01/04: warn before logout while an OPEN shift is still owned.
-  const [logoutWarn, setLogoutWarn] = useState(false);
-  const [logoutAfterClose, setLogoutAfterClose] = useState(false);
-
-  useEffect(() => {
-    getMyShift()
-      .then((s) => {
-        setShift(s);
-        if (!s) setShiftModalOpen(true);
-      })
-      .catch(() => {
-        setShift(null);
-        setShiftModalOpen(true);
-      })
-      .finally(() => setShiftLoading(false));
-  }, []);
-
-  const doLogout = async () => {
-    try {
-      await logout();
-    } catch {
-      /* ignore */
-    }
-    signOut();
-    navigate("/login", { replace: true });
-  };
 
   // Returns the freshly fetched snapshot (in addition to its usual setState calls) so a
   // caller that needs correctly order-linked table data *immediately* — e.g. VNPAY
@@ -381,60 +254,6 @@ const CashierOrders = () => {
       activeOrders: freshActiveOrders,
     };
   }, []);
-
-  // BR-CS-19: open the merge dialog and load candidate main shifts.
-  const openMergeDialog = async () => {
-    setShiftMergeError("");
-    setMergeTargetId("");
-    setMergeCash("");
-    setMergeNote("");
-    setMergeOpen(true);
-    try {
-      const targets = await getOpenNormalShifts();
-      setMergeTargets(targets);
-    } catch {
-      setMergeTargets([]);
-    }
-  };
-
-  const submitMerge = async () => {
-    if (!shift) return;
-    if (!mergeTargetId) {
-      setShiftMergeError("Vui lòng chọn ca chính để gộp.");
-      return;
-    }
-    const cash = parseInt(mergeCash.replace(/\D/g, "") || "0", 10);
-    setMergeLoading(true);
-    setShiftMergeError("");
-    try {
-      await mergeFloatingShift(
-        shift.id,
-        mergeTargetId,
-        cash,
-        mergeNote.trim() || undefined,
-      );
-      // The floating shift is now MERGED; the helper no longer owns an open shift.
-      setMergeOpen(false);
-      setShift(null);
-      setShiftModalOpen(true);
-    } catch (err) {
-      setShiftMergeError(
-        err instanceof Error ? err.message : "Không thể gộp ca tạm.",
-      );
-    } finally {
-      setMergeLoading(false);
-    }
-  };
-
-  // BR-AUTH-01/04: logout is never blocked, but if the cashier still owns an OPEN cash
-  // shift we warn first and offer a "close shift, then log out" shortcut.
-  const handleLogout = () => {
-    if (shift && shift.status === "OPEN") {
-      setLogoutWarn(true);
-    } else {
-      void doLogout();
-    }
-  };
 
   // Re-fetches table list from backend and merges selection state.
   // Called after reservation actions and order close/cancel so statuses
@@ -555,22 +374,58 @@ const CashierOrders = () => {
   }, [activeOrders]);
 
   useEffect(() => {
-    if (successTotal !== null) {
-      const t = setTimeout(() => setSuccessTotal(null), 3500);
-      return () => clearTimeout(t);
-    }
-  }, [successTotal]);
-
-  useEffect(() => {
     if (vnpayFailureNotice !== null) {
       const t = setTimeout(() => setVnpayFailureNotice(null), 4000);
       return () => clearTimeout(t);
     }
   }, [vnpayFailureNotice]);
 
+  const selectedTable = tables.find((table) => table.selected) ?? null;
+  const selectedOrderId = selectedTable?.orderId ?? "";
+  const selectedOrder = activeOrders.find(
+    (order) => order.id === selectedOrderId,
+  );
+  const cashierDisplayName =
+    user?.fullName?.trim() || user?.username?.trim() || "Thu ngân";
+  const shiftDisplayLabel = (() => {
+    if (!shift) return "Chưa mở ca";
+    const openedAt = new Date(shift.openedAt);
+    const time = (value: Date) =>
+      value.toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    return shift.closedAt
+      ? `${time(openedAt)} - ${time(new Date(shift.closedAt))}`
+      : `Đang mở từ ${time(openedAt)}`;
+  })();
+  const handleCheckoutOrderUpdated = useCallback((updated: Order) => {
+    setActiveOrders((orders) =>
+      orders.map((order) => (order.id === updated.id ? updated : order)),
+    );
+  }, []);
+  const handleCheckoutWorkspaceRefresh = useCallback(() => {
+    setRefreshTrigger((value) => value + 1);
+  }, []);
+  const handleCheckoutOrderError = useCallback((message: string | null) => {
+    setOrderActionMessage(message ? { type: "error", text: message } : null);
+  }, []);
+  const checkout = useCashierCheckout({
+    orderId: selectedOrderId,
+    order: selectedOrder,
+    table: selectedTable,
+    role: user?.role,
+    cashierName: cashierDisplayName,
+    shiftLabel: shiftDisplayLabel,
+    onOrderUpdated: handleCheckoutOrderUpdated,
+    onWorkspaceRefresh: handleCheckoutWorkspaceRefresh,
+    onOrderError: handleCheckoutOrderError,
+  });
+
   // Restores the cashier's table/order/payment context after a VNPAY round-trip — either a
   // same-tab redirect (router state, or its localStorage fallback), or the cross-tab case
-  // where a separate VNPAY tab (see handleInitiateVnpay) wrote this same context and closed
+  // where a separate VNPAY tab created by the checkout module wrote this context and closed
   // itself, picked up by the focus listener further below. Payment status always comes from
   // the fresh invoice/order data reloaded here, never from the stored context itself — the
   // context only selects which table/order/invoice to reload and display.
@@ -586,12 +441,12 @@ const CashierOrders = () => {
       vnpayReturnHandledRef.current = state.txnRef;
 
       // Both outcomes reuse the same PaymentResultToast card the cash flow shows
-      // (handleConfirmCash, handleCheckVnpayStatus) instead of VNPAY having its own look —
+      // from the checkout module instead of VNPAY having its own look —
       // success and failure used to read as two different kinds of message (a bordered card
       // with an icon vs. a plain solid-color pill) even though both are just "here's what
       // happened to the payment."
       if (state.paymentResult === "PAID") {
-        setSuccessTotal(state.amount ?? 0);
+        checkout.showPaymentSuccess(state.amount ?? 0);
       } else {
         const message =
           state.paymentResult === "FAILED"
@@ -606,6 +461,7 @@ const CashierOrders = () => {
 
       const { tableId, orderId, invoiceId, paymentResult } = state;
       let restored = false;
+      let releaseAutoRefreshSuppression: (() => void) | null = null;
       try {
         // loadCashierState() returns the freshly fetched, fully order-linked snapshot
         // directly — restoration reads that returned value, not React state, so it can't
@@ -641,11 +497,11 @@ const CashierOrders = () => {
         // Select the exact table with its already-resolved orderId/amount/items — no need
         // to wait for the separate [activeOrders] overlay effect to converge on a later
         // render, which is what left the screen looking unrestored before. This also
-        // changes selectedOrderId, which the reactive refreshInvoices effect further below
-        // reacts to with its own null-invoice-preference call; suppress it once for this
+        // changes selectedOrderId, which the checkout module reacts to with its own
+        // null-invoice-preference refresh; suppress it once for this
         // order so it doesn't clobber the specific invoiceId refreshed explicitly below.
         const resolvedTable = table;
-        suppressAutoInvoiceRefreshForOrderRef.current = orderId;
+        releaseAutoRefreshSuppression = checkout.suppressNextAutoRefresh(orderId);
         setTables((ts) =>
           ts.map((t) =>
             t.id === resolvedTable.id
@@ -655,20 +511,22 @@ const CashierOrders = () => {
         );
         setActiveArea(resolvedTable.area);
         setOrderActionMessage(null);
-        // Both callbacks are stable useCallback values and restoration only runs after the
-        // component has initialized them; the compiler lint cannot infer that ordering.
-        // eslint-disable-next-line react-hooks/immutability
-        resetInvoiceLink();
+        checkout.reset();
 
         // Await the full invoice refresh and read its returned snapshot directly — not
         // React state — to decide whether to reopen PaymentModal, so that decision can't be
         // made against not-yet-settled invoiceListLoading/invoiceListOrderId. One retry
         // covers the (now normally unreachable, since the reactive effect above no longer
         // interferes while suppressed) case of the request being discarded as stale.
-        // eslint-disable-next-line react-hooks/immutability -- see initialization note above
-        let invoiceSnapshot = await refreshInvoices(orderId, invoiceId ?? null);
+        let invoiceSnapshot = await checkout.refreshInvoices(
+          orderId,
+          invoiceId ?? null,
+        );
         if (!invoiceSnapshot) {
-          invoiceSnapshot = await refreshInvoices(orderId, invoiceId ?? null);
+          invoiceSnapshot = await checkout.refreshInvoices(
+            orderId,
+            invoiceId ?? null,
+          );
         }
         if (!invoiceSnapshot) {
           throw new Error("Không thể tải hóa đơn để khôi phục.");
@@ -676,11 +534,11 @@ const CashierOrders = () => {
 
         // Kept consistent with cash: a paid invoice always closes the payment modal — the
         // cashier reopens it deliberately via OrderPanel's "Xem lại hóa đơn đã thanh toán"
-        // (see handleReopenPaidInvoice) rather than the modal reappearing on its own.
+        // rather than the modal reappearing on its own.
         if (paymentResult === "PAID" || invoiceSnapshot.allActiveInvoicesPaid) {
-          setPaymentOpen(false);
+          checkout.setRestoredPaymentOpen(false);
         } else {
-          setPaymentOpen(true);
+          checkout.setRestoredPaymentOpen(true);
         }
         restored = true;
       } catch (err) {
@@ -689,9 +547,7 @@ const CashierOrders = () => {
           "Không thể khôi phục bàn/đơn hàng sau khi thanh toán VNPAY. Vui lòng thử lại.",
         );
       } finally {
-        if (suppressAutoInvoiceRefreshForOrderRef.current === orderId) {
-          suppressAutoInvoiceRefreshForOrderRef.current = null;
-        }
+        releaseAutoRefreshSuppression?.();
         if (restored) {
           // Clear the one-time context only after restoration has actually succeeded —
           // never before, and never on failure, so a retry (another focus, or a refresh)
@@ -702,8 +558,8 @@ const CashierOrders = () => {
         }
       }
     },
-    // Deliberately not exhaustive: loadCashierState/refreshInvoices/resetInvoiceLink/navigate
-    // are themselves stable useCallback/router references, and location.pathname does not
+    // Deliberately not exhaustive: the workspace and checkout methods are stable for this
+    // restoration lifecycle, and location.pathname does not
     // change within this screen — re-running this identity on every render would defeat the
     // point of extracting it for the focus-listener effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -724,7 +580,6 @@ const CashierOrders = () => {
   const tablesInArea = (
     activeArea === "all" ? tables : tables.filter((t) => t.area === activeArea)
   ).filter((t) => !search || t.name.toLowerCase().includes(search.toLowerCase()));
-  const selectedTable = tables.find((t) => t.selected) ?? null;
 
   // Build the order panel's item list for the selected table from the live orders feed.
   useEffect(() => {
@@ -760,29 +615,10 @@ const CashierOrders = () => {
   }, [selectedTable, activeOrders]);
 
   const hasSelectedMenu = cart.length > 0;
-  const selectedOrderId = selectedTable?.orderId ?? "";
 
   useEffect(() => {
     selectedTableIdRef.current = selectedTable?.id ?? "";
-    selectedOrderIdRef.current = selectedOrderId;
-  }, [selectedOrderId, selectedTable?.id]);
-
-  // The payment module otherwise broadcasts nothing (see RealtimeEventPublisher), so two
-  // cashiers — or the same cashier in two tabs — looking at the same invoice would silently
-  // drift out of sync while one of them applies a discount, splits/merges, or pays. This
-  // per-order topic re-subscribes whenever the selected table/order changes (a falsy
-  // destination is a no-op per useRealtime); any event on it always means "refetch", never
-  // "trust this payload", so it can't race with what the mutation's own response already did.
-  useRealtime(
-    selectedOrderId ? `/topic/orders/${selectedOrderId}/invoices` : "",
-    () => {
-      void refreshInvoices(selectedOrderId, selectedInvoiceId);
-    },
-  );
-
-  const selectedOrder = activeOrders.find(
-    (order) => order.id === selectedOrderId,
-  );
+  }, [selectedTable?.id]);
   const selectedOrderCustomerKey = selectedOrder
     ? `${selectedOrder.id}|${selectedOrder.customerName ?? ""}|${selectedOrder.customerPhone ?? ""}|${selectedOrder.customerEmail ?? ""}`
     : `none|${selectedTable?.id ?? ""}`;
@@ -803,48 +639,9 @@ const CashierOrders = () => {
         customerEmail: "",
       });
     }
-    setCustomerError("");
     // Keyed on the stored values so a save or a table switch re-seeds, but typing does not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedOrderCustomerKey]);
-
-  // Receipt identity comes from the signed-in account: prefer the human full name and
-  // only fall back to the login name when no display name is stored.
-  const cashierDisplayName =
-    user?.fullName?.trim() || user?.username?.trim() || "Thu ngân";
-  // Real shift, never a fixed time range. An open shift only knows when it started.
-  const shiftDisplayLabel = (() => {
-    if (!shift) return "Chưa mở ca";
-    const openedAt = new Date(shift.openedAt);
-    const time = (value: Date) =>
-      value.toLocaleTimeString("vi-VN", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      });
-    if (shift.closedAt) {
-      return `${time(openedAt)} - ${time(new Date(shift.closedAt))}`;
-    }
-    return `Đang mở từ ${time(openedAt)}`;
-  })();
-  const selectedOrderItemCount =
-    selectedOrder?.items.reduce((total, item) => total + item.quantity, 0) ?? 0;
-  const nonPayableRejectedItems =
-    selectedOrder?.items
-      .filter((item) => item.cookingStatus === "REJECTED")
-      .map((item) => ({
-        id: item.orderItemId,
-        name: item.menuItemName,
-        quantity: item.quantity,
-        note: item.rejectionNote,
-      })) ?? [];
-  const invoiceListMatchesOrder =
-    !!selectedOrderId && invoiceListOrderId === selectedOrderId;
-  const currentOrderInvoices = invoiceListMatchesOrder ? invoices : [];
-  const selectedInvoice =
-    currentOrderInvoices.find(
-      (candidate) => candidate.id === selectedInvoiceId,
-    ) ?? null;
 
   const pendingOrders = activeOrders.filter(
     (o) =>
@@ -856,35 +653,14 @@ const CashierOrders = () => {
         )),
   );
   const pendingOrdersCount = pendingOrders.length;
-  const currentOrderInvoiceDetail =
-    selectedInvoice &&
-    selectedInvoiceDetail?.id === selectedInvoice.id &&
-    selectedInvoiceDetail.orderId === selectedOrderId
-      ? selectedInvoiceDetail
-      : null;
-  const activeOrderInvoices = currentOrderInvoices.filter(
-    (candidate) => candidate.status === "ACTIVE",
-  );
-  const orderHasInvoice = currentOrderInvoices.length > 0;
-  const invoiceChecked =
-    invoiceListMatchesOrder && !invoiceListLoading && !invoiceListError;
-  const orderIsFinal =
-    selectedOrder?.status === "CLOSED" || selectedOrder?.status === "CANCELLED";
-  const canCloseSelectedOrder =
-    !!selectedOrder &&
-    activeOrderInvoices.length > 0 &&
-    activeOrderInvoices.every((candidate) => candidate.paid) &&
-    !orderIsFinal;
-  const emptyOrderWithoutInvoice =
-    !!selectedOrder &&
-    invoiceChecked &&
-    !orderHasInvoice &&
-    !orderIsFinal &&
-    selectedOrderItemCount === 0;
-  const disableItemMutation = orderHasInvoice || orderIsFinal;
-  const itemMutationDisabledMessage = orderHasInvoice
-    ? ORDER_ALREADY_INVOICED_MESSAGE
-    : ORDER_FINAL_ITEM_LOCK_MESSAGE;
+  const {
+    canCloseOrder: canCloseSelectedOrder,
+    emptyOrderWithoutInvoice,
+    itemMutationDisabled: disableItemMutation,
+    itemMutationDisabledMessage,
+    checkoutDisabled,
+    checkoutLabel,
+  } = checkout.status;
 
   const showItemMutationBlockedMessage = () => {
     setOrderActionMessage({
@@ -893,398 +669,7 @@ const CashierOrders = () => {
     });
   };
 
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- dependencies are intentionally empty
-  const resetInvoiceLink = useCallback(() => {
-    invoiceListRequestRef.current += 1;
-    invoiceDetailRequestRef.current += 1;
-    setInvoices([]);
-    setInvoiceListOrderId(null);
-    setSelectedInvoiceId(null);
-    setSelectedInvoiceDetail(null);
-    setPromotionCode("");
-    setInvoiceListLoading(false);
-    setInvoiceListError("");
-    setInvoiceDetailLoading(false);
-    setInvoiceDetailError("");
-    setInvoiceAction(null);
-    setSplitError("");
-    setMergeError("");
-    splitSubmissionRef.current = false;
-    mergeSubmissionRef.current = false;
-    setInvoiceMessage(null);
-    setPaymentOpen(false);
-    setPaymentError("");
-    setPaymentProcessing(false);
-    setOrderActionMessage(null);
-  }, []);
-
-  const loadInvoiceDetail = useCallback(
-    async (invoiceId: string, expectedOrderId: string) => {
-      const requestId = ++invoiceDetailRequestRef.current;
-      setSelectedInvoiceDetail(null);
-      setInvoiceDetailLoading(true);
-      setInvoiceDetailError("");
-      try {
-        const detailData = await getInvoiceById(invoiceId);
-        if (requestId !== invoiceDetailRequestRef.current) return null;
-        if (detailData.orderId !== expectedOrderId) {
-          setInvoiceDetailError("Hóa đơn không thuộc đơn hàng đang chọn.");
-          return null;
-        }
-        setSelectedInvoiceDetail(detailData);
-        return detailData;
-      } catch (loadError) {
-        if (requestId !== invoiceDetailRequestRef.current) return null;
-        setInvoiceDetailError(
-          getInvoiceUiErrorMessage(
-            loadError,
-            INVOICE_DETAIL_LOAD_FALLBACK_ERROR,
-          ),
-        );
-        return null;
-      } finally {
-        if (requestId === invoiceDetailRequestRef.current) {
-          setInvoiceDetailLoading(false);
-        }
-      }
-    },
-    [],
-  );
-
-  // Returns a snapshot of the refresh's outcome (not just the selected invoice id) so a
-  // caller — e.g. VNPAY restoration — can determine paid/payable/close-eligibility right
-  // away from the value it awaited, instead of re-deriving it from React state that may not
-  // have settled (or may have been reset again by something else) by the next line.
-  const refreshInvoices = useCallback(
-    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- loadInvoiceDetail is stable
-    async (
-      orderId: string,
-      preferredInvoiceId: string | null = null,
-    ): Promise<{
-      invoices: InvoiceSummary[];
-      selectedInvoiceId: string | null;
-      activeInvoices: InvoiceSummary[];
-      allActiveInvoicesPaid: boolean;
-    } | null> => {
-      const normalizedOrderId = orderId.trim();
-      if (!normalizedOrderId) return null;
-
-      const requestId = ++invoiceListRequestRef.current;
-      setInvoiceListLoading(true);
-      setInvoiceListError("");
-      try {
-        const foundInvoices = await getInvoices({ orderId: normalizedOrderId });
-        if (requestId !== invoiceListRequestRef.current) return null;
-        const nextSelectedId = chooseInvoiceId(
-          foundInvoices,
-          preferredInvoiceId,
-        );
-        setInvoices(foundInvoices);
-        setInvoiceListOrderId(normalizedOrderId);
-        setSelectedInvoiceId(nextSelectedId);
-        setSelectedInvoiceDetail(null);
-        setInvoiceDetailError("");
-        if (nextSelectedId) {
-          await loadInvoiceDetail(nextSelectedId, normalizedOrderId);
-        } else {
-          invoiceDetailRequestRef.current += 1;
-          setInvoiceDetailLoading(false);
-        }
-        const activeInvoices = foundInvoices.filter(
-          (candidate) => candidate.status === "ACTIVE",
-        );
-        return {
-          invoices: foundInvoices,
-          selectedInvoiceId: nextSelectedId,
-          activeInvoices,
-          allActiveInvoicesPaid:
-            activeInvoices.length > 0 &&
-            activeInvoices.every((candidate) => candidate.paid),
-        };
-      } catch (loadError) {
-        if (requestId !== invoiceListRequestRef.current) return null;
-        setInvoices([]);
-        setInvoiceListOrderId(normalizedOrderId);
-        setSelectedInvoiceId(null);
-        setSelectedInvoiceDetail(null);
-        setInvoiceListError(
-          getInvoiceUiErrorMessage(
-            loadError,
-            "Không thể tải danh sách hóa đơn.",
-          ),
-        );
-        return null;
-      } finally {
-        if (requestId === invoiceListRequestRef.current) {
-          setInvoiceListLoading(false);
-        }
-      }
-    },
-    [loadInvoiceDetail],
-  );
-
-  const handleGenerateInvoice = async () => {
-    const invoiceOrderId = selectedOrderId.trim();
-    if (!invoiceOrderId) {
-      setInvoiceMessage({
-        type: "error",
-        text: "Vui lòng chọn đơn hàng trước khi tạo hóa đơn",
-      });
-      return;
-    }
-    if (emptyOrderWithoutInvoice) {
-      setPaymentOpen(false);
-      setInvoiceMessage(null);
-      setOrderActionMessage({
-        type: "error",
-        text: EMPTY_ORDER_MESSAGE,
-      });
-      return;
-    }
-    setInvoiceAction("generate");
-    setInvoiceMessage(null);
-    setOrderActionMessage(null);
-    try {
-      const createdInvoice = await generateInvoice({
-        orderId: invoiceOrderId,
-        promotionCode: null,
-      });
-      await refreshInvoices(invoiceOrderId, createdInvoice.id);
-      setPaymentOpen(true);
-      setInvoiceMessage({
-        type: "success",
-        text: "Hóa đơn đã được tạo và sẵn sàng thanh toán.",
-      });
-    } catch (generateError) {
-      const message = getInvoiceGenerationErrorMessage(generateError);
-      setInvoiceMessage({
-        type: "error",
-        text: message,
-      });
-      setOrderActionMessage({
-        type: "error",
-        text: message,
-      });
-      setPaymentOpen(false);
-    } finally {
-      setInvoiceAction(null);
-    }
-  };
-
-  const handleApplyDiscount = async () => {
-    if (!selectedInvoice || !promotionCode.trim()) return;
-    setInvoiceAction("discount");
-    setInvoiceMessage(null);
-    try {
-      await applyInvoiceDiscount(selectedInvoice.id, promotionCode.trim());
-      await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
-      setPromotionCode("");
-      setInvoiceMessage({
-        type: "success",
-        text: "Áp dụng khuyến mãi thành công",
-      });
-    } catch (discountError) {
-      setInvoiceMessage({
-        type: "error",
-        text: getPromotionDiscountErrorMessage(discountError),
-      });
-      if (
-        discountError instanceof ApiError &&
-        discountError.code &&
-        STALE_INVOICE_ERROR_CODES.has(discountError.code)
-      ) {
-        await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
-      }
-    } finally {
-      setInvoiceAction(null);
-    }
-  };
-
-  const handleSendInvoice = async () => {
-    if (!selectedInvoice) return;
-    setInvoiceAction("send");
-    setInvoiceMessage(null);
-    try {
-      const result = await sendInvoice(selectedInvoice.id);
-      setInvoiceMessage({ type: "success", text: result.message });
-    } catch (sendError) {
-      setInvoiceMessage({
-        type: "error",
-        text: getInvoiceUiErrorMessage(sendError, SEND_INVOICE_FALLBACK_ERROR),
-      });
-    } finally {
-      setInvoiceAction(null);
-    }
-  };
-
-  // Customer contact lives on the order, so the receipt and the invoice email both read
-  // the same record. Saving is independent of payment and never blocks it.
-  const handleSaveCustomer = async (customer: OrderCustomerInput) => {
-    if (!selectedOrderId) return false;
-    setCustomerSaving(true);
-    setCustomerError("");
-    try {
-      const updated = await updateOrderCustomer(selectedOrderId, customer);
-      setActiveOrders((orders) =>
-        orders.map((order) => (order.id === updated.id ? updated : order)),
-      );
-      return true;
-    } catch (saveError) {
-      setCustomerError(
-        getInvoiceUiErrorMessage(saveError, SAVE_CUSTOMER_FALLBACK_ERROR),
-      );
-      return false;
-    } finally {
-      setCustomerSaving(false);
-    }
-  };
-
-  const handlePrintInvoice = () => {
-    if (!currentOrderInvoiceDetail) return;
-    if (
-      !printCashierInvoice(
-        currentOrderInvoiceDetail,
-        selectedTable?.name || "-",
-        cashierDisplayName,
-        shiftDisplayLabel,
-        {
-          name: selectedOrder?.customerName ?? null,
-          phone: selectedOrder?.customerPhone ?? null,
-          email: selectedOrder?.customerEmail ?? null,
-        },
-      )
-    ) {
-      setInvoiceMessage({
-        type: "error",
-        text: "Trình duyệt đã chặn cửa sổ in hóa đơn",
-      });
-    }
-  };
-
-  const handleConfirmCash = async (receivedAmount: number) => {
-    if (!selectedInvoice) {
-      setPaymentError("Không xác định được hóa đơn cần thanh toán");
-      return;
-    }
-
-    setPaymentProcessing(true);
-    setPaymentError("");
-    try {
-      const createdPayment = await processCashPayment(
-        selectedInvoice.id,
-        receivedAmount,
-      );
-      setPaymentOpen(false);
-      setSuccessTotal(createdPayment.amount);
-      await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
-      setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
-    } catch (processError) {
-      setPaymentError(getPaymentProcessErrorMessage(processError));
-      if (
-        processError instanceof ApiError &&
-        processError.code &&
-        STALE_INVOICE_ERROR_CODES.has(processError.code)
-      ) {
-        await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
-      }
-    } finally {
-      setPaymentProcessing(false);
-    }
-  };
-
-  const handleResetVnpayState = () => {
-    setVnpayError("");
-  };
-
-  // Creates (or reuses) a PENDING VNPAY attempt and opens it in a SEPARATE tab/window
-  // (reused via the named target, so repeated clicks don't pile up tabs) rather than
-  // navigating this tab away. If VNPAY sandbox hangs or errors, the cashier just closes
-  // that tab and is still sitting in the app with the same table/invoice selected — no
-  // re-login, no lost place. If a popup blocker prevents opening it, fall back to the old
-  // same-tab redirect so the payment can still proceed. IPN/QueryDR finalizes the payment
-  // either way; the "focus" listener below re-syncs this tab once the cashier returns to it.
-  const handleInitiateVnpay = async () => {
-    if (!selectedInvoice) {
-      setVnpayError("Không xác định được hóa đơn cần thanh toán");
-      return;
-    }
-    setVnpayLoading(true);
-    setVnpayError("");
-    try {
-      const result = await createVnpayPayment(selectedInvoice.id);
-      const popup = window.open(result.paymentUrl, "vnpay-payment");
-      if (!popup) {
-        window.location.href = result.paymentUrl;
-        return;
-      }
-      popup.focus();
-    } catch (initiateError) {
-      setVnpayError(getPaymentProcessErrorMessage(initiateError));
-    } finally {
-      setVnpayLoading(false);
-    }
-  };
-
-  // Escape hatch when VNPAY has the money but this machine never received the IPN: ask the
-  // backend to query VNPAY directly (QueryDR) and settle whatever it reports. Also covers a
-  // stale PENDING attempt that is blocking a new payment.
-  const handleCheckVnpayStatus = async () => {
-    if (!selectedInvoice) return;
-    setVnpayLoading(true);
-    setVnpayError("");
-    try {
-      const payments = await getPayments(selectedInvoice.id);
-      const pending = payments.find(
-        (payment) =>
-          payment.method === "VNPAY" &&
-          payment.status === "PENDING" &&
-          Boolean(payment.gatewayRef),
-      );
-
-      if (!pending?.gatewayRef) {
-        await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
-        setVnpayError("Không có giao dịch VNPAY nào đang chờ xử lý cho hóa đơn này.");
-        return;
-      }
-
-      const status = await reconcileVnpayPayment(pending.gatewayRef);
-      await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
-
-      if (status.status === "PAID") {
-        // Clear the cash-payment error too: the usual way to reach this button is a CASH
-        // attempt that the backend rejected because this very VNPAY attempt was still
-        // pending. Reconciling it to PAID resolves that error, so leaving the red
-        // "đã có giao dịch đang chờ xử lý" text behind would contradict the paid invoice
-        // (visible again as soon as the cashier reopens the settled invoice to review it).
-        setPaymentError("");
-        setPaymentOpen(false);
-        setSuccessTotal(status.amount);
-        setInvoiceMessage({ type: "success", text: "Thanh toán thành công" });
-        return;
-      }
-      setVnpayError(
-        VNPAY_STATUS_MESSAGES[status.status] ??
-          "Giao dịch vẫn đang chờ xác nhận từ VNPAY.",
-      );
-    } catch (checkError) {
-      setVnpayError(getPaymentProcessErrorMessage(checkError));
-    } finally {
-      setVnpayLoading(false);
-    }
-  };
-
-  // Reopens the payment modal on an already-settled invoice so the cashier can review, print
-  // or resend it before closing the order. Errors from the attempts that led to the payment
-  // are stale by definition here (the invoice is paid), so this starts from a clean slate —
-  // the same reset handleSelectInvoice does when moving between invoices.
-  const handleReopenPaidInvoice = () => {
-    setPaymentError("");
-    handleResetVnpayState();
-    setInvoiceMessage(null);
-    setPaymentOpen(true);
-  };
-
-  // A VNPAY attempt opened via handleInitiateVnpay runs in a separate tab, so a payment
+  // A VNPAY attempt opened by the checkout module runs in a separate tab, so a payment
   // settled there (or abandoned) never touches this tab's state on its own — that tab writes
   // the outcome to the shared localStorage context and closes itself instead of navigating.
   // Whenever this tab regains focus: if that context is waiting, run the same restore flow a
@@ -1298,134 +683,16 @@ const CashierOrders = () => {
       if (pending?.txnRef) {
         void restoreFromVnpayState(pending);
       } else if (selectedOrderId) {
-        void refreshInvoices(selectedOrderId, selectedInvoiceId);
+        void checkout.refreshInvoices(
+          selectedOrderId,
+          checkout.selectedInvoiceId,
+        );
       }
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedOrderId, selectedInvoiceId]);
-
-  const handleSelectInvoice = (invoiceId: string) => {
-    if (!selectedOrderId || invoiceId === selectedInvoiceId) return;
-    setSelectedInvoiceId(invoiceId);
-    setSelectedInvoiceDetail(null);
-    setInvoiceDetailError("");
-    setInvoiceMessage(null);
-    setPaymentError("");
-    setSplitError("");
-    setPromotionCode("");
-    handleResetVnpayState();
-    void loadInvoiceDetail(invoiceId, selectedOrderId);
-  };
-
-  const handleSplitInvoice = async (
-    request: SplitInvoiceRequest,
-  ): Promise<boolean> => {
-    if (
-      splitSubmissionRef.current ||
-      !selectedInvoice ||
-      !currentOrderInvoiceDetail
-    ) {
-      return false;
-    }
-    splitSubmissionRef.current = true;
-    setInvoiceAction("split");
-    setSplitError("");
-    setInvoiceMessage(null);
-    try {
-      const result = await splitInvoice(selectedInvoice.id, request);
-      const firstChildId = result.children[0]?.invoiceId;
-      if (!firstChildId) {
-        setSplitError(
-          "Máy chủ không trả về hóa đơn con. Danh sách hóa đơn đã được làm mới.",
-        );
-        await refreshInvoices(selectedInvoice.orderId, null);
-        return false;
-      }
-      await refreshInvoices(selectedInvoice.orderId, firstChildId);
-      setInvoiceMessage({
-        type: "success",
-        text: "Chia hóa đơn thành công. Hóa đơn con đầu tiên đã được chọn.",
-      });
-      setPaymentOpen(true);
-      return true;
-    } catch (splitFailure) {
-      setSplitError(getSplitInvoiceErrorMessage(splitFailure));
-      if (
-        splitFailure instanceof ApiError &&
-        splitFailure.code &&
-        STALE_INVOICE_ERROR_CODES.has(splitFailure.code)
-      ) {
-        await refreshInvoices(selectedInvoice.orderId, selectedInvoice.id);
-        if (splitFailure.code === "ORDER_NOT_FOUND") {
-          setRefreshTrigger((value) => value + 1);
-        }
-      }
-      return false;
-    } finally {
-      splitSubmissionRef.current = false;
-      setInvoiceAction(null);
-    }
-  };
-
-  const handleMergeInvoices = async (
-    request: MergeInvoiceRequest,
-  ): Promise<boolean> => {
-    const expectedOrderId = selectedOrderId.trim();
-    const uniqueInvoiceIds = [...new Set(request.invoiceIds)];
-    if (
-      mergeSubmissionRef.current ||
-      !expectedOrderId ||
-      uniqueInvoiceIds.length < 2
-    ) {
-      return false;
-    }
-
-    mergeSubmissionRef.current = true;
-    setInvoiceAction("merge");
-    setMergeError("");
-    setInvoiceMessage(null);
-    try {
-      const result = await mergeInvoices({ invoiceIds: uniqueInvoiceIds });
-      if (selectedOrderIdRef.current !== expectedOrderId) return true;
-
-      const targetInvoiceId = result.targetInvoice?.id?.trim();
-      if (result.orderId !== expectedOrderId || !targetInvoiceId) {
-        setMergeError(
-          "Máy chủ trả về hóa đơn đích không hợp lệ. Danh sách đã được làm mới.",
-        );
-        await refreshInvoices(expectedOrderId, selectedInvoiceId);
-        return false;
-      }
-
-      await refreshInvoices(expectedOrderId, targetInvoiceId);
-      if (selectedOrderIdRef.current !== expectedOrderId) return true;
-      setInvoiceMessage({
-        type: "success",
-        text: "Gộp hóa đơn thành công. Hóa đơn đích đã được chọn.",
-      });
-      setPaymentOpen(true);
-      return true;
-    } catch (mergeFailure) {
-      if (selectedOrderIdRef.current !== expectedOrderId) return false;
-      setMergeError(getMergeInvoiceErrorMessage(mergeFailure));
-      if (
-        mergeFailure instanceof ApiError &&
-        mergeFailure.code &&
-        STALE_MERGE_ERROR_CODES.has(mergeFailure.code)
-      ) {
-        await refreshInvoices(expectedOrderId, selectedInvoiceId);
-        if (mergeFailure.code === "ORDER_NOT_FOUND") {
-          setRefreshTrigger((value) => value + 1);
-        }
-      }
-      return false;
-    } finally {
-      mergeSubmissionRef.current = false;
-      setInvoiceAction(null);
-    }
-  };
+  }, [selectedOrderId, checkout.selectedInvoiceId]);
 
   const handleQtyChange = (id: string, delta: number) => {
     if (delta > 0) {
@@ -1483,7 +750,7 @@ const CashierOrders = () => {
     }
     setTables((ts) => ts.map((t) => ({ ...t, selected: t.id === id })));
     setOrderActionMessage(null);
-    resetInvoiceLink();
+    checkout.reset();
     if (id) {
       const selected = tables.find((t) => t.id === id);
       if (selected) {
@@ -1542,27 +809,6 @@ const CashierOrders = () => {
       setReservationLoading(false);
     }
   };
-
-  // ─────────────────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    // While a VNPAY restoration is explicitly managing invoice state for this exact order
-    // (see the restoration effect above), this effect must not run at all — not even
-    // resetInvoiceLink(). resetInvoiceLink() unconditionally bumps invoiceListRequestRef,
-    // which is the same counter refreshInvoices() uses to detect a stale/superseded call;
-    // firing it while the restoration's own refreshInvoices() call is still in flight
-    // invalidated that call's results once they came back, leaving invoiceListOrderId stuck
-    // at null (checkoutLabel stuck on "Đang kiểm tra hóa đơn") until an unrelated table
-    // switch happened to run this effect again uncontested.
-    if (selectedOrderId && suppressAutoInvoiceRefreshForOrderRef.current === selectedOrderId) {
-      suppressAutoInvoiceRefreshForOrderRef.current = null;
-      return;
-    }
-    resetInvoiceLink();
-    if (selectedOrderId && selectedOrder?.id === selectedOrderId) {
-      void refreshInvoices(selectedOrderId, null);
-    }
-  }, [selectedOrderId, selectedOrder?.id, refreshInvoices, resetInvoiceLink]);
 
   const handleStatusChange = async (
     orderId: string,
@@ -1741,7 +987,7 @@ const CashierOrders = () => {
     setOrderActionMessage(null);
     try {
       await closeOrder(closedOrderId);
-      resetInvoiceLink();
+      checkout.reset();
       setActiveOrders((orders) =>
         orders.filter((order) => order.id !== closedOrderId),
       );
@@ -1978,41 +1224,16 @@ const CashierOrders = () => {
     }
   };
 
-  const filteredMenu = menuItems.filter((i) => {
-    const matchesCategory =
-      activeMenuCategory === "all" || i.categoryId === activeMenuCategory;
-    const matchesSearch =
-      !search || i.name.toLowerCase().includes(search.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
-  const menuCategoryPills: Category[] = [
-    { id: "all", label: "Tất Cả", count: menuItems.length },
-    ...menuCategories
-      .map((c) => ({ id: c.id, label: c.name, count: c.itemCount }))
-      .sort((a, b) => b.count - a.count),
-  ];
-  const BUSY_TABLE_STATUSES = ["OCCUPIED", "BILLING", "RESERVED"];
-  const tableCounts: Record<string, number> = {
-    all: tablesInArea.length,
-    used: tablesInArea.filter((t) => BUSY_TABLE_STATUSES.includes(t.status))
-      .length,
-    empty: tablesInArea.filter((t) => !BUSY_TABLE_STATUSES.includes(t.status))
-      .length,
-  };
-  const checkoutDisabled =
-    invoiceAction !== null ||
-    invoiceListLoading ||
-    !selectedOrderId ||
-    emptyOrderWithoutInvoice ||
-    (orderHasInvoice ? !selectedInvoiceId : !invoiceChecked);
-  const checkoutLabel = orderHasInvoice
-    ? activeOrderInvoices.some((candidate) => !candidate.paid)
-      ? "Mở thanh toán"
-      : "Mở hóa đơn"
-    : invoiceChecked
-      ? "Tạo hóa đơn"
-      : "Đang kiểm tra hóa đơn";
-
+  const filteredMenu = selectFilteredMenu(
+    menuItems,
+    activeMenuCategory,
+    search,
+  );
+  const menuCategoryPills = selectMenuCategoryPills(
+    menuItems,
+    menuCategories,
+  );
+  const tableCounts = selectTableCounts(tablesInArea);
   if (shiftLoading) {
     // Mirrors the real page shell (header / tab+search row / area filters / table grid /
     // order panel) below, rather than a blank centered message, since this is the very first
@@ -2068,28 +1289,16 @@ const CashierOrders = () => {
           onDismiss={() => setVnpayFailureNotice(null)}
         />
       )}
-      {!shift && shiftModalOpen && (
-        <OpenShiftModal
-          employeeName={user?.fullName ?? user?.username ?? "Nhân viên"}
-          onOpened={(s) => {
-            setShift(s);
-            setShiftModalOpen(false);
-          }}
-          onLogout={handleLogout}
-          onClose={() => setShiftModalOpen(false)}
-        />
-      )}
-
       <Header
         employeeName={user?.fullName ?? user?.username ?? "Nhân viên"}
         roleLabel={ROLE_LABEL[user?.role ?? ""] ?? user?.role ?? "Thu ngân"}
         shift={shift}
         assistanceRequests={assistanceRequests}
         onResolveRequest={handleResolveAssistance}
-        onLogout={handleLogout}
+        onLogout={shiftSession.requestLogout}
         onChangePassword={() => setShowChangePw(true)}
-        onCashMovement={() => setShowCashMovement(true)}
-        onCloseShift={() => setShowCloseShift(true)}
+        onCashMovement={shiftSession.requestCashMovement}
+        onCloseShift={shiftSession.requestCloseShift}
       />
 
       {shift?.shiftType === "FLOATING" && shift.status === "OPEN" && (
@@ -2113,14 +1322,14 @@ const CashierOrders = () => {
           </div>
           <button
             className="kv-btn kv-btn-primary h-9 shrink-0"
-            onClick={() => void openMergeDialog()}
+            onClick={() => void shiftSession.requestMerge()}
           >
             Gộp vào ca chính
           </button>
         </div>
       )}
 
-      {!shift && !shiftModalOpen && (
+      {!shift && (
         <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2 text-amber-700 text-[14px]">
             <svg
@@ -2139,7 +1348,7 @@ const CashierOrders = () => {
             <span>Ca thu ngân chưa mở — không thể tạo đơn hàng mới.</span>
           </div>
           <button
-            onClick={() => setShiftModalOpen(true)}
+            onClick={shiftSession.requestOpenShift}
             className="shrink-0 h-8 px-3 rounded-lg bg-amber-500 text-white text-[13px] font-medium hover:bg-amber-600 transition-colors"
           >
             Mở ca
@@ -2324,16 +1533,7 @@ const CashierOrders = () => {
             ]}
             hasSelectedMenu={hasSelectedMenu}
             onStatusChange={handleStatusChange}
-            onCheckout={() => {
-              setOrderActionMessage(null);
-              setPaymentError("");
-              setSplitError("");
-              if (orderHasInvoice) {
-                setPaymentOpen(true);
-              } else {
-                void handleGenerateInvoice();
-              }
-            }}
+            onCheckout={checkout.requestOpen}
             onCreateOrder={handleCreateOrder}
             onCheckInWalkIn={handleCheckInWalkIn}
             checkInWalkInSubmitting={checkInWalkInSubmitting}
@@ -2347,9 +1547,9 @@ const CashierOrders = () => {
             selectedTable={selectedTable}
             customer={customerDraft}
             onCustomerChange={setCustomerDraft}
-            onSaveCustomer={() => void handleSaveCustomer(customerDraft)}
-            customerSaving={customerSaving}
-            customerError={customerError}
+            onSaveCustomer={() => void checkout.saveCustomer(customerDraft)}
+            customerSaving={checkout.customerSaving}
+            customerError={checkout.customerError}
             orderExists={Boolean(selectedOrderId)}
             isWalkInSeating={
               !!selectedTable && walkInOverrideTableId === selectedTable.id
@@ -2372,7 +1572,7 @@ const CashierOrders = () => {
                 : undefined
             }
             onCloseOrder={handleCloseOrder}
-            onReopenPaidInvoice={handleReopenPaidInvoice}
+            onReopenPaidInvoice={checkout.reopenPaidInvoice}
             invoiceTools={null}
           />
         )}
@@ -2389,229 +1589,56 @@ const CashierOrders = () => {
       )}
 
       {removeConfirmModal.open && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
-            <div className="w-12 h-12 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center mb-4">
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                />
-              </svg>
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">
-              Xác nhận xóa
-            </h3>
-            <p className="text-sm text-gray-600 mb-6">
-              Bạn có chắc chắn muốn xóa món này khỏi đơn hàng?
-            </p>
-            <div className="flex gap-3 w-full">
-              <button
-                onClick={() =>
-                  setRemoveConfirmModal({
-                    open: false,
-                    orderId: null,
-                    orderItemId: null,
-                  })
-                }
-                className="flex-1 border border-gray-300 text-gray-700 font-bold py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={() => void executeRemoveItem()}
-                className="flex-1 bg-[#dc2f02] text-white font-bold py-2.5 rounded-xl hover:bg-[#9d0208] transition-colors"
-              >
-                Xóa
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmActionModal
+          title="Xác nhận xóa"
+          message="Bạn có chắc chắn muốn xóa món này khỏi đơn hàng?"
+          cancelLabel="Hủy"
+          confirmLabel="Xóa"
+          tone="warning"
+          onCancel={() =>
+            setRemoveConfirmModal({
+              open: false,
+              orderId: null,
+              orderItemId: null,
+            })
+          }
+          onConfirm={() => void executeRemoveItem()}
+        />
       )}
 
       {cancelConfirmModal.open && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
-            <div className="w-12 h-12 rounded-full bg-red-100 text-[#dc2f02] flex items-center justify-center mb-4">
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                />
-              </svg>
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">
-              Hủy đơn hàng
-            </h3>
-            <p className="text-sm text-gray-600 mb-6">
-              Bạn có chắc chắn muốn hủy đơn hàng này?
-            </p>
-            <div className="flex gap-3 w-full">
-              <button
-                onClick={() =>
-                  setCancelConfirmModal({ open: false, orderIds: [] })
-                }
-                className="flex-1 border border-gray-300 text-gray-700 font-bold py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
-              >
-                Đóng
-              </button>
-              <button
-                onClick={() => void executeCancelOrder()}
-                className="flex-1 bg-[#dc2f02] text-white font-bold py-2.5 rounded-xl hover:bg-[#9d0208] transition-colors"
-              >
-                Xác nhận
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmActionModal
+          title="Hủy đơn hàng"
+          message="Bạn có chắc chắn muốn hủy đơn hàng này?"
+          onCancel={() =>
+            setCancelConfirmModal({ open: false, orderIds: [] })
+          }
+          onConfirm={() => void executeCancelOrder()}
+        />
       )}
 
       {reservationCancelConfirmOpen && selectedTable?.upcomingReservation && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
-            <div className="w-12 h-12 rounded-full bg-red-100 text-[#dc2f02] flex items-center justify-center mb-4">
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                />
-              </svg>
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">
-              Hủy đặt bàn
-            </h3>
-            <p className="text-sm text-gray-600 mb-6">
-              Xác nhận hủy đặt bàn của khách "
-              {selectedTable.upcomingReservation.guestName}"?
-            </p>
-            <div className="flex gap-3 w-full">
-              <button
-                onClick={() => setReservationCancelConfirmOpen(false)}
-                className="flex-1 border border-gray-300 text-gray-700 font-bold py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
-              >
-                Đóng
-              </button>
-              <button
-                onClick={() => void executeReservationCancel()}
-                className="flex-1 bg-[#dc2f02] text-white font-bold py-2.5 rounded-xl hover:bg-[#9d0208] transition-colors"
-              >
-                Xác nhận
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmActionModal
+          title="Hủy đặt bàn"
+          message={`Xác nhận hủy đặt bàn của khách "${selectedTable.upcomingReservation.guestName}"?`}
+          onCancel={() => setReservationCancelConfirmOpen(false)}
+          onConfirm={() => void executeReservationCancel()}
+        />
       )}
 
       {orderActionMessage && orderActionMessage.type === "error" && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-fade-in">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
-            <div className="w-12 h-12 rounded-full bg-red-100 text-red-500 flex items-center justify-center mb-4">
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                />
-              </svg>
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Thông báo</h3>
-            <p className="text-sm text-gray-600 mb-6">
-              {orderActionMessage.text}
-            </p>
-            <button
-              onClick={() => setOrderActionMessage(null)}
-              className="w-full bg-gray-900 text-white font-bold py-2.5 rounded-xl hover:bg-gray-800 transition-colors"
-            >
-              Đóng
-            </button>
-          </div>
-        </div>
+        <ConfirmActionModal
+          title="Thông báo"
+          message={orderActionMessage.text}
+          confirmLabel="Đóng"
+          cancelLabel={null}
+          tone="neutral"
+          onCancel={() => setOrderActionMessage(null)}
+          onConfirm={() => setOrderActionMessage(null)}
+        />
       )}
 
-      {paymentOpen && selectedOrderId && (
-        <PaymentModal
-          invoices={currentOrderInvoices}
-          selectedInvoiceId={selectedInvoiceId}
-          invoice={currentOrderInvoiceDetail}
-          table={selectedTable}
-          invoiceListLoading={invoiceListLoading}
-          invoiceListError={invoiceListError}
-          detailLoading={invoiceDetailLoading}
-          detailError={invoiceDetailError}
-          processing={paymentProcessing}
-          error={paymentError}
-          promotionCode={promotionCode}
-          action={invoiceAction}
-          splitError={splitError}
-          mergeError={mergeError}
-          role={user?.role}
-          invoiceMessage={invoiceMessage}
-          nonPayableItems={nonPayableRejectedItems}
-          vnpayLoading={vnpayLoading}
-          vnpayError={vnpayError}
-          cashierName={cashierDisplayName}
-          shiftLabel={shiftDisplayLabel}
-          customer={{
-            name: selectedOrder?.customerName ?? null,
-            phone: selectedOrder?.customerPhone ?? null,
-            email: selectedOrder?.customerEmail ?? null,
-          }}
-          customerSaving={customerSaving}
-          customerError={customerError}
-          onSaveCustomer={handleSaveCustomer}
-          onClose={() => setPaymentOpen(false)}
-          onSelectInvoice={handleSelectInvoice}
-          onRefreshInvoices={() => {
-            void refreshInvoices(selectedOrderId, selectedInvoiceId);
-          }}
-          onConfirmCash={(receivedAmount) =>
-            void handleConfirmCash(receivedAmount)
-          }
-          onInitiateVnpay={() => void handleInitiateVnpay()}
-          onCheckVnpayStatus={() => void handleCheckVnpayStatus()}
-          onResetVnpayState={handleResetVnpayState}
-          onPromotionCodeChange={setPromotionCode}
-          onApplyDiscount={() => void handleApplyDiscount()}
-          onPrint={handlePrintInvoice}
-          onSend={() => void handleSendInvoice()}
-          onSplit={handleSplitInvoice}
-          onMerge={handleMergeInvoices}
-          onResetMergeError={() => setMergeError("")}
-        />
-      )}
-      {successTotal !== null && (
-        <SuccessToast
-          total={successTotal}
-          onDismiss={() => setSuccessTotal(null)}
-        />
-      )}
+      {checkout.overlays}
       {noteModal.open && noteModal.itemId !== null && (
         <AddNoteModal
           itemId={noteModal.itemId}
@@ -2636,177 +1663,7 @@ const CashierOrders = () => {
       {showChangePw && (
         <ChangePasswordModal onClose={() => setShowChangePw(false)} />
       )}
-      {showCloseShift && shift && (
-        <CloseShiftModal
-          shift={shift}
-          cashierName={user?.username ?? user?.fullName ?? "—"}
-          onClosed={() => {
-            setShift(null);
-            setShowCloseShift(false);
-            if (logoutAfterClose) {
-              setLogoutAfterClose(false);
-              void doLogout(); // BR-AUTH-04: "close shift, then log out" shortcut
-            }
-          }}
-          onCancel={() => {
-            setShowCloseShift(false);
-            setLogoutAfterClose(false);
-          }}
-        />
-      )}
-      {mergeOpen && shift && (
-        <div
-          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setMergeOpen(false);
-          }}
-        >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[460px] mx-4 overflow-hidden">
-            <div className="px-6 py-5 border-b border-[#eceef0]">
-              <h2 className="text-[18px] font-bold text-[#202325]">
-                Gộp ca tạm vào ca chính
-              </h2>
-              <p className="text-[13px] text-[#636566] mt-1">
-                Đếm tiền mặt đã thu trong ca tạm và chọn ca chính để gộp. Giao
-                dịch sẽ được chuyển vào ca chính (giữ nguyên người thu).
-              </p>
-            </div>
-            <div className="p-6 flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[14px] font-medium text-[#202325]">
-                  Ca chính
-                </label>
-                {mergeTargets.length === 0 ? (
-                  <p className="text-[13px] text-[#636566]">
-                    Không có ca chính nào đang mở để gộp.
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-1.5">
-                    {mergeTargets.map((t) => (
-                      <label
-                        key={t.shiftId}
-                        className="flex items-center gap-2 text-[14px] text-[#202325] cursor-pointer"
-                      >
-                        <input
-                          type="radio"
-                          name="merge-target"
-                          checked={mergeTargetId === t.shiftId}
-                          onChange={() => setMergeTargetId(t.shiftId)}
-                        />
-                        {t.cashierName}
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[14px] font-medium text-[#202325]">
-                  Tiền mặt đã đếm (VNĐ)
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={mergeCash}
-                  onChange={(e) =>
-                    setMergeCash(
-                      parseInt(
-                        e.target.value.replace(/\D/g, "") || "0",
-                        10,
-                      ).toLocaleString("vi-VN"),
-                    )
-                  }
-                  className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[15px] text-[#202325] outline-none focus:border-[#025cca]"
-                />
-              </div>
-              <input
-                type="text"
-                value={mergeNote}
-                onChange={(e) => setMergeNote(e.target.value)}
-                placeholder="Ghi chú (nếu lệch tiền)"
-                className="h-11 px-4 border border-[#d1d5db] rounded-lg text-[14px] text-[#202325] outline-none focus:border-[#025cca]"
-              />
-              {shiftMergeError && (
-                <div className="px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-600">
-                  {shiftMergeError}
-                </div>
-              )}
-            </div>
-            <div className="px-6 py-4 border-t border-[#eceef0] flex justify-end gap-2">
-              <button
-                className="kv-btn kv-btn-outline-neutral h-10"
-                onClick={() => setMergeOpen(false)}
-              >
-                Hủy
-              </button>
-              <button
-                className="kv-btn kv-btn-primary h-10"
-                disabled={mergeLoading || mergeTargets.length === 0}
-                onClick={() => void submitMerge()}
-              >
-                {mergeLoading ? "Đang gộp..." : "Gộp ca"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {logoutWarn && (
-        <div
-          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setLogoutWarn(false);
-          }}
-        >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[420px] mx-4 overflow-hidden">
-            <div className="px-6 py-5 border-b border-[#eceef0]">
-              <h2 className="text-[18px] font-bold text-[#202325]">
-                Đăng xuất
-              </h2>
-              <p className="text-[13px] text-[#636566] mt-1">
-                Đăng xuất sẽ không đóng ca thu ngân của bạn. Ca vẫn mở trên hệ
-                thống và sẽ được khôi phục khi bạn đăng nhập lại.
-              </p>
-            </div>
-            <div className="p-6 flex flex-col gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setLogoutWarn(false);
-                  setLogoutAfterClose(true);
-                  setShowCloseShift(true);
-                }}
-                className="h-11 rounded-lg bg-[#025cca] text-white font-semibold text-[15px] hover:bg-[#0251b3] transition-colors"
-              >
-                Đóng ca rồi đăng xuất
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setLogoutWarn(false);
-                  void doLogout();
-                }}
-                className="h-11 rounded-lg border border-[#d1d5db] text-[14px] text-[#636566] hover:bg-[#f5f5f5] transition-colors"
-              >
-                Chỉ đăng xuất
-              </button>
-              <button
-                type="button"
-                onClick={() => setLogoutWarn(false)}
-                className="h-10 text-[13px] text-[#636566] hover:text-[#202325] transition-colors"
-              >
-                Hủy
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {showCashMovement && shift && (
-        <CashMovementModal
-          shift={shift}
-          onUpdated={(s) => setShift(s)}
-          onClose={() => setShowCashMovement(false)}
-        />
-      )}
+      {shiftSession.overlays}
     </div>
   );
 };
