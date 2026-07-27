@@ -26,7 +26,7 @@ export default function DraftTab({
         ) : (
           cart.map((item) => (
             <div key={item.cartItemId} className="bg-white rounded-2xl p-3 mb-3 shadow-sm border border-gray-100 flex gap-3">
-              <img src={getItemImage(item.id)} alt={item.name} className="w-20 h-20 rounded-xl object-cover border border-gray-100" />
+              <img src={getItemImage(item.id)} alt={item.name} loading="lazy" decoding="async" className="w-20 h-20 rounded-xl object-cover border border-gray-100" />
               <div className="flex-1 flex flex-col justify-between">
                 <div className="flex justify-between items-start">
                   <h3 className="font-bold text-gray-900 text-sm pr-2 leading-tight">{item.name}</h3>

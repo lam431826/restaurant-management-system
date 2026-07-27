@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import AssistanceButton from '../AssistanceButton'
-import imgMakiSpicyTuna from '../../assets/images/menu-maki-spicy-tuna.jpg'
+import imgMakiSpicyTuna from '../../assets/images/menu-maki-spicy-tuna.webp'
 import QuantityInput from './QuantityInput'
 import CartModal from './CartModal'
 import AlertModal from './AlertModal'
@@ -335,7 +335,7 @@ export default function GuestOrderPage() {
                     return (
                       <div key={item.id} className="p-3 flex gap-3">
                         <div className="w-20 h-20 bg-gray-100 rounded-lg overflow-hidden shrink-0 border border-gray-100">
-                          <img src={imgUrl} alt={item.name} className="w-full h-full object-cover" />
+                          <img src={imgUrl} alt={item.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                         </div>
                         <div className="flex-1 flex flex-col justify-between">
                           <div>

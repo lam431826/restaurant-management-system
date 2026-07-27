@@ -1,6 +1,6 @@
-import IMG_BG from '../assets/images/about-bg.jpg'
-import IMG_INTERIOR from '../assets/images/about-interior.jpg'
-import IMG_CHEF from '../assets/images/about-chef.jpg'
+import IMG_BG from '../assets/images/about-bg.webp'
+import IMG_INTERIOR from '../assets/images/about-interior.webp'
+import IMG_CHEF from '../assets/images/about-chef.webp'
 import { useInView } from '../hooks/useInView'
 
 const AWARDS = [
@@ -15,19 +15,21 @@ export default function AboutSection() {
   const [row3Ref, row3In] = useInView()
 
   return (
-    <section id="about" className="bg-[#0a0b0a] p-6">
-      <div className="flex gap-4 items-start">
+    <section id="about" className="bg-[#0a0b0a] p-3 md:p-6">
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
 
         {/* Left — sticky image */}
-        <div className="flex-1 sticky top-6 self-start h-[calc(100vh-3rem)] overflow-hidden rounded-2xl relative bg-black min-w-0">
+        <div className="w-full lg:flex-1 lg:sticky lg:top-6 self-start h-[70vh] lg:h-[calc(100vh-3rem)] overflow-hidden rounded-2xl relative bg-black min-w-0">
           <img
             src={IMG_BG}
             alt="Chef hands"
+            loading="lazy"
+            decoding="async"
             className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
           />
           <div className="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-b from-transparent to-black opacity-60 pointer-events-none" />
           <p
-            className="absolute bottom-[140px] left-[67px] text-[#efe7d2] uppercase tracking-[2px] leading-[0.63]"
+            className="absolute bottom-16 left-6 md:bottom-[140px] md:left-[67px] text-[#efe7d2] uppercase tracking-[2px] leading-[0.63]"
             style={{ fontFamily: 'Forum, serif', fontSize: 'clamp(52px, 7vw, 112px)' }}
           >
             About
@@ -35,12 +37,12 @@ export default function AboutSection() {
         </div>
 
         {/* Right — content grid + footer */}
-        <div className="flex-1 flex flex-col gap-4 min-w-0">
+        <div className="w-full lg:flex-1 flex flex-col gap-4 min-w-0">
           <div className="flex flex-col gap-4">
 
             {/* Row 1: tagline card + interior image */}
-            <div ref={row1Ref} className={`flex gap-4 min-h-[280px] ${row1In ? 'animate-fade-up' : 'opacity-0'}`}>
-              <div className="border border-[rgba(239,231,210,0.15)] rounded-2xl flex-1 flex flex-col justify-between p-12 min-w-0 overflow-hidden">
+            <div ref={row1Ref} className={`flex flex-col md:flex-row gap-4 min-h-[280px] ${row1In ? 'animate-fade-up' : 'opacity-0'}`}>
+              <div className="border border-[rgba(239,231,210,0.15)] rounded-2xl flex-1 flex flex-col justify-between gap-8 p-6 md:p-12 min-w-0 overflow-hidden">
                 <p
                   className="text-[#efe7d2] text-[32px] tracking-[1px] uppercase leading-[1.2]"
                   style={{ fontFamily: 'Forum, serif' }}
@@ -59,28 +61,32 @@ export default function AboutSection() {
                 <img
                   src={IMG_INTERIOR}
                   alt="Restaurant interior"
+                  loading="lazy"
+                  decoding="async"
                   className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                 />
               </div>
             </div>
 
             {/* Row 2: award cards */}
-            <div ref={row2Ref} className={`flex gap-4 ${row2In ? 'animate-fade-up' : 'opacity-0'}`}>
+            <div ref={row2Ref} className={`grid grid-cols-1 sm:grid-cols-3 gap-4 ${row2In ? 'animate-fade-up' : 'opacity-0'}`}>
               {AWARDS.map((award, i) => (
                 <AwardCard key={award.name} delay={i * 80} {...award} />
               ))}
             </div>
 
             {/* Row 3: chef image + our story card */}
-            <div ref={row3Ref} className={`flex gap-4 min-h-[280px] ${row3In ? 'animate-fade-up' : 'opacity-0'}`}>
+            <div ref={row3Ref} className={`flex flex-col md:flex-row gap-4 min-h-[280px] ${row3In ? 'animate-fade-up' : 'opacity-0'}`}>
               <div className="flex-1 bg-black overflow-hidden rounded-2xl min-w-0 relative">
                 <img
                   src={IMG_CHEF}
                   alt="Chef at work"
+                  loading="lazy"
+                  decoding="async"
                   className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                 />
               </div>
-              <div className="border border-[rgba(239,231,210,0.15)] rounded-2xl flex-1 flex flex-col justify-between p-12 min-w-0 overflow-hidden">
+              <div className="border border-[rgba(239,231,210,0.15)] rounded-2xl flex-1 flex flex-col justify-between gap-8 p-6 md:p-12 min-w-0 overflow-hidden">
                 {/* "Our Story" sub-title with short decorative lines */}
                 <div className="flex items-center justify-center gap-4">
                   <div className="flex items-center">
@@ -121,7 +127,7 @@ export default function AboutSection() {
 function AwardCard({ name, sub, delay = 0 }) {
   return (
     <div
-      className="border border-[rgba(239,231,210,0.15)] rounded-2xl flex-1 flex flex-col items-center justify-center gap-2 p-8"
+      className="border border-[rgba(239,231,210,0.15)] rounded-2xl flex-1 min-w-0 flex flex-col items-center justify-center gap-2 p-6"
       style={{ animationDelay: `${delay}ms` }}
     >
       <div className="flex gap-1 items-center py-[7px]">
@@ -131,7 +137,7 @@ function AwardCard({ name, sub, delay = 0 }) {
       </div>
       <div className="flex flex-col items-center gap-1">
         <p
-          className="text-[#efe7d2] text-[24px] tracking-[1px] uppercase text-center whitespace-nowrap"
+          className="text-[#efe7d2] text-[24px] tracking-[1px] uppercase text-center"
           style={{ fontFamily: 'Forum, serif', lineHeight: 1.2 }}
         >
           {name}

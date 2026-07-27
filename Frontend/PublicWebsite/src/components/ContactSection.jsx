@@ -2,11 +2,11 @@ import { useInView } from '../hooks/useInView'
 import InstagramIcon from '../assets/icons/InstagramIcon'
 import FacebookIcon from '../assets/icons/FacebookIcon'
 import TwitterIcon from '../assets/icons/TwitterIcon'
-import IMG_LEFT from '../assets/images/contact-left.jpg'
-import IMG_GRID_TR from '../assets/images/contact-grid-tr.jpg'
-import IMG_GRID_BL from '../assets/images/contact-grid-bl.jpg'
-import IMG_GRID_BR from '../assets/images/contact-grid-br.jpg'
-import IMG_MAP from '../assets/images/contact-map.png'
+import IMG_LEFT from '../assets/images/contact-left.webp'
+import IMG_GRID_TR from '../assets/images/contact-grid-tr.webp'
+import IMG_GRID_BL from '../assets/images/contact-grid-bl.webp'
+import IMG_GRID_BR from '../assets/images/contact-grid-br.webp'
+import IMG_MAP from '../assets/images/contact-map.webp'
 
 const HOURS = [
   { day: 'Thứ hai',             time: '16:00 - 22:30' },
@@ -21,19 +21,21 @@ export default function ContactSection() {
   const [row1Ref, row1In] = useInView()
   const [row2Ref, row2In] = useInView()
   return (
-    <section id="contact" className="bg-[#0a0b0a] p-6">
-      <div className="flex gap-4 items-start">
+    <section id="contact" className="bg-[#0a0b0a] p-3 md:p-6">
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
 
         {/* Left — sticky image */}
-        <div className="flex-1 sticky top-6 self-start h-[calc(100vh-3rem)] overflow-hidden rounded-2xl relative bg-black min-w-0">
+        <div className="w-full lg:flex-1 lg:sticky lg:top-6 self-start h-[70vh] lg:h-[calc(100vh-3rem)] overflow-hidden rounded-2xl relative bg-black min-w-0">
           <img
             src={IMG_LEFT}
             alt="Contact"
+            loading="lazy"
+            decoding="async"
             className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
           />
           <div className="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-b from-transparent to-black opacity-60 pointer-events-none" />
           <p
-            className="absolute bottom-[140px] left-[67px] text-[#efe7d2] uppercase tracking-[2px] leading-[0.63]"
+            className="absolute bottom-16 left-6 md:bottom-[140px] md:left-[67px] text-[#efe7d2] uppercase tracking-[2px] leading-[0.63]"
             style={{ fontFamily: 'Forum, serif', fontSize: 'clamp(52px, 7vw, 112px)' }}
           >
             Contact
@@ -41,10 +43,10 @@ export default function ContactSection() {
         </div>
 
         {/* Right — content grid */}
-        <div className="flex-1 flex flex-col gap-4 min-w-0">
+        <div className="w-full lg:flex-1 flex flex-col gap-4 min-w-0">
 
           {/* Row 1: Opening Hours + Photo grid */}
-          <div ref={row1Ref} className={`flex gap-4 min-h-[400px] ${row1In ? 'animate-fade-up' : 'opacity-0'}`}>
+          <div ref={row1Ref} className={`flex flex-col md:flex-row gap-4 min-h-[400px] ${row1In ? 'animate-fade-up' : 'opacity-0'}`}>
 
             {/* Opening Hours card */}
             <div className="flex-1 border border-[rgba(239,231,210,0.15)] rounded-2xl flex flex-col justify-between px-12 py-14 min-w-0">
@@ -85,6 +87,8 @@ export default function ContactSection() {
                   <img
                     src={IMG_LEFT}
                     alt="Instagram"
+                    loading="lazy"
+                    decoding="async"
                     className="absolute inset-0 w-full h-full object-cover opacity-30 pointer-events-none"
                   />
                   <div className="absolute inset-0 flex items-center justify-center text-[#efe7d2] group-hover:opacity-60 transition-opacity">
@@ -95,6 +99,8 @@ export default function ContactSection() {
                   <img
                     src={IMG_GRID_TR}
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                     className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                   />
                 </div>
@@ -104,6 +110,8 @@ export default function ContactSection() {
                   <img
                     src={IMG_GRID_BL}
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                     className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                   />
                 </div>
@@ -111,6 +119,8 @@ export default function ContactSection() {
                   <img
                     src={IMG_GRID_BR}
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                     className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                   />
                 </div>
@@ -119,13 +129,15 @@ export default function ContactSection() {
           </div>
 
           {/* Row 2: Map + Contact info */}
-          <div ref={row2Ref} className={`flex gap-4 min-h-[350px] ${row2In ? 'animate-fade-up' : 'opacity-0'}`} style={{ animationDelay: '100ms' }}>
+          <div ref={row2Ref} className={`flex flex-col md:flex-row gap-4 min-h-[350px] ${row2In ? 'animate-fade-up' : 'opacity-0'}`} style={{ animationDelay: '100ms' }}>
 
             {/* Map */}
             <div className="flex-1 bg-black rounded-2xl overflow-hidden relative min-w-0">
               <img
                 src={IMG_MAP}
                 alt="Map"
+                loading="lazy"
+                decoding="async"
                 className="absolute inset-0 w-full h-full object-cover pointer-events-none"
               />
               {/* "Chỉ đường" button — bottom-right */}

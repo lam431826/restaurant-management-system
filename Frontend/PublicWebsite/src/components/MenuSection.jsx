@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useInView } from '../hooks/useInView'
-import IMG_BG from '../assets/images/menu-bg.jpg'
-import imgMakiSpicyTuna from '../assets/images/menu-maki-spicy-tuna.jpg'
+import IMG_BG from '../assets/images/menu-bg.webp'
+import imgMakiSpicyTuna from '../assets/images/menu-maki-spicy-tuna.webp'
 import { getImageUrl } from '../utils/api'
 
 export default function MenuSection({ onAddToCart }) {
@@ -26,18 +26,20 @@ export default function MenuSection({ onAddToCart }) {
   }
 
   return (
-    <section id="menu" className="bg-[#0a0b0a] p-6">
-      <div className="flex gap-4 items-start">
+    <section id="menu" className="bg-[#0a0b0a] p-3 md:p-6">
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
         {/* Left — sticky food image */}
-        <div className="flex-1 sticky top-6 self-start h-[calc(100vh-3rem)] overflow-hidden rounded-2xl relative bg-black min-w-0">
+        <div className="w-full lg:flex-1 lg:sticky lg:top-6 self-start h-[70vh] lg:h-[calc(100vh-3rem)] overflow-hidden rounded-2xl relative bg-black min-w-0">
           <img
             src={IMG_BG}
             alt="Sushi dish"
+            loading="lazy"
+            decoding="async"
             className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
           />
           <div className="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-b from-transparent to-black opacity-60 pointer-events-none" />
           <p
-            className="absolute bottom-[140px] left-[66px] text-[#efe7d2] uppercase tracking-[2px] leading-[0.63]"
+            className="absolute bottom-16 left-6 md:bottom-[140px] md:left-[66px] text-[#efe7d2] uppercase tracking-[2px] leading-[0.63]"
             style={{ fontFamily: 'Forum, serif', fontSize: 'clamp(64px, 7vw, 112px)' }}
           >
             Menu
@@ -45,8 +47,8 @@ export default function MenuSection({ onAddToCart }) {
         </div>
 
         {/* Right — content */}
-        <div className="flex-1 flex flex-col gap-4 min-w-0">
-          <div className="border border-[rgba(239,231,210,0.15)] rounded-2xl pt-8 pb-20 px-16 flex flex-col gap-16 min-h-[500px]">
+        <div className="w-full lg:flex-1 flex flex-col gap-4 min-w-0">
+          <div className="border border-[rgba(239,231,210,0.15)] rounded-2xl pt-8 pb-12 md:pb-20 px-4 md:px-16 flex flex-col gap-12 md:gap-16 min-h-[500px]">
             {loading ? (
               <p className="text-[#efe7d2] text-center mt-10 text-xl" style={{ fontFamily: 'Forum, serif' }}>Đang tải thực đơn...</p>
             ) : (
@@ -130,8 +132,8 @@ function MenuItem({ item, index = 0, onAddToCart }) {
       className={`flex gap-6 items-center ${inView ? 'animate-fade-up' : 'opacity-0'}`}
       style={{ animationDelay: `${index * 70}ms` }}
     >
-      <div className="w-[150px] h-[100px] bg-[#0a0b0a] overflow-hidden rounded-xl shrink-0 relative">
-        <img src={imgUrl} alt={item.name} className="absolute inset-0 w-full h-full object-cover" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = imgMakiSpicyTuna }} />
+      <div className="w-[100px] md:w-[150px] h-[100px] bg-[#0a0b0a] overflow-hidden rounded-xl shrink-0 relative">
+        <img src={imgUrl} alt={item.name} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = imgMakiSpicyTuna }} />
       </div>
       <div className="flex-1 flex flex-col gap-1 min-w-0">
         <div className="flex items-start gap-4">

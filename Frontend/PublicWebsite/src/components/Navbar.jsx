@@ -27,7 +27,7 @@ export default function Navbar({ className, onMenuOpen }) {
       </button>
 
       {/* Menu links */}
-      <div className="flex gap-1 items-center">
+      <div className="hidden md:flex gap-1 items-center">
         {[
           { label: 'Menu',    href: '#menu' },
           { label: 'About',   href: '#about' },

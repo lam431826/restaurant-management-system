@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import IMG_BG from '../assets/images/reservation-bg.jpg'
+import IMG_BG from '../assets/images/reservation-bg.webp'
 import { useInView } from '../hooks/useInView'
 
 const API_BASE = 'http://localhost:8080/api'
@@ -104,19 +104,21 @@ export default function ReservationSection() {
   }
 
   return (
-    <section id="reservation" className="bg-[#0a0b0a] p-6">
-      <div className="flex gap-4 items-start">
+    <section id="reservation" className="bg-[#0a0b0a] p-3 md:p-6">
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
 
         {/* Left — sticky image */}
-        <div className="flex-1 sticky top-6 self-start h-[calc(100vh-3rem)] overflow-hidden rounded-2xl relative bg-black min-w-0">
+        <div className="w-full lg:flex-1 lg:sticky lg:top-6 self-start h-[70vh] lg:h-[calc(100vh-3rem)] overflow-hidden rounded-2xl relative bg-black min-w-0">
           <img
             src={IMG_BG}
             alt="Wine glasses at Wasabi"
+            loading="lazy"
+            decoding="async"
             className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
           />
           <div className="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-b from-transparent to-black opacity-60 pointer-events-none" />
           <p
-            className="absolute bottom-[140px] left-[77px] text-[#efe7d2] uppercase tracking-[2px] leading-none"
+            className="absolute bottom-16 left-6 md:bottom-[140px] md:left-[77px] text-[#efe7d2] uppercase tracking-[2px] leading-none"
             style={{ fontFamily: 'Forum, serif', fontSize: 'clamp(36px, 5vw, 112px)' }}
           >
             Reservation
@@ -124,8 +126,8 @@ export default function ReservationSection() {
         </div>
 
         {/* Right — form + footer */}
-        <div ref={contentRef} className={`flex-1 flex flex-col gap-4 min-w-0 ${contentIn ? 'animate-fade-up' : 'opacity-0'}`}>
-          <div className="border border-[rgba(239,231,210,0.15)] rounded-2xl flex flex-col items-center justify-center px-24 py-20">
+        <div ref={contentRef} className={`w-full lg:flex-1 flex flex-col gap-4 min-w-0 ${contentIn ? 'animate-fade-up' : 'opacity-0'}`}>
+          <div className="border border-[rgba(239,231,210,0.15)] rounded-2xl flex flex-col items-center justify-center px-6 py-12 md:px-24 md:py-20">
             <div className="flex flex-col gap-20 items-center w-full">
 
               {/* Heading */}

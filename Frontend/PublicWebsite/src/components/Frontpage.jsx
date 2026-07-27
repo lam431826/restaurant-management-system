@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import heroImg from '../assets/images/hero.png'
+import heroImg from '../assets/images/hero.webp'
 
 import Navbar from './Navbar'
 import SocialBadge from './SocialBadge'
@@ -31,7 +31,7 @@ export default function Frontpage() {
 
     {/* ── Navbar — fixed, follows scroll ── */}
     <Navbar
-      className={`fixed top-10 left-10 z-30 bg-[#0a0b0a] flex gap-3 items-center justify-center p-2 rounded-xl transition-[border-color,box-shadow] duration-300 ease-out ${
+      className={`fixed top-4 left-4 right-4 md:top-10 md:left-10 md:right-auto z-30 bg-[#0a0b0a] flex gap-3 items-center justify-start md:justify-center p-2 rounded-xl transition-[border-color,box-shadow] duration-300 ease-out ${
         scrolled
           ? 'border border-[rgba(239,231,210,0.2)] shadow-lg shadow-black/40'
           : 'border border-transparent'
@@ -39,12 +39,14 @@ export default function Frontpage() {
       onMenuOpen={() => setMenuOpen(true)}
     />
 
-    <section className="relative w-screen h-screen overflow-hidden">
+    <section className="relative w-full h-screen overflow-hidden">
 
       {/* ── Full-screen hero image ── */}
       <img
         src={heroImg}
         alt="Japanese cuisine"
+        decoding="async"
+        fetchPriority="high"
         className="absolute inset-0 w-full h-full object-cover object-center select-none pointer-events-none"
       />
 
@@ -78,8 +80,7 @@ export default function Frontpage() {
       {/* ── Social card — bottom-right ── */}
       <div
         className="absolute bottom-0 right-0 bg-[#0a0b0a] flex flex-col gap-6 items-start pb-4 pl-6 pr-4 pt-6 rounded-tl-[24px] z-[3] animate-fade-in"
-        style={{ animationDelay: '500ms' }}
-        style={{ isolation: 'isolate' }}
+        style={{ animationDelay: '500ms', isolation: 'isolate' }}
       >
         <RoundedCorner position="bottom-left" />
         <RoundedCorner position="top-right" />

@@ -51,7 +51,7 @@ export default function SentTab({ statusData, handleStartEditing, getItemImage }
       ) : (
         sortedItems.map((item, idx) => (
           <div key={idx} className="bg-white rounded-2xl p-3 mb-3 shadow-sm border border-gray-100 flex gap-3 relative opacity-95">
-            <img src={getItemImage(item.menuItemId)} className="w-16 h-16 rounded-xl object-cover grayscale-[20%] border border-gray-100" />
+            <img src={getItemImage(item.menuItemId)} alt={item.menuItemName} loading="lazy" decoding="async" className="w-16 h-16 rounded-xl object-cover grayscale-[20%] border border-gray-100" />
             <div className="flex-1">
               <div className="flex justify-between items-start">
                 <h3 className="font-bold text-gray-800 text-sm leading-tight pr-1">

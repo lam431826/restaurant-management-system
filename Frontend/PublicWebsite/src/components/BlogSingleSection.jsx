@@ -1,4 +1,4 @@
-import IMG_LEFT from '../assets/images/blog-single-left.jpg'
+import IMG_LEFT from '../assets/images/blog-single-left.webp'
 import { useInView } from '../hooks/useInView'
 
 const ARTICLE_SECTIONS = [
@@ -27,22 +27,24 @@ const ARTICLE_SECTIONS = [
 export default function BlogSingleSection() {
   const [headerRef, headerIn] = useInView()
   return (
-    <section id="blog-single" className="bg-[#0a0b0a] p-6">
-      <div className="flex gap-4 items-start">
+    <section id="blog-single" className="bg-[#0a0b0a] p-3 md:p-6">
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
 
         {/* Left — sticky image */}
-        <div className="flex-1 sticky top-6 self-start h-[calc(100vh-3rem)] overflow-hidden rounded-2xl relative bg-black min-w-0">
+        <div className="w-full lg:flex-1 lg:sticky lg:top-6 self-start h-[70vh] lg:h-[calc(100vh-3rem)] overflow-hidden rounded-2xl relative bg-black min-w-0">
           <img
             src={IMG_LEFT}
             alt="Blog article"
+            loading="lazy"
+            decoding="async"
             className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
           />
           <div className="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-b from-transparent to-black opacity-60 pointer-events-none" />
         </div>
 
         {/* Right — article content */}
-        <div className="flex-1 flex flex-col gap-4 min-w-0">
-          <div className="border border-[rgba(239,231,210,0.15)] rounded-2xl flex flex-col gap-20 px-24 py-20">
+        <div className="w-full lg:flex-1 flex flex-col gap-4 min-w-0">
+          <div className="border border-[rgba(239,231,210,0.15)] rounded-2xl flex flex-col gap-12 md:gap-20 px-6 py-12 md:px-24 md:py-20">
 
             {/* Article header */}
             <div ref={headerRef} className={`flex flex-col gap-4 items-center ${headerIn ? 'animate-fade-up' : 'opacity-0'}`}>
