@@ -202,8 +202,6 @@ export interface VoucherListParams {
   size?: number;
 }
 
-// No pagination UI in the cash book table — fetch a large page and filter/sort client-side,
-// same shape as the previous in-memory mock array.
 export const listVouchers = async (
   params: VoucherListParams = {},
 ): Promise<VouchersPage> => {
@@ -211,13 +209,25 @@ export const listVouchers = async (
     data: VoucherResponseDto[];
     pagination: PageMeta;
   }>("/cashbook/vouchers", {
-    params: { size: 1000, ...params },
+    params: { size: 20, ...params },
     paramsSerializer: { indexes: null },
   });
   return {
     data: res.data.data.map(mapVoucher),
     pagination: res.data.pagination,
   };
+};
+
+// Full unpaged export (CSV) — same filters as listVouchers but every matching row,
+// via the backend's dedicated /export endpoint (no page/size).
+export const exportVouchersUnpaged = async (
+  params: Omit<VoucherListParams, "page" | "size"> = {},
+): Promise<CashFlowVoucher[]> => {
+  const res = await apiClient.get<{ data: VoucherResponseDto[] }>(
+    "/cashbook/vouchers/export",
+    { params, paramsSerializer: { indexes: null } },
+  );
+  return res.data.data.map(mapVoucher);
 };
 
 export const listCategories = async (): Promise<CashFlowCategory[]> => {

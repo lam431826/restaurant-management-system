@@ -10,6 +10,8 @@ import com.rms.restaurant.module.cashbook.service.CashbookService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -69,7 +71,7 @@ public class CashbookController {
             @RequestParam(required = false) String createdBy,
             @RequestParam(required = false) CashbookPartnerGroup partnerScope,
             @RequestParam(required = false) String partnerQuery,
-            Pageable pageable) {
+            @PageableDefault(sort = "occurredAt", direction = Sort.Direction.DESC) Pageable pageable) {
         VoucherFilter filter = new VoucherFilter(search, fund, from, to, types, categoryIds,
                 voided, accountingToIncome, createdBy, partnerScope, partnerQuery);
         return ResponseEntity.ok(cashbookService.listVouchers(filter, pageable));

@@ -3,6 +3,8 @@ package com.rms.restaurant.module.payment.repository;
 import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.module.payment.model.Invoice;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -49,6 +51,11 @@ public interface InvoiceRepository extends JpaRepository<Invoice, String> {
             boolean paid,
             Collection<InvoiceStatus> statuses
     );
+
+    // Paged variants for the Manager Invoice screen (no orderId scope) — sort comes from Pageable.
+    Page<Invoice> findByStatusIn(Collection<InvoiceStatus> statuses, Pageable pageable);
+
+    Page<Invoice> findByPaidAndStatusIn(boolean paid, Collection<InvoiceStatus> statuses, Pageable pageable);
 
     // Reverse lineage lookups, used only when a single invoice detail is opened.
     List<Invoice> findBySplitFromInvoiceIdOrderByCreatedAtAscIdAsc(String splitFromInvoiceId);

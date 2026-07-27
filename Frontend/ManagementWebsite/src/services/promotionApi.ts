@@ -1,4 +1,4 @@
-import { api, type ApiResponse } from './api'
+import { api, type ApiResponse, type PageResponse } from './api'
 
 export interface Promotion {
   id: string
@@ -28,8 +28,17 @@ export interface UpdatePromotionRequest extends CreatePromotionRequest {
   active: boolean
 }
 
-export const getPromotions = () =>
-  api.get<ApiResponse<Promotion[]>>('/api/promotions').then(response => response.data)
+export interface PromotionListParams {
+  /** 1-based, like tableService/menuService. */
+  page?: number
+  size?: number
+}
+
+export const getPromotions = (params: PromotionListParams = {}) =>
+  api.get<PageResponse<Promotion>>('/api/promotions', {
+    page: params.page ? params.page - 1 : 0,
+    size: params.size ?? 20,
+  })
 
 export const getPromotionById = (id: string) =>
   api.get<ApiResponse<Promotion>>(`/api/promotions/${id}`).then(response => response.data)

@@ -16,6 +16,7 @@ import type {
 } from '../../services/promotionApi'
 
 const initialFilters: PromotionFilterState = { search: '', status: 'all' }
+const PAGE_SIZE = 20
 
 const PromotionManagement = () => {
   const [promotions, setPromotions] = useState<Promotion[]>([])
@@ -26,12 +27,19 @@ const PromotionManagement = () => {
   const [showForm, setShowForm] = useState(false)
   const [editingPromotion, setEditingPromotion] = useState<Promotion | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [total, setTotal] = useState(0)
 
-  const loadPromotions = useCallback(async () => {
+  const loadPromotions = useCallback(async (nextPage: number) => {
     setLoading(true)
     setError('')
     try {
-      setPromotions(await getPromotions())
+      const result = await getPromotions({ page: nextPage, size: PAGE_SIZE })
+      setPromotions(result.data)
+      setPage(nextPage)
+      setTotal(result.pagination.total)
+      setTotalPages(result.pagination.totalPages)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Không thể tải danh sách khuyến mãi')
     } finally {
@@ -40,8 +48,12 @@ const PromotionManagement = () => {
   }, [])
 
   useEffect(() => {
-    void loadPromotions()
+    void loadPromotions(1)
   }, [loadPromotions])
+
+  const changePage = (nextPage: number) => {
+    void loadPromotions(nextPage)
+  }
 
   const filteredPromotions = useMemo(() => {
     const keyword = filters.search.trim().toLowerCase()
@@ -75,7 +87,7 @@ const PromotionManagement = () => {
     }
     setShowForm(false)
     setEditingPromotion(null)
-    await loadPromotions()
+    await loadPromotions(page)
   }
 
   const handleDeactivate = async (promotion: Promotion) => {
@@ -89,7 +101,7 @@ const PromotionManagement = () => {
     try {
       await deletePromotion(promotion.id)
       setSuccess(`Đã ngừng hoạt động khuyến mãi ${promotion.code}`)
-      await loadPromotions()
+      await loadPromotions(page)
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : 'Không thể ngừng hoạt động khuyến mãi')
     } finally {
@@ -110,7 +122,7 @@ const PromotionManagement = () => {
             <p className="text-md text-ink-subtle mt-1">Theo dõi mã giảm giá, thời hạn và số lượt sử dụng</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button type="button" className="kv-btn kv-btn-outline-neutral h-10 bg-card" onClick={() => void loadPromotions()} disabled={loading}>
+            <button type="button" className="kv-btn kv-btn-outline-neutral h-10 bg-card" onClick={() => void loadPromotions(page)} disabled={loading}>
               Làm mới
             </button>
             <button type="button" className="kv-btn kv-btn-primary h-10" onClick={openCreate}>
@@ -125,7 +137,7 @@ const PromotionManagement = () => {
         {error && (
           <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-md bg-danger-50 text-danger-700 text-md" role="alert">
             <span>{error}</span>
-            <button type="button" className="font-semibold hover:underline" onClick={() => void loadPromotions()}>Thử lại</button>
+            <button type="button" className="font-semibold hover:underline" onClick={() => void loadPromotions(page)}>Thử lại</button>
           </div>
         )}
         {success && (
@@ -141,6 +153,10 @@ const PromotionManagement = () => {
           deletingId={deletingId}
           onEdit={openEdit}
           onDeactivate={handleDeactivate}
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          onPageChange={changePage}
         />
       </section>
 

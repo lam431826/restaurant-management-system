@@ -1,18 +1,20 @@
 package com.rms.restaurant.module.payment.controller;
 
 import com.rms.restaurant.common.utils.wrapper.ApiResponse;
+import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.payment.dto.CreatePromotionRequest;
 import com.rms.restaurant.module.payment.dto.PromotionResponse;
 import com.rms.restaurant.module.payment.dto.UpdatePromotionRequest;
 import com.rms.restaurant.module.payment.service.PromotionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/promotions")
@@ -22,8 +24,9 @@ public class PromotionController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER')")
-    public ResponseEntity<ApiResponse<List<PromotionResponse>>> getAll() {
-        return ResponseEntity.ok(ApiResponse.success(promotionService.getAll()));
+    public ResponseEntity<PageResponse<PromotionResponse>> getAll(
+            @PageableDefault(size = 20, sort = "code") Pageable pageable) {
+        return ResponseEntity.ok(promotionService.getAll(pageable));
     }
 
     @GetMapping("/{id}")

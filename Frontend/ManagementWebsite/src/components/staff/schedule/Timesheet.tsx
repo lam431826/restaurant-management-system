@@ -594,6 +594,16 @@ const ChangeShiftModal = ({ cell, shifts, employees, cells, onClose, onSaved }: 
   const existingRight = rightEmployeeId && rightDate && rightShiftId
     ? cells.find(c => c.employeeId === rightEmployeeId && c.workDate === rightDate && c.shiftId === rightShiftId)
     : undefined
+  // The employee on each side may independently already have a schedule sitting on the
+  // exact slot they're about to be moved into (e.g. a merged/second shift that day) — that's
+  // not a conflict, just a no-op for that side, so the matching create is skipped rather than
+  // attempted (which the backend would reject as AT_SCHEDULE_DUPLICATE).
+  const leftAlreadyAtTarget = rightEmployeeId && rightDate && rightShiftId
+    ? cells.some(c => c.employeeId === cell.employeeId && c.workDate === rightDate && c.shiftId === rightShiftId)
+    : false
+  const rightAlreadyAtOriginal = rightEmployeeId
+    ? cells.some(c => c.employeeId === rightEmployeeId && c.workDate === cell.workDate && c.shiftId === cell.shiftId)
+    : false
 
   const handleSave = async () => {
     if (!rightDate || !rightEmployeeId || !rightShiftId) return
@@ -612,14 +622,20 @@ const ChangeShiftModal = ({ cell, shifts, employees, cells, onClose, onSaved }: 
     setSaving(true)
     try {
       const scheduleBase = { repeatWeekly: false, repeatDays: [], repeatEnd: null, workOnHolidays: true }
-      await createSchedules({ employeeIds: [cell.employeeId], shiftIds: [rightShiftId], date: rightDate, ...scheduleBase })
-      await createSchedules({ employeeIds: [rightEmployeeId], shiftIds: [cell.shiftId], date: cell.workDate, ...scheduleBase })
+      if (!leftAlreadyAtTarget) {
+        await createSchedules({ employeeIds: [cell.employeeId], shiftIds: [rightShiftId], date: rightDate, ...scheduleBase })
+      }
+      if (!rightAlreadyAtOriginal) {
+        await createSchedules({ employeeIds: [rightEmployeeId], shiftIds: [cell.shiftId], date: cell.workDate, ...scheduleBase })
+      }
       await deleteSchedule(cell.scheduleId)
       if (existingRight) await deleteSchedule(existingRight.scheduleId)
       onSaved()
     } catch (err) {
       const msg = err instanceof ApiError
-        ? err.code === 'AT_SCHEDULE_HAS_ATTENDANCE' ? 'Ca làm việc đã có dữ liệu chấm công, không thể đổi ca.' : err.message
+        ? err.code === 'AT_SCHEDULE_HAS_ATTENDANCE' ? 'Ca làm việc đã có dữ liệu chấm công, không thể đổi ca.'
+        : err.code === 'AT_SCHEDULE_DUPLICATE' ? 'Nhân viên đã có lịch trùng với ca này, không thể đổi ca.'
+        : err.message
         : 'Không thể đổi ca.'
       setError(msg)
       setSaving(false)

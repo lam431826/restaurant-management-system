@@ -4,6 +4,7 @@ import com.rms.restaurant.common.utils.enums.InvoiceStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.wrapper.ApiResponse;
+import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.payment.dto.ApplyDiscountRequest;
 import com.rms.restaurant.module.payment.dto.GenerateInvoiceRequest;
 import com.rms.restaurant.module.payment.dto.InvoiceDetailResponse;
@@ -17,6 +18,9 @@ import com.rms.restaurant.module.payment.dto.SplitInvoiceResponse;
 import com.rms.restaurant.module.payment.service.InvoiceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -43,13 +47,14 @@ public class InvoiceController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('CASHIER', 'MANAGER')")
-    public ResponseEntity<ApiResponse<List<InvoiceSummaryResponse>>> getAll(
+    public ResponseEntity<PageResponse<InvoiceSummaryResponse>> getAll(
             @RequestParam(required = false) Boolean paid,
             @RequestParam(required = false) String orderId,
-            @RequestParam(required = false) List<String> status) {
-        return ResponseEntity.ok(ApiResponse.success(
-                invoiceService.getAll(paid, orderId, parseStatusFilter(status))
-        ));
+            @RequestParam(required = false) List<String> status,
+            @PageableDefault(size = 20, sort = {"createdAt", "id"}, direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(
+                invoiceService.getAll(paid, orderId, parseStatusFilter(status), pageable)
+        );
     }
 
     /**

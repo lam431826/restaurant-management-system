@@ -5,6 +5,7 @@ import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
+import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.module.payment.dto.CreatePromotionRequest;
 import com.rms.restaurant.module.payment.dto.PromotionResponse;
 import com.rms.restaurant.module.payment.dto.UpdatePromotionRequest;
@@ -15,12 +16,13 @@ import com.rms.restaurant.module.payment.service.PromotionService;
 import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
 
 @Slf4j
 @Service
@@ -36,11 +38,9 @@ public class PromotionServiceImpl implements PromotionService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<PromotionResponse> getAll() {
-        return promotionRepository.findAll()
-                .stream()
-                .map(promotionMapper::toResponse)
-                .toList();
+    public PageResponse<PromotionResponse> getAll(Pageable pageable) {
+        Page<PromotionResponse> page = promotionRepository.findAll(pageable).map(promotionMapper::toResponse);
+        return PageResponse.of(page);
     }
 
     @Override

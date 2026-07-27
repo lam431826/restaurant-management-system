@@ -1,4 +1,4 @@
-import { api, type ApiResponse } from './api'
+import { api, type ApiResponse, type PageResponse } from './api'
 
 export type InvoiceStatus = 'ACTIVE' | 'MERGED' | 'SPLIT'
 
@@ -107,6 +107,9 @@ export interface InvoiceFilters {
   orderId?: string
   /** Lifecycle scope. Omitted means every status, which the Cashier view relies on. */
   status?: InvoiceStatus[]
+  /** 1-based, like tableService/menuService. Omitted when fetching all of one order's invoices. */
+  page?: number
+  size?: number
 }
 
 export interface GenerateInvoiceRequest {
@@ -129,8 +132,10 @@ export const getInvoices = (filters: InvoiceFilters = {}) => {
   if (typeof filters.paid === 'boolean') params.set('paid', String(filters.paid))
   if (filters.orderId) params.set('orderId', filters.orderId)
   if (filters.status?.length) params.set('status', filters.status.join(','))
+  if (filters.page) params.set('page', String(filters.page - 1))
+  if (filters.size) params.set('size', String(filters.size))
   const query = params.toString()
-  return api.get<ApiResponse<InvoiceSummary[]>>(`/api/invoices${query ? `?${query}` : ''}`).then(response => response.data)
+  return api.get<PageResponse<InvoiceSummary>>(`/api/invoices${query ? `?${query}` : ''}`)
 }
 
 export const getInvoiceById = (id: string) =>

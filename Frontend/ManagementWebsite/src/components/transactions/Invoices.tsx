@@ -59,6 +59,8 @@ const getInvoiceListErrorMessage = (error: unknown): string => {
   return fallback?.[1] ?? INVOICE_LIST_FALLBACK_ERROR;
 };
 
+const PAGE_SIZE = 20;
+
 const Invoices = () => {
   // Deep link from Sổ quỹ ("nhảy vào hóa đơn" on an auto-generated receipt voucher) —
   // see SourceInvoicePanel in cashbook/CashBookDetail.tsx.
@@ -70,6 +72,9 @@ const Invoices = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [total, setTotal] = useState(0);
   // Sticky: once a legacy SPLIT row is confirmed to exist, the "Đã tách" filter stays
   // offered even if the user then narrows to a scope (e.g. "Đã gộp") that no longer
   // includes it. Never reset to false — that would just make the option flicker.
@@ -77,7 +82,7 @@ const Invoices = () => {
   const requestRef = useRef(0);
 
   const loadInvoices = useCallback(
-    async (nextTab: InvoiceViewTab, nextFilters: FilterState) => {
+    async (nextTab: InvoiceViewTab, nextFilters: FilterState, nextPage: number) => {
       const requestId = ++requestRef.current;
       setLoading(true);
       setError("");
@@ -91,11 +96,18 @@ const Invoices = () => {
               ? nextFilters.paid === "paid"
               : undefined,
           status: resolveStatusFilter(nextTab, nextFilters),
+          page: nextPage,
+          size: PAGE_SIZE,
         });
         // Ignore a response that a newer tab/filter request has already superseded.
         if (requestId !== requestRef.current) return;
-        setInvoices(result);
-        if (result.some((invoice) => invoice.status === "SPLIT")) {
+        setInvoices(result.data);
+        setPage(nextPage);
+        setTotal(result.pagination.total);
+        setTotalPages(result.pagination.totalPages);
+        // Only scans the currently-loaded page, same limitation as the Employees screen's
+        // in-page search — a SPLIT row on another page won't surface the option until visited.
+        if (result.data.some((invoice) => invoice.status === "SPLIT")) {
           setHasSplitHistory(true);
         }
       } catch (loadError) {
@@ -109,11 +121,11 @@ const Invoices = () => {
   );
 
   useEffect(() => {
-    void loadInvoices(tab, filters);
+    void loadInvoices(tab, filters, 1);
   }, [tab, filters, loadInvoices]);
 
   const refreshInvoices = async () => {
-    await loadInvoices(tab, filters);
+    await loadInvoices(tab, filters, page);
     setRefreshVersion((version) => version + 1);
   };
 
@@ -126,6 +138,10 @@ const Invoices = () => {
       lifecycle: "all",
     }));
     setTab(nextTab);
+  };
+
+  const changePage = (nextPage: number) => {
+    void loadInvoices(tab, filters, nextPage);
   };
 
   return (
@@ -196,6 +212,10 @@ const Invoices = () => {
           tab={tab}
           refreshVersion={refreshVersion}
           deepLinkInvoiceId={deepLinkInvoiceId}
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          onPageChange={changePage}
         />
       </section>
     </div>
