@@ -48,7 +48,7 @@ export const navItems: NavigationItem[] = [
     label: 'Báo cáo',
     children: [
       { label: 'Cuối ngày', href: '#/manager/reports/daily-summary' },
-      { label: 'Tài chính', href: '#/manager/reports/financial' },
+      { label: 'Thu chi', href: '#/manager/reports/financial' },
     ],
   },
   {
