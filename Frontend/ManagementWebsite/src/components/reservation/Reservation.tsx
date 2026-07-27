@@ -6,7 +6,7 @@ import CalendarView from './CalendarView'
 import ListView from './ListView'
 import ReservationModal from './ReservationModal'
 import EditReservationModal from './EditReservationModal'
-import type { Reservation as Res } from '../../data/mockData'
+import type { Reservation as Res } from './types'
 import { useAuth } from '../../context/useAuth'
 import { logout } from '../../api/auth'
 import {

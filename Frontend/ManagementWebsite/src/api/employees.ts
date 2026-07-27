@@ -1,7 +1,24 @@
 import apiClient from './apiClient'
-import type { Employee } from '../data/mockData'
 
 export type EmployeeStatus = 'ACTIVE' | 'INACTIVE'
+
+/** Frontend employee shape after nullable API fields have been normalized for forms and tables. */
+export interface Employee {
+  id: string
+  code: string
+  timekeepCode: string
+  name: string
+  phone: string
+  idNumber: string
+  note: string
+  status: EmployeeStatus
+  birthday: string
+  gender: string
+  address: string
+  email: string
+  startDate: string
+  userId: string
+}
 
 export interface EmployeeDto {
   id: string

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import FinancialReportFilters from './FinancialReportFilters'
 import FinancialReportPreview from './FinancialReportPreview'
-import { defaultFinancialFilters } from '../../data/financialReportMockData'
-import type { FinancialCustomLine, FinancialPeriod } from '../../data/financialReportMockData'
+import { defaultFinancialFilters } from '../../data/financialReport'
+import type { FinancialCustomLine, FinancialPeriod } from '../../data/financialReport'
 import { getFinancialReport, listFinancialCustomLines } from '../../api/reports'
 import type { FinancialGranularityParam } from '../../api/reports'
 

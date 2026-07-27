@@ -4,8 +4,10 @@ import EndOfDayPreview from './EndOfDayPreview'
 import { listUsers } from '../../api/users'
 import { getEndOfDaySalesReport, PAYMENT_METHOD_LABEL } from '../../api/reports'
 import type { EndOfDaySalesRow, ReportPaymentMethod } from '../../api/reports'
-import { defaultEndOfDayFilters } from '../../data/endOfDayReportMockData'
-import type { EndOfDayFilterState } from '../../data/endOfDayReportMockData'
+import { listAreas, listTables } from '../../services/tableService'
+import type { TableArea, TableItem } from '../../services/tableService'
+import { defaultEndOfDayFilters } from '../../data/endOfDayReport'
+import type { EndOfDayFilterState } from '../../data/endOfDayReport'
 
 interface StaffOption { id: string; fullName: string }
 
@@ -48,6 +50,8 @@ const errMsg = (err: unknown, fallback: string): string =>
 const EndOfDayReport = () => {
   const [filters, setFilters] = useState<EndOfDayFilterState>(defaultEndOfDayFilters)
   const [staffList, setStaffList] = useState<StaffOption[]>([])
+  const [areas, setAreas] = useState<TableArea[]>([])
+  const [tables, setTables] = useState<TableItem[]>([])
   const [rows, setRows] = useState<EndOfDaySalesRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -65,6 +69,18 @@ const EndOfDayReport = () => {
         setStaffList(staff)
       })
       .catch(() => { /* staff filter just has no options if this fails — rest of the report still works */ })
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([listAreas(), listTables()])
+      .then(([nextAreas, nextTables]) => {
+        if (cancelled) return
+        setAreas(nextAreas)
+        setTables(nextTables)
+      })
+      .catch(() => { /* room/table filters remain empty; report generation still works */ })
+    return () => { cancelled = true }
   }, [])
 
   const staffOptions = useMemo(() => staffList.map(s => s.fullName), [staffList])
@@ -120,7 +136,13 @@ const EndOfDayReport = () => {
       <div className="flex flex-col w-[26rem] shrink-0">
         <h1 className="text-h3 font-extrabold text-ink mb-4">Báo cáo cuối ngày</h1>
         <aside className="flex-1 min-h-0 overflow-y-auto bg-card border border-line rounded-lg p-4">
-          <EndOfDayFilters value={filters} onChange={setFilters} staffOptions={staffOptions} />
+          <EndOfDayFilters
+            value={filters}
+            onChange={setFilters}
+            staffOptions={staffOptions}
+            areas={areas}
+            tables={tables}
+          />
         </aside>
       </div>
 

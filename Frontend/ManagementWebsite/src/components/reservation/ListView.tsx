@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import type { Reservation, ReservationStatus } from '../../data/mockData'
-import { reservationStatusMeta } from '../../data/mockData'
+import type { Reservation, ReservationStatus } from './types'
+import { reservationStatusMeta } from './types'
 import type { TableDto } from '../../api/tables'
 import type { UserRole } from '../../context/AuthContext'
 

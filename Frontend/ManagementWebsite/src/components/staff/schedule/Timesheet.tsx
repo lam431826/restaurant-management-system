@@ -100,7 +100,7 @@ const cellStatusLabel = (c: TimesheetCellDto) =>
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Chấm công modal — opens when a shift assignment card is clicked.
- * Tabs: "Chấm công", "Lịch sử chấm công" (placeholder) and "Phạt vi phạm".
+ * Tabs: "Chấm công", "Lịch sử chấm công" and "Phạt vi phạm".
  * ──────────────────────────────────────────────────────────────────────────── */
 const ModalField = ({ label, info, align = 'center', children }: { label: string; info?: boolean; align?: 'center' | 'top'; children: React.ReactNode }) => (
   <div className={`flex ${align === 'top' ? 'items-start' : 'items-center'} gap-6 py-2`}>

@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BRANCHES } from '../../data/endOfDayReportMockData'
+import { BRANCHES } from '../../data/endOfDayReport'
 import { PAYMENT_METHOD_ABBR } from '../../api/reports'
 import type { EndOfDaySalesRow, ReportPaymentMethod } from '../../api/reports'
-import type { EndOfDayFilterState } from '../../data/endOfDayReportMockData'
+import type { EndOfDayFilterState } from '../../data/endOfDayReport'
 import { Skeleton } from '../dashboard/DashboardStates'
 
 const money = (n: number) => n.toLocaleString('vi-VN')

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { Employee } from '../../data/mockData'
+import type { Employee } from '../../api/employees'
 
 export interface EmployeeColumn {
   key: string

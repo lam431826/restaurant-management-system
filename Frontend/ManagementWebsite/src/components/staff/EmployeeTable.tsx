@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import type { Employee } from '../../data/mockData'
+import type { Employee } from '../../api/employees'
 import EmployeeDetail from './EmployeeDetail'
 import { EMPLOYEE_COLUMNS } from './employeeColumns'
 

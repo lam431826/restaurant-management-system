@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Employee } from '../../data/mockData'
+import type { Employee } from '../../api/employees'
 import Avatar from '../common/Avatar'
 import EmployeeModal from './EmployeeModal'
 import { parseRates, rateLabel, type OtRates } from './employeeSalary'

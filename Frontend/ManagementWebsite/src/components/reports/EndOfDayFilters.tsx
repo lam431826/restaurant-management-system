@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Picker } from '../staff/EmployeeModal'
-import { roomAreas, rooms } from '../../data/mockData'
 import { PAYMENT_METHOD_LABEL } from '../../api/reports'
-import type { EndOfDayFilterState } from '../../data/endOfDayReportMockData'
+import type { TableArea, TableItem } from '../../services/tableService'
+import type { EndOfDayFilterState } from '../../data/endOfDayReport'
 import EndOfDayDateRangePicker from './EndOfDayDateRangePicker'
 
 const PAYMENT_METHOD_LABELS = Object.values(PAYMENT_METHOD_LABEL)
@@ -11,6 +11,8 @@ interface Props {
   value: EndOfDayFilterState
   onChange: (next: EndOfDayFilterState) => void
   staffOptions: string[]
+  areas: TableArea[]
+  tables: TableItem[]
 }
 
 const ChevronDown = () => (
@@ -157,9 +159,10 @@ const TimeDropdown = ({ value, onChange, placeholder }: { value: string; onChang
   )
 }
 
-const EndOfDayFilters = ({ value: f, onChange, staffOptions }: Props) => {
+const EndOfDayFilters = ({ value: f, onChange, staffOptions, areas, tables }: Props) => {
   const set = <K extends keyof EndOfDayFilterState>(key: K, val: EndOfDayFilterState[K]) => onChange({ ...f, [key]: val })
-  const tableOptions = (f.areaName ? rooms.filter(r => r.area === f.areaName) : rooms).map(r => r.name)
+  const tableOptions = (f.areaName ? tables.filter(table => table.area === f.areaName) : tables)
+    .map(table => table.name)
   const dateInputRef = useRef<HTMLInputElement>(null)
 
   return (
@@ -214,7 +217,7 @@ const EndOfDayFilters = ({ value: f, onChange, staffOptions }: Props) => {
       <div className="flex flex-col gap-3">
         <span className="text-md font-semibold text-ink">Phòng/Bàn</span>
         <Picker
-          value={f.areaName} options={roomAreas.map(a => a.name)} placeholder="Chọn khu vực"
+          value={f.areaName} options={areas.map(area => area.name)} placeholder="Chọn khu vực"
           onChange={v => onChange({ ...f, areaName: v === f.areaName ? '' : v, tableName: '' })}
         />
         <Picker

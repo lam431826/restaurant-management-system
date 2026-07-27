@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { BRANCHES, CUSTOM_LINE_INSERT_AFTER, FIN_LINES, sumCustomLineValues, sumValues } from '../../data/financialReportMockData'
-import type { FinancialCustomLine, FinancialFilterState, FinancialPeriod } from '../../data/financialReportMockData'
+import { BRANCHES, CUSTOM_LINE_INSERT_AFTER, FIN_LINES, sumCustomLineValues, sumValues } from '../../data/financialReport'
+import type { FinancialCustomLine, FinancialFilterState, FinancialPeriod } from '../../data/financialReport'
 import { upsertFinancialCustomLineValue } from '../../api/reports'
 import { Skeleton } from '../dashboard/DashboardStates'
 

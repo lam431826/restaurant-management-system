@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Employee } from '../../data/mockData'
+import type { Employee } from '../../api/employees'
 import { getSalarySetting, putSalarySetting } from '../../api/employees'
 import type { EmployeeDto, EmployeeFormPayload } from '../../api/employees'
 import { listUsers, createUser } from '../../api/users'

@@ -11,7 +11,7 @@ import type {
   PayslipDetailDto, PayslipRowDto, ReloadMode, SalaryPaymentMethod,
 } from '../../../api/payroll'
 import { listEmployees, toEmployee } from '../../../api/employees'
-import type { Employee } from '../../../data/mockData'
+import type { Employee } from '../../../api/employees'
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Bảng lương (Payroll) — KiotViet-style screen, wired to /api/payroll.

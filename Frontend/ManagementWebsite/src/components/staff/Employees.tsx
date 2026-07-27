@@ -7,8 +7,7 @@ import { EMPLOYEE_COLUMNS, DEFAULT_VISIBLE_COLUMNS } from './employeeColumns'
 import EmployeeModal from './EmployeeModal'
 import ConfirmDialog from '../menu/ConfirmDialog'
 import { listEmployees, createEmployee, deactivateEmployee, updateEmployee, toEmployee } from '../../api/employees'
-import type { EmployeeFormPayload, EmployeeStatus } from '../../api/employees'
-import type { Employee } from '../../data/mockData'
+import type { Employee, EmployeeFormPayload, EmployeeStatus } from '../../api/employees'
 
 const PAGE_SIZE = 20
 

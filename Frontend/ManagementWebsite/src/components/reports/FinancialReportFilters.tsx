@@ -1,6 +1,6 @@
 import { Picker } from '../staff/EmployeeModal'
-import { YEAR_OPTIONS } from '../../data/financialReportMockData'
-import type { FinancialFilterState, FinancialGranularity } from '../../data/financialReportMockData'
+import { YEAR_OPTIONS } from '../../data/financialReport'
+import type { FinancialFilterState, FinancialGranularity } from '../../data/financialReport'
 
 interface Props {
   value: FinancialFilterState
