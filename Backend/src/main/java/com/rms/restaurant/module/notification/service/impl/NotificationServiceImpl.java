@@ -4,7 +4,6 @@ import com.rms.restaurant.common.utils.enums.NotificationType;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
-import com.rms.restaurant.module.notification.dto.ManualNotificationRequest;
 import com.rms.restaurant.module.notification.dto.NotificationLogResponse;
 import com.rms.restaurant.module.notification.dto.PaymentNotificationRequest;
 import com.rms.restaurant.module.notification.dto.ReservationNotificationRequest;

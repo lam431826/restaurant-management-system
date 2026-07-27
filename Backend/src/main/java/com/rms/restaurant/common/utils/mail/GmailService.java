@@ -437,17 +437,6 @@ public class GmailService {
         mailSender.send(msg);
     }
 
-    // ── NM-04: Manual email ───────────────────────────────────────────────────
-
-    public void sendManualEmail(String toEmail, String message) {
-        SimpleMailMessage msg = new SimpleMailMessage();
-        msg.setFrom(fromAddress);
-        msg.setTo(toEmail);
-        msg.setSubject("Thông báo từ Wasabi Restaurant");
-        msg.setText(message + "\n\nTrân trọng,\nWasabi Restaurant");
-        mailSender.send(msg);
-    }
-
     private static final DateTimeFormatter DATETIME_FORMATTER =
             DateTimeFormatter.ofPattern("HH:mm, dd/MM/yyyy");
 }

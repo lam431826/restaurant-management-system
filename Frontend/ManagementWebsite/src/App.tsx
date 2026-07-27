@@ -24,7 +24,6 @@ const CashierOrders = lazy(() => import("./components/cashier/CashierOrders"));
 const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard"));
 const AuditLogPage = lazy(() => import("./components/audit/AuditLogPage"));
 const LoginPage = lazy(() => import("./components/auth/LoginPage"));
-const EmployeeLoginPage = lazy(() => import("./components/auth/EmployeeLoginPage"));
 const ForgotPasswordPage = lazy(() => import("./components/auth/ForgotPasswordPage"));
 const NewPasswordPage = lazy(() => import("./components/auth/NewPasswordPage"));
 const PromotionManagement = lazy(() => import("./components/promotions/PromotionManagement"));
@@ -38,7 +37,6 @@ function App() {
         <Routes>
         {/* ── Auth (public) ── */}
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/employee-login" element={<EmployeeLoginPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/new-password" element={<NewPasswordPage />} />
 
