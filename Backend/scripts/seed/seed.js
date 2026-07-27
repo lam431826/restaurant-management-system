@@ -46,7 +46,12 @@ const DB_USERNAME = ENV.DB_USERNAME || 'sa';
 const DB_PASSWORD = ENV.DB_PASSWORD || '123';
 // -b: abort with a non-zero exit code on the first error, instead of sqlcmd's default of
 // printing the error and continuing -- we want a broken run to fail loudly, not silently.
-const SQLCMD_ARGS_BASE = ['-S', 'localhost', '-U', DB_USERNAME, '-P', DB_PASSWORD, '-d', 'rms_db', '-b'];
+// -I: sets QUOTED_IDENTIFIER ON at the connection level. Without it, inserts into tables with
+// a filtered index/computed column (invoice_item_allocations, cashbook_vouchers, payroll_sheets,
+// payslips, payslip_payments, payments, reservations, shifts) fail with Msg 1934 even though the
+// script's own "SET QUOTED_IDENTIFIER ON;" is present -- that in-script SET was not enough to
+// prevent every one of those tables ending up silently empty after a real run.
+const SQLCMD_ARGS_BASE = ['-S', 'localhost', '-U', DB_USERNAME, '-P', DB_PASSWORD, '-d', 'rms_db', '-b', '-I'];
 const CLEANUP_PATH = path.join(__dirname, '00_cleanup.sql');
 const OUT_PATH = path.join(__dirname, 'seed_3_months.sql');
 const BASELINE_PATH = path.join(__dirname, 'baseline_bootstrap.sql');
@@ -282,8 +287,8 @@ sqlcmdRunFile(CLEANUP_PATH);
 // ---------------------------------------------------------------------------------------
 console.log('[3/5] Resolving live reference data...');
 
-const MENU_ITEMS = sqlcmdQuery('SELECT id, name, price FROM menu_items WHERE available = 1')
-  .map(([id, name, price]) => [id, name, parseInt(price, 10)]);
+const MENU_ITEMS = sqlcmdQuery('SELECT id, name, price, cost_price FROM menu_items WHERE available = 1')
+  .map(([id, name, price, costPrice]) => [id, name, parseInt(price, 10), costPrice ? parseInt(costPrice, 10) : 0]);
 const TABLE_IDS = sqlcmdQuery('SELECT id FROM restaurant_tables WHERE active = 1').map((r) => r[0]);
 if (!MENU_ITEMS.length) throw new Error('No available menu_items found -- is rms_db reachable and seeded?');
 if (!TABLE_IDS.length) throw new Error('No active restaurant_tables found.');
@@ -679,9 +684,9 @@ for (const d of ALL_DATES) {
     const nItems = choice([1, 2, 2, 3, 3, 3, 4, 5]);
     const items = [];
     for (let k = 0; k < nItems; k++) {
-      const [mid, mname, price] = choice(MENU_ITEMS);
+      const [mid, mname, price, costPrice] = choice(MENU_ITEMS);
       const qty = choice([1, 1, 1, 2, 2, 3]);
-      items.push({ id: newId(), menuItemId: mid, name: mname, qty, price, isQr: isGuest });
+      items.push({ id: newId(), menuItemId: mid, name: mname, qty, price, costPrice, isQr: isGuest });
     }
 
     const orderId = newId();
@@ -707,8 +712,8 @@ for (const d of ALL_DATES) {
         null, null, shift.username, fmtDateTime(orderTime)]);
       invoiceRows.push([childId, childCode, orderId, childSubtotal, 0, childSubtotal, null, true, 'ACTIVE',
         null, sourceId, shift.username, fmtDateTime(orderTime)]);
-      for (const i of sourceItems) allocationRows.push([newId(), sourceId, i.id, i.qty, i.price, true, fmtDateTime(orderTime)]);
-      allocationRows.push([newId(), childId, childItem.id, childItem.qty, childItem.price, true, fmtDateTime(orderTime)]);
+      for (const i of sourceItems) allocationRows.push([newId(), sourceId, i.id, i.qty, i.price, true, fmtDateTime(orderTime), i.costPrice]);
+      allocationRows.push([newId(), childId, childItem.id, childItem.qty, childItem.price, true, fmtDateTime(orderTime), childItem.costPrice]);
 
       for (const [invId, amount] of [[sourceId, sourceSubtotal], [childId, childSubtotal]]) {
         const pm = randomPaymentMethod();
@@ -738,9 +743,9 @@ for (const d of ALL_DATES) {
         targetId, null, shift.username, fmtDateTime(orderTime)]);
       invoiceRows.push([targetId, targetCode, orderId, targetSubtotal, 0, targetSubtotal, null, true, 'ACTIVE',
         null, null, shift.username, fmtDateTime(orderTime)]);
-      for (const i of groupA) allocationRows.push([newId(), aId, i.id, i.qty, i.price, false, fmtDateTime(orderTime)]);
-      for (const i of groupB) allocationRows.push([newId(), bId, i.id, i.qty, i.price, false, fmtDateTime(orderTime)]);
-      for (const i of items) allocationRows.push([newId(), targetId, i.id, i.qty, i.price, true, fmtDateTime(orderTime)]);
+      for (const i of groupA) allocationRows.push([newId(), aId, i.id, i.qty, i.price, false, fmtDateTime(orderTime), i.costPrice]);
+      for (const i of groupB) allocationRows.push([newId(), bId, i.id, i.qty, i.price, false, fmtDateTime(orderTime), i.costPrice]);
+      for (const i of items) allocationRows.push([newId(), targetId, i.id, i.qty, i.price, true, fmtDateTime(orderTime), i.costPrice]);
 
       const pm = randomPaymentMethod();
       const paidAt = addMinutes(orderTime, randInt(2, 20));
@@ -768,7 +773,7 @@ for (const d of ALL_DATES) {
       const invId = newId(), invCode = nextInvoiceCode();
       invoiceRows.push([invId, invCode, orderId, subtotal, discount, total, promoId, true, 'ACTIVE', null, null,
         shift.username, fmtDateTime(orderTime)]);
-      for (const i of items) allocationRows.push([newId(), invId, i.id, i.qty, i.price, true, fmtDateTime(orderTime)]);
+      for (const i of items) allocationRows.push([newId(), invId, i.id, i.qty, i.price, true, fmtDateTime(orderTime), i.costPrice]);
 
       const pm = randomPaymentMethod();
       const paidAt = addMinutes(orderTime, randInt(2, 20));
@@ -1076,7 +1081,7 @@ emitInsert(OUT, 'invoices', ['id', 'code', 'order_id', 'subtotal', 'discount_amo
   'is_paid', 'status', 'merged_into_invoice_id', 'split_from_invoice_id', 'created_by', 'created_at'], invoiceRows);
 
 emitInsert(OUT, 'invoice_item_allocations', ['id', 'invoice_id', 'order_item_id', 'allocated_quantity',
-  'unit_price_snapshot', 'active', 'created_at'], allocationRows);
+  'unit_price_snapshot', 'active', 'created_at', 'unit_cost_snapshot'], allocationRows);
 
 emitInsert(OUT, 'shifts', ['id', 'cashier_id', 'business_date', 'opened_at', 'closed_at', 'opening_cash', 'closing_cash',
   'total_revenue', 'status', 'shift_type', 'closed_by', 'handover_amount', 'card_batch_total', 'closing_note'], shiftRows);
