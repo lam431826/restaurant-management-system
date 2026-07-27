@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /** One period row of "Báo cáo kết quả hoạt động kinh doanh" (P&L). Mirrors the frontend's
- * FinLineKey/FIN_LINES schema (financialReportMockData.ts) field-for-field. returnedGoods and
+ * FinLineKey/FIN_LINES schema (financialReport.ts) field-for-field. returnedGoods and
  * otherExpense are always zero — no tracked concept for them anywhere else in this app. The
  * expense/other-income sub-lines that used to be fixed zero placeholders (expCCDC,
  * expDepreciation, expDeliveryFee, expQRFee, expWriteOff, expPointRedeem, incReturnFee,

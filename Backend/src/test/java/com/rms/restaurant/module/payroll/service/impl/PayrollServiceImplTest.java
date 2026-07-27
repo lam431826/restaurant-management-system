@@ -23,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -52,6 +53,7 @@ class PayrollServiceImplTest {
     @Mock private SalaryCalculator salaryCalculator;
     @Mock private PayrollMapper mapper;
     @Mock private CashbookService cashbookService;
+    @Captor private ArgumentCaptor<List<Payslip>> payslipsCaptor;
 
     private PayrollServiceImpl service;
 
@@ -104,10 +106,9 @@ class PayrollServiceImplTest {
 
         service.createSheet(request(), "manager01");
 
-        ArgumentCaptor<List<Payslip>> captor = ArgumentCaptor.forClass(List.class);
-        verify(payslipRepository).saveAll(captor.capture());
-        assertThat(captor.getValue()).hasSize(1);
-        assertThat(captor.getValue().get(0).getDeduction()).isEqualByComparingTo("75000");
+        verify(payslipRepository).saveAll(payslipsCaptor.capture());
+        assertThat(payslipsCaptor.getValue()).hasSize(1);
+        assertThat(payslipsCaptor.getValue().get(0).getDeduction()).isEqualByComparingTo("75000");
     }
 
     @Test
