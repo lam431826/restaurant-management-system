@@ -60,12 +60,5 @@ public class NotificationController {
         return notificationService.getLogs(type, status, referenceId, from, to, pageable);
     }
 
-    // ── NM-04: Gửi thông báo thủ công ────────────────────────────────────────
-    @PostMapping("/manual")
-    @PreAuthorize("hasRole('MANAGER')")
-    public ResponseEntity<Void> sendManual(
-            @Valid @RequestBody ManualNotificationRequest request) {
-        notificationService.sendManual(request);
-        return ResponseEntity.noContent().build();
-    }
+
 }

@@ -115,13 +115,6 @@ public class NotificationServiceImpl implements NotificationService {
         );
     }
 
-    // ── NM-04: Manual email ───────────────────────────────────────────────────
-
-    @Override
-    public void sendManual(ManualNotificationRequest request) {
-        dispatcher.dispatch(request.recipient(), "MANUAL",
-                Map.of("message", request.message()), null, "MANUAL");
-    }
 
     // ── Helper ────────────────────────────────────────────────────────────────
 

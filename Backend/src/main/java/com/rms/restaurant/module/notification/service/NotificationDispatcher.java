@@ -170,7 +170,6 @@ public class NotificationDispatcher {
                     (String) vars.get("paymentMethodLabel"),
                     (LocalDateTime) vars.get("invoiceTime")
             );
-            case "MANUAL" -> gmailService.sendManualEmail(recipient, (String) vars.get("message"));
             default -> throw new IllegalArgumentException("Unknown email template: " + template);
         }
     }

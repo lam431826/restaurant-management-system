@@ -20,5 +20,4 @@ public interface NotificationService {
                                                    LocalDate from, LocalDate to,
                                                    Pageable pageable);
 
-    void sendManual(ManualNotificationRequest request);
 }
