@@ -16,6 +16,8 @@ import {
   isActiveInvoice,
 } from "./invoiceLifecycle";
 import type { InvoiceViewTab } from "./invoiceLifecycle";
+import type { InvoicePageSize } from "./Invoices";
+import { INVOICE_PAGE_SIZE_OPTIONS } from "./Invoices";
 
 interface Props {
   invoices: InvoiceSummary[];
@@ -27,6 +29,8 @@ interface Props {
   totalPages: number;
   total: number;
   onPageChange: (page: number) => void;
+  pageSize: InvoicePageSize;
+  onPageSizeChange: (size: InvoicePageSize) => void;
 }
 
 const money = (value: number) => value.toLocaleString("vi-VN");
@@ -84,6 +88,8 @@ const InvoiceTable = ({
   totalPages,
   total,
   onPageChange,
+  pageSize,
+  onPageSizeChange,
 }: Props) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<InvoiceDetailData | null>(null);
@@ -370,6 +376,22 @@ const InvoiceTable = ({
         <div className="flex items-center justify-between gap-4 px-4 py-3 border-t border-line shrink-0">
           <span className="text-md text-ink-subtle">Tổng số {total} hóa đơn</span>
           <div className="flex items-center gap-2">
+            <select
+              className="h-[2.8rem] px-2 border border-line-default rounded-xxs bg-card text-md text-ink-subtle cursor-pointer focus:outline-none focus:border-primary"
+              value={pageSize}
+              onChange={(e) =>
+                onPageSizeChange(
+                  e.target.value === "all" ? "all" : (Number(e.target.value) as InvoicePageSize),
+                )
+              }
+              aria-label="Số hóa đơn mỗi trang"
+            >
+              {INVOICE_PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size === "all" ? "Tất cả" : `${size} / trang`}
+                </option>
+              ))}
+            </select>
             <button
               className="w-[2.8rem] h-[2.8rem] flex items-center justify-center border border-line-default rounded-xxs bg-card text-ink-subtle cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               disabled={page <= 1}

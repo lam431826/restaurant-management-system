@@ -59,7 +59,14 @@ const getInvoiceListErrorMessage = (error: unknown): string => {
   return fallback?.[1] ?? INVOICE_LIST_FALLBACK_ERROR;
 };
 
-const PAGE_SIZE = 20;
+export type InvoicePageSize = 20 | 50 | 100 | "all";
+export const INVOICE_PAGE_SIZE_OPTIONS: InvoicePageSize[] = [20, 50, 100, "all"];
+// Comfortably under Spring Data's default max-page-size (2000) and the invoice endpoint's
+// known order_items-IN-clause ceiling (~2100 SQL Server params, see rms-seed-3months-data
+// memory) at current data volumes — "Tất cả" is not a true unpaged fetch, just a large page.
+const ALL_PAGE_SIZE = 1000;
+const resolvePageSize = (size: InvoicePageSize): number =>
+  size === "all" ? ALL_PAGE_SIZE : size;
 
 const Invoices = () => {
   // Deep link from Sổ quỹ ("nhảy vào hóa đơn" on an auto-generated receipt voucher) —
@@ -73,6 +80,7 @@ const Invoices = () => {
   const [error, setError] = useState("");
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<InvoicePageSize>(20);
   const [totalPages, setTotalPages] = useState(0);
   const [total, setTotal] = useState(0);
   // Sticky: once a legacy SPLIT row is confirmed to exist, the "Đã tách" filter stays
@@ -82,7 +90,12 @@ const Invoices = () => {
   const requestRef = useRef(0);
 
   const loadInvoices = useCallback(
-    async (nextTab: InvoiceViewTab, nextFilters: FilterState, nextPage: number) => {
+    async (
+      nextTab: InvoiceViewTab,
+      nextFilters: FilterState,
+      nextPage: number,
+      nextPageSize: InvoicePageSize,
+    ) => {
       const requestId = ++requestRef.current;
       setLoading(true);
       setError("");
@@ -97,7 +110,7 @@ const Invoices = () => {
               : undefined,
           status: resolveStatusFilter(nextTab, nextFilters),
           page: nextPage,
-          size: PAGE_SIZE,
+          size: resolvePageSize(nextPageSize),
         });
         // Ignore a response that a newer tab/filter request has already superseded.
         if (requestId !== requestRef.current) return;
@@ -121,11 +134,11 @@ const Invoices = () => {
   );
 
   useEffect(() => {
-    void loadInvoices(tab, filters, 1);
-  }, [tab, filters, loadInvoices]);
+    void loadInvoices(tab, filters, 1, pageSize);
+  }, [tab, filters, pageSize, loadInvoices]);
 
   const refreshInvoices = async () => {
-    await loadInvoices(tab, filters, page);
+    await loadInvoices(tab, filters, page, pageSize);
     setRefreshVersion((version) => version + 1);
   };
 
@@ -141,7 +154,11 @@ const Invoices = () => {
   };
 
   const changePage = (nextPage: number) => {
-    void loadInvoices(tab, filters, nextPage);
+    void loadInvoices(tab, filters, nextPage, pageSize);
+  };
+
+  const changePageSize = (nextPageSize: InvoicePageSize) => {
+    setPageSize(nextPageSize);
   };
 
   return (
@@ -216,6 +233,8 @@ const Invoices = () => {
           totalPages={totalPages}
           total={total}
           onPageChange={changePage}
+          pageSize={pageSize}
+          onPageSizeChange={changePageSize}
         />
       </section>
     </div>

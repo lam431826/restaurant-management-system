@@ -24,7 +24,12 @@ const DEFAULT_VISIBLE_COLUMNS: Record<ColumnKey, boolean> = {
   time: true, category: true, method: true, partner: true, amount: true,
 }
 
-const PAGE_SIZE = 20
+export type CashBookPageSize = 20 | 50 | 100 | 'all'
+export const CASHBOOK_PAGE_SIZE_OPTIONS: CashBookPageSize[] = [20, 50, 100, 'all']
+// Comfortably under Spring Data's default max-page-size (2000) at current data volumes —
+// "Tất cả" is not a true unpaged fetch (use exportVouchersUnpaged for that), just a large page.
+const ALL_PAGE_SIZE = 1000
+const resolvePageSize = (size: CashBookPageSize): number => (size === 'all' ? ALL_PAGE_SIZE : size)
 
 const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1)
 const endOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999)
@@ -99,6 +104,7 @@ const CashBook = () => {
   const [visibleColumns, setVisibleColumns] = useState<Record<ColumnKey, boolean>>(DEFAULT_VISIBLE_COLUMNS)
   const [vouchersLoading, setVouchersLoading] = useState(true)
   const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState<CashBookPageSize>(20)
   const [totalPages, setTotalPages] = useState(0)
   const [total, setTotal] = useState(0)
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -109,7 +115,12 @@ const CashBook = () => {
   }, [search])
 
   const loadVouchers = useCallback(
-    async (nextPage: number, nextFilters: CashBookFilterState, nextSearch: string) => {
+    async (
+      nextPage: number,
+      nextFilters: CashBookFilterState,
+      nextSearch: string,
+      nextPageSize: CashBookPageSize,
+    ) => {
       setVouchersLoading(true)
       try {
         const params = buildVoucherParams(nextFilters, nextSearch)
@@ -121,7 +132,7 @@ const CashBook = () => {
           setTotalPages(0)
           return
         }
-        const result = await listVouchers({ ...params, page: nextPage, size: PAGE_SIZE })
+        const result = await listVouchers({ ...params, page: nextPage, size: resolvePageSize(nextPageSize) })
         setVouchers(result.data)
         setPage(nextPage)
         setTotal(result.pagination.total)
@@ -136,11 +147,15 @@ const CashBook = () => {
   )
 
   useEffect(() => {
-    void loadVouchers(0, filters, debouncedSearch)
-  }, [filters, debouncedSearch, loadVouchers])
+    void loadVouchers(0, filters, debouncedSearch, pageSize)
+  }, [filters, debouncedSearch, pageSize, loadVouchers])
 
   const changePage = (nextPage: number) => {
-    void loadVouchers(nextPage, filters, debouncedSearch)
+    void loadVouchers(nextPage, filters, debouncedSearch, pageSize)
+  }
+
+  const changePageSize = (nextPageSize: CashBookPageSize) => {
+    setPageSize(nextPageSize)
   }
 
   useEffect(() => {
@@ -175,13 +190,13 @@ const CashBook = () => {
 
   const saveVoucher = async (payload: CreateVoucherPayload) => {
     await apiCreateVoucher(payload)
-    await loadVouchers(0, filters, debouncedSearch)
+    await loadVouchers(0, filters, debouncedSearch, pageSize)
     setModal(null)
   }
 
   const updateVoucher = async (id: string, payload: CreateVoucherPayload) => {
     await apiUpdateVoucher(id, payload)
-    await loadVouchers(page, filters, debouncedSearch)
+    await loadVouchers(page, filters, debouncedSearch, pageSize)
     setModal(null)
   }
 
@@ -207,7 +222,7 @@ const CashBook = () => {
       await apiVoidVoucher(voucherId)
       // Refetch rather than update in place — a voucher that no longer matches the
       // active status filter (e.g. "chỉ Đã thanh toán") must disappear from view.
-      await loadVouchers(page, filters, debouncedSearch)
+      await loadVouchers(page, filters, debouncedSearch, pageSize)
     } catch (err) {
       window.alert(errMsg(err, 'Không thể hủy phiếu'))
     }
@@ -258,6 +273,8 @@ const CashBook = () => {
           totalPages={totalPages}
           total={total}
           onPageChange={changePage}
+          pageSize={pageSize}
+          onPageSizeChange={changePageSize}
         />
       </section>
 

@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  cancelPayslip, finalizeSheet, fmtDate, getSheet, listSheetPayslips, money, saveDraft,
+  cancelPayslip, finalizeSheet, fmtDate, fmtDateTime, getSheet, listSheetPayslips, money, reloadSheet, saveDraft,
   SHEET_STATUS_LABEL,
 } from '../../../api/payroll'
-import type { DraftRowPayload, PayrollSheetDto, PayslipRowDto } from '../../../api/payroll'
+import type { DraftRowPayload, PayrollSheetDto, PayslipRowDto, ReloadMode } from '../../../api/payroll'
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Cập nhật bảng tính lương — the editable payroll worksheet opened from the
@@ -56,6 +56,7 @@ const MenuIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="no
 const TrashIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>)
 const InfoIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>)
 const CloseIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>)
+const RefreshIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>)
 
 /* ── Chốt lương confirm popup (matches CancelPayrollModal's style in Payroll.tsx) ── */
 const FinalizeConfirmModal = ({ code, busy, onClose, onConfirm }: { code: string; busy: boolean; onClose: () => void; onConfirm: () => void }) => {
@@ -104,6 +105,14 @@ const PayrollUpdate = () => {
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [confirmFinalize, setConfirmFinalize] = useState(false)
+  const [reloadOpen, setReloadOpen] = useState(false)
+  const reloadRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (reloadRef.current && !reloadRef.current.contains(e.target as Node)) setReloadOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
 
   const load = useCallback(async () => {
     if (!sheetId) { setLoading(false); return }
@@ -123,6 +132,7 @@ const PayrollUpdate = () => {
   useEffect(() => { void load() }, [load])
 
   const editable = sheet?.status === 'DRAFT'
+  const canRefreshData = sheet?.status === 'DRAFT' || sheet?.status === 'GENERATING'
 
   const patch = (id: string, p: Partial<Row>) => {
     setRows(rs => rs.map(r => r.id === id ? { ...r, ...p } : r))
@@ -144,6 +154,22 @@ const PayrollUpdate = () => {
       setNotice('Đã lưu tạm')
     } catch (err) {
       setError(errMsg(err, 'Không thể lưu tạm'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const doReload = async (mode: ReloadMode) => {
+    if (!sheetId) return
+    setReloadOpen(false)
+    setBusy(true)
+    setError('')
+    try {
+      await reloadSheet(sheetId, mode)
+      await load()
+      setNotice('Đã cập nhật dữ liệu')
+    } catch (err) {
+      setError(errMsg(err, 'Không thể cập nhật dữ liệu'))
     } finally {
       setBusy(false)
     }
@@ -210,6 +236,22 @@ const PayrollUpdate = () => {
           <span className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"><ChevronDown /></span>
         </div>
         <div className="flex-1" />
+        {sheet && (
+          <div className="hidden xl:flex items-center gap-2 text-sm text-ink-subtle whitespace-nowrap">
+            Dữ liệu được cập nhật vào: <span className="font-semibold text-ink">{fmtDateTime(sheet.dataRefreshedAt) || '—'}</span>
+          </div>
+        )}
+        {canRefreshData && (
+          <div ref={reloadRef} className="relative">
+            <button onClick={() => setReloadOpen(o => !o)} disabled={busy} className="kv-btn kv-btn-outline-neutral h-10 bg-card"><RefreshIcon /> {busy ? 'Đang xử lý…' : 'Cập nhật dữ liệu'}</button>
+            {reloadOpen && (
+              <div className="absolute right-0 top-[calc(100%+0.3rem)] w-[24rem] bg-card border border-line-default rounded-md shadow-md z-[var(--kv-z-dropdown)] py-1">
+                <button onClick={() => void doReload('FULL')} className="w-full text-left px-3 py-2.5 text-md text-ink cursor-pointer hover:bg-[var(--kv-state-hover-bg)]">Tải lại toàn bộ</button>
+                <button onClick={() => void doReload('BY_WORKDAY')} className="w-full text-left px-3 py-2.5 text-md text-ink cursor-pointer hover:bg-[var(--kv-state-hover-bg)]">Chỉ cập nhật theo ngày làm việc</button>
+              </div>
+            )}
+          </div>
+        )}
         {editable && <button onClick={() => void doSaveDraft()} disabled={busy} className="kv-btn kv-btn-outline-neutral h-10 bg-card"><SaveIcon /> Lưu tạm</button>}
         {sheet?.status === 'FINALIZED' && <button onClick={() => navigate('/manager/payroll')} className="kv-btn kv-btn-outline-primary h-10">Thanh toán tại danh sách</button>}
         {editable && <button onClick={() => setConfirmFinalize(true)} disabled={busy} className="kv-btn kv-btn-primary h-10"><CheckIcon /> Chốt lương</button>}

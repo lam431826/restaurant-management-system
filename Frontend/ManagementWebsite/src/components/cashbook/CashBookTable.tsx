@@ -3,6 +3,8 @@ import CashBookDetail from './CashBookDetail'
 import { COLUMN_LABEL, METHOD_LABEL } from '../../api/cashbook'
 import type { CashFlowCategory, CashFlowVoucher, ColumnKey } from '../../api/cashbook'
 import { Skeleton } from '../dashboard/DashboardStates'
+import type { CashBookPageSize } from './CashBook'
+import { CASHBOOK_PAGE_SIZE_OPTIONS } from './CashBook'
 
 const money = (value: number) => value.toLocaleString('vi-VN')
 const formatDateTime = (value: string) =>
@@ -25,11 +27,13 @@ interface Props {
   totalPages: number
   total: number
   onPageChange: (page: number) => void
+  pageSize: CashBookPageSize
+  onPageSizeChange: (size: CashBookPageSize) => void
 }
 
 const CashBookTable = ({
   vouchers, categories, visibleColumns, expandedId, loading, onToggleExpand, onVoid, onEdit,
-  page, totalPages, total, onPageChange,
+  page, totalPages, total, onPageChange, pageSize, onPageSizeChange,
 }: Props) => {
   const categoryName = (id: string) => categories.find(c => c.id === id)?.name ?? '—'
   const colCount = 1 + (Object.values(visibleColumns).filter(Boolean).length)
@@ -112,35 +116,53 @@ const CashBookTable = ({
       {!loading && vouchers.length > 0 && (
         <div className="flex items-center justify-between gap-4 px-4 py-3 border-t border-line shrink-0">
           <span className="text-md text-ink-subtle">Trang {page + 1} / {totalPages || 1} · {total} phiếu</span>
-          {totalPages > 1 && (
-            <div className="flex items-center gap-1.5">
-              <button
-                disabled={page === 0}
-                onClick={() => onPageChange(page - 1)}
-                className={pageBtnCls}
-                aria-label="Trang trước"
-              >
-                ← Trước
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => (
-                <button
-                  key={i}
-                  onClick={() => onPageChange(i)}
-                  className={`${pageBtnCls} ${i === page ? 'bg-primary border-primary text-white hover:text-white' : ''}`}
-                >
-                  {i + 1}
-                </button>
+          <div className="flex items-center gap-2.5">
+            <select
+              className="h-9 px-2 border border-line-default rounded-md bg-card text-md text-ink-subtle cursor-pointer focus:outline-none focus:border-primary"
+              value={pageSize}
+              onChange={(e) =>
+                onPageSizeChange(
+                  e.target.value === 'all' ? 'all' : (Number(e.target.value) as CashBookPageSize),
+                )
+              }
+              aria-label="Số phiếu mỗi trang"
+            >
+              {CASHBOOK_PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size === 'all' ? 'Tất cả' : `${size} / trang`}
+                </option>
               ))}
-              <button
-                disabled={page >= totalPages - 1}
-                onClick={() => onPageChange(page + 1)}
-                className={pageBtnCls}
-                aria-label="Trang sau"
-              >
-                Sau →
-              </button>
-            </div>
-          )}
+            </select>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  disabled={page === 0}
+                  onClick={() => onPageChange(page - 1)}
+                  className={pageBtnCls}
+                  aria-label="Trang trước"
+                >
+                  ← Trước
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onPageChange(i)}
+                    className={`${pageBtnCls} ${i === page ? 'bg-primary border-primary text-white hover:text-white' : ''}`}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+                <button
+                  disabled={page >= totalPages - 1}
+                  onClick={() => onPageChange(page + 1)}
+                  className={pageBtnCls}
+                  aria-label="Trang sau"
+                >
+                  Sau →
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
