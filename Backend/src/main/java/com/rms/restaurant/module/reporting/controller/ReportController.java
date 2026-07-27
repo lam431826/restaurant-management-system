@@ -6,6 +6,7 @@ import com.rms.restaurant.common.utils.enums.PaymentMethod;
 import com.rms.restaurant.common.utils.wrapper.ApiResponse;
 import com.rms.restaurant.module.reporting.dto.DashboardOverviewResponse;
 import com.rms.restaurant.module.reporting.dto.EndOfDaySalesRow;
+import com.rms.restaurant.module.reporting.dto.FinancialCategoryLineDto;
 import com.rms.restaurant.module.reporting.dto.FinancialPeriodResponse;
 import com.rms.restaurant.module.reporting.service.ReportService;
 import lombok.RequiredArgsConstructor;
@@ -60,5 +61,14 @@ public class ReportController {
             @RequestParam int year,
             @RequestParam FinancialGranularity granularity) {
         return ResponseEntity.ok(ApiResponse.success(reportService.getFinancialReport(year, granularity)));
+    }
+
+    // Danh mục "Chi phí"/"Thu nhập khác" P&L sub-lines, derived from Cashbook categories
+    // (code IS NULL, accountingToIncome=true) — read-only, no create/edit/delete here anymore;
+    // managers add/edit/delete underlying transactions in Sổ quỹ (/manager/cash-book).
+    @GetMapping("/financial/lines")
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    public ResponseEntity<ApiResponse<List<FinancialCategoryLineDto>>> getFinancialReportLines() {
+        return ResponseEntity.ok(ApiResponse.success(reportService.getFinancialReportLines()));
     }
 }

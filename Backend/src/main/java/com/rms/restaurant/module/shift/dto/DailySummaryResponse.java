@@ -13,8 +13,6 @@ public record DailySummaryResponse(
         boolean incomplete,          // BR-CS-10: true if any shift is still OPEN/PENDING_RECON
         int shiftCount,
         BigDecimal totalRevenue,
-        BigDecimal totalCashIn,
-        BigDecimal totalCashOut,
         BigDecimal totalVariance,
         List<MethodTotal> methodTotals,    // Tầng 1 — day totals by payment method
         List<CashierShiftRow> shifts       // Tầng 2 — per-cashier breakdown
@@ -36,8 +34,6 @@ public record DailySummaryResponse(
             BigDecimal openingCash,
             BigDecimal handoverAmount,
             BigDecimal totalRevenue,
-            BigDecimal totalCashIn,
-            BigDecimal totalCashOut,
             BigDecimal totalVariance,
             List<PaymentMethodBreakdown> paymentBreakdown
     ) {}

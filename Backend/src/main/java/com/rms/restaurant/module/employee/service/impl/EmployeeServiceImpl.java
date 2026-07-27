@@ -4,6 +4,7 @@ import com.rms.restaurant.common.utils.audit.AuditDetailBuilder;
 import com.rms.restaurant.common.utils.enums.EmployeeStatus;
 import com.rms.restaurant.common.utils.validation.AgeValidator;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
+import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ConflictException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
 import com.rms.restaurant.common.utils.wrapper.PageResponse;
@@ -64,6 +65,7 @@ public class EmployeeServiceImpl implements EmployeeService {
     private final EmployeeMapper employeeMapper;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final EmployeeDeactivationCheckService deactivationCheckService;
 
     // ── CRUD (UC-EMP-01..04) ─────────────────────────────────────────────
 
@@ -96,9 +98,10 @@ public class EmployeeServiceImpl implements EmployeeService {
             throw new ConflictException(ApplicationError.DUPLICATE_EMPLOYEE_PHONE);
         }
         String userId = trimToNull(request.userId());
-        if (userId != null) {
-            linkUser(userId);
+        if (userId == null) {
+            throw new ApplicationException(ApplicationError.EMPLOYEE_USER_REQUIRED);
         }
+        linkUser(userId);
 
         Employee employee = Employee.builder()
                 .code(code)
@@ -266,10 +269,18 @@ public class EmployeeServiceImpl implements EmployeeService {
     }
 
     @Override
-    public void deactivate(String id) {
+    public void deactivate(String id, boolean acknowledgeWarnings) {
         Employee employee = findEmployeeById(id);
-        // NOTE: SRS §9 gap #2 (blocking conditions e.g. an open shift) is deferred until
-        // SRS_AT_Attendance_Shift.md exists; no such check is implemented here.
+        EmployeeDeactivationCheckResponse check = deactivationCheckService.check(employee);
+
+        if (check.blocked()) {
+            throw new ApplicationException(ApplicationError.EMP_DEACTIVATE_BLOCKED, blockedMessage(check));
+        }
+        boolean hasWarnings = check.hasOpenPosShift() || check.hasOpenAttendanceToday();
+        if (hasWarnings && !acknowledgeWarnings) {
+            throw new ApplicationException(ApplicationError.EMP_DEACTIVATE_WARNINGS_PENDING, warningsMessage(check));
+        }
+
         EmployeeStatus oldStatus = employee.getStatus();
         employee.setStatus(EmployeeStatus.INACTIVE);
         employeeRepository.save(employee);
@@ -278,7 +289,37 @@ public class EmployeeServiceImpl implements EmployeeService {
                 .field("code", employee.getCode())
                 .field("name", employee.getName())
                 .changed("status", oldStatus, EmployeeStatus.INACTIVE)
+                .field("acknowledgedWarnings", hasWarnings)
                 .build());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public EmployeeDeactivationCheckResponse checkDeactivationEligibility(String id) {
+        return deactivationCheckService.check(findEmployeeById(id));
+    }
+
+    private String blockedMessage(EmployeeDeactivationCheckResponse check) {
+        List<String> parts = new ArrayList<>();
+        if (!check.futureSchedules().isEmpty()) {
+            parts.add(check.futureSchedules().size() + " future work schedule(s)");
+        }
+        if (!check.unfinalizedPayslips().isEmpty()) {
+            parts.add(check.unfinalizedPayslips().size() + " unfinalized payslip(s)");
+        }
+        return "Cannot deactivate: employee still has " + String.join(" and ", parts)
+                + ". Resolve them in the attendance/payroll modules first.";
+    }
+
+    private String warningsMessage(EmployeeDeactivationCheckResponse check) {
+        List<String> parts = new ArrayList<>();
+        if (check.hasOpenPosShift()) {
+            parts.add("an open cash register shift");
+        }
+        if (check.hasOpenAttendanceToday()) {
+            parts.add("an unfinished attendance record today");
+        }
+        return "Employee has " + String.join(" and ", parts) + ". Confirm to proceed anyway.";
     }
 
     // ── Self-service profile ("Hồ sơ của tôi") ────────────────────────────

@@ -25,6 +25,7 @@ import com.rms.restaurant.module.attendance.service.AttendanceCalculator.MergedS
 import com.rms.restaurant.module.attendance.service.AttendanceCalculator.MergedSlot;
 import com.rms.restaurant.module.attendance.service.AttendanceService;
 import com.rms.restaurant.module.attendance.service.AttendanceSettingService;
+import com.rms.restaurant.module.attendance.service.WorkScheduleService;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
 import com.rms.restaurant.module.employee.model.Employee;
@@ -68,6 +69,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     private final AttendanceSettingService settingService;
     private final AttendanceCalculator calculator;
     private final AttendanceMapper mapper;
+    private final WorkScheduleService workScheduleService;
 
     // ---- Timesheet (UC-AT-07) ----
 
@@ -362,12 +364,19 @@ public class AttendanceServiceImpl implements AttendanceService {
         return recordRepository.save(record);
     }
 
-    /** BR-AT-07: substitute only on leave marks, must differ from the scheduled employee. */
+    /**
+     * BR-AT-07: substitute only on leave marks, must differ from the scheduled employee.
+     * Assigning a substitute books them onto the same shift/date (their own WorkSchedule
+     * occurrence) so their attendance/payroll can track the covered shift; switching away
+     * from a substitute releases that booking (best-effort — kept if they already clocked in).
+     */
     private void applySubstitute(WorkSchedule schedule, String substituteEmployeeId, AttendanceType type) {
+        String previousSubstituteId = schedule.getSubstituteEmployeeId();
         if (substituteEmployeeId == null) {
-            if (type == AttendanceType.PRESENT && schedule.getSubstituteEmployeeId() != null) {
+            if (type == AttendanceType.PRESENT && previousSubstituteId != null) {
                 schedule.setSubstituteEmployeeId(null);
                 scheduleRepository.save(schedule);
+                releaseSubstituteSchedule(previousSubstituteId, schedule);
             }
             return;
         }
@@ -383,8 +392,40 @@ public class AttendanceServiceImpl implements AttendanceService {
         if (substitute.getStatus() != EmployeeStatus.ACTIVE) {
             throw new ApplicationException(ApplicationError.AT_EMPLOYEE_INACTIVE);
         }
+        if (!substituteEmployeeId.equals(previousSubstituteId)) {
+            if (previousSubstituteId != null) releaseSubstituteSchedule(previousSubstituteId, schedule);
+            bookSubstituteSchedule(substituteEmployeeId, schedule);
+        }
         schedule.setSubstituteEmployeeId(substituteEmployeeId);
         scheduleRepository.save(schedule);
+    }
+
+    /** Creates the substitute's own occurrence for this shift/date, unless one already exists
+     * (e.g. re-picking a substitute that was already booked). Goes through WorkScheduleService
+     * so BR-AT-03 overlap and active-employee/shift checks apply exactly as for any other schedule. */
+    private void bookSubstituteSchedule(String substituteEmployeeId, WorkSchedule schedule) {
+        if (scheduleRepository.existsByEmployeeIdAndShiftIdAndWorkDate(
+                substituteEmployeeId, schedule.getShiftId(), schedule.getWorkDate())) {
+            return;
+        }
+        workScheduleService.create(new ScheduleCreateRequest(
+                List.of(substituteEmployeeId), List.of(schedule.getShiftId()),
+                schedule.getWorkDate(), false, null, null, false));
+    }
+
+    /** Best-effort cleanup of a previous substitute's auto-booked occurrence. Left in place
+     * (via deleteOccurrence's own guard) if they've already clocked attendance against it. */
+    private void releaseSubstituteSchedule(String previousSubstituteId, WorkSchedule schedule) {
+        scheduleRepository.findByEmployeeIdAndWorkDate(previousSubstituteId, schedule.getWorkDate()).stream()
+                .filter(s -> s.getShiftId().equals(schedule.getShiftId()))
+                .findFirst()
+                .ifPresent(s -> {
+                    try {
+                        workScheduleService.deleteOccurrence(s.getId());
+                    } catch (ApplicationException ignored) {
+                        // has attendance already — keep it, don't destroy history
+                    }
+                });
     }
 
     @Override

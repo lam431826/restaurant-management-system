@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Pure unit tests for BR-AT-08/09/10/11/15 — no Spring context, mirroring SalaryCalculatorTest.
- * Base fixture: 08:00–16:00 shift on 2026-07-15, standard workday 480m, all thresholds 0.
+ * Base fixture: 08:00–16:00 shift on 2026-07-15, standard workday 480m, all grace minutes 0.
  */
 class AttendanceCalculatorTest {
 
@@ -34,8 +34,7 @@ class AttendanceCalculatorTest {
                 .halfDayEnabled(false)
                 .lateEnabled(true).lateGraceMinutes(0)
                 .earlyLeaveEnabled(true).earlyLeaveGraceMinutes(0)
-                .otBeforeEnabled(true).otBeforeMinMinutes(0)
-                .otAfterEnabled(true).otAfterMinMinutes(0)
+                .overtimeEnabled(true)
                 .mergedShiftEnabled(true).mergedShiftMaxCount(2).mergedShiftMaxBreakMinutes(60);
     }
 
@@ -77,33 +76,26 @@ class AttendanceCalculatorTest {
         assertThat(r.lateMinutes()).isZero();
     }
 
-    // ---- BR-AT-10: overtime minimum ----
+    // ---- BR-AT-10: overtime (decimal-hour, no minimum threshold) ----
 
     @Test
-    void otAtMinimumIsIgnored() {
-        AttendanceSetting s = settings().otAfterMinMinutes(30).build();
-        CalcResult r = compute(at(8, 0), at(16, 30), s);
-        assertThat(r.otMinutes()).isZero();
-    }
-
-    @Test
-    void otBeyondMinimumCountsTheWholeInterval() {
-        AttendanceSetting s = settings().otAfterMinMinutes(30).build();
-        CalcResult r = compute(at(8, 0), at(16, 31), s);
-        assertThat(r.otMinutes()).isEqualTo(31);
+    void otCountsAnyMinuteOutsideShiftWindow() {
+        AttendanceSetting s = settings().build();
+        CalcResult r = compute(at(8, 0), at(16, 1), s);
+        assertThat(r.otMinutes()).isEqualTo(1);
     }
 
     @Test
     void otBeforeAndAfterAreSummed() {
-        AttendanceSetting s = settings().otBeforeMinMinutes(15).otAfterMinMinutes(15).build();
+        AttendanceSetting s = settings().build();
         CalcResult r = compute(at(7, 30), at(17, 0), s);
         assertThat(r.otMinutes()).isEqualTo(30 + 60);
     }
 
     @Test
-    void otBeforeDisabledIgnoresEarlyArrival() {
-        AttendanceSetting s = settings().otBeforeEnabled(false).build();
-        CalcResult r = compute(at(7, 0), at(16, 0), s);
+    void otDisabledIgnoresTimeOutsideShiftWindow() {
+        AttendanceSetting s = settings().overtimeEnabled(false).build();
+        CalcResult r = compute(at(7, 0), at(17, 0), s);
         assertThat(r.otMinutes()).isZero();
     }
 
@@ -148,8 +140,7 @@ class AttendanceCalculatorTest {
     @Test
     void halfDayKeepsOvertimeButDropsLateAndEarly() {
         AttendanceSetting s = settings().halfDayEnabled(true)
-                .halfDayMinMinutes(60).halfDayMaxMinutes(270)
-                .otBeforeMinMinutes(15).build();
+                .halfDayMinMinutes(60).halfDayMaxMinutes(270).build();
         // Arrives 1h early (OT before), leaves 12:00 => worked 05:00→12:00... use late arrival:
         // in 09:00 (late 60), out 12:30 (early 210), worked 210m => half-day window
         CalcResult late = compute(at(9, 0), at(12, 30), s);
@@ -158,7 +149,7 @@ class AttendanceCalculatorTest {
         assertThat(late.earlyLeaveMinutes()).isZero();
         assertThat(late.workCredit()).isEqualByComparingTo("0.50");
 
-        // in 07:00 (OT before 60 > 15), out 10:30 => worked 210m half-day, OT preserved
+        // in 07:00 (OT before = 60), out 10:30 => worked 210m half-day, OT preserved
         CalcResult ot = compute(at(7, 0), at(10, 30), s);
         assertThat(ot.halfDay()).isTrue();
         assertThat(ot.otMinutes()).isEqualTo(60);

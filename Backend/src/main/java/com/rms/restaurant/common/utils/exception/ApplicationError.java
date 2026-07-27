@@ -51,9 +51,12 @@ public enum ApplicationError {
     DUPLICATE_EMPLOYEE_CODE("Employee code already in use", HttpStatus.CONFLICT),
     DUPLICATE_EMPLOYEE_PHONE("Phone number already in use", HttpStatus.CONFLICT),
     EMPLOYEE_USER_ALREADY_LINKED("This user account is already linked to another employee", HttpStatus.CONFLICT),
+    EMPLOYEE_USER_REQUIRED("Vui lòng gắn tài khoản đăng nhập cho nhân viên", HttpStatus.BAD_REQUEST),
     EMPLOYEE_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
     EMPLOYEE_IMPORT_TOO_MANY_ROWS("Import file exceeds the 500-row limit", HttpStatus.BAD_REQUEST),
     EMPLOYEE_AGE_OUT_OF_RANGE("Employee must be between 18 and 60 years old", HttpStatus.UNPROCESSABLE_ENTITY),
+    EMP_DEACTIVATE_BLOCKED("Cannot deactivate: employee still has future work schedules or an unfinalized payslip", HttpStatus.CONFLICT),
+    EMP_DEACTIVATE_WARNINGS_PENDING("Employee has an open cash register shift or unfinished attendance today; confirm you've reviewed this before continuing", HttpStatus.CONFLICT),
 
     // Table Management
     DUPLICATE_TABLE_NAME("A table with this name already exists", HttpStatus.CONFLICT),
@@ -83,6 +86,9 @@ public enum ApplicationError {
     CASH_OUT_EXCEEDS_BALANCE("Cash-out amount exceeds current drawer balance", HttpStatus.UNPROCESSABLE_ENTITY),
     CASH_MOVEMENT_REASON_REQUIRED("A reason is required for cash-out transactions", HttpStatus.BAD_REQUEST),
     INVALID_CASH_MOVEMENT_TYPE("Transaction type must be CASH_IN or CASH_OUT", HttpStatus.BAD_REQUEST),
+    SHIFT_NOT_PENDING_CONFIRM("Shift is not awaiting manager confirmation", HttpStatus.UNPROCESSABLE_ENTITY),
+    RESERVATION_NO_EMAIL("No email on file — contact the restaurant to cancel", HttpStatus.UNPROCESSABLE_ENTITY),
+    RESERVATION_PHONE_MISMATCH("Phone number does not match this reservation", HttpStatus.UNAUTHORIZED),
     RESERVATION_OUTSIDE_HOURS("Reservation time must be within opening hours (16:00 - 21:00; the restaurant closes at 22:30)", HttpStatus.UNPROCESSABLE_ENTITY),
     CANNOT_CANCEL_PAID_ORDER("Cannot cancel an order that has been paid", HttpStatus.UNPROCESSABLE_ENTITY),
     CANNOT_CANCEL_INVOICED_ORDER("Cannot cancel an order after invoice has been created", HttpStatus.UNPROCESSABLE_ENTITY),
@@ -181,10 +187,7 @@ public enum ApplicationError {
     CASHBOOK_VOUCHER_ALREADY_VOIDED("Voucher has already been voided", HttpStatus.CONFLICT),
     CASHBOOK_VOUCHER_CATEGORY_TYPE_MISMATCH("Category type does not match the voucher type", HttpStatus.UNPROCESSABLE_ENTITY),
     CASHBOOK_VOUCHER_PARTNER_GROUP_INVALID("Voucher partner group is invalid for this operation", HttpStatus.UNPROCESSABLE_ENTITY),
-
-    // Financial report — custom Chi phí / Thu nhập khác line items
-    FIN_CUSTOM_LINE_NOT_FOUND("Không tìm thấy danh mục", HttpStatus.NOT_FOUND),
-    FIN_CUSTOM_LINE_INVALID("Tên danh mục không hợp lệ", HttpStatus.BAD_REQUEST),
+    CASHBOOK_VOUCHER_NOT_EDITABLE("Only manually created vouchers can be edited", HttpStatus.CONFLICT),
 
     // System
     INTERNAL_ERROR("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR);

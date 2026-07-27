@@ -192,7 +192,7 @@ export const useCashierCheckout = ({
       setInvoiceListLoading(true);
       setInvoiceListError("");
       try {
-        const foundInvoices = await getInvoices({ orderId: normalizedOrderId });
+        const foundInvoices = (await getInvoices({ orderId: normalizedOrderId })).data;
         if (requestId !== invoiceListRequestRef.current) return null;
         const nextSelectedId = chooseInvoiceId(foundInvoices, preferredInvoiceId);
         setInvoices(foundInvoices);

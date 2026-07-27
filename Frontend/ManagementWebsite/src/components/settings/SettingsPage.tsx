@@ -7,22 +7,23 @@ import type { PayrollHolidayDto } from '../../api/payrollHolidays'
 import { listPayrollHolidays } from '../../api/payrollHolidays'
 import type { PayrollSettingsDto } from '../../api/payroll'
 import { getPayrollSettings, updatePayrollSettings } from '../../api/payroll'
-import type { FinancialCustomLineRow, FinancialLineGroupParam } from '../../api/reports'
-import { deleteFinancialCustomLine, listFinancialCustomLines } from '../../api/reports'
+import type { ReportSettingsDto } from '../../api/reports'
+import { getReportSettings, updateReportSettings } from '../../api/reports'
+import type { ShiftSettingsDto } from '../../api/shiftSettings'
+import { getShiftSettings, updateShiftSettings } from '../../api/shiftSettings'
 import { ApiError } from '../../services/api'
 import ShiftTemplateModal from '../staff/schedule/ShiftTemplateModal'
 import SalaryTemplateList from '../staff/settings/SalaryTemplateList'
 import HolidayList from '../staff/settings/HolidayList'
-import FinancialCustomLineModal from './FinancialCustomLineModal'
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Thiết lập — unified KiotViet-style settings shell. Sidebar trimmed down to
- * only what's implemented: Báo cáo (display-only, no backend yet), and the
- * former "Thiết lập nhân viên" screen flattened into Chấm công / Tính lương.
- * Chấm công is wired to the real UC-AT-05 settings API + UC-AT-01 shift CRUD.
+ * only what's implemented: Báo cáo, and the former "Thiết lập nhân viên" screen
+ * flattened into Chấm công / Tính lương. Chấm công is wired to the real
+ * UC-AT-05 settings API + UC-AT-01 shift CRUD.
  * ──────────────────────────────────────────────────────────────────────────── */
 
-type Tab = 'reports' | 'attendance' | 'payroll' | 'financial'
+type Tab = 'reports' | 'attendance' | 'payroll'
 
 /* ── icons ─────────────────────────────────────────────────────────────────── */
 const InfoIcon = () => (
@@ -51,9 +52,6 @@ const TrashIcon = () => (
 )
 const SearchIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-)
-const FinanceIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></svg>
 )
 
 /* ── primitives ────────────────────────────────────────────────────────────── */
@@ -156,7 +154,6 @@ const SettingsPage = () => {
   const [salaryTemplates, setSalaryTemplates] = useState<SalaryTemplateDto[]>([])
   const [holidayListOpen, setHolidayListOpen] = useState(false)
   const [holidays, setHolidays] = useState<PayrollHolidayDto[]>([])
-  const [financialLines, setFinancialLines] = useState<FinancialCustomLineRow[]>([])
 
   const [settings, setSettings] = useState<AttendanceSettingsDto | null>(null)
   const [loadError, setLoadError] = useState('')
@@ -166,11 +163,13 @@ const SettingsPage = () => {
   const [payrollLoadError, setPayrollLoadError] = useState('')
   const [payrollSaveError, setPayrollSaveError] = useState('')
 
-  // reports toggles — display-only, no backend support yet
-  const [customRevenueWindow, setCustomRevenueWindow] = useState(true)
-  const [revenueCutoffTime, setRevenueCutoffTime] = useState('00:00')
-  const [shiftClosingRequired, setShiftClosingRequired] = useState(true)
-  const [managerConfirmClosing, setManagerConfirmClosing] = useState(false)
+  const [reportSettings, setReportSettings] = useState<ReportSettingsDto | null>(null)
+  const [reportLoadError, setReportLoadError] = useState('')
+  const [reportSaveError, setReportSaveError] = useState('')
+
+  const [shiftSettings, setShiftSettings] = useState<ShiftSettingsDto | null>(null)
+  const [shiftSettingsLoadError, setShiftSettingsLoadError] = useState('')
+  const [shiftSettingsSaveError, setShiftSettingsSaveError] = useState('')
 
   const loadShifts = () => {
     listShifts().then(res => setShifts(res.data.data)).catch(() => {})
@@ -181,21 +180,23 @@ const SettingsPage = () => {
   const loadHolidays = () => {
     listPayrollHolidays().then(res => setHolidays(res.data.data)).catch(() => {})
   }
-  const loadFinancialLines = () => {
-    listFinancialCustomLines().then(res => setFinancialLines(res.data.data)).catch(() => {})
-  }
 
   useEffect(() => {
     loadShifts()
     loadSalaryTemplates()
     loadHolidays()
-    loadFinancialLines()
     getSettings()
       .then(res => setSettings(res.data.data))
       .catch(err => setLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập chấm công.'))
     getPayrollSettings()
       .then(res => setPayrollSettings(res.data.data))
       .catch(err => setPayrollLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập tính lương.'))
+    getReportSettings()
+      .then(res => setReportSettings(res.data.data))
+      .catch(err => setReportLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập báo cáo.'))
+    getShiftSettings()
+      .then(setShiftSettings)
+      .catch(err => setShiftSettingsLoadError(err instanceof ApiError ? err.message : 'Không tải được thiết lập kết ca.'))
   }, [])
 
   const commit = async (next: AttendanceSettingsDto) => {
@@ -218,11 +219,30 @@ const SettingsPage = () => {
     }
   }
 
+  const commitReportSettings = async (next: ReportSettingsDto) => {
+    setReportSettings(next) // optimistic
+    try {
+      await updateReportSettings(next)
+      setReportSaveError('')
+    } catch (err) {
+      setReportSaveError(err instanceof ApiError ? err.message : 'Không thể lưu thiết lập báo cáo.')
+    }
+  }
+
+  const commitShiftSettings = async (next: ShiftSettingsDto) => {
+    setShiftSettings(next) // optimistic
+    try {
+      await updateShiftSettings(next)
+      setShiftSettingsSaveError('')
+    } catch (err) {
+      setShiftSettingsSaveError(err instanceof ApiError ? err.message : 'Không thể lưu thiết lập kết ca.')
+    }
+  }
+
   const NAV = [
     { id: 'reports' as Tab, label: 'Báo cáo', icon: <ReportIcon /> },
     { id: 'attendance' as Tab, label: 'Chấm công', icon: <CalCheckIcon /> },
     { id: 'payroll' as Tab, label: 'Tính lương', icon: <DollarIcon /> },
-    { id: 'financial' as Tab, label: 'Tài chính', icon: <FinanceIcon /> },
   ]
 
   return (
@@ -258,10 +278,11 @@ const SettingsPage = () => {
 
             {tab === 'reports' && (
               <ReportsSettings
-                customRevenueWindow={customRevenueWindow} setCustomRevenueWindow={setCustomRevenueWindow}
-                revenueCutoffTime={revenueCutoffTime} setRevenueCutoffTime={setRevenueCutoffTime}
-                shiftClosingRequired={shiftClosingRequired} setShiftClosingRequired={setShiftClosingRequired}
-                managerConfirmClosing={managerConfirmClosing} setManagerConfirmClosing={setManagerConfirmClosing}
+                reportSettings={reportSettings} commitReportSettings={commitReportSettings}
+                reportSettingsError={reportLoadError || reportSaveError}
+                shiftSettings={shiftSettings}
+                commitShiftSettings={commitShiftSettings}
+                shiftSettingsError={shiftSettingsLoadError || shiftSettingsSaveError}
               />
             )}
 
@@ -302,10 +323,6 @@ const SettingsPage = () => {
                 onChanged={loadHolidays}
               />
             )}
-
-            {tab === 'financial' && (
-              <FinancialLineSettings lines={financialLines} onChanged={loadFinancialLines} />
-            )}
           </main>
         </div>
       </div>
@@ -315,40 +332,50 @@ const SettingsPage = () => {
 
 /* ── Báo cáo tab ───────────────────────────────────────────────────────────── */
 const ReportsSettings = ({
-  customRevenueWindow, setCustomRevenueWindow,
-  revenueCutoffTime, setRevenueCutoffTime,
-  shiftClosingRequired, setShiftClosingRequired,
-  managerConfirmClosing, setManagerConfirmClosing,
+  reportSettings, commitReportSettings, reportSettingsError,
+  shiftSettings, commitShiftSettings, shiftSettingsError,
 }: {
-  customRevenueWindow: boolean; setCustomRevenueWindow: (v: boolean) => void
-  revenueCutoffTime: string; setRevenueCutoffTime: (v: string) => void
-  shiftClosingRequired: boolean; setShiftClosingRequired: (v: boolean) => void
-  managerConfirmClosing: boolean; setManagerConfirmClosing: (v: boolean) => void
+  reportSettings: ReportSettingsDto | null
+  commitReportSettings: (next: ReportSettingsDto) => void
+  reportSettingsError: string
+  shiftSettings: ShiftSettingsDto | null
+  commitShiftSettings: (next: ShiftSettingsDto) => void
+  shiftSettingsError: string
 }) => (
   <div>
     <h2 className="text-lg font-bold text-ink mb-2">Báo cáo</h2>
 
-    <Block title="Cho phép tùy chỉnh khung giờ tính doanh thu"
-      desc="Thiết lập khung giờ tính doanh thu trong ngày thay vì dùng khung giờ mặc định từ 00:00 đến trước 00:00 ngày hôm sau."
-      right={<Toggle on={customRevenueWindow} onChange={setCustomRevenueWindow} />}>
-      {customRevenueWindow && (
-        <div className="flex items-center gap-3">
-          <span className="text-md text-ink">Tính doanh thu theo giao dịch phát sinh trước</span>
-          <input type="time" value={revenueCutoffTime} onChange={e => setRevenueCutoffTime(e.target.value)}
-            className="h-9 px-3 border border-line-default rounded-md bg-card text-md text-ink outline-none focus:border-primary" />
-          <InfoIcon />
-        </div>
-      )}
-    </Block>
+    {reportSettingsError && <div className="mb-3 px-4 py-2 rounded-md bg-danger-50 text-danger text-md border border-danger/30">{reportSettingsError}</div>}
+    {reportSettings && (
+      <Block title="Cho phép tùy chỉnh khung giờ tính doanh thu"
+        desc="Thiết lập khung giờ tính doanh thu trong ngày thay vì dùng khung giờ mặc định từ 00:00 đến trước 00:00 ngày hôm sau."
+        right={<Toggle on={reportSettings.customRevenueWindowEnabled}
+          onChange={v => commitReportSettings({ ...reportSettings, customRevenueWindowEnabled: v })} />}>
+        {reportSettings.customRevenueWindowEnabled && (
+          <div className="flex items-center gap-3">
+            <span className="text-md text-ink">Tính doanh thu theo giao dịch phát sinh trước</span>
+            <input type="time" value={reportSettings.revenueCutoffTime.slice(0, 5)}
+              onChange={e => commitReportSettings({ ...reportSettings, revenueCutoffTime: `${e.target.value}:00` })}
+              className="h-9 px-3 border border-line-default rounded-md bg-card text-md text-ink outline-none focus:border-primary" />
+            <InfoIcon />
+          </div>
+        )}
+      </Block>
+    )}
 
-    <Block title="Kết ca" desc="Thu ngân cần mở ca để bắt đầu làm việc và kết ca khi kết thúc ca làm."
-      right={<Toggle on={shiftClosingRequired} onChange={setShiftClosingRequired} />} last>
-      {shiftClosingRequired && (
-        <CheckLabel checked={managerConfirmClosing} onChange={setManagerConfirmClosing}>
-          <span className="text-md text-ink">Xác nhận kết ca của Quản lý</span>
-        </CheckLabel>
-      )}
-    </Block>
+    {shiftSettingsError && <div className="mb-3 px-4 py-2 rounded-md bg-danger-50 text-danger text-md border border-danger/30">{shiftSettingsError}</div>}
+    {shiftSettings && (
+      <Block title="Kết ca" desc="Thu ngân cần mở ca để bắt đầu làm việc và kết ca khi kết thúc ca làm."
+        right={<Toggle on={shiftSettings.shiftClosingRequired}
+          onChange={v => commitShiftSettings({ ...shiftSettings, shiftClosingRequired: v })} />} last>
+        {shiftSettings.shiftClosingRequired && (
+          <CheckLabel checked={shiftSettings.managerConfirmClosing}
+            onChange={v => commitShiftSettings({ ...shiftSettings, managerConfirmClosing: v })}>
+            <span className="text-md text-ink">Xác nhận kết ca của Quản lý</span>
+          </CheckLabel>
+        )}
+      </Block>
+    )}
   </div>
 )
 
@@ -398,17 +425,17 @@ const AttendanceSettingsView = ({ onOpenShiftList, shiftCount, settings, commit,
           <NumUnit value={settings.earlyLeaveGraceMinutes} onChange={v => set('earlyLeaveGraceMinutes', v)} unit="phút" disabled={!settings.earlyLeaveEnabled} />
           <InfoIcon />
         </CheckLabel>
+        <CheckLabel checked={settings.latePenaltyEnabled} onChange={v => set('latePenaltyEnabled', v)}>
+          <span className="w-[11rem] text-md text-ink">Tính phạt theo giờ thập phân</span>
+          <NumUnit value={settings.latePenaltyRoundingMinutes} onChange={v => set('latePenaltyRoundingMinutes', v)} unit="phút" disabled={!settings.latePenaltyEnabled} />
+          <InfoIcon />
+        </CheckLabel>
       </Block>
 
       <Block title="Cài đặt làm thêm giờ" desc="Tính làm thêm giờ cho nhân viên khi vào ca sớm hoặc tan ca muộn (BR-AT-10)">
-        <CheckLabel checked={settings.otBeforeEnabled} onChange={v => set('otBeforeEnabled', v)}>
-          <span className="w-[11rem] text-md text-ink">Tính làm thêm giờ trước ca</span>
-          <NumUnit value={settings.otBeforeMinMinutes} onChange={v => set('otBeforeMinMinutes', v)} unit="phút" disabled={!settings.otBeforeEnabled} />
-          <InfoIcon />
-        </CheckLabel>
-        <CheckLabel checked={settings.otAfterEnabled} onChange={v => set('otAfterEnabled', v)}>
-          <span className="w-[11rem] text-md text-ink">Tính làm thêm giờ sau ca</span>
-          <NumUnit value={settings.otAfterMinMinutes} onChange={v => set('otAfterMinMinutes', v)} unit="phút" disabled={!settings.otAfterEnabled} />
+        <CheckLabel checked={settings.overtimeEnabled} onChange={v => set('overtimeEnabled', v)}>
+          <span className="w-[11rem] text-md text-ink">Tính lương theo giờ thập phân</span>
+          <NumUnit value={settings.otRoundingMinutes} onChange={v => set('otRoundingMinutes', v)} unit="phút" disabled={!settings.overtimeEnabled} />
           <InfoIcon />
         </CheckLabel>
       </Block>
@@ -589,73 +616,6 @@ const PayrollSettings = ({
 
       <Block title="Thuế TNCN cho nhân viên" desc="Thiết lập quy định tính thuế TNCN cho nhân viên"
         right={<Toggle on={settings.personalIncomeTaxEnabled} onChange={v => set('personalIncomeTaxEnabled', v)} />} last />
-    </div>
-  )
-}
-
-/* ── Tài chính tab ─────────────────────────────────────────────────────────── */
-const FinancialLineSettings = ({ lines, onChanged }: { lines: FinancialCustomLineRow[]; onChanged: () => void }) => {
-  const [modal, setModal] = useState<{ group: FinancialLineGroupParam; line: FinancialCustomLineRow | null } | null>(null)
-
-  const remove = async (line: FinancialCustomLineRow) => {
-    if (!window.confirm(`Xóa danh mục "${line.name}"? Số liệu đã nhập cho danh mục này trên báo cáo cũng sẽ mất.`)) return
-    try {
-      await deleteFinancialCustomLine(line.id)
-      onChanged()
-    } catch {
-      window.alert('Không thể xóa danh mục.')
-    }
-  }
-
-  const renderLineTable = (group: FinancialLineGroupParam, title: string, last = false) => {
-    const rows = lines.filter(l => l.group === group).sort((a, b) => a.sortOrder - b.sortOrder)
-    return (
-      <Block title={title} last={last}
-        right={<button onClick={() => setModal({ group, line: null })} className="kv-btn kv-btn-outline-primary h-9">+ Thêm danh mục</button>}>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-fill text-sm font-semibold text-ink-subtle">
-              <th className="text-left px-4 py-2 w-[4rem]">STT</th>
-              <th className="text-left px-4 py-2">Tên danh mục</th>
-              <th className="text-right px-4 py-2 w-[8rem]">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((l, i) => (
-              <tr key={l.id} className="border-b border-line">
-                <td className="px-4 py-3 text-md text-ink">{i + 1}</td>
-                <td className="px-4 py-3 text-md text-ink">{l.name}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center justify-end gap-4 text-ink-muted">
-                    <button onClick={() => setModal({ group, line: l })} className="hover:text-primary cursor-pointer" aria-label="Sửa"><PencilIcon /></button>
-                    <button onClick={() => void remove(l)} className="hover:text-danger cursor-pointer" aria-label="Xóa"><TrashIcon /></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr><td colSpan={3} className="px-4 py-6 text-center text-md text-ink-subtle">Chưa có danh mục nào</td></tr>
-            )}
-          </tbody>
-        </table>
-      </Block>
-    )
-  }
-
-  return (
-    <div>
-      <h2 className="text-lg font-bold text-ink mb-2">Tài chính</h2>
-      {renderLineTable('EXPENSE', 'Danh mục chi phí')}
-      {renderLineTable('OTHER_INCOME', 'Danh mục thu nhập khác', true)}
-
-      {modal && (
-        <FinancialCustomLineModal
-          group={modal.group}
-          line={modal.line}
-          onClose={() => setModal(null)}
-          onSaved={() => { setModal(null); onChanged() }}
-        />
-      )}
     </div>
   )
 }

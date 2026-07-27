@@ -64,14 +64,52 @@ export interface EmployeeFormPayload {
 export const listEmployees = (params: { page?: number; size?: number; sort?: string; status?: EmployeeStatus } = {}) =>
   apiClient.get<EmployeesPage>('/employees', { params: { page: 0, size: 20, sort: 'code,asc', ...params } })
 
-export const createEmployee = (req: EmployeeFormPayload) =>
-  apiClient.post<{ data: EmployeeDto }>('/employees', req)
-
 export const updateEmployee = (id: string, req: Partial<EmployeeFormPayload> & { status?: EmployeeStatus }) =>
   apiClient.put<{ data: EmployeeDto }>(`/employees/${id}`, req)
 
-export const deactivateEmployee = (id: string) =>
-  apiClient.post(`/employees/${id}/deactivate`)
+export const deactivateEmployee = (id: string, acknowledgeWarnings = false) =>
+  apiClient.post(`/employees/${id}/deactivate`, null, { params: { acknowledgeWarnings } })
+
+/* ── Deactivation eligibility check (SRS §9 gap #2) ──────────────────────── */
+export interface FutureScheduleItem {
+  scheduleId: string
+  workDate: string
+  shiftId: string
+  shiftName: string | null
+}
+
+export interface UnfinalizedPayslipItem {
+  payslipId: string
+  payslipCode: string
+  payrollSheetId: string
+  payrollSheetCode: string | null
+  payrollSheetName: string | null
+  payrollSheetStatus: string | null
+}
+
+export interface OpenPosShiftInfo {
+  shiftId: string
+  openedAt: string
+}
+
+export interface OpenAttendanceInfo {
+  scheduleId: string
+  shiftName: string | null
+  checkInTime: string
+}
+
+export interface DeactivationCheckDto {
+  blocked: boolean
+  futureSchedules: FutureScheduleItem[]
+  unfinalizedPayslips: UnfinalizedPayslipItem[]
+  hasOpenPosShift: boolean
+  openPosShiftInfo: OpenPosShiftInfo | null
+  hasOpenAttendanceToday: boolean
+  openAttendanceInfo: OpenAttendanceInfo | null
+}
+
+export const getDeactivationCheck = (id: string) =>
+  apiClient.get<{ data: DeactivationCheckDto }>(`/employees/${id}/deactivation-check`)
 
 /* ── Self-service ("Hồ sơ của tôi") ──────────────────────────────────────── */
 // id/code are null until the employee's first save — everything else is EmployeeDto-shaped.

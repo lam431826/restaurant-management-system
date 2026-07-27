@@ -10,6 +10,7 @@ const formatDateTime = (value: string) =>
 
 const th = 'sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-3 py-3 whitespace-nowrap'
 const td = 'text-md text-ink px-3 py-3 border-b border-line align-middle'
+const pageBtnCls = 'h-9 min-w-[2.25rem] px-2 flex items-center justify-center border border-line-default rounded-md text-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:border-primary hover:text-primary cursor-pointer'
 
 interface Props {
   vouchers: CashFlowVoucher[]
@@ -19,9 +20,17 @@ interface Props {
   loading?: boolean
   onToggleExpand: (voucher: CashFlowVoucher) => void
   onVoid: (voucherId: string) => void
+  onEdit: (voucher: CashFlowVoucher) => void
+  page: number
+  totalPages: number
+  total: number
+  onPageChange: (page: number) => void
 }
 
-const CashBookTable = ({ vouchers, categories, visibleColumns, expandedId, loading, onToggleExpand, onVoid }: Props) => {
+const CashBookTable = ({
+  vouchers, categories, visibleColumns, expandedId, loading, onToggleExpand, onVoid, onEdit,
+  page, totalPages, total, onPageChange,
+}: Props) => {
   const categoryName = (id: string) => categories.find(c => c.id === id)?.name ?? '—'
   const colCount = 1 + (Object.values(visibleColumns).filter(Boolean).length)
 
@@ -80,6 +89,7 @@ const CashBookTable = ({ vouchers, categories, visibleColumns, expandedId, loadi
                           voucher={voucher}
                           categoryName={categoryName(voucher.categoryId)}
                           onVoid={() => onVoid(voucher.id)}
+                          onEdit={() => onEdit(voucher)}
                         />
                       </td>
                     </tr>
@@ -98,6 +108,41 @@ const CashBookTable = ({ vouchers, categories, visibleColumns, expandedId, loadi
           </tbody>
         </table>
       </div>
+
+      {!loading && vouchers.length > 0 && (
+        <div className="flex items-center justify-between gap-4 px-4 py-3 border-t border-line shrink-0">
+          <span className="text-md text-ink-subtle">Trang {page + 1} / {totalPages || 1} · {total} phiếu</span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                disabled={page === 0}
+                onClick={() => onPageChange(page - 1)}
+                className={pageBtnCls}
+                aria-label="Trang trước"
+              >
+                ← Trước
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => (
+                <button
+                  key={i}
+                  onClick={() => onPageChange(i)}
+                  className={`${pageBtnCls} ${i === page ? 'bg-primary border-primary text-white hover:text-white' : ''}`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button
+                disabled={page >= totalPages - 1}
+                onClick={() => onPageChange(page + 1)}
+                className={pageBtnCls}
+                aria-label="Trang sau"
+              >
+                Sau →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

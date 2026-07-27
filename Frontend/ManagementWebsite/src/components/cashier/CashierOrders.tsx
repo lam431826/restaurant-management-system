@@ -2,6 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useRealtime } from "../../hooks/useRealtime";
 import { useAuth } from "../../context/useAuth";
+import { logout } from "../../api/auth";
+import { getMyShift } from "../../services/shiftService";
+import type { ShiftSummary } from "../../services/shiftService";
+import { getShiftSettings } from "../../api/shiftSettings";
+import type { ShiftSettingsDto } from "../../api/shiftSettings";
+import { OpenShiftModal } from "./orders/OpenShiftModal";
+import { CloseShiftModal } from "./orders/CloseShiftModal";
 import {
   listTables,
   checkInWalkIn,
@@ -55,7 +62,6 @@ import { PaymentResultToast } from "./orders/SuccessToast";
 import { SearchIcon } from "./orders/icons";
 import { QROrderConfirmationModal } from "./orders/QROrderConfirmationModal";
 import { ConfirmActionModal } from "./orders/ConfirmActionModal";
-import { useCashierShiftSession } from "./orders/useCashierShiftSession";
 import { useCashierCheckout } from "./orders/useCashierCheckout";
 import {
   selectFilteredMenu,
@@ -82,9 +88,7 @@ import type { VnpayReturnContext } from "./orders/cashierOrderRules";
 const CashierOrders = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
-  const shiftSession = useCashierShiftSession();
-  const { shift, loading: shiftLoading } = shiftSession;
+  const { user, signOut } = useAuth();
   const [tab, setTab] = useState<"menu" | "table">("menu");
   const [activeArea, setActiveArea] = useState<string>("all");
   const [tableFilter, setFilter] = useState("all");
@@ -161,7 +165,50 @@ const CashierOrders = () => {
   // tracked per table id so switching tables resets it back to the reservation view.
   const [walkInOverrideTableId, setWalkInOverrideTableId] = useState<string | null>(null);
 
+  // ── Cash shift state ──────────────────────────────────────────────────────
+  const [shift, setShift] = useState<ShiftSummary | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
+  const [showCloseShift, setShowCloseShift] = useState(false);
+  const [shiftModalOpen, setShiftModalOpen] = useState(false);
+  const [shiftSettings, setShiftSettings] = useState<ShiftSettingsDto | null>(null);
   const [showQRModal, setShowQRModal] = useState(false);
+
+  // BR-AUTH-01/04: warn before logout while an OPEN shift is still owned.
+  const [logoutWarn, setLogoutWarn] = useState(false);
+  const [logoutAfterClose, setLogoutAfterClose] = useState(false);
+
+  useEffect(() => {
+    getShiftSettings()
+      .then(setShiftSettings)
+      .catch(() => setShiftSettings({ shiftClosingRequired: true, managerConfirmClosing: false }));
+
+    getMyShift()
+      .then((s) => {
+        setShift(s);
+        if (!s) setShiftModalOpen(true);
+      })
+      .catch(() => {
+        setShift(null);
+        setShiftModalOpen(true);
+      })
+      .finally(() => setShiftLoading(false));
+  }, []);
+
+  // "Kết ca" turned off entirely: don't block the POS on Mở ca — the cashier should be
+  // able to sell right away. requireCashierWithOpenShift() on the backend already tolerates
+  // a missing shift when this setting is off (see PaymentServiceImpl).
+  const shiftClosingEnabled = shiftSettings?.shiftClosingRequired ?? true;
+  const shouldShowOpenShiftModal = shiftModalOpen && shiftClosingEnabled;
+
+  const doLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      /* ignore */
+    }
+    signOut();
+    navigate("/login", { replace: true });
+  };
 
   // Returns the freshly fetched snapshot (in addition to its usual setState calls) so a
   // caller that needs correctly order-linked table data *immediately* — e.g. VNPAY
@@ -254,6 +301,16 @@ const CashierOrders = () => {
       activeOrders: freshActiveOrders,
     };
   }, []);
+
+  // BR-AUTH-01/04: logout is never blocked, but if the cashier still owns an OPEN cash
+  // shift we warn first and offer a "close shift, then log out" shortcut.
+  const handleLogout = () => {
+    if (shift && shift.status === "OPEN") {
+      setLogoutWarn(true);
+    } else {
+      void doLogout();
+    }
+  };
 
   // Re-fetches table list from backend and merges selection state.
   // Called after reservation actions and order close/cancel so statuses
@@ -348,6 +405,18 @@ const CashierOrders = () => {
   // refetch path the mutation handlers below already use — one source of truth.
   useRealtime("/topic/orders", () => {
     setRefreshTrigger((t) => t + 1);
+  });
+
+  // Manager approves/rejects this cashier's pending shift-close request — reflect the
+  // outcome instantly instead of waiting for the cashier to reload.
+  useRealtime("/topic/shifts", (body) => {
+    const event = body as { eventType?: string; shift?: ShiftSummary };
+    if (!event.shift || event.shift.id !== shift?.id) return;
+    if (event.eventType === "APPROVED") {
+      setShift(null);
+    } else if (event.eventType === "REJECTED") {
+      setShift(event.shift);
+    }
   });
 
   // Table status changes (from any terminal, including the BR-04 no-show cron) — refetch
@@ -1289,47 +1358,31 @@ const CashierOrders = () => {
           onDismiss={() => setVnpayFailureNotice(null)}
         />
       )}
+      {!shift && shouldShowOpenShiftModal && (
+        <OpenShiftModal
+          employeeName={user?.fullName ?? user?.username ?? "Nhân viên"}
+          onOpened={(s) => {
+            setShift(s);
+            setShiftModalOpen(false);
+          }}
+          onLogout={handleLogout}
+          onClose={() => setShiftModalOpen(false)}
+        />
+      )}
       <Header
         employeeName={user?.fullName ?? user?.username ?? "Nhân viên"}
         roleLabel={ROLE_LABEL[user?.role ?? ""] ?? user?.role ?? "Thu ngân"}
+        role={user?.role}
         shift={shift}
+        shiftClosingEnabled={shiftClosingEnabled}
         assistanceRequests={assistanceRequests}
         onResolveRequest={handleResolveAssistance}
-        onLogout={shiftSession.requestLogout}
+        onLogout={handleLogout}
         onChangePassword={() => setShowChangePw(true)}
-        onCashMovement={shiftSession.requestCashMovement}
-        onCloseShift={shiftSession.requestCloseShift}
+        onCloseShift={() => setShowCloseShift(true)}
       />
 
-      {shift?.shiftType === "FLOATING" && shift.status === "OPEN" && (
-        <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2 text-[#025cca] text-[14px]">
-            <svg
-              className="w-4 h-4 shrink-0"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M13 10V3L4 14h7v7l9-11h-7z"
-              />
-            </svg>
-            Đây là ca tạm (hỗ trợ). Tiền thu được giữ riêng; khi xong hãy gộp
-            vào ca chính.
-          </div>
-          <button
-            className="kv-btn kv-btn-primary h-9 shrink-0"
-            onClick={() => void shiftSession.requestMerge()}
-          >
-            Gộp vào ca chính
-          </button>
-        </div>
-      )}
-
-      {!shift && (
+      {!shift && !shiftModalOpen && shiftClosingEnabled && (
         <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2 text-amber-700 text-[14px]">
             <svg
@@ -1348,11 +1401,30 @@ const CashierOrders = () => {
             <span>Ca thu ngân chưa mở — không thể tạo đơn hàng mới.</span>
           </div>
           <button
-            onClick={shiftSession.requestOpenShift}
+            onClick={() => setShiftModalOpen(true)}
             className="shrink-0 h-8 px-3 rounded-lg bg-amber-500 text-white text-[13px] font-medium hover:bg-amber-600 transition-colors"
           >
             Mở ca
           </button>
+        </div>
+      )}
+
+      {shift?.status === "PENDING_MANAGER_CONFIRM" && (
+        <div className="mx-3 lg:mx-4 mt-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 flex items-center gap-2 text-[#025cca] text-[14px] shrink-0">
+          <svg
+            className="w-4 h-4 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          Đang chờ quản lý xác nhận kết ca.
         </div>
       )}
 
@@ -1557,7 +1629,7 @@ const CashierOrders = () => {
             onCancelWalkInSeating={() => setWalkInOverrideTableId(null)}
             checkoutDisabled={checkoutDisabled}
             checkoutLabel={checkoutLabel}
-            shiftOpen={!!shift}
+            shiftOpen={!!shift || !shiftClosingEnabled}
             invoicePaid={canCloseSelectedOrder}
             itemMutationDisabled={disableItemMutation}
             itemMutationDisabledMessage={itemMutationDisabledMessage}
@@ -1663,7 +1735,81 @@ const CashierOrders = () => {
       {showChangePw && (
         <ChangePasswordModal onClose={() => setShowChangePw(false)} />
       )}
-      {shiftSession.overlays}
+      {showCloseShift && shift && (
+        <CloseShiftModal
+          shift={shift}
+          cashierName={user?.username ?? user?.fullName ?? "—"}
+          onClosed={(closed) => {
+            setShowCloseShift(false);
+            if (closed.status === "PENDING_MANAGER_CONFIRM") {
+              // Not final yet — a manager must approve/reject first. Keep the shift
+              // around (banner above shows the pending state) and wait for the
+              // realtime APPROVED/REJECTED event below.
+              setShift(closed);
+              return;
+            }
+            setShift(null);
+            if (logoutAfterClose) {
+              setLogoutAfterClose(false);
+              void doLogout(); // BR-AUTH-04: "close shift, then log out" shortcut
+            }
+          }}
+          onCancel={() => {
+            setShowCloseShift(false);
+            setLogoutAfterClose(false);
+          }}
+        />
+      )}
+      {logoutWarn && (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setLogoutWarn(false);
+          }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[420px] mx-4 overflow-hidden">
+            <div className="px-6 py-5 border-b border-[#eceef0]">
+              <h2 className="text-[18px] font-bold text-[#202325]">
+                Đăng xuất
+              </h2>
+              <p className="text-[13px] text-[#636566] mt-1">
+                Đăng xuất sẽ không đóng ca thu ngân của bạn. Ca vẫn mở trên hệ
+                thống và sẽ được khôi phục khi bạn đăng nhập lại.
+              </p>
+            </div>
+            <div className="p-6 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setLogoutWarn(false);
+                  setLogoutAfterClose(true);
+                  setShowCloseShift(true);
+                }}
+                className="h-11 rounded-lg bg-[#025cca] text-white font-semibold text-[15px] hover:bg-[#0251b3] transition-colors"
+              >
+                Đóng ca rồi đăng xuất
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLogoutWarn(false);
+                  void doLogout();
+                }}
+                className="h-11 rounded-lg border border-[#d1d5db] text-[14px] text-[#636566] hover:bg-[#f5f5f5] transition-colors"
+              >
+                Chỉ đăng xuất
+              </button>
+              <button
+                type="button"
+                onClick={() => setLogoutWarn(false)}
+                className="h-10 text-[13px] text-[#636566] hover:text-[#202325] transition-colors"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -7,6 +7,7 @@ import com.rms.restaurant.common.utils.enums.OrderStatus;
 import com.rms.restaurant.common.utils.exception.ApplicationError;
 import com.rms.restaurant.common.utils.exception.ApplicationException;
 import com.rms.restaurant.common.utils.exception.ResourceNotFoundException;
+import com.rms.restaurant.common.utils.wrapper.PageResponse;
 import com.rms.restaurant.common.realtime.RealtimeEventPublisher;
 import com.rms.restaurant.module.authentication.model.User;
 import com.rms.restaurant.module.authentication.repository.UserRepository;
@@ -41,6 +42,9 @@ import com.rms.restaurant.module.table.repository.TableRepository;
 import com.rms.restaurant.module.user.service.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
@@ -106,7 +110,7 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<InvoiceSummaryResponse> getAll(Boolean paid, String orderId, List<InvoiceStatus> statuses) {
+    public PageResponse<InvoiceSummaryResponse> getAll(Boolean paid, String orderId, List<InvoiceStatus> statuses, Pageable pageable) {
         orderId = resolveOrderIdFilter(orderId);
         boolean hasOrderId = orderId != null && !orderId.isBlank();
         // No lifecycle filter means "every status", preserving the existing contract for
@@ -114,30 +118,31 @@ public class InvoiceServiceImpl implements InvoiceService {
         List<InvoiceStatus> effectiveStatuses = (statuses == null || statuses.isEmpty())
                 ? ALL_INVOICE_STATUSES
                 : statuses;
-        List<Invoice> invoices;
+        Page<Invoice> invoicePage;
 
+        // orderId scope (Cashier checkout flow) always needs every invoice for that one
+        // order, never a slice — wrapped as a single unpaged page so it flows through the
+        // same PageResponse pipeline as the Manager screen's real pagination below.
         if (hasOrderId && paid != null) {
-            invoices = invoiceRepository.findByOrderIdAndPaidAndStatusInOrderByCreatedAtDescIdDesc(
-                    orderId.trim(), paid, effectiveStatuses);
+            invoicePage = new PageImpl<>(invoiceRepository.findByOrderIdAndPaidAndStatusInOrderByCreatedAtDescIdDesc(
+                    orderId.trim(), paid, effectiveStatuses));
         } else if (hasOrderId) {
-            invoices = invoiceRepository.findByOrderIdAndStatusInOrderByCreatedAtDescIdDesc(
-                    orderId.trim(), effectiveStatuses);
+            invoicePage = new PageImpl<>(invoiceRepository.findByOrderIdAndStatusInOrderByCreatedAtDescIdDesc(
+                    orderId.trim(), effectiveStatuses));
         } else if (paid != null) {
-            invoices = invoiceRepository.findByPaidAndStatusInOrderByCreatedAtDescIdDesc(
-                    paid, effectiveStatuses);
+            invoicePage = invoiceRepository.findByPaidAndStatusIn(paid, effectiveStatuses, pageable);
         } else {
-            invoices = invoiceRepository.findByStatusInOrderByCreatedAtDescIdDesc(effectiveStatuses);
+            invoicePage = invoiceRepository.findByStatusIn(effectiveStatuses, pageable);
         }
 
+        List<Invoice> invoices = invoicePage.getContent();
         resolveAllocationLines(invoices);
         Map<String, String> lineageCodesById = resolveLineageCodes(invoices);
         Map<String, String> orderCodesByOrderId = resolveOrderCodes(invoices);
 
-        List<InvoiceSummaryResponse> responses = new ArrayList<>();
-        for (Invoice invoice : invoices) {
-            responses.add(invoiceMapper.toSummaryResponse(invoice, lineageCodesById, orderCodesByOrderId));
-        }
-        return responses;
+        Page<InvoiceSummaryResponse> responsePage = invoicePage.map(
+                invoice -> invoiceMapper.toSummaryResponse(invoice, lineageCodesById, orderCodesByOrderId));
+        return PageResponse.of(responsePage);
     }
 
     /** Batch-resolves codes for every invoice referenced via mergedIntoInvoiceId/splitFromInvoiceId. */

@@ -107,6 +107,9 @@ export interface CashFlowVoucher {
   accountingToIncome: boolean;
   createdBy: string;
   voided: boolean;
+  // Only MANUAL vouchers can be edited — PAYROLL/INVOICE_PAYMENT ones mirror domain state
+  // owned elsewhere (payroll sheets / invoice payments) and would go stale if edited here.
+  isEditable: boolean;
   sourceInvoice?: SourceInvoice;
 }
 
@@ -163,6 +166,7 @@ const mapVoucher = (dto: VoucherResponseDto): CashFlowVoucher => ({
   accountingToIncome: dto.accountingToIncome,
   createdBy: dto.createdBy ?? "",
   voided: dto.voided,
+  isEditable: dto.sourceType === "MANUAL" && !dto.voided,
   sourceInvoice:
     dto.sourceType === "INVOICE_PAYMENT" && dto.sourceReferenceId
       ? {
@@ -198,8 +202,6 @@ export interface VoucherListParams {
   size?: number;
 }
 
-// No pagination UI in the cash book table — fetch a large page and filter/sort client-side,
-// same shape as the previous in-memory mock array.
 export const listVouchers = async (
   params: VoucherListParams = {},
 ): Promise<VouchersPage> => {
@@ -207,13 +209,25 @@ export const listVouchers = async (
     data: VoucherResponseDto[];
     pagination: PageMeta;
   }>("/cashbook/vouchers", {
-    params: { size: 1000, ...params },
+    params: { size: 20, ...params },
     paramsSerializer: { indexes: null },
   });
   return {
     data: res.data.data.map(mapVoucher),
     pagination: res.data.pagination,
   };
+};
+
+// Full unpaged export (CSV) — same filters as listVouchers but every matching row,
+// via the backend's dedicated /export endpoint (no page/size).
+export const exportVouchersUnpaged = async (
+  params: Omit<VoucherListParams, "page" | "size"> = {},
+): Promise<CashFlowVoucher[]> => {
+  const res = await apiClient.get<{ data: VoucherResponseDto[] }>(
+    "/cashbook/vouchers/export",
+    { params, paramsSerializer: { indexes: null } },
+  );
+  return res.data.data.map(mapVoucher);
 };
 
 export const listCategories = async (): Promise<CashFlowCategory[]> => {
@@ -272,6 +286,17 @@ export const createVoucher = async (
 ): Promise<CashFlowVoucher> => {
   const res = await apiClient.post<{ data: VoucherResponseDto }>(
     "/cashbook/vouchers",
+    payload,
+  );
+  return mapVoucher(res.data.data);
+};
+
+export const updateVoucher = async (
+  id: string,
+  payload: CreateVoucherPayload,
+): Promise<CashFlowVoucher> => {
+  const res = await apiClient.put<{ data: VoucherResponseDto }>(
+    `/cashbook/vouchers/${id}`,
     payload,
   );
   return mapVoucher(res.data.data);

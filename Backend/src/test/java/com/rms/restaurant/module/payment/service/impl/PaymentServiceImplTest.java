@@ -26,6 +26,7 @@ import com.rms.restaurant.module.payment.service.internal.VnpayQueryClient;
 import com.rms.restaurant.module.payment.service.internal.VnpayService;
 import com.rms.restaurant.module.shift.model.Shift;
 import com.rms.restaurant.module.shift.repository.ShiftRepository;
+import com.rms.restaurant.module.shift.service.ShiftSettingService;
 import com.rms.restaurant.module.user.service.AuditService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,6 +59,7 @@ class PaymentServiceImplTest {
     @Mock private AuditService auditService;
     @Mock private UserRepository userRepository;
     @Mock private ShiftRepository shiftRepository;
+    @Mock private ShiftSettingService shiftSettingService;
     @Mock private CashbookService cashbookService;
     @Mock private VnpayService vnpayService;
     @Mock private VnpayQueryClient vnpayQueryClient;
@@ -73,7 +75,7 @@ class PaymentServiceImplTest {
     void setUp() {
         service = new PaymentServiceImpl(
                 invoiceRepository, paymentRepository, orderRepository, new PaymentMapper(), auditService,
-                userRepository, shiftRepository, cashbookService, vnpayService,
+                userRepository, shiftRepository, shiftSettingService, cashbookService, vnpayService,
                 vnpayQueryClient, vnpayProperties, realtimeEventPublisher, selfProvider);
     }
 

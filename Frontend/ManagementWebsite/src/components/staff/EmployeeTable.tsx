@@ -11,7 +11,6 @@ interface Props {
   total: number
   visibleColumns: Record<string, boolean>
   onPageChange: (page: number) => void
-  onAdd: () => void
   onSave: (emp: Employee) => void
   onToggleActive: (emp: Employee) => void
 }
@@ -19,7 +18,7 @@ interface Props {
 const th = 'sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-3 py-3 whitespace-nowrap'
 const td = 'text-md text-ink px-3 py-3 border-b border-line align-middle'
 
-const EmptyState = ({ onAdd }: { onAdd: () => void }) => (
+const EmptyState = () => (
   <div className="flex-1 flex flex-col items-center justify-center gap-3 py-20">
     <div className="w-[9rem] h-[9rem] rounded-full bg-primary-50 flex items-center justify-center">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--kv-primary)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -27,15 +26,12 @@ const EmptyState = ({ onAdd }: { onAdd: () => void }) => (
       </svg>
     </div>
     <div className="text-lg font-semibold text-ink-strong mt-2">Gian hàng chưa có nhân viên.</div>
-    <div className="text-md text-ink-subtle">
-      Nhấn <button className="text-primary cursor-pointer hover:underline" onClick={onAdd}>vào đây</button> để thêm mới nhân viên.
-    </div>
   </div>
 )
 
 const pageBtnCls = 'h-9 min-w-[2.25rem] px-2 flex items-center justify-center border border-line-default rounded-md text-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:border-primary hover:text-primary cursor-pointer'
 
-const EmployeeTable = ({ employees, loading, page, totalPages, total, visibleColumns, onPageChange, onAdd, onSave, onToggleActive }: Props) => {
+const EmployeeTable = ({ employees, loading, page, totalPages, total, visibleColumns, onPageChange, onSave, onToggleActive }: Props) => {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [expandedCode, setExpandedCode] = useState<string | null>(null)
 
@@ -113,7 +109,7 @@ const EmployeeTable = ({ employees, loading, page, totalPages, total, visibleCol
           )}
         </table>
 
-        {!loading && employees.length === 0 && <EmptyState onAdd={onAdd} />}
+        {!loading && employees.length === 0 && <EmptyState />}
       </div>
 
       {!loading && employees.length > 0 && (

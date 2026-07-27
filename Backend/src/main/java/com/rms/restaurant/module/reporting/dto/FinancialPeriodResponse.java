@@ -8,8 +8,9 @@ import java.util.List;
  * otherExpense are always zero — no tracked concept for them anywhere else in this app. The
  * expense/other-income sub-lines that used to be fixed zero placeholders (expCCDC,
  * expDepreciation, expDeliveryFee, expQRFee, expWriteOff, expPointRedeem, incReturnFee,
- * incSalaryAdvanceReturn) are now user-managed via FinancialCustomLine — see customLineValues.
- * expPayroll stays fixed since it has a real data source (payroll module). */
+ * incSalaryAdvanceReturn) are now derived live from Cashbook categories/vouchers — see
+ * categoryLineValues and ReportServiceImpl.accumulateCashbookCategoryLines. expPayroll stays
+ * fixed since it has a real data source (payroll module). */
 public record FinancialPeriodResponse(
         String key,
         String label,
@@ -26,5 +27,5 @@ public record FinancialPeriodResponse(
         BigDecimal otherIncome,
         BigDecimal otherExpense,
         BigDecimal netProfit,
-        List<FinancialCustomLineAmountDto> customLineValues
+        List<FinancialCategoryLineAmountDto> categoryLineValues
 ) {}

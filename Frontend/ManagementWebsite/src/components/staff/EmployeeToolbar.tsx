@@ -5,7 +5,6 @@ import type { EmployeeColumn } from './employeeColumns'
 interface Props {
   search: string
   onSearch: (v: string) => void
-  onAdd: () => void
   employees: Employee[]
   columns: EmployeeColumn[]
   visibleColumns: Record<string, boolean>
@@ -27,7 +26,7 @@ const exportCsv = (employees: Employee[]) => {
   URL.revokeObjectURL(url)
 }
 
-const EmployeeToolbar = ({ search, onSearch, onAdd, employees, columns, visibleColumns, onToggleColumn }: Props) => {
+const EmployeeToolbar = ({ search, onSearch, employees, columns, visibleColumns, onToggleColumn }: Props) => {
   const [menuOpen, setMenuOpen] = useState(false)
   const [colsOpen, setColsOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -60,13 +59,6 @@ const EmployeeToolbar = ({ search, onSearch, onAdd, employees, columns, visibleC
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
-        <button className="kv-btn kv-btn-outline-primary h-10 bg-card" onClick={onAdd}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          Nhân viên
-        </button>
-
         <input
           ref={importRef}
           type="file"

@@ -74,9 +74,8 @@ export const CloseShiftModal = ({
     data.paymentBreakdown.find(b => b.method === m)?.expectedAmount ?? 0
 
   const openingCash  = data.openingCash
-  const expectedCash = byMethod('CASH')                 // opening + cash movements (BR-CS-03)
-  const cashInShift  = expectedCash - openingCash       // net cash generated this shift
-  const cashSales    = cashInShift - data.totalCashIn + data.totalCashOut
+  const expectedCash = byMethod('CASH')                 // opening + cash sales (BR-CS-03)
+  const cashSales     = expectedCash - openingCash      // pure cash sales this shift
 
   const salesTransfer = byMethod('QR')
   const salesCard     = byMethod('CARD')
@@ -131,7 +130,15 @@ export const CloseShiftModal = ({
     }
   }
 
-  const statusLabel = data.status === 'OPEN' ? 'ĐANG MỞ' : data.status === 'PENDING_RECON' ? 'CHỜ ĐỐI SOÁT' : 'ĐÃ ĐÓNG'
+  const statusLabel = data.status === 'OPEN' ? 'ĐANG MỞ'
+    : data.status === 'PENDING_MANAGER_CONFIRM' ? 'CHỜ QUẢN LÝ XÁC NHẬN'
+    : data.status === 'PENDING_RECON' ? 'CHỜ ĐỐI SOÁT' : 'ĐÃ ĐÓNG'
+
+  // A previous close attempt was rejected by a manager — the shift is back to OPEN and
+  // closingNote carries the manager's reason (see ShiftServiceImpl.rejectClose()).
+  const rejectionNote = data.status === 'OPEN' && data.closingNote?.startsWith('REJECTED by manager:')
+    ? data.closingNote
+    : null
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -165,6 +172,11 @@ export const CloseShiftModal = ({
 
         {/* Body */}
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 flex flex-col gap-4 bg-white">
+          {rejectionNote && (
+            <div className="px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[13px] text-amber-700">
+              Quản lý đã từ chối phiếu kết ca trước đó: {rejectionNote.replace('REJECTED by manager: ', '')}
+            </div>
+          )}
           {/* Tiền mặt đầu ca */}
           <div className="border border-[#d9d9d9] rounded-2xl px-6 py-4 flex items-center justify-between">
             <span className="text-[16px] font-semibold text-[#202325]">Tiền mặt đầu ca</span>
@@ -177,10 +189,10 @@ export const CloseShiftModal = ({
               <span className="text-[16px] font-semibold text-[#202325]">Tiền mặt trong ca</span>
               <span className="flex items-center gap-1.5">
                 <HelpIcon />
-                <span className="text-[22px] font-bold text-[#025cca]">{num(cashInShift)}</span>
+                <span className="text-[22px] font-bold text-[#025cca]">{num(cashSales)}</span>
               </span>
             </div>
-            <div className="flex gap-4">
+            <div className="max-w-[22rem]">
               <BreakdownCard
                 title="Bán hàng" count={0} unit="hóa đơn"
                 rows={[
@@ -190,24 +202,6 @@ export const CloseShiftModal = ({
                   { label: 'Ví điện tử', value: salesWallet },
                 ]}
                 total={salesTotal}
-              />
-              <BreakdownCard
-                title="Phiếu thu" count={0} unit="phiếu"
-                rows={[
-                  { label: 'Tiền mặt', value: data.totalCashIn },
-                  { label: 'Chuyển khoản', value: 0 },
-                  { label: 'Thẻ', value: 0 },
-                ]}
-                total={data.totalCashIn}
-              />
-              <BreakdownCard
-                title="Phiếu chi" count={0} unit="phiếu"
-                rows={[
-                  { label: 'Tiền mặt', value: data.totalCashOut },
-                  { label: 'Chuyển khoản', value: 0 },
-                  { label: 'Thẻ', value: 0 },
-                ]}
-                total={data.totalCashOut}
               />
             </div>
           </div>

@@ -7,6 +7,10 @@ interface Props {
   deletingId: string | null
   onEdit: (promotion: Promotion) => void
   onDeactivate: (promotion: Promotion) => void
+  page: number
+  totalPages: number
+  total: number
+  onPageChange: (page: number) => void
 }
 
 const th = 'sticky top-0 z-2 bg-primary-25 text-left text-md font-semibold text-ink-strong px-3 py-3 whitespace-nowrap'
@@ -51,7 +55,7 @@ const DisableIcon = () => (
   </svg>
 )
 
-const PromotionTable = ({ promotions, loading, deletingId, onEdit, onDeactivate }: Props) => (
+const PromotionTable = ({ promotions, loading, deletingId, onEdit, onDeactivate, page, totalPages, total, onPageChange }: Props) => (
   <div className="flex-1 min-h-0 flex flex-col bg-card border border-line rounded-t-lg overflow-hidden">
     <div className="flex-1 min-h-0 overflow-auto">
       {/* Column set is deliberately compact so all 7 columns — including the action buttons —
@@ -178,9 +182,30 @@ const PromotionTable = ({ promotions, loading, deletingId, onEdit, onDeactivate 
         </tbody>
       </table>
     </div>
-    <div className="flex items-center px-4 py-3 border-t border-line shrink-0">
-      <span className="text-md text-ink-subtle">Tổng số {promotions.length} khuyến mãi</span>
-    </div>
+    {!loading && promotions.length > 0 && (
+      <div className="flex items-center justify-between gap-4 px-4 py-3 border-t border-line shrink-0">
+        <span className="text-md text-ink-subtle">Tổng số {total} khuyến mãi</span>
+        <div className="flex items-center gap-2">
+          <button
+            className="w-[2.8rem] h-[2.8rem] flex items-center justify-center border border-line-default rounded-xxs bg-card text-ink-subtle cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={page <= 1}
+            onClick={() => onPageChange(page - 1)}
+            aria-label="Trang trước"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 4l-4 4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          <span className="text-md text-ink-subtle">Trang {page} / {totalPages}</span>
+          <button
+            className="w-[2.8rem] h-[2.8rem] flex items-center justify-center border border-line-default rounded-xxs bg-card text-ink-subtle cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={page >= totalPages}
+            onClick={() => onPageChange(page + 1)}
+            aria-label="Trang sau"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        </div>
+      </div>
+    )}
   </div>
 )
 
