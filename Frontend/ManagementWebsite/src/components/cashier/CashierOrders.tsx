@@ -246,9 +246,18 @@ const CashierOrders = () => {
       missingActiveOrderIds.map((orderId) => getOrder(orderId)),
     );
     missingOrders.forEach((result) => {
+      // Bug fix: a table's first-ever QR order sits at order.status === "PENDING" until the
+      // cashier accepts it (see GuestOrderingServiceImpl.placeOrder) — ACTIVE_ORDER_STATUSES
+      // deliberately excludes PENDING (it's not yet a "real" occupied-table order), but that
+      // meant a brand-new QR order missing from the listOrders(0,100) page (any table whose
+      // order isn't among the newest ~100 — trivially true once months of seed data exist)
+      // was silently dropped here and never reached activeOrders, so it never showed up in the
+      // cashier's "Xác nhận gọi món" popup. Only exclude the two truly terminal statuses, same
+      // as the backend's own findActiveOrderId() non-terminal check for table.activeOrderId.
       if (
         result.status === "fulfilled" &&
-        ACTIVE_ORDER_STATUSES.includes(result.value.status)
+        result.value.status !== "CLOSED" &&
+        result.value.status !== "CANCELLED"
       ) {
         orderById.set(result.value.id, result.value);
       }
