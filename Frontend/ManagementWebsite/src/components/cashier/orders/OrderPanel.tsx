@@ -191,6 +191,21 @@ export const OrderPanel = ({
                 </span>
               </div>
             </>
+          ) : invoicePaid ? (
+            <>
+              <div className="bg-[#dcf7ea] flex items-center gap-1 px-2 py-1 rounded-[8px]">
+                <CheckIcon />
+                <span className="text-[12px] font-medium text-[#286b4a]">
+                  Đã thanh toán
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-[#48c185]" />
+                <span className="text-[12px] text-[#636566]">
+                  Đã thanh toán
+                </span>
+              </div>
+            </>
           ) : (
             <>
               <div className="bg-[#f5f5f5] flex items-center gap-1 px-2 py-1 rounded-[8px]">
