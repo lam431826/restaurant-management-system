@@ -7,6 +7,7 @@ interface Props {
   cancelLabel?: string
   danger?: boolean
   loading?: boolean
+  confirmDisabled?: boolean
   onConfirm: () => void
   onCancel: () => void
 }
@@ -19,21 +20,22 @@ const WarningIcon = () => (
 )
 
 const ConfirmDialog = ({
-  title, message, confirmLabel = 'Xóa', cancelLabel = 'Hủy', danger = true, loading = false, onConfirm, onCancel,
+  title, message, confirmLabel = 'Xóa', cancelLabel = 'Hủy', danger = true, loading = false, confirmDisabled = false,
+  onConfirm, onCancel,
 }: Props) => {
   useEffect(() => {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !loading) onCancel()
-      if (e.key === 'Enter' && !loading) onConfirm()
+      if (e.key === 'Enter' && !loading && !confirmDisabled) onConfirm()
     }
     document.addEventListener('keydown', onKey)
     return () => {
       document.body.style.overflow = prev
       document.removeEventListener('keydown', onKey)
     }
-  }, [onCancel, onConfirm, loading])
+  }, [onCancel, onConfirm, loading, confirmDisabled])
 
   return (
     <div
@@ -58,7 +60,7 @@ const ConfirmDialog = ({
             className={danger
               ? 'h-10 px-4 rounded-md bg-danger text-white font-medium transition-colors hover:bg-danger-600 disabled:opacity-60 disabled:cursor-not-allowed'
               : 'kv-btn kv-btn-primary h-10'}
-            disabled={loading}
+            disabled={loading || confirmDisabled}
             onClick={onConfirm}
           >
             {loading ? 'Đang xử lý…' : confirmLabel}

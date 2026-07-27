@@ -66,6 +66,7 @@ public class EmployeeController {
     }
 
     @PostMapping
+    @PreAuthorize("denyAll") // Employee creation intentionally disabled for all roles — business decision
     public ResponseEntity<ApiResponse<EmployeeResponse>> create(@Valid @RequestBody CreateEmployeeRequest request) {
         EmployeeResponse created = employeeService.create(request);
         return ResponseEntity
@@ -80,9 +81,15 @@ public class EmployeeController {
     }
 
     @PostMapping("/{id}/deactivate")
-    public ResponseEntity<Void> deactivate(@PathVariable String id) {
-        employeeService.deactivate(id);
+    public ResponseEntity<Void> deactivate(@PathVariable String id,
+                                            @RequestParam(defaultValue = "false") boolean acknowledgeWarnings) {
+        employeeService.deactivate(id, acknowledgeWarnings);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}/deactivation-check")
+    public ResponseEntity<ApiResponse<EmployeeDeactivationCheckResponse>> deactivationCheck(@PathVariable String id) {
+        return ResponseEntity.ok(ApiResponse.success(employeeService.checkDeactivationEligibility(id)));
     }
 
     @GetMapping("/{id}/salary-setting")

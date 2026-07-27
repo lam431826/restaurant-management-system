@@ -41,12 +41,19 @@ class EmployeeServiceImplTest {
     @Mock EmployeeMapper employeeMapper;
     @Mock UserRepository userRepository;
     @Mock AuditService auditService;
+    @Mock EmployeeDeactivationCheckService deactivationCheckService;
 
     private EmployeeServiceImpl service;
 
+    /** No blockers, no warnings — the common case for tests that don't exercise the check itself. */
+    private static EmployeeDeactivationCheckResponse noIssues() {
+        return new EmployeeDeactivationCheckResponse(false, List.of(), List.of(), false, null, false, null);
+    }
+
     @BeforeEach
     void setUp() {
-        service = new EmployeeServiceImpl(employeeRepository, salarySettingRepository, employeeMapper, userRepository, auditService);
+        service = new EmployeeServiceImpl(employeeRepository, salarySettingRepository, employeeMapper, userRepository,
+                auditService, deactivationCheckService);
 
         // lenient: not every test exercises the happy path that reaches mapping/saving
         lenient().when(employeeMapper.toResponse(any(Employee.class))).thenAnswer(inv -> {
@@ -123,12 +130,85 @@ class EmployeeServiceImplTest {
     void deactivate_setsInactiveStatus_onlyOnThatEmployee() {
         Employee employee = Employee.builder().id("e1").code("NV000001").status(EmployeeStatus.ACTIVE).build();
         when(employeeRepository.findById("e1")).thenReturn(Optional.of(employee));
+        when(deactivationCheckService.check(employee)).thenReturn(noIssues());
 
-        service.deactivate("e1");
+        service.deactivate("e1", false);
 
         assertThat(employee.getStatus()).isEqualTo(EmployeeStatus.INACTIVE);
         verify(employeeRepository).save(employee);
         verifyNoInteractions(salarySettingRepository);
+    }
+
+    @Test
+    void deactivate_throwsConflict_whenFutureSchedulesExist() {
+        Employee employee = Employee.builder().id("e1").code("NV000001").status(EmployeeStatus.ACTIVE).build();
+        when(employeeRepository.findById("e1")).thenReturn(Optional.of(employee));
+        when(deactivationCheckService.check(employee)).thenReturn(new EmployeeDeactivationCheckResponse(
+                true,
+                List.of(new EmployeeDeactivationCheckResponse.FutureScheduleItem("s1", null, "sh1", "Sáng")),
+                List.of(), false, null, false, null));
+
+        assertThatThrownBy(() -> service.deactivate("e1", false))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getError())
+                .isEqualTo(com.rms.restaurant.common.utils.exception.ApplicationError.EMP_DEACTIVATE_BLOCKED);
+        verify(employeeRepository, never()).save(any());
+    }
+
+    @Test
+    void deactivate_throwsConflict_whenUnfinalizedPayslipExists() {
+        Employee employee = Employee.builder().id("e1").code("NV000001").status(EmployeeStatus.ACTIVE).build();
+        when(employeeRepository.findById("e1")).thenReturn(Optional.of(employee));
+        when(deactivationCheckService.check(employee)).thenReturn(new EmployeeDeactivationCheckResponse(
+                true, List.of(),
+                List.of(new EmployeeDeactivationCheckResponse.UnfinalizedPayslipItem(
+                        "p1", "PL001", "s1", "BL001", "Bảng lương 07/2026", "DRAFT")),
+                false, null, false, null));
+
+        assertThatThrownBy(() -> service.deactivate("e1", false))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getError())
+                .isEqualTo(com.rms.restaurant.common.utils.exception.ApplicationError.EMP_DEACTIVATE_BLOCKED);
+        verify(employeeRepository, never()).save(any());
+    }
+
+    @Test
+    void deactivate_throwsConflict_whenWarningsPresent_andNotAcknowledged() {
+        Employee employee = Employee.builder().id("e1").code("NV000001").status(EmployeeStatus.ACTIVE).build();
+        when(employeeRepository.findById("e1")).thenReturn(Optional.of(employee));
+        when(deactivationCheckService.check(employee)).thenReturn(new EmployeeDeactivationCheckResponse(
+                false, List.of(), List.of(), true, null, false, null));
+
+        assertThatThrownBy(() -> service.deactivate("e1", false))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getError())
+                .isEqualTo(com.rms.restaurant.common.utils.exception.ApplicationError.EMP_DEACTIVATE_WARNINGS_PENDING);
+        verify(employeeRepository, never()).save(any());
+    }
+
+    @Test
+    void deactivate_succeeds_whenWarningsPresent_andAcknowledged() {
+        Employee employee = Employee.builder().id("e1").code("NV000001").status(EmployeeStatus.ACTIVE).build();
+        when(employeeRepository.findById("e1")).thenReturn(Optional.of(employee));
+        when(deactivationCheckService.check(employee)).thenReturn(new EmployeeDeactivationCheckResponse(
+                false, List.of(), List.of(), true, null, false, null));
+
+        service.deactivate("e1", true);
+
+        assertThat(employee.getStatus()).isEqualTo(EmployeeStatus.INACTIVE);
+        verify(employeeRepository).save(employee);
+    }
+
+    @Test
+    void checkDeactivationEligibility_delegatesToCheckService() {
+        Employee employee = Employee.builder().id("e1").code("NV000001").status(EmployeeStatus.ACTIVE).build();
+        when(employeeRepository.findById("e1")).thenReturn(Optional.of(employee));
+        EmployeeDeactivationCheckResponse expected = noIssues();
+        when(deactivationCheckService.check(employee)).thenReturn(expected);
+
+        EmployeeDeactivationCheckResponse result = service.checkDeactivationEligibility("e1");
+
+        assertThat(result).isEqualTo(expected);
     }
 
     @Test

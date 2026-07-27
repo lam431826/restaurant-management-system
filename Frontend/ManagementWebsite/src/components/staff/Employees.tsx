@@ -4,10 +4,9 @@ import type { EmpStatus } from './EmployeeFilters'
 import EmployeeToolbar from './EmployeeToolbar'
 import EmployeeTable from './EmployeeTable'
 import { EMPLOYEE_COLUMNS, DEFAULT_VISIBLE_COLUMNS } from './employeeColumns'
-import EmployeeModal from './EmployeeModal'
 import ConfirmDialog from '../menu/ConfirmDialog'
-import { listEmployees, createEmployee, deactivateEmployee, updateEmployee, toEmployee } from '../../api/employees'
-import type { Employee, EmployeeFormPayload, EmployeeStatus } from '../../api/employees'
+import { listEmployees, deactivateEmployee, updateEmployee, toEmployee, getDeactivationCheck } from '../../api/employees'
+import type { Employee, EmployeeStatus, DeactivationCheckDto } from '../../api/employees'
 
 const PAGE_SIZE = 20
 
@@ -23,11 +22,13 @@ const Employees = () => {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<EmpStatus>('active')
 
-  const [showAdd, setShowAdd] = useState(false)
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(DEFAULT_VISIBLE_COLUMNS)
 
   const [pendingToggle, setPendingToggle] = useState<Employee | null>(null)
   const [toggling, setToggling] = useState(false)
+  const [checkResult, setCheckResult] = useState<DeactivationCheckDto | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [ackWarnings, setAckWarnings] = useState(false)
 
   const fetchEmployees = useCallback(async (p: number, s: EmpStatus) => {
     setLoading(true)
@@ -53,32 +54,51 @@ const Employees = () => {
     return items.filter(e => `${e.code} ${e.name}`.toLowerCase().includes(q))
   }, [items, search])
 
-  const handleCreate = async (payload: EmployeeFormPayload) => {
-    const res = await createEmployee(payload)
-    await fetchEmployees(0, status)
-    setShowAdd(false)
-    return res.data.data
-  }
-
   const handleUpdate = () => {
     fetchEmployees(page, status)
   }
 
-  const handleToggleActive = (emp: Employee) => {
+  const closeToggle = () => {
+    setPendingToggle(null)
+    setCheckResult(null)
+    setAckWarnings(false)
+  }
+
+  const handleToggleActive = async (emp: Employee) => {
     setPendingToggle(emp)
+    setAckWarnings(false)
+    if (emp.status !== 'ACTIVE') {
+      // Reactivating has no eligibility constraints — keep the simple confirm flow.
+      setCheckResult(null)
+      return
+    }
+    setChecking(true)
+    try {
+      const res = await getDeactivationCheck(emp.id)
+      setCheckResult(res.data.data)
+    } catch {
+      // Fail open to the plain confirm dialog; the backend still enforces the check on submit.
+      setCheckResult(null)
+    } finally {
+      setChecking(false)
+    }
   }
 
   const handleConfirmToggle = async () => {
     if (!pendingToggle) return
+    if (checkResult?.blocked) {
+      closeToggle()
+      return
+    }
     setToggling(true)
     try {
       if (pendingToggle.status === 'ACTIVE') {
-        await deactivateEmployee(pendingToggle.id)
+        await deactivateEmployee(pendingToggle.id, ackWarnings)
       } else {
         await updateEmployee(pendingToggle.id, { status: 'ACTIVE' })
       }
       await fetchEmployees(page, status)
-      setPendingToggle(null)
+      closeToggle()
     } catch (err) {
       const anyErr = err as { response?: { data?: { message?: string } } }
       window.alert(anyErr.response?.data?.message || 'Có lỗi xảy ra, vui lòng thử lại')
@@ -98,7 +118,6 @@ const Employees = () => {
         <EmployeeToolbar
           search={search}
           onSearch={setSearch}
-          onAdd={() => setShowAdd(true)}
           employees={items}
           columns={EMPLOYEE_COLUMNS}
           visibleColumns={visibleColumns}
@@ -112,34 +131,72 @@ const Employees = () => {
           total={total}
           visibleColumns={visibleColumns}
           onPageChange={p => fetchEmployees(p, status)}
-          onAdd={() => setShowAdd(true)}
           onSave={handleUpdate}
           onToggleActive={handleToggleActive}
         />
       </section>
 
-      {showAdd && (
-        <EmployeeModal
-          onClose={() => setShowAdd(false)}
-          onSave={handleCreate}
-        />
-      )}
+      {pendingToggle && (() => {
+        const isDeactivating = pendingToggle.status === 'ACTIVE'
+        const hasWarnings = !!checkResult && (checkResult.hasOpenPosShift || checkResult.hasOpenAttendanceToday)
+        const blocked = isDeactivating && !!checkResult?.blocked
 
-      {pendingToggle && (
-        <ConfirmDialog
-          title={pendingToggle.status === 'ACTIVE' ? 'Ngừng làm việc' : 'Cho phép làm việc'}
-          message={
-            pendingToggle.status === 'ACTIVE'
-              ? <>Xác nhận ngừng làm việc đối với nhân viên <strong>{pendingToggle.name}</strong>?</>
-              : <>Xác nhận cho phép nhân viên <strong>{pendingToggle.name}</strong> làm việc trở lại?</>
-          }
-          confirmLabel={pendingToggle.status === 'ACTIVE' ? 'Ngừng làm việc' : 'Cho phép làm việc'}
-          danger={pendingToggle.status === 'ACTIVE'}
-          loading={toggling}
-          onConfirm={handleConfirmToggle}
-          onCancel={() => { if (!toggling) setPendingToggle(null) }}
-        />
-      )}
+        return (
+          <ConfirmDialog
+            title={blocked ? 'Không thể ngừng làm việc' : isDeactivating ? 'Ngừng làm việc' : 'Cho phép làm việc'}
+            message={
+              blocked ? (
+                <div className="space-y-2">
+                  <p>Nhân viên <strong>{pendingToggle.name}</strong> còn ràng buộc chưa xử lý:</p>
+                  {checkResult!.futureSchedules.length > 0 && (
+                    <div>
+                      <p>Còn {checkResult!.futureSchedules.length} lịch làm việc trong tương lai:</p>
+                      <ul className="list-disc pl-5">
+                        {checkResult!.futureSchedules.slice(0, 5).map(s => (
+                          <li key={s.scheduleId}>{s.workDate} — {s.shiftName ?? 'Ca không xác định'}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {checkResult!.unfinalizedPayslips.length > 0 && (
+                    <div>
+                      <p>Còn {checkResult!.unfinalizedPayslips.length} phiếu lương chưa chốt:</p>
+                      <ul className="list-disc pl-5">
+                        {checkResult!.unfinalizedPayslips.map(p => (
+                          <li key={p.payslipId}>{p.payrollSheetName ?? p.payrollSheetCode} ({p.payrollSheetStatus})</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <p>Vui lòng xử lý qua module Xếp lịch / Bảng lương trước khi ngừng làm việc.</p>
+                </div>
+              ) : isDeactivating && hasWarnings ? (
+                <div className="space-y-2">
+                  <p>Nhân viên <strong>{pendingToggle.name}</strong> hiện đang:</p>
+                  <ul className="list-disc pl-5">
+                    {checkResult!.hasOpenPosShift && <li>Có ca thu ngân đang mở</li>}
+                    {checkResult!.hasOpenAttendanceToday && <li>Chưa chấm công ra hôm nay</li>}
+                  </ul>
+                  <label className="flex items-center gap-2 mt-2">
+                    <input type="checkbox" checked={ackWarnings} onChange={e => setAckWarnings(e.target.checked)} />
+                    Tôi hiểu, vẫn ngừng làm việc
+                  </label>
+                </div>
+              ) : isDeactivating ? (
+                <>Xác nhận ngừng làm việc đối với nhân viên <strong>{pendingToggle.name}</strong>?</>
+              ) : (
+                <>Xác nhận cho phép nhân viên <strong>{pendingToggle.name}</strong> làm việc trở lại?</>
+              )
+            }
+            confirmLabel={blocked ? 'Đã hiểu' : isDeactivating ? 'Ngừng làm việc' : 'Cho phép làm việc'}
+            confirmDisabled={blocked || (isDeactivating && hasWarnings && !ackWarnings)}
+            danger={isDeactivating}
+            loading={toggling || checking}
+            onConfirm={handleConfirmToggle}
+            onCancel={() => { if (!toggling) closeToggle() }}
+          />
+        )
+      })()}
     </div>
   )
 }

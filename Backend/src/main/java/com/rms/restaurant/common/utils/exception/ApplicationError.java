@@ -55,6 +55,8 @@ public enum ApplicationError {
     EMPLOYEE_IMPORT_INVALID("The import file is missing or has an invalid format", HttpStatus.BAD_REQUEST),
     EMPLOYEE_IMPORT_TOO_MANY_ROWS("Import file exceeds the 500-row limit", HttpStatus.BAD_REQUEST),
     EMPLOYEE_AGE_OUT_OF_RANGE("Employee must be between 18 and 60 years old", HttpStatus.UNPROCESSABLE_ENTITY),
+    EMP_DEACTIVATE_BLOCKED("Cannot deactivate: employee still has future work schedules or an unfinalized payslip", HttpStatus.CONFLICT),
+    EMP_DEACTIVATE_WARNINGS_PENDING("Employee has an open cash register shift or unfinished attendance today; confirm you've reviewed this before continuing", HttpStatus.CONFLICT),
 
     // Table Management
     DUPLICATE_TABLE_NAME("A table with this name already exists", HttpStatus.CONFLICT),

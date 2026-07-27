@@ -18,7 +18,9 @@ public interface EmployeeService {
 
     EmployeeResponse update(String id, UpdateEmployeeRequest request);
 
-    void deactivate(String id);
+    void deactivate(String id, boolean acknowledgeWarnings);
+
+    EmployeeDeactivationCheckResponse checkDeactivationEligibility(String id);
 
     /** Self-service: the current user's own linked Employee, or a starter view pre-filled from their User row if none exists yet. */
     EmployeeResponse getMyProfile(String username);

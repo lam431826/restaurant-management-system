@@ -17,6 +17,9 @@ public interface WorkScheduleRepository extends JpaRepository<WorkSchedule, Stri
 
     List<WorkSchedule> findByEmployeeIdAndWorkDateBetween(String employeeId, LocalDate start, LocalDate end);
 
+    /** Future occurrences (workDate >= from) — deactivation-eligibility check (SRS §9 gap #2). */
+    List<WorkSchedule> findByEmployeeIdAndWorkDateGreaterThanEqualOrderByWorkDateAsc(String employeeId, LocalDate from);
+
     boolean existsByShiftId(String shiftId);
 
     boolean existsByEmployeeIdAndShiftIdAndWorkDate(String employeeId, String shiftId, LocalDate workDate);

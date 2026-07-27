@@ -22,4 +22,13 @@ public interface PayslipRepository extends JpaRepository<Payslip, String> {
 
     @Query("SELECT MAX(p.code) FROM Payslip p WHERE p.code LIKE 'PL%'")
     Optional<String> findMaxCode();
+
+    /** Deactivation-eligibility check: employee's active payslips sitting on a sheet not yet
+     *  FINALIZED (GENERATING/DRAFT) — must be resolved before the employee can be deactivated. */
+    @Query("SELECT p FROM Payslip p JOIN PayrollSheet s ON s.id = p.payrollSheetId " +
+           "WHERE p.employeeId = :employeeId AND p.status = com.rms.restaurant.common.utils.enums.PayslipStatus.ACTIVE " +
+           "AND s.status IN (com.rms.restaurant.common.utils.enums.PayrollSheetStatus.GENERATING, " +
+           "                 com.rms.restaurant.common.utils.enums.PayrollSheetStatus.DRAFT) " +
+           "ORDER BY s.periodStart DESC")
+    List<Payslip> findActiveOnUnfinalizedSheetsByEmployee(@Param("employeeId") String employeeId);
 }
