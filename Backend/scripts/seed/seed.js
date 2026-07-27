@@ -303,24 +303,23 @@ const USER_WAITER01 = userIdByUsername.waiter01;
 // waiter02, ...) -- same rationale as BASELINE_USERS above: no bcrypt in Node's stdlib.
 const SEED_ACCOUNT_PASSWORD_HASH = '$2a$12$laA5nJYNLEjnwIPvjeReju0IkZ5LzYF3IO.ZucZWBHIKVlbk7v2CW';
 
-// Cashbook categories -- only SALARY_PAYMENT/SALES_RECEIPT carry a non-null `code`; the other
-// 4 must be resolved by exact name (matched in JS to avoid passing diacritics through a
-// command-line -Q argument, which risks console-codepage mangling on Windows).
-const catRows = sqlcmdQuery('SELECT id, name, code FROM cashbook_categories');
-const catByCode = {}, catByName = {};
-for (const [id, name, code] of catRows) {
-  if (code && code !== 'NULL') catByCode[code] = id;
-  catByName[name] = id;
-}
-const CAT_SALARY_PAYMENT = catByCode.SALARY_PAYMENT;
-const CAT_SALES_RECEIPT = catByCode.SALES_RECEIPT;
-const CAT_OTHER_RECEIPT = catByName['Thu khác'];
-const CAT_INGREDIENTS = catByName['Chi phí nguyên liệu'];
-const CAT_UTILITIES = catByName['Chi phí điện nước'];
-const CAT_CSVC = catByName['Chi phí vận hành khác'];
-for (const [k, v] of Object.entries({ CAT_SALARY_PAYMENT, CAT_SALES_RECEIPT, CAT_OTHER_RECEIPT, CAT_INGREDIENTS, CAT_UTILITIES, CAT_CSVC })) {
-  if (!v) throw new Error(`Required cashbook category for ${k} not found live.`);
-}
+// Cashbook categories are fixed, migration-seeded rows (V42__create_cashbook.sql) that are never
+// recreated per environment, so their IDs are hardcoded here rather than resolved by name --
+// sqlcmd echoes query results using the Windows console codepage, not UTF-8, so any live text
+// with Vietnamese diacritics (e.g. "Thu khác") comes back mangled and never matches a JS string
+// literal. Matching by code (ASCII, unaffected by that mangling) covers the 2 named-code rows;
+// the ID existence check below covers the other 4, which the migration never assigns a code to.
+const CAT_SALARY_PAYMENT = 'c0000000-0000-0000-0000-000000000001';
+const CAT_SALES_RECEIPT = 'c0000000-0000-0000-0000-000000000002';
+const CAT_OTHER_RECEIPT = 'c0000000-0000-0000-0000-000000000003';
+const CAT_INGREDIENTS = 'c0000000-0000-0000-0000-000000000004';
+const CAT_UTILITIES = 'c0000000-0000-0000-0000-000000000005';
+const CAT_CSVC = 'c0000000-0000-0000-0000-000000000006';
+const catIds = [CAT_SALARY_PAYMENT, CAT_SALES_RECEIPT, CAT_OTHER_RECEIPT, CAT_INGREDIENTS, CAT_UTILITIES, CAT_CSVC];
+const catFoundCount = parseInt(sqlcmdQuery(
+  `SELECT COUNT(*) FROM cashbook_categories WHERE id IN (${catIds.map((id) => `'${id}'`).join(',')})`,
+)[0][0], 10);
+if (catFoundCount !== catIds.length) throw new Error('Fixed cashbook categories from V42 migration not found live.');
 
 // Active promotions usable for discounted invoices.
 const promoRows = sqlcmdQuery("SELECT id, code FROM promotions WHERE code IN ('PERCENT10','FLAT50K')");
