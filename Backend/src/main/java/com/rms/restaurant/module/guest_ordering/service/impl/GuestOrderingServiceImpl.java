@@ -66,6 +66,27 @@ public class GuestOrderingServiceImpl implements GuestOrderingService {
             throw new ApplicationException(ApplicationError.TABLE_HAS_PENDING_ORDER);
         }
 
+        // BR-RESERV-01: Block guest QR order placement if the table has an upcoming or active
+        // reservation within the 120-minute reservation window (60 mins before to 120 mins after).
+        if (table.getStatus() == TableStatus.AVAILABLE || table.getStatus() == TableStatus.RESERVED) {
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            List<ReservationStatus> scheduledStatuses = List.of(ReservationStatus.PENDING, ReservationStatus.CONFIRMED);
+            boolean hasBlockingReservation = !reservationRepository.findBlockingForTablesForUpdate(
+                    List.of(table.getId()),
+                    ReservationStatus.CHECKED_IN,
+                    scheduledStatuses,
+                    now.minusMinutes(60),
+                    now.plusMinutes(120)
+            ).isEmpty();
+
+            if (hasBlockingReservation) {
+                throw new ApplicationException(
+                        ApplicationError.TABLE_NOT_AVAILABLE,
+                        "Bàn đã có lịch đặt trước trong vòng 120 phút. Không thể đặt món mới."
+                );
+            }
+        }
+
         // If this table is already occupied by a checked-in reservation, link the order/invoice
         // back to the guest who booked it (same as the staff order-create path).
         Reservation activeReservation = reservationRepository
