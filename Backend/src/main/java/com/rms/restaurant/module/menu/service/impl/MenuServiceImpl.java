@@ -246,7 +246,7 @@ public class MenuServiceImpl implements MenuService {
     @Override
     @Transactional(readOnly = true)
     public List<CategoryResponse> listCategories() {
-        return categoryRepository.findAllByOrderByDisplayOrderAsc().stream()
+        return categoryRepository.findAllByOrderByNameAsc().stream()
                 .map(c -> menuMapper.toCategoryResponse(c, itemRepository.countByCategoryId(c.getId())))
                 .collect(Collectors.toList());
     }
@@ -485,16 +485,39 @@ public class MenuServiceImpl implements MenuService {
     @Override
     @Transactional(readOnly = true)
     public List<PublicMenuResponse> getPublicMenu() {
-        return categoryRepository.findAllByOrderByDisplayOrderAsc().stream()
-                .map(category -> {
-                    List<PublicMenuItemResponse> items = itemRepository.findByCategoryIdAndAvailableTrue(category.getId())
-                            .stream()
-                            .map(menuMapper::toPublicResponse)
-                            .collect(Collectors.toList());
-                    return new PublicMenuResponse(category.getId(), category.getName(), items);
-                })
-                .filter(response -> !response.items().isEmpty())
-                .collect(Collectors.toList());
+
+        // Danh sách kết quả trả về
+        List<PublicMenuResponse> result = new ArrayList<>();
+
+        // Lấy tất cả danh mục
+        List<MenuCategory> categories = categoryRepository.findAllByOrderByNameAsc();
+
+        // Duyệt từng danh mục
+        for (MenuCategory category : categories) {
+
+            // Lấy các món còn bán của danh mục
+            List<MenuItem> menuItems =
+                    itemRepository.findByCategoryIdAndAvailableTrue(category.getId());
+
+            // Danh sách món sau khi chuyển sang Response
+            List<PublicMenuItemResponse> items = new ArrayList<>();
+
+            // Chuyển từng MenuItem thành PublicMenuItemResponse
+            for (MenuItem item : menuItems) {
+                items.add(menuMapper.toPublicResponse(item));
+            }
+
+            // Nếu danh mục có món thì thêm vào kết quả
+            if (!items.isEmpty()) {
+                result.add(new PublicMenuResponse(
+                        category.getId(),
+                        category.getName(),
+                        items
+                ));
+            }
+        }
+
+        return result;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

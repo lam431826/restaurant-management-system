@@ -8,7 +8,7 @@ import java.util.Optional;
 
 public interface MenuCategoryRepository extends JpaRepository<MenuCategory, String> {
 
-    List<MenuCategory> findAllByOrderByDisplayOrderAsc();
+    List<MenuCategory> findAllByOrderByNameAsc();
 
     boolean existsByNameIgnoreCase(String name);
 
