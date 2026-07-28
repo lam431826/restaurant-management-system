@@ -35,6 +35,7 @@ public class PayrollSettingServiceImpl implements PayrollSettingService {
         s.setAutoCreateEnabled(request.autoCreateEnabled());
         s.setAutoUpdateEnabled(request.autoUpdateEnabled());
         s.setPersonalIncomeTaxEnabled(request.personalIncomeTaxEnabled());
+        s.setPaidLeaveDaysPerYear(request.paidLeaveDaysPerYear());
         return mapper.toSettingResponse(settingRepository.save(s));
     }
 
@@ -46,6 +47,9 @@ public class PayrollSettingServiceImpl implements PayrollSettingService {
 
     private void validate(PayrollSettingRequest r) {
         if (r.payrollCutoffDay() < 1 || r.payrollCutoffDay() > 28) {
+            throw new ApplicationException(ApplicationError.PAYROLL_SETTING_INVALID);
+        }
+        if (r.paidLeaveDaysPerYear() < 0) {
             throw new ApplicationException(ApplicationError.PAYROLL_SETTING_INVALID);
         }
     }

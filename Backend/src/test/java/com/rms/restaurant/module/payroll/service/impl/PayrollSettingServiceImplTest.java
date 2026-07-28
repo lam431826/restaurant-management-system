@@ -42,21 +42,31 @@ class PayrollSettingServiceImplTest {
         PayrollSettingResponse response = service.get();
         assertThat(response.payrollCutoffDay()).isEqualTo(1);
         assertThat(response.autoCreateEnabled()).isTrue();
+        assertThat(response.paidLeaveDaysPerYear()).isEqualTo(12);
     }
 
     @Test
     void updatePersistsAllFields() {
         PayrollSettingResponse response = service.update(
-                new PayrollSettingRequest(15, false, false, true));
+                new PayrollSettingRequest(15, false, false, true, 20));
         assertThat(response.payrollCutoffDay()).isEqualTo(15);
         assertThat(response.autoCreateEnabled()).isFalse();
         assertThat(response.autoUpdateEnabled()).isFalse();
         assertThat(response.personalIncomeTaxEnabled()).isTrue();
+        assertThat(response.paidLeaveDaysPerYear()).isEqualTo(20);
     }
 
     @Test
     void updateRejectsCutoffDayOutOfRange() {
-        assertThatThrownBy(() -> service.update(new PayrollSettingRequest(29, true, true, false)))
+        assertThatThrownBy(() -> service.update(new PayrollSettingRequest(29, true, true, false, 12)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getError())
+                .isEqualTo(ApplicationError.PAYROLL_SETTING_INVALID);
+    }
+
+    @Test
+    void updateRejectsNegativePaidLeaveDaysPerYear() {
+        assertThatThrownBy(() -> service.update(new PayrollSettingRequest(1, true, true, false, -1)))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getError())
                 .isEqualTo(ApplicationError.PAYROLL_SETTING_INVALID);

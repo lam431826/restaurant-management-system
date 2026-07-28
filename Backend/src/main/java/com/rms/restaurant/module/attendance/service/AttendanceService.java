@@ -55,4 +55,7 @@ public interface AttendanceService {
 
     /** BR-AT-12: total violation penalty of one employee over a period. */
     BigDecimal violationTotal(String employeeId, LocalDate start, LocalDate end);
+
+    /** Paid-leave quota (PAY module): LEAVE_APPROVED days already used in date's calendar year, before date. */
+    int countApprovedLeaveThisYearBefore(String employeeId, LocalDate date);
 }

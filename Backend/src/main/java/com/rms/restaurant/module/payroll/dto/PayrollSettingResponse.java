@@ -4,5 +4,6 @@ public record PayrollSettingResponse(
         int payrollCutoffDay,
         boolean autoCreateEnabled,
         boolean autoUpdateEnabled,
-        boolean personalIncomeTaxEnabled) {
+        boolean personalIncomeTaxEnabled,
+        int paidLeaveDaysPerYear) {
 }

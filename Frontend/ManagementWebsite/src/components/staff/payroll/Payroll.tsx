@@ -4,7 +4,7 @@ import {
   cancelPayslip, cancelSheet, createSheet, fmtDate, fmtDateTime, getPayslip,
   listSheetPayments, listSheetPayslips, listSheets, money, paySheet, reloadSheet,
   toIsoDate,
-  ATTENDANCE_STATUS_LABEL, METHOD_LABEL, PAYSLIP_PAYMENT_STATUS_LABEL, SALARY_TYPE_LABEL, SCOPE_LABEL, SHEET_STATUS_LABEL, TERM_LABEL,
+  ATTENDANCE_STATUS_LABEL, METHOD_LABEL, PAYSLIP_PAYMENT_STATUS_LABEL, SALARY_TYPE_LABEL, SCOPE_LABEL, SHEET_STATUS_LABEL, sheetStatusLabel, TERM_LABEL,
 } from '../../../api/payroll'
 import type {
   CreateSheetPayload, PaymentDto, PayrollSheetDto, PayrollSheetStatus, PayrollTerm,
@@ -59,7 +59,7 @@ const ALL_COLUMNS: Col[] = [
   { key: 'total', label: 'Tổng lương', align: 'right', sum: true, render: p => money(p.total) },
   { key: 'paid', label: 'Đã trả nhân viên', align: 'right', sum: true, render: p => money(p.paid) },
   { key: 'remaining', label: 'Còn cần trả', align: 'right', sum: true, render: p => money(p.remaining) },
-  { key: 'status', label: 'Trạng thái', render: p => SHEET_STATUS_LABEL[p.status] },
+  { key: 'status', label: 'Trạng thái', render: p => sheetStatusLabel(p) },
   { key: 'createdBy', label: 'Người tạo', render: p => p.createdBy || '' },
   { key: 'preparedBy', label: 'Người lập bảng', render: p => p.createdBy || '' },
   { key: 'createdAt', label: 'Ngày tạo', render: p => fmtDateTime(p.createdAt) },
@@ -403,7 +403,7 @@ const PayrollDetail = ({ payroll, detail, tab, setTab, onPay, onOpenPayslip, onV
           <FieldRO label="Ngày tạo:" value={fmtDateTime(payroll.createdAt)} />
           <FieldRO label="Người tạo:" value={payroll.createdBy || ''} />
           <FieldRO label="Người lập bảng:" value={payroll.createdBy || ''} />
-          <FieldRO label="Trạng thái:" value={SHEET_STATUS_LABEL[payroll.status]} />
+          <FieldRO label="Trạng thái:" value={sheetStatusLabel(payroll)} />
           <FieldRO label="Tổng số nhân viên:" value={String(payroll.employeeCount)} />
           <FieldRO label="Tổng lương:" value={money(payroll.total)} />
           <FieldRO label="Đã trả nhân viên:" value={money(payroll.paid)} />
@@ -606,7 +606,7 @@ const PaymentModal = ({ payroll, payslips, onClose, onDone }: {
           <h2 className="text-xl font-bold text-ink">Thanh toán bảng lương</h2>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-ink-muted hover:bg-fill hover:text-ink cursor-pointer"><CloseIcon /></button>
         </div>
-        <div className="px-6 text-sm text-ink-subtle">{payroll.name} | Kỳ làm việc: {periodLabel(payroll)} | Trạng thái: {SHEET_STATUS_LABEL[payroll.status]}</div>
+        <div className="px-6 text-sm text-ink-subtle">{payroll.name} | Kỳ làm việc: {periodLabel(payroll)} | Trạng thái: {sheetStatusLabel(payroll)}</div>
 
         <div className="px-6 py-4 grid grid-cols-2 gap-x-8 gap-y-3">
           <div className="flex items-center gap-3"><span className="w-[9rem] text-md text-ink">Tiền trả nhân viên</span><span className="text-md font-bold text-ink">{money(total)}</span></div>
@@ -716,7 +716,7 @@ const PayslipModal = ({ payslipId, onClose, onChanged }: {
   }
 
   const statusLabel = detail
-    ? (detail.status === 'CANCELLED' ? 'Đã hủy' : SHEET_STATUS_LABEL[detail.sheetStatus])
+    ? (detail.status === 'CANCELLED' ? 'Đã hủy' : PAYSLIP_PAYMENT_STATUS_LABEL[detail.paymentStatus])
     : ''
   const canCancel = !!detail && detail.status === 'ACTIVE' && detail.paidAmount === 0 && detail.sheetStatus !== 'CANCELLED'
 

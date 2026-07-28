@@ -40,6 +40,10 @@ public class PayrollSetting {
     @Column(name = "personal_income_tax_enabled", nullable = false)
     private boolean personalIncomeTaxEnabled = false;
 
+    @Builder.Default
+    @Column(name = "paid_leave_days_per_year", nullable = false)
+    private int paidLeaveDaysPerYear = 12;
+
     @CreatedDate
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

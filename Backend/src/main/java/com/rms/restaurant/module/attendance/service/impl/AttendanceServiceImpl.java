@@ -173,6 +173,9 @@ public class AttendanceServiceImpl implements AttendanceService {
         if (existing != null && existing.getActualCheckIn() != null) {
             throw new ApplicationException(ApplicationError.AT_RECORD_TIME_INVALID, "Đã chấm công vào ca này");
         }
+        WorkShift shift = shiftRepository.findById(schedule.getShiftId())
+                .orElseThrow(() -> new ApplicationException(ApplicationError.AT_SHIFT_NOT_FOUND));
+        requireWithinCheckInWindow(shift);
         LocalDateTime now = LocalDateTime.now();
         AttendanceRecord saved = mark(schedule, AttendanceType.PRESENT,
                 now.toLocalDate(), now.toLocalTime(), null, null, null, false, username, null, null);
@@ -327,6 +330,24 @@ public class AttendanceServiceImpl implements AttendanceService {
         if (date == null) return;
         if (date.isBefore(schedule.getWorkDate()) || date.isAfter(schedule.getWorkDate().plusDays(1))) {
             throw new ApplicationException(ApplicationError.AT_RECORD_DATE_INVALID);
+        }
+    }
+
+    /**
+     * BR-AT-14: self-service check-in is only allowed within the shift's configured window;
+     * unset (null) means unrestricted (shifts created before this field was enforced).
+     */
+    private void requireWithinCheckInWindow(WorkShift shift) {
+        LocalTime start = shift.getCheckInWindowStart();
+        LocalTime end = shift.getCheckInWindowEnd();
+        if (start == null || end == null) return;
+        LocalTime now = LocalTime.now();
+        boolean withinWindow = end.isAfter(start)
+                ? !now.isBefore(start) && !now.isAfter(end)
+                : !now.isBefore(start) || !now.isAfter(end); // window wraps past midnight
+        if (!withinWindow) {
+            throw new ApplicationException(ApplicationError.AT_CHECKIN_WINDOW_INVALID,
+                    "Chỉ được chấm công vào ca này trong khoảng " + start + " - " + end);
         }
     }
 
@@ -579,6 +600,12 @@ public class AttendanceServiceImpl implements AttendanceService {
     public BigDecimal violationTotal(String employeeId, LocalDate start, LocalDate end) {
         BigDecimal total = violationRepository.totalPenaltyForEmployee(employeeId, start, end);
         return total != null ? total : BigDecimal.ZERO;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public int countApprovedLeaveThisYearBefore(String employeeId, LocalDate date) {
+        return recordRepository.countApprovedLeaveBetween(employeeId, date.withDayOfYear(1), date);
     }
 
     // ---- helpers ----

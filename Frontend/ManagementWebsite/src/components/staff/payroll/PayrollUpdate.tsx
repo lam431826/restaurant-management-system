@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   cancelPayslip, finalizeSheet, fmtDate, fmtDateTime, getSheet, listSheetPayslips, money, reloadSheet, saveDraft,
-  SHEET_STATUS_LABEL,
+  sheetStatusLabel,
 } from '../../../api/payroll'
 import type { DraftRowPayload, PayrollSheetDto, PayslipRowDto, ReloadMode } from '../../../api/payroll'
 
@@ -227,7 +227,7 @@ const PayrollUpdate = () => {
         <button onClick={() => navigate('/manager/payroll')} className="w-9 h-9 flex items-center justify-center rounded-md text-ink-subtle hover:bg-fill hover:text-ink cursor-pointer" aria-label="Quay lại"><ArrowLeft /></button>
         <div className="whitespace-nowrap">
           <h1 className="text-lg font-bold text-ink">Cập nhật bảng tính lương</h1>
-          {sheet && <div className="text-sm text-ink-subtle">{sheet.name} · {fmtDate(sheet.periodStart)} - {fmtDate(sheet.periodEnd)} · {SHEET_STATUS_LABEL[sheet.status]}</div>}
+          {sheet && <div className="text-sm text-ink-subtle">{sheet.name} · {fmtDate(sheet.periodStart)} - {fmtDate(sheet.periodEnd)} · {sheetStatusLabel(sheet)}</div>}
         </div>
         <div className="relative flex-1 max-w-[34rem]">
           <span className="absolute left-3 top-1/2 -translate-y-1/2"><SearchIcon /></span>

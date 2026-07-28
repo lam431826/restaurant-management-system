@@ -602,6 +602,9 @@ const PayrollSettings = ({
         </div>
       </Block>
 
+      <Block title="Nghỉ có phép có lương" desc="Số ngày nghỉ có phép được trả nguyên lương ca mỗi năm; nghỉ có phép vượt số ngày này (hoặc nghỉ không phép) sẽ không được tính lương"
+        right={<div className="flex items-center gap-2"><NumUnit value={settings.paidLeaveDaysPerYear} onChange={v => set('paidLeaveDaysPerYear', v)} unit="ngày / năm" /><InfoIcon /></div>} />
+
       <Block title="Tự động tạo bảng tính lương" desc="Bảng tính lương sẽ được tự động tạo mới vào mỗi kỳ lương"
         right={<Toggle on={settings.autoCreateEnabled} onChange={v => set('autoCreateEnabled', v)} />} />
 

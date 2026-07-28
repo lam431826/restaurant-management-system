@@ -339,7 +339,7 @@ const PROMO_USAGE = {};
 
 // Work-shift templates: find-or-create by name, uniformly (no more "assumed pre-existing").
 const SHIFT_DEFS = [
-  { key: 'CA_SANG', name: 'Ca Sang', start: [6, 0], end: [14, 0] },
+  { key: 'CA_SANG', name: 'Ca Sang', start: [6, 0], end: [10, 0] },
   { key: 'CA_CHIEU', name: 'Ca Chieu', start: [14, 30], end: [18, 30] },
   { key: 'CA_TOI', name: 'Ca Toi', start: [18, 0], end: [22, 0] },
 ];
@@ -357,7 +357,7 @@ for (const def of SHIFT_DEFS) {
 }
 const SHIFT_CA_SANG = shiftIdByKey.CA_SANG, SHIFT_CA_CHIEU = shiftIdByKey.CA_CHIEU, SHIFT_CA_TOI = shiftIdByKey.CA_TOI;
 const SHIFT_TIMES = {
-  [SHIFT_CA_SANG]: [6, 0, 14, 0],
+  [SHIFT_CA_SANG]: [6, 0, 10, 0],
   [SHIFT_CA_CHIEU]: [14, 30, 18, 30],
   [SHIFT_CA_TOI]: [18, 0, 22, 0],
 };

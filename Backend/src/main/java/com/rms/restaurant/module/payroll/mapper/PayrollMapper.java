@@ -76,7 +76,8 @@ public class PayrollMapper {
     public PayrollSettingResponse toSettingResponse(PayrollSetting s) {
         return new PayrollSettingResponse(
                 s.getPayrollCutoffDay(), s.isAutoCreateEnabled(),
-                s.isAutoUpdateEnabled(), s.isPersonalIncomeTaxEnabled());
+                s.isAutoUpdateEnabled(), s.isPersonalIncomeTaxEnabled(),
+                s.getPaidLeaveDaysPerYear());
     }
 
     public PayrollHolidayResponse toResponse(PayrollHoliday h) {

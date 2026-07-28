@@ -25,6 +25,7 @@ import com.rms.restaurant.module.payroll.repository.PayslipPaymentRepository;
 import com.rms.restaurant.module.payroll.repository.PayslipRepository;
 import com.rms.restaurant.module.payroll.service.ComputedPayslip;
 import com.rms.restaurant.module.payroll.service.PayrollService;
+import com.rms.restaurant.module.payroll.service.PayrollSettingService;
 import com.rms.restaurant.module.payroll.service.SalaryCalculator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -53,6 +54,7 @@ public class PayrollServiceImpl implements PayrollService {
     // employees(id) — no more hop through a linked user account.
     private final AttendanceService attendanceService;
     private final AttendanceSettingService attendanceSettingService;
+    private final PayrollSettingService payrollSettingService;
     private final SalaryCalculator salaryCalculator;
     private final PayrollMapper mapper;
     // BR-PAY-17: each salary payout mints a Cash Book (Sổ quỹ) voucher — cashbook owns PC%06d numbering.
@@ -160,8 +162,12 @@ public class PayrollServiceImpl implements PayrollService {
                 .findAllByHolidayDateBetween(sheet.getPeriodStart(), sheet.getPeriodEnd())
                 .stream().map(PayrollHoliday::getHolidayDate).collect(Collectors.toSet());
         var attendanceSettings = attendanceSettingService.current();
+        int paidLeaveDaysPerYear = payrollSettingService.get().paidLeaveDaysPerYear();
+        int leaveUsedBeforePeriod = attendanceService.countApprovedLeaveThisYearBefore(
+                employee.getId(), sheet.getPeriodStart());
         return salaryCalculator.compute(setting, attendance, holidayDates, attendanceSettings.getOtRoundingMinutes(),
-                attendanceSettings.isLatePenaltyEnabled(), attendanceSettings.getLatePenaltyRoundingMinutes());
+                attendanceSettings.isLatePenaltyEnabled(), attendanceSettings.getLatePenaltyRoundingMinutes(),
+                paidLeaveDaysPerYear, leaveUsedBeforePeriod);
     }
 
     private Payslip buildPayslip(PayrollSheet sheet, Employee employee,

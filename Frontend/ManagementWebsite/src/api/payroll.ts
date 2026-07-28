@@ -38,6 +38,14 @@ export const PAYSLIP_PAYMENT_STATUS_LABEL: Record<SalaryPaymentStatus, string> =
   PAID: 'Đã thanh toán',
 }
 
+/**
+ * Once a sheet is FINALIZED, "Đã chốt lương" never changes again even after full payment —
+ * show the payment status instead so a fully-paid sheet doesn't look stuck forever. Other
+ * lifecycle states (GENERATING/DRAFT/CANCELLED) have no meaningful payment status yet.
+ */
+export const sheetStatusLabel = (sheet: { status: PayrollSheetStatus; paymentStatus: SalaryPaymentStatus }): string =>
+  sheet.status === 'FINALIZED' ? PAYSLIP_PAYMENT_STATUS_LABEL[sheet.paymentStatus] : SHEET_STATUS_LABEL[sheet.status]
+
 /* ── DTOs ────────────────────────────────────────────────────────────────── */
 export interface PayrollSheetDto {
   id: string
@@ -208,6 +216,7 @@ export interface PayrollSettingsDto {
   autoCreateEnabled: boolean
   autoUpdateEnabled: boolean
   personalIncomeTaxEnabled: boolean
+  paidLeaveDaysPerYear: number
 }
 
 export const getPayrollSettings = () =>

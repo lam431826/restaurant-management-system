@@ -33,4 +33,16 @@ public interface AttendanceRecordRepository extends JpaRepository<AttendanceReco
     List<Object[]> findWithScheduleForEmployee(@Param("employeeId") String employeeId,
                                                @Param("start") LocalDate start,
                                                @Param("end") LocalDate end);
+
+    /** Count LEAVE_APPROVED days already consumed in [start, end) — payroll paid-leave quota. */
+    @Query("""
+            SELECT COUNT(r) FROM AttendanceRecord r
+            JOIN WorkSchedule s ON s.id = r.scheduleId
+            WHERE s.employeeId = :employeeId
+              AND r.type = com.rms.restaurant.common.utils.enums.AttendanceType.LEAVE_APPROVED
+              AND s.workDate >= :start AND s.workDate < :end
+            """)
+    int countApprovedLeaveBetween(@Param("employeeId") String employeeId,
+                                  @Param("start") LocalDate start,
+                                  @Param("end") LocalDate end);
 }

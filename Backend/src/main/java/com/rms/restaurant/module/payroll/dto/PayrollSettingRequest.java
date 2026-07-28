@@ -5,5 +5,6 @@ public record PayrollSettingRequest(
         int payrollCutoffDay,
         boolean autoCreateEnabled,
         boolean autoUpdateEnabled,
-        boolean personalIncomeTaxEnabled) {
+        boolean personalIncomeTaxEnabled,
+        int paidLeaveDaysPerYear) {
 }

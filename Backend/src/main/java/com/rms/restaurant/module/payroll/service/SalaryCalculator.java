@@ -56,10 +56,18 @@ public class SalaryCalculator {
      *                          salary automatically deducts wages for late/early minutes.
      * @param latePenaltyRoundingMinutes AttendanceSetting.latePenaltyRoundingMinutes -- block
      *                          size for the late/early deduction formula (rounds UP).
+     * @param paidLeaveDaysPerYear PayrollSetting.paidLeaveDaysPerYear -- how many LEAVE_APPROVED
+     *                          days per calendar year are paid in full; LEAVE_UNAPPROVED is
+     *                          never paid regardless of this quota.
+     * @param approvedLeaveUsedBeforePeriod count of LEAVE_APPROVED days already consumed this
+     *                          calendar year before this period started (caller resolves via
+     *                          AttendanceService.countApprovedLeaveThisYearBefore) -- quota slots
+     *                          within this period are then allocated in date order.
      */
     public ComputedPayslip compute(SalarySetting setting, List<AttendanceForPayroll> attendance,
                                     Set<LocalDate> holidayDates, int otRoundingMinutes,
-                                    boolean latePenaltyEnabled, int latePenaltyRoundingMinutes) {
+                                    boolean latePenaltyEnabled, int latePenaltyRoundingMinutes,
+                                    int paidLeaveDaysPerYear, int approvedLeaveUsedBeforePeriod) {
         if (setting == null) {
             return new ComputedPayslip(null, BigDecimal.ZERO, BigDecimal.ZERO,
                     0, 0, 0, toJson(snapshotRows(attendance, holidayDates, "Chưa có thiết lập lương")), BigDecimal.ZERO);
@@ -67,8 +75,8 @@ public class SalaryCalculator {
         return switch (setting.getMainSalaryType()) {
             case FIXED -> computeFixed(setting, attendance, holidayDates);
             case SHIFT -> computeShift(setting, attendance, holidayDates, otRoundingMinutes,
-                    latePenaltyEnabled, latePenaltyRoundingMinutes);
-            case HOURLY -> computeHourly(setting, attendance, holidayDates);
+                    latePenaltyEnabled, latePenaltyRoundingMinutes, paidLeaveDaysPerYear, approvedLeaveUsedBeforePeriod);
+            case HOURLY -> computeHourly(setting, attendance, holidayDates, paidLeaveDaysPerYear, approvedLeaveUsedBeforePeriod);
         };
     }
 
@@ -81,26 +89,29 @@ public class SalaryCalculator {
 
     private ComputedPayslip computeShift(SalarySetting setting, List<AttendanceForPayroll> attendance,
                                          Set<LocalDate> holidayDates, int otRoundingMinutes,
-                                         boolean latePenaltyEnabled, int latePenaltyRoundingMinutes) {
+                                         boolean latePenaltyEnabled, int latePenaltyRoundingMinutes,
+                                         int paidLeaveDaysPerYear, int approvedLeaveUsedBeforePeriod) {
         Map<String, RateSpec> dayRates = parseRates(setting.getMainAdvancedRates());
         Map<String, RateSpec> otRates = parseRates(setting.getOvertimeRates());
         BigDecimal main = BigDecimal.ZERO;
         BigDecimal overtime = BigDecimal.ZERO;
         BigDecimal lateEarlyDeduction = BigDecimal.ZERO;
         int otMinutesTotal = 0;
+        int[] leaveUsed = {approvedLeaveUsedBeforePeriod};
         List<AttendanceDetailRow> rows = new ArrayList<>();
 
         for (AttendanceForPayroll a : attendance) {
             String dayType = dayType(a.workDate(), holidayDates);
             BigDecimal shiftWage = resolveRate(setting.getMainBaseWage(), dayRates.get(dayType));
-            BigDecimal amount = shiftAmount(a, shiftWage);
+            boolean paid = isPaidRow(a, paidLeaveDaysPerYear, leaveUsed);
+            BigDecimal amount = paid ? scale(shiftWage) : BigDecimal.ZERO;
             int otMin = setting.isOvertimeEnabled() ? a.otMinutes() : 0;
             BigDecimal otAmount = otMin > 0
                     ? otAmount(setting.getMainBaseWage(), a, otMin, otRate(otRates, dayType), otRoundingMinutes) : BigDecimal.ZERO;
             main = main.add(amount);
             overtime = overtime.add(otAmount);
             otMinutesTotal += otMin;
-            String note = null;
+            String note = leaveNote(a, paid, paidLeaveDaysPerYear);
             if (latePenaltyEnabled) {
                 BigDecimal rowDeduction = lateEarlyPenalty(setting.getMainBaseWage(), a, a.lateMinutes(), latePenaltyRoundingMinutes)
                         .add(lateEarlyPenalty(setting.getMainBaseWage(), a, a.earlyLeaveMinutes(), latePenaltyRoundingMinutes));
@@ -115,36 +126,70 @@ public class SalaryCalculator {
                 countPaidShifts(attendance), sumWorkedMinutes(attendance), otMinutesTotal, toJson(rows), scale(lateEarlyDeduction));
     }
 
-    private ComputedPayslip computeHourly(SalarySetting setting, List<AttendanceForPayroll> attendance, Set<LocalDate> holidayDates) {
+    private ComputedPayslip computeHourly(SalarySetting setting, List<AttendanceForPayroll> attendance,
+                                          Set<LocalDate> holidayDates, int paidLeaveDaysPerYear,
+                                          int approvedLeaveUsedBeforePeriod) {
         Map<String, RateSpec> dayRates = parseRates(setting.getMainAdvancedRates());
         BigDecimal main = BigDecimal.ZERO;
+        int[] leaveUsed = {approvedLeaveUsedBeforePeriod};
         List<AttendanceDetailRow> rows = new ArrayList<>();
 
         for (AttendanceForPayroll a : attendance) {
             String dayType = dayType(a.workDate(), holidayDates);
             BigDecimal hourlyRate = resolveRate(setting.getMainBaseWage(), dayRates.get(dayType));
             BigDecimal amount = BigDecimal.ZERO;
+            String note = null;
             if (isPaid(a) && a.workedMinutes() > 0) {
                 amount = scale(hourlyRate.multiply(BigDecimal.valueOf(a.workedMinutes()))
                         .divide(BigDecimal.valueOf(60), 0, RoundingMode.HALF_UP));
+            } else if (a.type() == AttendanceType.LEAVE_APPROVED) {
+                // No workedMinutes on a leave day, so pay it by the scheduled shift length instead.
+                if (leaveUsed[0] < paidLeaveDaysPerYear) {
+                    leaveUsed[0]++;
+                    amount = scale(hourlyRate.multiply(BigDecimal.valueOf(scheduledPaidMinutes(a)))
+                            .divide(BigDecimal.valueOf(60), 0, RoundingMode.HALF_UP));
+                    note = "Nghỉ có phép — trong định mức, tính theo giờ ca đã xếp lịch";
+                } else {
+                    note = "Nghỉ có phép — đã vượt định mức " + paidLeaveDaysPerYear + " ngày/năm, không lương";
+                }
+            } else if (a.type() == AttendanceType.LEAVE_UNAPPROVED) {
+                note = "Nghỉ không phép — không lương";
             }
             main = main.add(amount);
-            rows.add(row(a, dayType, rateLabel(dayRates.get(dayType)), amount, 0, null));
+            rows.add(row(a, dayType, rateLabel(dayRates.get(dayType)), amount, 0, note));
         }
         // BR-PAY-05: overtime (and the late/early auto-deduction, same restriction) applies to
-        // SHIFT-type main salary only -- HOURLY already pays strictly by workedMinutes, so
-        // lateness already reduces its pay naturally.
+        // SHIFT-type main salary only -- HOURLY already pays strictly by workedMinutes (or, for a
+        // paid approved-leave day within quota, by the scheduled shift length instead).
         return new ComputedPayslip(SalaryType.HOURLY, scale(main), BigDecimal.ZERO,
                 countPaidShifts(attendance), sumWorkedMinutes(attendance), 0, toJson(rows), BigDecimal.ZERO);
     }
 
     /**
-     * Full shift wage whenever the shift was worked (checked in and out), regardless of late
-     * arrival or early leave — those are handled manually via violation penalties (Giảm trừ),
-     * not by prorating the shift wage here.
+     * Whether a row earns wage: PRESENT-worked (unchanged BR-PAY-02 gate, see {@link #isPaid}),
+     * or LEAVE_APPROVED within the yearly paid-leave quota -- consumes one slot from
+     * {@code leaveUsed[0]} in date order (attendance is already ORDER BY workDate from
+     * AttendanceRecordRepository.findWithScheduleForEmployee). LEAVE_UNAPPROVED never pays.
      */
-    private BigDecimal shiftAmount(AttendanceForPayroll a, BigDecimal shiftWage) {
-        return isPaid(a) ? scale(shiftWage) : BigDecimal.ZERO;
+    private boolean isPaidRow(AttendanceForPayroll a, int paidLeaveDaysPerYear, int[] leaveUsed) {
+        if (isPaid(a)) return true;
+        if (a.type() == AttendanceType.LEAVE_APPROVED && leaveUsed[0] < paidLeaveDaysPerYear) {
+            leaveUsed[0]++;
+            return true;
+        }
+        return false;
+    }
+
+    /** Explains a leave row's pay outcome in the payslip breakdown; null for PRESENT rows. */
+    private String leaveNote(AttendanceForPayroll a, boolean paid, int paidLeaveDaysPerYear) {
+        if (a.type() == AttendanceType.LEAVE_APPROVED) {
+            return paid ? "Nghỉ có phép — trong định mức, tính đủ lương ca"
+                    : "Nghỉ có phép — đã vượt định mức " + paidLeaveDaysPerYear + " ngày/năm, không lương";
+        }
+        if (a.type() == AttendanceType.LEAVE_UNAPPROVED) {
+            return "Nghỉ không phép — không lương";
+        }
+        return null;
     }
 
     /**
